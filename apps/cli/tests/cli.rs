@@ -105,7 +105,8 @@ fn validate_writes_skipped_result_for_missing_requested_rule() {
 
     assert!(report_json.contains("\"execution_status\": \"skipped\""));
     assert!(report_json.contains("\"skipped_reason\": \"rule_not_found\""));
-    assert!(report_csv.contains("CORE-MISSING,skipped,rule_not_found"));
+    assert!(report_csv.contains("CORE-MISSING,skipped"));
+    assert!(report_csv.contains("rule_not_found"));
 }
 
 #[test]

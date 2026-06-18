@@ -1,0 +1,30 @@
+{
+  "Core": {
+    "Id": "CORE-GOLDEN-0002",
+    "Status": "Published"
+  },
+  "Scope": {
+    "Domains": {},
+    "Classes": {}
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "type": "lookup",
+      "leftDataset": "AE",
+      "rightDataset": "ADSL",
+      "leftKeys": ["USUBJID"],
+      "rightKeys": ["USUBJID"],
+      "prefix": "ADSL."
+    }
+  ],
+  "Check": {
+    "name": "ADSL.SAFFL",
+    "operator": "equal_to",
+    "value": "N"
+  },
+  "Outcome": {
+    "Message": "AE subject must be in the safety population"
+  }
+}

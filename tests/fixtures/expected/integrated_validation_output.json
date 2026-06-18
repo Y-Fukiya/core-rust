@@ -1,0 +1,101 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-GOLDEN-0001",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must use controlled terminology",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-GOLDEN-0001",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 3,
+          "variables": ["DOMAIN"],
+          "message": "DOMAIN must use controlled terminology"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "CM",
+      "domain": "CM",
+      "message": "DOMAIN must use controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "DOMAIN must use controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0002",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AE subject must be in the safety population",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-GOLDEN-0002",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 2,
+          "variables": ["ADSL.SAFFL"],
+          "message": "AE subject must be in the safety population"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0003",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must be one of the study domains",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-GOLDEN-0003",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 3,
+          "variables": ["DOMAIN"],
+          "message": "DOMAIN must be one of the study domains"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0003",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "CM",
+      "domain": "CM",
+      "message": "DOMAIN must be one of the study domains",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-GOLDEN-0003",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "DOMAIN must be one of the study domains",
+      "error_count": 0,
+      "errors": []
+    }
+  ]
+}

@@ -420,6 +420,160 @@ pub fn dataset_names(datasets: &[LoadedDataset]) -> BTreeSet<String> {
         .collect()
 }
 
+pub fn filter_dataset_by_mask(dataset: &LoadedDataset, mask: &[bool]) -> Result<LoadedDataset> {
+    if mask.len() != dataset.frame.height() {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "filter mask length {} does not match row count {}",
+            mask.len(),
+            dataset.frame.height()
+        )));
+    }
+
+    let indices = mask
+        .iter()
+        .enumerate()
+        .filter_map(|(index, keep)| keep.then_some(index as u32))
+        .collect::<Vec<_>>();
+    take_dataset_rows(dataset, &indices)
+}
+
+pub fn derive_literal_column(
+    dataset: &LoadedDataset,
+    column_name: &str,
+    value: &Value,
+) -> Result<LoadedDataset> {
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "derive operation requires a target column".to_owned(),
+        ));
+    }
+    if dataset.frame.column(column_name).is_ok() {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "derived column already exists: {column_name}"
+        )));
+    }
+
+    let values = (0..dataset.frame.height())
+        .map(|_| value.clone())
+        .collect::<Vec<_>>();
+    let mut frame = dataset.frame.clone();
+    frame
+        .hstack_mut(&[series_from_json_values(column_name, &values).into()])
+        .map_err(|source| DataError::Polars {
+            path: dataset.metadata.full_path.clone(),
+            source,
+        })?;
+
+    Ok(LoadedDataset::new(dataset.metadata.clone(), frame))
+}
+
+pub fn group_count_dataset(
+    dataset: &LoadedDataset,
+    keys: &[String],
+    column_name: &str,
+) -> Result<LoadedDataset> {
+    if keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "group count operation requires at least one key".to_owned(),
+        ));
+    }
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "group count operation requires an output column".to_owned(),
+        ));
+    }
+    for key in keys {
+        if dataset.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "group count key not found: {key}"
+            )));
+        }
+    }
+
+    let mut counts = HashMap::new();
+    for row in 0..dataset.frame.height() {
+        *counts
+            .entry(row_key(&dataset.frame, keys, row)?)
+            .or_insert(0_i64) += 1;
+    }
+
+    let values = (0..dataset.frame.height())
+        .map(|row| {
+            row_key(&dataset.frame, keys, row).map(|key| {
+                Value::Number(serde_json::Number::from(
+                    *counts.get(&key).unwrap_or(&0_i64),
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    derive_literal_series(dataset, column_name, &values)
+}
+
+pub fn sort_dataset_by_columns(
+    dataset: &LoadedDataset,
+    keys: &[String],
+    descending: bool,
+) -> Result<LoadedDataset> {
+    if keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "sort operation requires at least one key".to_owned(),
+        ));
+    }
+    for key in keys {
+        if dataset.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "sort key not found: {key}"
+            )));
+        }
+    }
+
+    let mut keyed_rows = (0..dataset.frame.height())
+        .map(|row| row_key(&dataset.frame, keys, row).map(|key| (key, row as u32)))
+        .collect::<Result<Vec<_>>>()?;
+    keyed_rows.sort_by(|left, right| left.0.cmp(&right.0));
+    if descending {
+        keyed_rows.reverse();
+    }
+    let indices = keyed_rows
+        .into_iter()
+        .map(|(_key, row)| row)
+        .collect::<Vec<_>>();
+    take_dataset_rows(dataset, &indices)
+}
+
+fn derive_literal_series(
+    dataset: &LoadedDataset,
+    column_name: &str,
+    values: &[Value],
+) -> Result<LoadedDataset> {
+    if dataset.frame.column(column_name).is_ok() {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "derived column already exists: {column_name}"
+        )));
+    }
+
+    let mut frame = dataset.frame.clone();
+    frame
+        .hstack_mut(&[series_from_json_values(column_name, values).into()])
+        .map_err(|source| DataError::Polars {
+            path: dataset.metadata.full_path.clone(),
+            source,
+        })?;
+    Ok(LoadedDataset::new(dataset.metadata.clone(), frame))
+}
+
+fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Result<LoadedDataset> {
+    let indices = UInt32Chunked::from_vec("row_index".into(), indices.to_vec());
+    let frame = dataset
+        .frame
+        .take(&indices)
+        .map_err(|source| DataError::Polars {
+            path: dataset.metadata.full_path.clone(),
+            source,
+        })?;
+    Ok(LoadedDataset::new(dataset.metadata.clone(), frame))
+}
+
 pub fn left_join_dataset(
     left: &LoadedDataset,
     right: &LoadedDataset,
@@ -811,6 +965,72 @@ mod tests {
                 .expect("row 2")
                 .extract_str(),
             Some("Y")
+        );
+    }
+
+    #[test]
+    fn dataset_operations_filter_derive_group_count_and_sort_rows() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S2", "S1", "S2"],
+        "DOMAIN": ["AE", "AE", "AE"],
+        "AESEQ": [2, 1, 3],
+        "AESER": ["Y", "N", "Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let filtered =
+            filter_dataset_by_mask(&datasets[0], &[true, false, true]).expect("filter dataset");
+        assert_eq!(filtered.summary().row_count, 2);
+
+        let derived = derive_literal_column(&filtered, "SOURCE", &Value::String("TEST".to_owned()))
+            .expect("derive column");
+        assert_eq!(
+            derived
+                .frame()
+                .column("SOURCE")
+                .expect("source column")
+                .get(0)
+                .expect("source row")
+                .extract_str(),
+            Some("TEST")
+        );
+
+        let counted = group_count_dataset(&derived, &["USUBJID".to_owned()], "USUBJID_COUNT")
+            .expect("group count");
+        assert_eq!(
+            counted
+                .frame()
+                .column("USUBJID_COUNT")
+                .expect("count column")
+                .get(0)
+                .expect("count row"),
+            AnyValue::Int64(2)
+        );
+
+        let sorted =
+            sort_dataset_by_columns(&counted, &["AESEQ".to_owned()], true).expect("sort rows");
+        assert_eq!(
+            sorted
+                .frame()
+                .column("AESEQ")
+                .expect("seq column")
+                .get(0)
+                .expect("first seq"),
+            AnyValue::Int64(3)
         );
     }
 }

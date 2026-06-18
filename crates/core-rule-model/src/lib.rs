@@ -586,6 +586,10 @@ pub fn normalize_rule(value: Value) -> Result<ExecutableRule> {
     }
 }
 
+pub fn normalize_condition_value(value: &Value) -> Result<ConditionGroup> {
+    normalize_condition(value)
+}
+
 fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
     let object = value.as_object().ok_or_else(|| {
         RuleModelError::InvalidRuleFormat("rule root must be a JSON object".to_owned())
@@ -728,7 +732,32 @@ fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
 
 fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
     let expression = trim_wrapping_parens(expression.trim());
-    if let Some(argument) = jsonata_function_argument(expression, "$exists") {
+    if let Some(argument) = jsonata_function_argument(expression, &["$not", "not"]) {
+        return normalize_jsonata_expression(argument)
+            .map(|group| ConditionGroup::Not(Box::new(group)));
+    }
+
+    if let Some(args) = jsonata_function_arguments(expression, &["$contains", "contains"]) {
+        if args.len() == 2 {
+            return Ok(jsonata_leaf(
+                clean_jsonata_identifier(args[0]),
+                Operator::Contains,
+                jsonata_comparator(args[1])?,
+            ));
+        }
+    }
+
+    if let Some(args) = jsonata_function_arguments(expression, &["$match", "match"]) {
+        if args.len() >= 2 {
+            return Ok(jsonata_leaf(
+                clean_jsonata_identifier(args[0]),
+                Operator::MatchesRegex,
+                jsonata_comparator(args[1])?,
+            ));
+        }
+    }
+
+    if let Some(argument) = jsonata_function_argument(expression, &["$exists", "exists"]) {
         return Ok(ConditionGroup::Leaf(Condition {
             target: Some(clean_jsonata_identifier(argument)),
             operator: Operator::Exists,
@@ -758,10 +787,19 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
         ("<", Operator::LessThan),
     ] {
         if let Some(index) = find_top_level_operator(expression, token) {
-            let target = clean_jsonata_identifier(&expression[..index]);
+            let left = &expression[..index];
             let comparator = jsonata_comparator(&expression[index + token.len()..])?;
-            return Ok(jsonata_leaf(target, operator, comparator));
+            return jsonata_comparison_leaf(left, operator, comparator);
         }
+    }
+
+    if is_jsonata_identifier(expression) {
+        return Ok(ConditionGroup::Leaf(Condition {
+            target: Some(clean_jsonata_identifier(expression)),
+            operator: Operator::Exists,
+            comparator: ValueExpr::Null,
+            options: OperatorOptions::default(),
+        }));
     }
 
     Err(RuleModelError::InvalidRuleFormat(format!(
@@ -778,14 +816,98 @@ fn jsonata_leaf(target: String, operator: Operator, comparator: ValueExpr) -> Co
     })
 }
 
-fn jsonata_function_argument<'a>(expression: &'a str, name: &str) -> Option<&'a str> {
+fn jsonata_comparison_leaf(
+    target: &str,
+    operator: Operator,
+    comparator: ValueExpr,
+) -> Result<ConditionGroup> {
+    if let Some(argument) = jsonata_function_argument(target, &["$uppercase", "uppercase"])
+        .or_else(|| jsonata_function_argument(target, &["$lowercase", "lowercase"]))
+    {
+        return Ok(jsonata_leaf(
+            clean_jsonata_identifier(argument),
+            case_insensitive_jsonata_operator(operator),
+            comparator,
+        ));
+    }
+
+    if let Some(argument) = jsonata_function_argument(target, &["$length", "length"]) {
+        return length_jsonata_condition(argument, &operator, &comparator);
+    }
+
+    Ok(jsonata_leaf(
+        clean_jsonata_identifier(target),
+        operator,
+        comparator,
+    ))
+}
+
+fn case_insensitive_jsonata_operator(operator: Operator) -> Operator {
+    match operator {
+        Operator::EqualTo => Operator::EqualToCaseInsensitive,
+        Operator::NotEqualTo => Operator::NotEqualToCaseInsensitive,
+        other => other,
+    }
+}
+
+fn length_jsonata_condition(
+    target: &str,
+    operator: &Operator,
+    comparator: &ValueExpr,
+) -> Result<ConditionGroup> {
+    let Some(value) = numeric_comparator(comparator) else {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "$length() comparator must be numeric".to_owned(),
+        ));
+    };
+    let target = clean_jsonata_identifier(target);
+
+    let operator = match (operator, value) {
+        (Operator::EqualTo | Operator::LessThanOrEqualTo, 0.0) => Operator::IsEmpty,
+        (Operator::LessThan, 1.0) => Operator::IsEmpty,
+        (Operator::NotEqualTo | Operator::GreaterThan, 0.0) => Operator::IsNotEmpty,
+        (Operator::GreaterThanOrEqualTo, 1.0) => Operator::IsNotEmpty,
+        _ => {
+            return Err(RuleModelError::InvalidRuleFormat(
+                "$length() currently supports empty/not-empty comparisons".to_owned(),
+            ))
+        }
+    };
+
+    Ok(jsonata_leaf(target, operator, ValueExpr::Null))
+}
+
+fn numeric_comparator(comparator: &ValueExpr) -> Option<f64> {
+    match comparator {
+        ValueExpr::Literal(Value::Number(value)) => value.as_f64(),
+        _ => None,
+    }
+}
+
+fn jsonata_function_argument<'a>(expression: &'a str, names: &[&str]) -> Option<&'a str> {
+    let args = jsonata_function_arguments(expression, names)?;
+    (args.len() == 1).then_some(args[0])
+}
+
+fn jsonata_function_arguments<'a>(expression: &'a str, names: &[&str]) -> Option<Vec<&'a str>> {
     let expression = expression.trim();
     let open = expression.find('(')?;
-    if !expression[..open].trim().eq_ignore_ascii_case(name) || !expression.ends_with(')') {
+    if !names
+        .iter()
+        .any(|name| jsonata_function_names_equal(&expression[..open], name))
+        || !expression.ends_with(')')
+        || !outer_parens_enclose_expression(&expression[open..])
+    {
         return None;
     }
     let argument = &expression[open + 1..expression.len() - 1];
-    Some(argument.trim())
+    Some(split_top_level_commas(argument))
+}
+
+fn jsonata_function_names_equal(left: &str, right: &str) -> bool {
+    left.trim()
+        .trim_start_matches('$')
+        .eq_ignore_ascii_case(right.trim().trim_start_matches('$'))
 }
 
 fn jsonata_list_comparator(value: &str) -> Result<ValueExpr> {
@@ -1511,6 +1633,61 @@ Outcome:
             condition.comparator,
             ValueExpr::List(vec![json!("AE"), json!("CM")])
         );
+    }
+
+    #[test]
+    fn normalize_jsonata_function_expressions() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("$not($contains(AETERM, 'headache')) or $match(AEDECOD, '^HEAD')");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Any(groups) = rule.conditions else {
+            panic!("expected any condition group");
+        };
+
+        let ConditionGroup::Not(contains_group) = &groups[0] else {
+            panic!("expected not condition");
+        };
+        let ConditionGroup::Leaf(contains) = contains_group.as_ref() else {
+            panic!("expected contains leaf");
+        };
+        assert_eq!(contains.target.as_deref(), Some("AETERM"));
+        assert_eq!(contains.operator, Operator::Contains);
+        assert_eq!(contains.comparator, ValueExpr::Literal(json!("headache")));
+
+        let ConditionGroup::Leaf(matches) = &groups[1] else {
+            panic!("expected match leaf");
+        };
+        assert_eq!(matches.target.as_deref(), Some("AEDECOD"));
+        assert_eq!(matches.operator, Operator::MatchesRegex);
+        assert_eq!(matches.comparator, ValueExpr::Literal(json!("^HEAD")));
+    }
+
+    #[test]
+    fn normalize_jsonata_case_and_length_functions() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("$uppercase(domain) = 'AE' and $length(AETERM) > 0");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::All(groups) = rule.conditions else {
+            panic!("expected all condition group");
+        };
+
+        let ConditionGroup::Leaf(case_condition) = &groups[0] else {
+            panic!("expected case condition");
+        };
+        assert_eq!(case_condition.target.as_deref(), Some("domain"));
+        assert_eq!(case_condition.operator, Operator::EqualToCaseInsensitive);
+        assert_eq!(case_condition.comparator, ValueExpr::Literal(json!("AE")));
+
+        let ConditionGroup::Leaf(length_condition) = &groups[1] else {
+            panic!("expected length condition");
+        };
+        assert_eq!(length_condition.target.as_deref(), Some("AETERM"));
+        assert_eq!(length_condition.operator, Operator::IsNotEmpty);
+        assert_eq!(length_condition.comparator, ValueExpr::Null);
     }
 
     #[test]

@@ -6,15 +6,20 @@ use std::path::PathBuf;
 use core_cdisc_library::{
     load_ct_json_file, load_define_xml_file, ControlledTerminology, DefineXmlMetadata,
 };
-use core_data::{left_join_dataset_on, load_datasets_from_paths, DataError, LoadedDataset};
-use core_engine::{validate_rule, EngineError, RuleValidationResult, SkippedReason};
+use core_data::{
+    derive_literal_column, filter_dataset_by_mask, group_count_dataset, left_join_dataset_on,
+    load_datasets_from_paths, sort_dataset_by_columns, DataError, LoadedDataset,
+};
+use core_engine::{
+    evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
+};
 use core_report::{
     write_reports_with_options, ReportError, ReportMetadata, ReportOptions, ReportOutputFormat,
     WrittenReports,
 };
 use core_rule_model::{
-    load_rules_from_paths, Condition, ConditionGroup, ExecutableRule, OperationSpec, Operator,
-    RuleModelError, RuleType, Sensitivity, ValueExpr,
+    load_rules_from_paths, normalize_condition_value, Condition, ConditionGroup, ExecutableRule,
+    OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -120,6 +125,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                         standard: request.standard.clone(),
                         standard_version: request.standard_version.clone(),
                         log_level: request.log_level.clone(),
+                        ..Default::default()
                     },
                 },
             )
@@ -195,13 +201,13 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if !rule.operations.is_empty() && supported_join_operation(rule).is_none() {
+    if let Some(operation) = unsupported_operation(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::OperationsNotSupported,
             format!(
-                "Rule {} uses Operations, which are not supported",
-                rule.core_id
+                "Rule {} uses unsupported operation {}",
+                rule.core_id, operation
             ),
         ));
     }
@@ -386,10 +392,27 @@ fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    let Some(operation) = supported_join_operation(rule) else {
+    if rule.operations.is_empty() {
         return Ok(datasets.to_vec());
-    };
+    }
 
+    let mut execution_datasets = initial_operation_datasets(rule, datasets)?;
+    for operation in &rule.operations {
+        if is_join_operation(operation) {
+            execution_datasets = execute_join_operation(rule, operation, datasets)?;
+        } else {
+            execution_datasets = execute_dataset_operation(rule, operation, &execution_datasets)?;
+        }
+    }
+
+    Ok(execution_datasets)
+}
+
+fn execute_join_operation(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     let Some((left_keys, right_keys)) = join_keys(operation) else {
         return Err(join_skipped_result(rule, "join operation is missing keys"));
     };
@@ -444,6 +467,172 @@ fn execution_datasets_for_rule(
         .map_err(|source| join_skipped_result(rule, source.to_string()))
 }
 
+fn initial_operation_datasets(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let Some(operation) = rule
+        .operations
+        .iter()
+        .find(|operation| !is_join_operation(operation))
+    else {
+        return Ok(datasets.to_vec());
+    };
+
+    if let Some(name) = operation_dataset_name(operation) {
+        let Some(dataset) = find_dataset(datasets, &name) else {
+            return Err(operation_skipped_result(
+                rule,
+                format!("dataset {name} was not loaded"),
+            ));
+        };
+        Ok(vec![dataset.clone()])
+    } else {
+        Ok(datasets.to_vec())
+    }
+}
+
+fn execute_dataset_operation(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let name = operation_name(operation).unwrap_or_default();
+    let input = operation_input_datasets(rule, operation, datasets)?;
+
+    match name.as_str() {
+        "filter" | "where" | "subset" => {
+            let Some(condition_value) = operation_value(
+                operation,
+                &["where", "condition", "conditions", "check", "filter"],
+            ) else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "filter operation is missing a condition",
+                ));
+            };
+            let condition = normalize_condition_value(condition_value)
+                .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
+
+            input
+                .iter()
+                .map(|dataset| {
+                    evaluate_condition_group(&condition, dataset)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                        .and_then(|mask| {
+                            filter_dataset_by_mask(dataset, &mask).map_err(|source| {
+                                operation_skipped_result(rule, source.to_string())
+                            })
+                        })
+                })
+                .collect()
+        }
+        "derive" | "add_column" => {
+            let Some(column) =
+                string_field(operation, &["target", "as", "output", "column", "name"])
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "derive operation is missing a target column",
+                ));
+            };
+            let value = operation_value(operation, &["value", "literal"])
+                .cloned()
+                .unwrap_or(Value::Null);
+
+            input
+                .iter()
+                .map(|dataset| {
+                    derive_literal_column(dataset, &column, &value)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "aggregate" | "group_by" | "group_count" => {
+            let Some(keys) =
+                string_list_field(operation, &["by", "keys", "group_by", "group_keys"])
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "aggregate operation is missing grouping keys",
+                ));
+            };
+            let output = string_field(operation, &["target", "as", "output", "column", "name"])
+                .unwrap_or_else(|| "GROUP_COUNT".to_owned());
+
+            input
+                .iter()
+                .map(|dataset| {
+                    group_count_dataset(dataset, &keys, &output)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "sort" | "order_by" => {
+            let Some(keys) = string_list_field(operation, &["by", "keys", "order_by", "sort_by"])
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "sort operation is missing keys",
+                ));
+            };
+            let descending = bool_field(operation, &["descending", "desc"]).unwrap_or_else(|| {
+                string_field(operation, &["order", "direction"])
+                    .is_some_and(|order| order.eq_ignore_ascii_case("desc"))
+            });
+
+            input
+                .iter()
+                .map(|dataset| {
+                    sort_dataset_by_columns(dataset, &keys, descending)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        _ => Err(operation_skipped_result(
+            rule,
+            format!("unsupported operation {name}"),
+        )),
+    }
+}
+
+fn operation_input_datasets(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    if let Some(name) = operation_dataset_name(operation) {
+        let Some(dataset) = find_dataset(datasets, &name) else {
+            return Err(operation_skipped_result(
+                rule,
+                format!("dataset {name} was not available for operation"),
+            ));
+        };
+        Ok(vec![dataset.clone()])
+    } else {
+        Ok(datasets.to_vec())
+    }
+}
+
+fn operation_dataset_name(operation: &OperationSpec) -> Option<String> {
+    string_field(operation, &["dataset", "domain", "input", "source"])
+}
+
+fn operation_skipped_result(
+    rule: &ExecutableRule,
+    message: impl Into<String>,
+) -> RuleValidationResult {
+    RuleValidationResult::skipped_rule(
+        rule.core_id.clone(),
+        SkippedReason::OperationsNotSupported,
+        format!(
+            "Rule {} cannot run operation: {}",
+            rule.core_id,
+            message.into()
+        ),
+    )
+}
+
 fn join_keys(operation: &OperationSpec) -> Option<(Vec<String>, Vec<String>)> {
     let common_keys = string_list_field(
         operation,
@@ -488,40 +677,57 @@ fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> Rul
 }
 
 fn supported_join_operation(rule: &ExecutableRule) -> Option<&OperationSpec> {
-    rule.operations.iter().find(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some(
-                "join"
-                    | "left_join"
-                    | "dataset_join"
-                    | "merge"
-                    | "lookup"
-                    | "match_dataset"
-                    | "match_datasets"
-            )
-        )
+    rule.operations
+        .iter()
+        .find(|operation| is_join_operation(operation))
+}
+
+fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
+    rule.operations.iter().find_map(|operation| {
+        let name = operation_name(operation).unwrap_or_else(|| "<missing>".to_owned());
+        (!is_supported_operation_name(&name)).then_some(name)
     })
 }
 
+fn is_join_operation(operation: &OperationSpec) -> bool {
+    operation_name(operation)
+        .as_deref()
+        .is_some_and(is_join_operation_name)
+}
+
+fn is_supported_operation_name(name: &str) -> bool {
+    is_join_operation_name(name)
+        || matches!(
+            name,
+            "filter"
+                | "where"
+                | "subset"
+                | "derive"
+                | "add_column"
+                | "aggregate"
+                | "group_by"
+                | "group_count"
+                | "sort"
+                | "order_by"
+        )
+}
+
+fn is_join_operation_name(name: &str) -> bool {
+    matches!(
+        name,
+        "join"
+            | "left_join"
+            | "dataset_join"
+            | "merge"
+            | "lookup"
+            | "match_dataset"
+            | "match_datasets"
+    )
+}
+
 fn operation_name(operation: &OperationSpec) -> Option<String> {
-    string_field(operation, &["name", "type", "operation"]).map(|value| {
-        value
-            .trim()
-            .chars()
-            .map(|ch| {
-                if ch.is_ascii_alphanumeric() {
-                    ch.to_ascii_lowercase()
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>()
-            .split('_')
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join("_")
-    })
+    string_field(operation, &["name", "type", "operation"])
+        .map(|value| normalize_operation_key(&value))
 }
 
 fn string_field(operation: &OperationSpec, keys: &[&str]) -> Option<String> {
@@ -546,6 +752,26 @@ fn string_list_field(operation: &OperationSpec, keys: &[&str]) -> Option<Vec<Str
         })
         .and_then(strings_from_value)
         .filter(|values| !values.is_empty())
+}
+
+fn bool_field(operation: &OperationSpec, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| {
+            operation
+                .fields
+                .get(*key)
+                .or_else(|| field_normalized(operation, key))
+        })
+        .and_then(Value::as_bool)
+}
+
+fn operation_value<'a>(operation: &'a OperationSpec, keys: &[&str]) -> Option<&'a Value> {
+    keys.iter().find_map(|key| {
+        operation
+            .fields
+            .get(*key)
+            .or_else(|| field_normalized(operation, key))
+    })
 }
 
 fn strings_from_value(value: &Value) -> Option<Vec<String>> {
@@ -1258,6 +1484,102 @@ mod tests {
         assert_eq!(outcome.results.len(), 1);
         assert_eq!(outcome.results[0].rule_id, "CORE-STANDARD-34");
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn run_validation_executes_filter_sort_aggregate_and_derive_operations() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-OPS-PIPELINE.json"),
+            r#"{
+  "Core": { "Id": "CORE-OPS-PIPELINE", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "filter",
+      "dataset": "AE",
+      "where": {
+        "name": "AESER",
+        "operator": "equal_to",
+        "value": "Y"
+      }
+    },
+    {
+      "name": "sort",
+      "by": ["AESEQ"],
+      "descending": true
+    },
+    {
+      "name": "aggregate",
+      "by": ["USUBJID"],
+      "as": "USUBJID_COUNT"
+    },
+    {
+      "name": "derive",
+      "as": "PIPELINE",
+      "value": "OPS"
+    }
+  ],
+  "Check": {
+    "all": [
+      {
+        "name": "USUBJID_COUNT",
+        "operator": "greater_than",
+        "value": 1
+      },
+      {
+        "name": "PIPELINE",
+        "operator": "equal_to",
+        "value": "OPS"
+      }
+    ]
+  },
+  "Outcome": { "Message": "Duplicate serious AE subject requires review" }
+}"#,
+        )
+        .expect("write operations rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S2", "S1", "S2"],
+        "DOMAIN": ["AE", "AE", "AE"],
+        "AESEQ": [2, 1, 3],
+        "AESER": ["Y", "N", "Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write operations data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("3"));
+        assert_eq!(outcome.results[0].errors[1].row, Some(2));
+        assert_eq!(outcome.results[0].errors[1].seq.as_deref(), Some("2"));
     }
 
     fn write_raw_rule(

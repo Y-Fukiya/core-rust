@@ -126,6 +126,10 @@ fn golden_writes_json_and_csv_reports() {
 
     let reports = outcome.reports.expect("reports");
     let report_json = read_json(reports.json.as_ref().expect("json report"));
+    assert_eq!(report_json["metadata"]["schema_version"], "1.0");
+    assert_eq!(report_json["metadata"]["engine"], "core-rs");
+    assert_eq!(report_json["summary"]["total_results"], 1);
+    assert_eq!(report_json["summary"]["failed"], 1);
     let actual_json = comparable_validation_output(&report_json["results"]);
     let expected_json = read_json(&fixtures.join("expected/report_validation_report.json"));
     assert_eq!(actual_json, expected_json);
@@ -135,6 +139,27 @@ fn golden_writes_json_and_csv_reports() {
     let expected_csv = fs::read_to_string(fixtures.join("expected/report_validation_report.csv"))
         .expect("read expected csv");
     assert_eq!(actual_csv, expected_csv);
+}
+
+#[test]
+fn golden_validates_integrated_study_package_with_define_xml_and_ct() {
+    let fixtures = fixture_root();
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/integrated")],
+        dataset_paths: vec![fixtures.join("datasets/integrated/study_package.json")],
+        define_xml_paths: vec![fixtures.join("cdisc/integrated_define.xml")],
+        ct_paths: vec![fixtures.join("cdisc/integrated_ct.json")],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        ..Default::default()
+    })
+    .expect("run integrated golden validation");
+
+    let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
+    let expected = read_json(&fixtures.join("expected/integrated_validation_output.json"));
+
+    assert_eq!(actual, expected);
 }
 
 fn comparable_validation_output(results: &Value) -> Value {

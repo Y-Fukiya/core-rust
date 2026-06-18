@@ -1,0 +1,16 @@
+{
+  "Core": {
+    "Id": "CORE-GOLDEN-0003",
+    "Status": "Published"
+  },
+  "Scope": {
+    "Domains": {},
+    "Classes": {}
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "JSONATA",
+  "Check": "DOMAIN not in ['AE', 'CM', 'ADSL']",
+  "Outcome": {
+    "Message": "DOMAIN must be one of the study domains"
+  }
+}

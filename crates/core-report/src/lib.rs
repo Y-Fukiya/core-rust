@@ -71,11 +71,25 @@ pub struct ReportOptions {
     pub metadata: ReportMetadata,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReportMetadata {
+    pub schema_version: String,
+    pub engine: String,
     pub standard: Option<String>,
     pub standard_version: Option<String>,
     pub log_level: Option<String>,
+}
+
+impl Default for ReportMetadata {
+    fn default() -> Self {
+        Self {
+            schema_version: "1.0".to_owned(),
+            engine: "core-rs".to_owned(),
+            standard: None,
+            standard_version: None,
+            log_level: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -244,13 +258,13 @@ pub fn flatten_csv_rows(results: &[RuleValidationResult]) -> Vec<CsvReportRow> {
 const CSV_HEADERS: &[&str] = &[
     "rule_id",
     "execution_status",
-    "skipped_reason",
     "dataset",
     "domain",
     "row",
     "variables",
     "message",
     "error_count",
+    "skipped_reason",
     "usubjid",
     "seq",
 ];
@@ -292,13 +306,13 @@ impl CsvReportRow {
         [
             self.rule_id.clone(),
             self.execution_status.clone(),
-            self.skipped_reason.clone(),
             self.dataset.clone(),
             self.domain.clone(),
             self.row.clone(),
             self.variables.clone(),
             self.message.clone(),
             self.error_count.to_string(),
+            self.skipped_reason.clone(),
             self.usubjid.clone(),
             self.seq.clone(),
         ]
@@ -439,10 +453,10 @@ mod tests {
 
         assert_eq!(
             source,
-            "rule_id,execution_status,skipped_reason,dataset,domain,row,variables,message,error_count,usubjid,seq\n\
-CORE-TEST-0001,failed,,AE,AE,2,DOMAIN,DOMAIN must be AE,2,SUBJ2,2\n\
-CORE-TEST-0001,failed,,AE,AE,3,DOMAIN|AESEQ,\"DOMAIN, AESEQ need review\",2,SUBJ3,3\n\
-CORE-TEST-0002,passed,,CM,CM,,,CM passed,0,,\n"
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-TEST-0001,failed,AE,AE,2,DOMAIN,DOMAIN must be AE,2,,SUBJ2,2\n\
+CORE-TEST-0001,failed,AE,AE,3,DOMAIN|AESEQ,\"DOMAIN, AESEQ need review\",2,,SUBJ3,3\n\
+CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
         );
     }
 
@@ -483,6 +497,7 @@ CORE-TEST-0002,passed,,CM,CM,,,CM passed,0,,\n"
                     standard: Some("SDTMIG".to_owned()),
                     standard_version: Some("3.4".to_owned()),
                     log_level: Some("info".to_owned()),
+                    ..Default::default()
                 },
             },
         )
@@ -495,6 +510,8 @@ CORE-TEST-0002,passed,,CM,CM,,,CM passed,0,,\n"
         let document: ReportDocument =
             serde_json::from_str(&fs::read_to_string(dir.path().join("report.json")).unwrap())
                 .expect("document");
+        assert_eq!(document.metadata.schema_version, "1.0");
+        assert_eq!(document.metadata.engine, "core-rs");
         assert_eq!(document.metadata.standard.as_deref(), Some("SDTMIG"));
         assert_eq!(document.metadata.standard_version.as_deref(), Some("3.4"));
         assert_eq!(document.metadata.log_level.as_deref(), Some("info"));

@@ -1,0 +1,16 @@
+<ODM>
+  <ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text" Length="4">
+    <CodeListRef CodeListOID="CL.DOMAIN"/>
+  </ItemDef>
+  <ItemDef OID="IT.AE.AESER" Name="AESER" DataType="text" Length="1">
+    <CodeListRef CodeListOID="CL.NY"/>
+  </ItemDef>
+  <CodeList OID="CL.DOMAIN" Name="Domain Abbreviation">
+    <CodeListItem CodedValue="AE"/>
+    <CodeListItem CodedValue="CM"/>
+  </CodeList>
+  <CodeList OID="CL.NY" Name="No Yes Response">
+    <EnumeratedItem CodedValue="N"/>
+    <EnumeratedItem CodedValue="Y"/>
+  </CodeList>
+</ODM>
