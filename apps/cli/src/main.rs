@@ -105,6 +105,7 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
     let outcome = run_validation(ValidateRequest {
         rule_paths: args.local_rules,
         dataset_paths,
+        dataset_loader: Default::default(),
         define_xml_paths: args.define_xml,
         ct_paths: args.ct,
         external_dictionary_paths: args.external_dictionary,
