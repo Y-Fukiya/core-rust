@@ -4,11 +4,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use core_cdisc_library::{
-    load_ct_json_file, load_define_xml_file, ControlledTerminology, DefineXmlMetadata,
+    load_ct_json_file, load_define_xml_file, load_external_dictionary_file, ControlledTerminology,
+    DefineXmlMetadata,
 };
 use core_data::{
-    derive_literal_column, filter_dataset_by_mask, group_count_dataset, left_join_dataset_on,
-    load_datasets_from_paths, sort_dataset_by_columns, DataError, LoadedDataset,
+    dataset_column_values, deduplicate_dataset_by_columns, derive_column_from_column,
+    derive_column_from_values, derive_literal_column, drop_dataset_columns, filter_dataset_by_mask,
+    group_count_dataset, group_stat_dataset, left_join_dataset_on, load_datasets_from_paths,
+    rename_dataset_columns, select_dataset_columns, sort_dataset_by_columns, DataError,
+    LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -19,7 +23,7 @@ use core_report::{
 };
 use core_rule_model::{
     load_rules_from_paths, normalize_condition_value, Condition, ConditionGroup, ExecutableRule,
-    OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
+    MatchDataset, OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -52,6 +56,7 @@ pub struct ValidateRequest {
     pub dataset_paths: Vec<PathBuf>,
     pub define_xml_paths: Vec<PathBuf>,
     pub ct_paths: Vec<PathBuf>,
+    pub external_dictionary_paths: Vec<PathBuf>,
     pub include_rules: Vec<String>,
     pub exclude_rules: Vec<String>,
     pub standard: Option<String>,
@@ -86,7 +91,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
     let datasets = load_datasets_from_paths(&request.dataset_paths)?;
-    let cdisc_context = CdiscContext::load(&request.define_xml_paths, &request.ct_paths)?;
+    let cdisc_context = CdiscContext::load(
+        &request.define_xml_paths,
+        &request.ct_paths,
+        &request.external_dictionary_paths,
+    )?;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
     selection
         .selected
@@ -212,22 +221,6 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if rule
-        .datasets
-        .as_ref()
-        .is_some_and(|datasets| !datasets.is_empty())
-        && supported_join_operation(rule).is_none()
-    {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::DatasetJoinNotSupported,
-            format!(
-                "Rule {} uses Match Datasets, which are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
     unsupported_operator(&rule.conditions).map(|operator| {
         RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -248,7 +241,11 @@ struct CdiscContext {
 }
 
 impl CdiscContext {
-    fn load(define_xml_paths: &[PathBuf], ct_paths: &[PathBuf]) -> Result<Self> {
+    fn load(
+        define_xml_paths: &[PathBuf],
+        ct_paths: &[PathBuf],
+        external_dictionary_paths: &[PathBuf],
+    ) -> Result<Self> {
         let define_xml = define_xml_paths
             .iter()
             .map(load_define_xml_file)
@@ -269,6 +266,11 @@ impl CdiscContext {
         for path in ct_paths {
             let ct = load_ct_json_file(path)?;
             merge_terminology(&mut terminology, ct);
+        }
+
+        for path in external_dictionary_paths {
+            let dictionary = load_external_dictionary_file(path)?;
+            merge_terminology(&mut terminology, dictionary);
         }
 
         Ok(Self {
@@ -372,6 +374,11 @@ fn condition_codelist(condition: &Condition) -> Option<String> {
             "codelist_oid",
             "ct_codelist",
             "define_codelist",
+            "dictionary",
+            "dictionary_name",
+            "dictionary_id",
+            "external_dictionary",
+            "external_dictionary_name",
             "CodeListOID",
             "CodeList",
         ],
@@ -419,6 +426,13 @@ fn execution_datasets_for_rule(
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     if rule.operations.is_empty() {
+        if rule
+            .datasets
+            .as_ref()
+            .is_some_and(|match_datasets| !match_datasets.is_empty())
+        {
+            return execute_match_datasets(rule, datasets);
+        }
         return Ok(datasets.to_vec());
     }
 
@@ -432,6 +446,136 @@ fn execution_datasets_for_rule(
     }
 
     Ok(execution_datasets)
+}
+
+fn execute_match_datasets(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let match_datasets = rule.datasets.as_deref().unwrap_or_default();
+    let mut names = match_datasets
+        .iter()
+        .filter_map(match_dataset_name)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return Err(join_skipped_result(
+            rule,
+            "Match Datasets is missing dataset names",
+        ));
+    }
+    if names.len() == 1 {
+        let Some(dataset) = find_dataset(datasets, &names[0]) else {
+            return Err(join_skipped_result(
+                rule,
+                format!("dataset {} was not loaded", names[0]),
+            ));
+        };
+        return Ok(vec![dataset.clone()]);
+    }
+
+    let left_name = names.remove(0);
+    let Some(mut joined) = find_dataset(datasets, &left_name).cloned() else {
+        return Err(join_skipped_result(
+            rule,
+            format!("left dataset {left_name} was not loaded"),
+        ));
+    };
+
+    for (index, right_name) in names.iter().enumerate() {
+        let Some(right) = find_dataset(datasets, right_name) else {
+            return Err(join_skipped_result(
+                rule,
+                format!("right dataset {right_name} was not loaded"),
+            ));
+        };
+        let keys = match_datasets
+            .get(index + 1)
+            .and_then(match_dataset_keys)
+            .or_else(|| match_datasets.first().and_then(match_dataset_keys))
+            .or_else(|| common_join_keys(&joined, right));
+        let Some(keys) = keys else {
+            return Err(join_skipped_result(
+                rule,
+                format!("no common join keys for {left_name} and {right_name}"),
+            ));
+        };
+        let prefix = match_datasets
+            .get(index + 1)
+            .and_then(|dataset| match_dataset_string_field(dataset, &["prefix"]))
+            .unwrap_or_else(|| format!("{right_name}."));
+        joined = left_join_dataset_on(&joined, right, &keys, &keys, &prefix)
+            .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+    }
+
+    Ok(vec![joined])
+}
+
+fn match_dataset_name(dataset: &MatchDataset) -> Option<String> {
+    match_dataset_string_field(
+        dataset,
+        &[
+            "dataset", "domain", "name", "id", "Dataset", "Domain", "Name",
+        ],
+    )
+}
+
+fn match_dataset_keys(dataset: &MatchDataset) -> Option<Vec<String>> {
+    match_dataset_value(dataset, &["by", "keys", "on", "join_keys", "match_keys"])
+        .and_then(strings_from_value)
+        .filter(|values| !values.is_empty())
+}
+
+fn match_dataset_string_field(dataset: &MatchDataset, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| match_dataset_value(dataset, &[*key]))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn match_dataset_value<'a>(dataset: &'a MatchDataset, keys: &[&str]) -> Option<&'a Value> {
+    keys.iter().find_map(|key| {
+        dataset
+            .fields
+            .get(*key)
+            .or_else(|| match_dataset_field_normalized(dataset, key))
+    })
+}
+
+fn match_dataset_field_normalized<'a>(dataset: &'a MatchDataset, key: &str) -> Option<&'a Value> {
+    let normalized_key = normalize_operation_key(key);
+    dataset
+        .fields
+        .iter()
+        .find(|(candidate, _value)| normalize_operation_key(candidate) == normalized_key)
+        .map(|(_key, value)| value)
+}
+
+fn common_join_keys(left: &LoadedDataset, right: &LoadedDataset) -> Option<Vec<String>> {
+    let right_columns = right
+        .summary()
+        .columns
+        .into_iter()
+        .map(|column| column.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let left_columns = left.summary().columns;
+    let mut keys = Vec::new();
+    for preferred in ["STUDYID", "USUBJID", "DOMAIN", "IDVAR", "IDVARVAL"] {
+        if left_columns
+            .iter()
+            .any(|column| column.eq_ignore_ascii_case(preferred))
+            && right_columns.contains(&preferred.to_ascii_lowercase())
+        {
+            keys.push(preferred.to_owned());
+        }
+    }
+    for column in left_columns {
+        if right_columns.contains(&column.to_ascii_lowercase())
+            && !keys.iter().any(|key| key.eq_ignore_ascii_case(&column))
+        {
+            keys.push(column);
+        }
+    }
+    (!keys.is_empty()).then_some(keys)
 }
 
 fn execute_join_operation(
@@ -562,6 +706,17 @@ fn execute_dataset_operation(
                     "derive operation is missing a target column",
                 ));
             };
+            let source_column = string_field(
+                operation,
+                &[
+                    "from",
+                    "source_column",
+                    "copy_from",
+                    "column_ref",
+                    "sourceColumn",
+                ],
+            );
+            let expression = string_field(operation, &["expression", "jsonata"]);
             let value = operation_value(operation, &["value", "literal"])
                 .cloned()
                 .unwrap_or(Value::Null);
@@ -569,8 +724,16 @@ fn execute_dataset_operation(
             input
                 .iter()
                 .map(|dataset| {
-                    derive_literal_column(dataset, &column, &value)
-                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    if let Some(source_column) = source_column.as_deref() {
+                        derive_column_from_column(dataset, &column, source_column)
+                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    } else if let Some(expression) = expression.as_deref() {
+                        derive_jsonata_column(dataset, &column, expression)
+                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    } else {
+                        derive_literal_column(dataset, &column, &value)
+                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    }
                 })
                 .collect()
         }
@@ -585,12 +748,30 @@ fn execute_dataset_operation(
             };
             let output = string_field(operation, &["target", "as", "output", "column", "name"])
                 .unwrap_or_else(|| "GROUP_COUNT".to_owned());
+            let statistic =
+                string_field(operation, &["function", "statistic", "method", "aggregate"])
+                    .unwrap_or_else(|| "count".to_owned());
+            let source_column = string_field(
+                operation,
+                &["source_column", "value_column", "measure", "variable"],
+            );
 
             input
                 .iter()
                 .map(|dataset| {
-                    group_count_dataset(dataset, &keys, &output)
+                    if normalize_operation_key(&statistic) == "count" && source_column.is_none() {
+                        group_count_dataset(dataset, &keys, &output)
+                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    } else {
+                        group_stat_dataset(
+                            dataset,
+                            &keys,
+                            source_column.as_deref(),
+                            &output,
+                            &statistic,
+                        )
                         .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    }
                 })
                 .collect()
         }
@@ -611,6 +792,68 @@ fn execute_dataset_operation(
                 .iter()
                 .map(|dataset| {
                     sort_dataset_by_columns(dataset, &keys, descending)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "select" | "keep" | "project" => {
+            let Some(columns) =
+                string_list_field(operation, &["columns", "variables", "keep", "select"])
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "select operation is missing columns",
+                ));
+            };
+            input
+                .iter()
+                .map(|dataset| {
+                    select_dataset_columns(dataset, &columns)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "drop" | "remove_columns" | "exclude_columns" => {
+            let Some(columns) =
+                string_list_field(operation, &["columns", "variables", "drop", "remove"])
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "drop operation is missing columns",
+                ));
+            };
+            input
+                .iter()
+                .map(|dataset| {
+                    drop_dataset_columns(dataset, &columns)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "rename" | "rename_columns" => {
+            let Some(renames) = string_map_field(operation, &["columns", "mapping", "renames"])
+                .or_else(|| rename_pair(operation))
+            else {
+                return Err(operation_skipped_result(
+                    rule,
+                    "rename operation is missing column mapping",
+                ));
+            };
+            input
+                .iter()
+                .map(|dataset| {
+                    rename_dataset_columns(dataset, &renames)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
+        "distinct" | "deduplicate" | "unique" => {
+            let keys = string_list_field(operation, &["by", "keys", "columns", "variables"])
+                .unwrap_or_default();
+            input
+                .iter()
+                .map(|dataset| {
+                    deduplicate_dataset_by_columns(dataset, &keys)
                         .map_err(|source| operation_skipped_result(rule, source.to_string()))
                 })
                 .collect()
@@ -642,6 +885,77 @@ fn operation_input_datasets(
 
 fn operation_dataset_name(operation: &OperationSpec) -> Option<String> {
     string_field(operation, &["dataset", "domain", "input", "source"])
+}
+
+fn derive_jsonata_column(
+    dataset: &LoadedDataset,
+    column: &str,
+    expression: &str,
+) -> std::result::Result<LoadedDataset, DataError> {
+    let expression = expression.trim();
+    if let Some(argument) = operation_function_argument(expression, &["$uppercase", "uppercase"]) {
+        return derive_transformed_column(dataset, column, argument, |value| {
+            value.to_ascii_uppercase()
+        });
+    }
+    if let Some(argument) = operation_function_argument(expression, &["$lowercase", "lowercase"]) {
+        return derive_transformed_column(dataset, column, argument, |value| {
+            value.to_ascii_lowercase()
+        });
+    }
+    if let Some(argument) = operation_function_argument(expression, &["$trim", "trim"]) {
+        return derive_transformed_column(dataset, column, argument, |value| {
+            value.trim().to_owned()
+        });
+    }
+    if let Some(args) = operation_function_arguments(expression, &["$concat", "concat"]) {
+        let mut columns = Vec::new();
+        for arg in &args {
+            if !is_quoted_literal(arg) {
+                columns.push((
+                    arg,
+                    dataset_column_values(dataset, &clean_operation_identifier(arg))?,
+                ));
+            }
+        }
+        let values = (0..dataset.frame().height())
+            .map(|row| {
+                let mut value = String::new();
+                for arg in &args {
+                    if let Some(literal) = operation_string_literal(arg) {
+                        value.push_str(&literal);
+                    } else if let Some((_name, values)) = columns.iter().find(|(name, _values)| {
+                        clean_operation_identifier(name) == clean_operation_identifier(arg)
+                    }) {
+                        value.push_str(values.get(row).and_then(Value::as_str).unwrap_or_default());
+                    }
+                }
+                Value::String(value)
+            })
+            .collect::<Vec<_>>();
+        return derive_column_from_values(dataset, column, &values);
+    }
+    if let Some(literal) = operation_string_literal(expression) {
+        return derive_literal_column(dataset, column, &Value::String(literal));
+    }
+    derive_column_from_column(dataset, column, &clean_operation_identifier(expression))
+}
+
+fn derive_transformed_column(
+    dataset: &LoadedDataset,
+    column: &str,
+    source_column: &str,
+    transform: impl Fn(&str) -> String,
+) -> std::result::Result<LoadedDataset, DataError> {
+    let values = dataset_column_values(dataset, &clean_operation_identifier(source_column))?
+        .into_iter()
+        .map(|value| match value {
+            Value::String(value) => Value::String(transform(&value)),
+            Value::Null => Value::Null,
+            other => Value::String(transform(&other.to_string())),
+        })
+        .collect::<Vec<_>>();
+    derive_column_from_values(dataset, column, &values)
 }
 
 fn operation_skipped_result(
@@ -702,12 +1016,6 @@ fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> Rul
     )
 }
 
-fn supported_join_operation(rule: &ExecutableRule) -> Option<&OperationSpec> {
-    rule.operations
-        .iter()
-        .find(|operation| is_join_operation(operation))
-}
-
 fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
     rule.operations.iter().find_map(|operation| {
         let name = operation_name(operation).unwrap_or_else(|| "<missing>".to_owned());
@@ -735,6 +1043,17 @@ fn is_supported_operation_name(name: &str) -> bool {
                 | "group_count"
                 | "sort"
                 | "order_by"
+                | "select"
+                | "keep"
+                | "project"
+                | "drop"
+                | "remove_columns"
+                | "exclude_columns"
+                | "rename"
+                | "rename_columns"
+                | "distinct"
+                | "deduplicate"
+                | "unique"
         )
 }
 
@@ -791,6 +1110,32 @@ fn bool_field(operation: &OperationSpec, keys: &[&str]) -> Option<bool> {
         .and_then(Value::as_bool)
 }
 
+fn string_map_field(operation: &OperationSpec, keys: &[&str]) -> Option<BTreeMap<String, String>> {
+    keys.iter()
+        .find_map(|key| {
+            operation
+                .fields
+                .get(*key)
+                .or_else(|| field_normalized(operation, key))
+        })
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(key, value)| {
+                    value.as_str().map(|value| (key.clone(), value.to_owned()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .filter(|values| !values.is_empty())
+}
+
+fn rename_pair(operation: &OperationSpec) -> Option<BTreeMap<String, String>> {
+    let from = string_field(operation, &["from", "source", "old", "old_name"])?;
+    let to = string_field(operation, &["to", "target", "new", "new_name", "as"])?;
+    Some(BTreeMap::from([(from, to)]))
+}
+
 fn operation_value<'a>(operation: &'a OperationSpec, keys: &[&str]) -> Option<&'a Value> {
     keys.iter().find_map(|key| {
         operation
@@ -798,6 +1143,100 @@ fn operation_value<'a>(operation: &'a OperationSpec, keys: &[&str]) -> Option<&'
             .get(*key)
             .or_else(|| field_normalized(operation, key))
     })
+}
+
+fn operation_function_argument<'a>(expression: &'a str, names: &[&str]) -> Option<&'a str> {
+    let args = operation_function_arguments(expression, names)?;
+    (args.len() == 1).then_some(args[0])
+}
+
+fn operation_function_arguments<'a>(expression: &'a str, names: &[&str]) -> Option<Vec<&'a str>> {
+    let expression = expression.trim();
+    let open = expression.find('(')?;
+    if !names
+        .iter()
+        .any(|name| operation_function_names_equal(&expression[..open], name))
+        || !expression.ends_with(')')
+    {
+        return None;
+    }
+    Some(split_operation_commas(
+        &expression[open + 1..expression.len() - 1],
+    ))
+}
+
+fn operation_function_names_equal(left: &str, right: &str) -> bool {
+    left.trim()
+        .trim_start_matches('$')
+        .eq_ignore_ascii_case(right.trim().trim_start_matches('$'))
+}
+
+fn split_operation_commas(expression: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (byte_index, ch) in expression.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(expression[start..byte_index].trim());
+                start = byte_index + 1;
+            }
+            _ => {}
+        }
+    }
+
+    if !expression[start..].trim().is_empty() {
+        parts.push(expression[start..].trim());
+    }
+    parts
+}
+
+fn operation_string_literal(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() < 2 {
+        return None;
+    }
+    let quote = value.chars().next()?;
+    if !matches!(quote, '"' | '\'') || !value.ends_with(quote) {
+        return None;
+    }
+    Some(
+        value[1..value.len() - 1]
+            .replace("\\'", "'")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\"),
+    )
+}
+
+fn is_quoted_literal(value: &str) -> bool {
+    operation_string_literal(value).is_some()
+}
+
+fn clean_operation_identifier(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches('$')
+        .trim_matches('`')
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_owned()
 }
 
 fn strings_from_value(value: &Value) -> Option<Vec<String>> {
@@ -1370,6 +1809,75 @@ mod tests {
     }
 
     #[test]
+    fn run_validation_executes_match_datasets_without_explicit_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-MATCH-DATASETS.json"),
+            r#"{
+  "Core": { "Id": "CORE-MATCH-DATASETS", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "domain": "AE" },
+    { "domain": "LOOKUP", "prefix": "LOOKUP." }
+  ],
+  "Check": {
+    "name": "LOOKUP.FLAG",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": { "Message": "Lookup flag must not be Y" }
+}"#,
+        )
+        .expect("write match datasets rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": ["S2"],
+        "FLAG": ["Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write match datasets data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
     fn run_validation_executes_jsonata_string_rule() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -1571,6 +2079,81 @@ mod tests {
     }
 
     #[test]
+    fn run_validation_uses_external_dictionary_for_term_checks() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-DICTIONARY-MEDDRA.json"),
+            r#"{
+  "Core": { "Id": "CORE-DICTIONARY-MEDDRA", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AEDECOD",
+    "operator": "is_not_contained_by",
+    "dictionary": "MEDDRA"
+  },
+  "Outcome": { "Message": "AEDECOD must exist in external dictionary" }
+}"#,
+        )
+        .expect("write dictionary rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "AESEQ": [1, 2],
+        "AEDECOD": ["HEADACHE", "UNKNOWN"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dictionary data");
+
+        let dictionary_path = dir.path().join("external_dictionary.json");
+        fs::write(
+            &dictionary_path,
+            r#"{
+  "dictionaries": [
+    {
+      "dictionary": "MEDDRA",
+      "terms": [
+        { "term": "HEADACHE" },
+        { "term": "NAUSEA" }
+      ]
+    }
+  ]
+}"#,
+        )
+        .expect("write dictionary");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            external_dictionary_paths: vec![dictionary_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
     fn run_validation_filters_rules_by_standard_and_version() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -1726,6 +2309,106 @@ mod tests {
         assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("3"));
         assert_eq!(outcome.results[0].errors[1].row, Some(2));
         assert_eq!(outcome.results[0].errors[1].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_executes_expanded_operations_pipeline() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-OPS-EXPANDED.json"),
+            r#"{
+  "Core": { "Id": "CORE-OPS-EXPANDED", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "derive",
+      "dataset": "AE",
+      "as": "TERM_TRIM",
+      "expression": "$trim(AETERM)"
+    },
+    {
+      "name": "derive",
+      "as": "TERM_UP",
+      "expression": "$uppercase(TERM_TRIM)"
+    },
+    {
+      "name": "aggregate",
+      "by": ["USUBJID"],
+      "function": "sum",
+      "source_column": "AVAL",
+      "as": "AVAL_SUM"
+    },
+    {
+      "name": "distinct",
+      "by": ["USUBJID", "TERM_UP", "AVAL_SUM"]
+    },
+    {
+      "name": "rename",
+      "columns": { "TERM_UP": "TERM" }
+    },
+    {
+      "name": "select",
+      "columns": ["USUBJID", "AESEQ", "TERM", "AVAL_SUM"]
+    }
+  ],
+  "Check": {
+    "all": [
+      {
+        "name": "AVAL_SUM",
+        "operator": "greater_than",
+        "value": 4
+      },
+      {
+        "name": "TERM",
+        "operator": "equal_to",
+        "value": "HEADACHE"
+      }
+    ]
+  },
+  "Outcome": { "Message": "High aggregate value requires review" }
+}"#,
+        )
+        .expect("write expanded operations rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S1", "S2"],
+        "AESEQ": [1, 2, 3],
+        "AETERM": [" headache ", "headache", "nausea"],
+        "AVAL": [2, 3, 1]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write expanded operations data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("1"));
     }
 
     fn write_test_xpt_char_dataset(

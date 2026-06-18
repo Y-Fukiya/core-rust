@@ -43,6 +43,9 @@ struct ValidateArgs {
     #[arg(long, alias = "controlled-terminology", value_name = "FILE", num_args = 1..)]
     ct: Vec<PathBuf>,
 
+    #[arg(long, alias = "dictionary", value_name = "FILE", num_args = 1..)]
+    external_dictionary: Vec<PathBuf>,
+
     #[arg(short = 'r', long, value_name = "RULE_ID", num_args = 1..)]
     rules: Vec<String>,
 
@@ -101,6 +104,7 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         dataset_paths,
         define_xml_paths: args.define_xml,
         ct_paths: args.ct,
+        external_dictionary_paths: args.external_dictionary,
         include_rules: args.rules,
         exclude_rules: args.exclude_rules,
         standard: args.standard,

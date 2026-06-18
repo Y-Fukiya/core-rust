@@ -13,6 +13,8 @@ pub type Result<T> = std::result::Result<T, CdiscLibraryError>;
 
 #[derive(Debug, Error)]
 pub enum CdiscLibraryError {
+    #[error("unsupported CDISC library file extension: {0}")]
+    UnsupportedExtension(String),
     #[error("failed to read file {path}: {source}")]
     Io {
         path: PathBuf,
@@ -554,6 +556,32 @@ pub fn load_ct_json_file(path: impl AsRef<Path>) -> Result<ControlledTerminology
     Ok(parse_ct_json_value(&value))
 }
 
+pub fn load_external_dictionary_file(path: impl AsRef<Path>) -> Result<ControlledTerminology> {
+    let path = path.as_ref();
+    let source = fs::read_to_string(path).map_err(|source| CdiscLibraryError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let fallback_name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("dictionary");
+
+    match extension(path).as_deref() {
+        Some("json") => {
+            let value: Value =
+                serde_json::from_str(&source).map_err(|source| CdiscLibraryError::Json {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            Ok(parse_external_dictionary_json_value(&value, fallback_name))
+        }
+        Some("csv") => Ok(parse_external_dictionary_csv(&source, fallback_name)),
+        Some(other) => Err(CdiscLibraryError::UnsupportedExtension(other.to_owned())),
+        None => Err(CdiscLibraryError::UnsupportedExtension(String::new())),
+    }
+}
+
 pub fn parse_ct_json_value(value: &Value) -> ControlledTerminology {
     let mut terminology = ControlledTerminology::default();
     match value {
@@ -574,6 +602,164 @@ pub fn parse_ct_json_value(value: &Value) -> ControlledTerminology {
         _ => {}
     };
     terminology
+}
+
+pub fn parse_external_dictionary_json_value(
+    value: &Value,
+    fallback_name: &str,
+) -> ControlledTerminology {
+    let mut terminology = ControlledTerminology::default();
+    insert_external_dictionary_value(&mut terminology, fallback_name, value);
+    terminology
+}
+
+fn insert_external_dictionary_value(
+    terminology: &mut ControlledTerminology,
+    fallback_name: &str,
+    value: &Value,
+) {
+    match value {
+        Value::Array(values) => {
+            insert_ct_values(terminology, fallback_name, &Value::Array(values.to_vec()))
+        }
+        Value::Object(object) => {
+            if let Some(dictionaries) = object_array_field(
+                object,
+                &["dictionaries", "Dictionaries", "externalDictionaries"],
+            ) {
+                for dictionary in dictionaries {
+                    insert_external_dictionary_value(terminology, fallback_name, dictionary);
+                }
+                return;
+            }
+
+            if let Some(name) = string_field(
+                object,
+                &[
+                    "dictionary",
+                    "dictionaryName",
+                    "dictionary_name",
+                    "name",
+                    "id",
+                    "code",
+                ],
+            ) {
+                for alias in string_fields(
+                    object,
+                    &[
+                        "dictionary",
+                        "dictionaryName",
+                        "dictionary_name",
+                        "name",
+                        "id",
+                        "code",
+                        "version",
+                    ],
+                ) {
+                    terminology.insert_alias(name, alias);
+                }
+
+                for key in ["terms", "values", "items", "codes", "entries"] {
+                    if let Some(values) = object.get(key).or_else(|| {
+                        object
+                            .iter()
+                            .find(|(candidate, _)| lookup_key(candidate) == lookup_key(key))
+                            .map(|(_, value)| value)
+                    }) {
+                        insert_ct_values(terminology, name, values);
+                    }
+                }
+                return;
+            }
+
+            for (dictionary, values) in object {
+                insert_ct_values(terminology, dictionary, values);
+            }
+        }
+        Value::String(value) => terminology.insert_term(fallback_name, value),
+        _ => {}
+    }
+}
+
+fn parse_external_dictionary_csv(source: &str, fallback_name: &str) -> ControlledTerminology {
+    let mut terminology = ControlledTerminology::default();
+    let mut lines = source.lines().filter(|line| !line.trim().is_empty());
+    let Some(header) = lines.next() else {
+        return terminology;
+    };
+    let headers = split_csv_line(header);
+    let dictionary_index = find_header_index(
+        &headers,
+        &[
+            "dictionary",
+            "dictionary_name",
+            "dictionaryName",
+            "name",
+            "source",
+        ],
+    );
+    let value_index = find_header_index(
+        &headers,
+        &[
+            "value",
+            "term",
+            "code",
+            "codedValue",
+            "submissionValue",
+            "termCode",
+        ],
+    )
+    .unwrap_or_else(|| if dictionary_index == Some(0) { 1 } else { 0 });
+
+    for line in lines {
+        let row = split_csv_line(line);
+        let dictionary = dictionary_index
+            .and_then(|index| row.get(index))
+            .filter(|value| !value.trim().is_empty())
+            .map(String::as_str)
+            .unwrap_or(fallback_name);
+        let Some(value) = row
+            .get(value_index)
+            .filter(|value| !value.trim().is_empty())
+        else {
+            continue;
+        };
+        terminology.insert_term(dictionary, value);
+    }
+
+    terminology
+}
+
+fn split_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut quoted = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if quoted && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => quoted = !quoted,
+            ',' if !quoted => {
+                fields.push(current.trim().to_owned());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current.trim().to_owned());
+    fields
+}
+
+fn find_header_index(headers: &[String], candidates: &[&str]) -> Option<usize> {
+    headers.iter().position(|header| {
+        candidates
+            .iter()
+            .any(|candidate| lookup_key(header) == lookup_key(candidate))
+    })
 }
 
 fn insert_cdisc_ct_codelists(terminology: &mut ControlledTerminology, codelists: &[Value]) {
@@ -722,6 +908,12 @@ fn xml_text(value: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&")
+}
+
+fn extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
 }
 
 fn lookup_key(value: &str) -> String {
@@ -949,5 +1141,49 @@ mod tests {
         assert!(terminology.contains("DOMAIN", "AE"));
         assert!(terminology.contains("C66734", "CM"));
         assert!(terminology.contains("Domain Abbreviation", "AE"));
+    }
+
+    #[test]
+    fn parse_external_dictionary_json_accepts_named_and_nested_shapes() {
+        let terminology = parse_external_dictionary_json_value(
+            &json!({
+                "dictionaries": [
+                    {
+                        "dictionary": "MEDDRA",
+                        "version": "26.1",
+                        "terms": [
+                            { "code": "HEADACHE" },
+                            { "term": "NAUSEA" }
+                        ]
+                    },
+                    {
+                        "name": "UNII",
+                        "values": ["ABC123"]
+                    }
+                ]
+            }),
+            "fallback",
+        );
+
+        assert!(terminology.contains("MEDDRA", "HEADACHE"));
+        assert!(terminology.contains("26.1", "NAUSEA"));
+        assert!(terminology.contains("UNII", "ABC123"));
+    }
+
+    #[test]
+    fn load_external_dictionary_csv_uses_dictionary_and_term_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("dictionaries.csv");
+        std::fs::write(
+            &path,
+            "dictionary,term\nMEDDRA,HEADACHE\nMEDDRA,NAUSEA\nUNII,ABC123\n",
+        )
+        .expect("write dictionary");
+
+        let terminology = load_external_dictionary_file(&path).expect("load dictionary");
+
+        assert!(terminology.contains("MEDDRA", "HEADACHE"));
+        assert!(terminology.contains("MEDDRA", "NAUSEA"));
+        assert!(terminology.contains("UNII", "ABC123"));
     }
 }

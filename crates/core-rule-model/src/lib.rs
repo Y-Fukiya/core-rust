@@ -704,27 +704,32 @@ fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
 }
 
 fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
-    let expression = trim_wrapping_parens(expression.trim());
+    let resolved = resolve_jsonata_bindings(expression.trim());
+    let expression = trim_wrapping_parens(resolved.trim());
     if expression.is_empty() {
         return Err(RuleModelError::InvalidRuleFormat(
             "JSONATA expression must not be empty".to_owned(),
         ));
     }
 
-    if let Some(parts) = split_top_level_expression(expression, " or ") {
-        return parts
-            .into_iter()
-            .map(normalize_jsonata_expression)
-            .collect::<Result<Vec<_>>>()
-            .map(ConditionGroup::Any);
+    for token in [" or ", "||"] {
+        if let Some(parts) = split_top_level_expression(expression, token) {
+            return parts
+                .into_iter()
+                .map(normalize_jsonata_expression)
+                .collect::<Result<Vec<_>>>()
+                .map(ConditionGroup::Any);
+        }
     }
 
-    if let Some(parts) = split_top_level_expression(expression, " and ") {
-        return parts
-            .into_iter()
-            .map(normalize_jsonata_expression)
-            .collect::<Result<Vec<_>>>()
-            .map(ConditionGroup::All);
+    for token in [" and ", "&&"] {
+        if let Some(parts) = split_top_level_expression(expression, token) {
+            return parts
+                .into_iter()
+                .map(normalize_jsonata_expression)
+                .collect::<Result<Vec<_>>>()
+                .map(ConditionGroup::All);
+        }
     }
 
     normalize_jsonata_leaf(expression)
@@ -732,6 +737,13 @@ fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
 
 fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
     let expression = trim_wrapping_parens(expression.trim());
+    if let Some(rest) = expression.strip_prefix('!') {
+        if !rest.trim_start().starts_with('=') {
+            return normalize_jsonata_expression(rest)
+                .map(|group| ConditionGroup::Not(Box::new(group)));
+        }
+    }
+
     if let Some(argument) = jsonata_function_argument(expression, &["$not", "not"]) {
         return normalize_jsonata_expression(argument)
             .map(|group| ConditionGroup::Not(Box::new(group)));
@@ -739,9 +751,14 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
 
     if let Some(args) = jsonata_function_arguments(expression, &["$contains", "contains"]) {
         if args.len() == 2 {
+            let (target, case_insensitive) = jsonata_target(args[0]);
             return Ok(jsonata_leaf(
-                clean_jsonata_identifier(args[0]),
-                Operator::Contains,
+                target,
+                if case_insensitive {
+                    Operator::ContainsCaseInsensitive
+                } else {
+                    Operator::Contains
+                },
                 jsonata_comparator(args[1])?,
             ));
         }
@@ -749,10 +766,16 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
 
     if let Some(args) = jsonata_function_arguments(expression, &["$match", "match"]) {
         if args.len() >= 2 {
+            let (target, case_insensitive) = jsonata_target(args[0]);
+            let comparator = jsonata_comparator(args[1])?;
             return Ok(jsonata_leaf(
-                clean_jsonata_identifier(args[0]),
+                target,
                 Operator::MatchesRegex,
-                jsonata_comparator(args[1])?,
+                if case_insensitive {
+                    case_insensitive_regex_comparator(comparator)
+                } else {
+                    comparator
+                },
             ));
         }
     }
@@ -766,16 +789,36 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
         }));
     }
 
+    if let Some(argument) = jsonata_function_argument(expression, &["$boolean", "boolean"]) {
+        return normalize_jsonata_expression(argument);
+    }
+
     if let Some(index) = find_top_level_operator(expression, " not in ") {
-        let target = clean_jsonata_identifier(&expression[..index]);
+        let (target, case_insensitive) = jsonata_target(&expression[..index]);
         let comparator = jsonata_list_comparator(&expression[index + " not in ".len()..])?;
-        return Ok(jsonata_leaf(target, Operator::IsNotContainedBy, comparator));
+        return Ok(jsonata_leaf(
+            target,
+            if case_insensitive {
+                Operator::IsNotContainedByCaseInsensitive
+            } else {
+                Operator::IsNotContainedBy
+            },
+            comparator,
+        ));
     }
 
     if let Some(index) = find_top_level_operator(expression, " in ") {
-        let target = clean_jsonata_identifier(&expression[..index]);
+        let (target, case_insensitive) = jsonata_target(&expression[..index]);
         let comparator = jsonata_list_comparator(&expression[index + " in ".len()..])?;
-        return Ok(jsonata_leaf(target, Operator::IsContainedBy, comparator));
+        return Ok(jsonata_leaf(
+            target,
+            if case_insensitive {
+                Operator::IsContainedByCaseInsensitive
+            } else {
+                Operator::IsContainedBy
+            },
+            comparator,
+        ));
     }
 
     for (token, operator) in [
@@ -821,6 +864,25 @@ fn jsonata_comparison_leaf(
     operator: Operator,
     comparator: ValueExpr,
 ) -> Result<ConditionGroup> {
+    if let Some(argument) = jsonata_function_argument(target, &["$exists", "exists"]) {
+        if let Some(value) = bool_comparator(&comparator) {
+            let operator = match (operator, value) {
+                (Operator::EqualTo, true) | (Operator::NotEqualTo, false) => Operator::Exists,
+                (Operator::EqualTo, false) | (Operator::NotEqualTo, true) => Operator::NotExists,
+                _ => {
+                    return Err(RuleModelError::InvalidRuleFormat(
+                        "$exists() can only be compared with equality".to_owned(),
+                    ))
+                }
+            };
+            return Ok(jsonata_leaf(
+                clean_jsonata_identifier(argument),
+                operator,
+                ValueExpr::Null,
+            ));
+        }
+    }
+
     if let Some(argument) = jsonata_function_argument(target, &["$uppercase", "uppercase"])
         .or_else(|| jsonata_function_argument(target, &["$lowercase", "lowercase"]))
     {
@@ -867,19 +929,70 @@ fn length_jsonata_condition(
         (Operator::LessThan, 1.0) => Operator::IsEmpty,
         (Operator::NotEqualTo | Operator::GreaterThan, 0.0) => Operator::IsNotEmpty,
         (Operator::GreaterThanOrEqualTo, 1.0) => Operator::IsNotEmpty,
-        _ => {
-            return Err(RuleModelError::InvalidRuleFormat(
-                "$length() currently supports empty/not-empty comparisons".to_owned(),
-            ))
-        }
+        _ => return length_regex_condition(target, operator, value),
     };
 
     Ok(jsonata_leaf(target, operator, ValueExpr::Null))
 }
 
+fn length_regex_condition(
+    target: String,
+    operator: &Operator,
+    value: f64,
+) -> Result<ConditionGroup> {
+    if value.fract() != 0.0 || value < 0.0 {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "$length() comparator must be a non-negative integer".to_owned(),
+        ));
+    }
+    let value = value as usize;
+    let (operator, pattern) = match operator {
+        Operator::EqualTo => (Operator::MatchesRegex, format!(r#"(?s)^.{{{value}}}$"#)),
+        Operator::NotEqualTo => (
+            Operator::DoesNotMatchRegex,
+            format!(r#"(?s)^.{{{value}}}$"#),
+        ),
+        Operator::GreaterThan => (
+            Operator::MatchesRegex,
+            format!(r#"(?s)^.{{{},}}$"#, value + 1),
+        ),
+        Operator::GreaterThanOrEqualTo => {
+            (Operator::MatchesRegex, format!(r#"(?s)^.{{{value},}}$"#))
+        }
+        Operator::LessThan => {
+            if value == 0 {
+                (Operator::MatchesRegex, r#"(?!)"#.to_owned())
+            } else {
+                (
+                    Operator::MatchesRegex,
+                    format!(r#"(?s)^.{{0,{}}}$"#, value - 1),
+                )
+            }
+        }
+        Operator::LessThanOrEqualTo => (Operator::MatchesRegex, format!(r#"(?s)^.{{0,{value}}}$"#)),
+        _ => {
+            return Err(RuleModelError::InvalidRuleFormat(
+                "$length() comparator uses an unsupported operator".to_owned(),
+            ))
+        }
+    };
+    Ok(jsonata_leaf(
+        target,
+        operator,
+        ValueExpr::Literal(Value::String(pattern)),
+    ))
+}
+
 fn numeric_comparator(comparator: &ValueExpr) -> Option<f64> {
     match comparator {
         ValueExpr::Literal(Value::Number(value)) => value.as_f64(),
+        _ => None,
+    }
+}
+
+fn bool_comparator(comparator: &ValueExpr) -> Option<bool> {
+    match comparator {
+        ValueExpr::Literal(Value::Bool(value)) => Some(*value),
         _ => None,
     }
 }
@@ -919,7 +1032,9 @@ fn jsonata_list_comparator(value: &str) -> Result<ValueExpr> {
 
 fn jsonata_comparator(value: &str) -> Result<ValueExpr> {
     let value = value.trim();
-    if is_jsonata_identifier(value) {
+    if let Some(value) = jsonata_literal_function(value)? {
+        Ok(ValueExpr::Literal(value))
+    } else if is_jsonata_identifier(value) {
         Ok(ValueExpr::ColumnRef(clean_jsonata_identifier(value)))
     } else {
         Ok(value_expr_from_value(jsonata_value(value)?))
@@ -942,6 +1057,10 @@ fn jsonata_value(value: &str) -> Result<Value> {
             .map_err(|source| RuleModelError::InvalidRuleFormat(source.to_string()));
     }
 
+    if let Some(pattern) = jsonata_regex_literal(value) {
+        return Ok(Value::String(pattern));
+    }
+
     if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
         return Ok(Value::String(
             value[1..value.len() - 1]
@@ -960,6 +1079,105 @@ fn jsonata_value(value: &str) -> Result<Value> {
     match serde_json::from_str(value) {
         Ok(value) => Ok(value),
         Err(_) => Ok(Value::String(clean_jsonata_identifier(value))),
+    }
+}
+
+fn jsonata_literal_function(value: &str) -> Result<Option<Value>> {
+    for (names, transform) in [
+        (
+            &["$uppercase", "uppercase"][..],
+            JsonataLiteralTransform::Uppercase,
+        ),
+        (
+            &["$lowercase", "lowercase"][..],
+            JsonataLiteralTransform::Lowercase,
+        ),
+        (&["$trim", "trim"][..], JsonataLiteralTransform::Trim),
+        (&["$string", "string"][..], JsonataLiteralTransform::String),
+        (&["$number", "number"][..], JsonataLiteralTransform::Number),
+    ] {
+        if let Some(argument) = jsonata_function_argument(value, names) {
+            let argument = jsonata_value(argument)?;
+            return Ok(Some(apply_jsonata_literal_transform(argument, transform)));
+        }
+    }
+    Ok(None)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum JsonataLiteralTransform {
+    Uppercase,
+    Lowercase,
+    Trim,
+    String,
+    Number,
+}
+
+fn apply_jsonata_literal_transform(value: Value, transform: JsonataLiteralTransform) -> Value {
+    match transform {
+        JsonataLiteralTransform::Uppercase => {
+            Value::String(json_value_string(value).to_ascii_uppercase())
+        }
+        JsonataLiteralTransform::Lowercase => {
+            Value::String(json_value_string(value).to_ascii_lowercase())
+        }
+        JsonataLiteralTransform::Trim => Value::String(json_value_string(value).trim().to_owned()),
+        JsonataLiteralTransform::String => Value::String(json_value_string(value)),
+        JsonataLiteralTransform::Number => json_value_string(value)
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+    }
+}
+
+fn json_value_string(value: Value) -> String {
+    match value {
+        Value::String(value) => value,
+        other => other.to_string(),
+    }
+}
+
+fn jsonata_regex_literal(value: &str) -> Option<String> {
+    if !value.starts_with('/') || value.len() < 2 {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, ch) in value.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '/' {
+            let pattern = &value[1..index];
+            let flags = &value[index + 1..];
+            let prefix = if flags.contains('i') { "(?i)" } else { "" };
+            return Some(format!("{prefix}{}", pattern.replace("\\/", "/")));
+        }
+    }
+    None
+}
+
+fn jsonata_target(value: &str) -> (String, bool) {
+    if let Some(argument) = jsonata_function_argument(value, &["$uppercase", "uppercase"])
+        .or_else(|| jsonata_function_argument(value, &["$lowercase", "lowercase"]))
+    {
+        return (clean_jsonata_identifier(argument), true);
+    }
+    (clean_jsonata_identifier(value), false)
+}
+
+fn case_insensitive_regex_comparator(comparator: ValueExpr) -> ValueExpr {
+    match comparator {
+        ValueExpr::Literal(Value::String(pattern)) if !pattern.starts_with("(?i)") => {
+            ValueExpr::Literal(Value::String(format!("(?i){pattern}")))
+        }
+        other => other,
     }
 }
 
@@ -991,6 +1209,77 @@ fn is_jsonata_identifier(value: &str) -> bool {
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '`'))
 }
 
+fn resolve_jsonata_bindings(expression: &str) -> String {
+    let parts = split_top_level_statements(expression);
+    if parts.len() <= 1 {
+        return expression.to_owned();
+    }
+
+    let mut bindings = BTreeMap::new();
+    for statement in &parts[..parts.len() - 1] {
+        if let Some(index) = find_top_level_operator(statement, ":=") {
+            let name = clean_jsonata_identifier(&statement[..index]);
+            let value = trim_wrapping_parens(statement[index + 2..].trim()).to_owned();
+            if !name.is_empty() && !value.is_empty() {
+                bindings.insert(name, value);
+            }
+        }
+    }
+
+    let mut resolved = parts.last().copied().unwrap_or_default().to_owned();
+    for (name, value) in bindings {
+        resolved = resolved.replace(&format!("${name}"), &value);
+    }
+    resolved
+}
+
+fn split_top_level_statements(expression: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (byte_index, ch) in expression.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ';' if depth <= 1 => {
+                let part = expression[start..byte_index]
+                    .trim()
+                    .trim_start_matches('(')
+                    .trim();
+                if !part.is_empty() {
+                    parts.push(part);
+                }
+                start = byte_index + 1;
+            }
+            _ => {}
+        }
+    }
+
+    let mut part = expression[start..].trim();
+    if expression.trim().starts_with('(') && part.ends_with(')') {
+        part = part[..part.len() - 1].trim();
+    }
+    if !part.is_empty() {
+        parts.push(part);
+    }
+    parts
+}
+
 fn split_top_level_expression<'a>(expression: &'a str, token: &str) -> Option<Vec<&'a str>> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -1016,8 +1305,8 @@ fn split_top_level_expression<'a>(expression: &'a str, token: &str) -> Option<Ve
 
         match ch {
             '"' | '\'' => quote = Some(ch),
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
             _ => {}
         }
 
@@ -1063,8 +1352,8 @@ fn split_top_level_commas(expression: &str) -> Vec<&str> {
 
         match ch {
             '"' | '\'' => quote = Some(ch),
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
             ',' if depth == 0 => {
                 parts.push(expression[start..byte_index].trim());
                 start = byte_index + 1;
@@ -1097,8 +1386,8 @@ fn find_top_level_operator(expression: &str, token: &str) -> Option<usize> {
 
         match ch {
             '"' | '\'' => quote = Some(ch),
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
             _ => {}
         }
 
@@ -1147,8 +1436,14 @@ fn outer_parens_enclose_expression(expression: &str) -> bool {
 
         match ch {
             '"' | '\'' => quote = Some(ch),
-            '(' | '[' => depth += 1,
+            '(' | '[' | '{' => depth += 1,
             ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && byte_index != last {
+                    return false;
+                }
+            }
+            '}' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 && byte_index != last {
                     return false;
@@ -1688,6 +1983,69 @@ Outcome:
         assert_eq!(length_condition.target.as_deref(), Some("AETERM"));
         assert_eq!(length_condition.operator, Operator::IsNotEmpty);
         assert_eq!(length_condition.comparator, ValueExpr::Null);
+    }
+
+    #[test]
+    fn normalize_jsonata_extended_boolean_functions_and_bindings() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] =
+            json!("($domain := DOMAIN; !$exists(AETERM) || $contains($uppercase($domain), 'ae'))");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Any(groups) = rule.conditions else {
+            panic!("expected any condition group");
+        };
+
+        let ConditionGroup::Not(exists_group) = &groups[0] else {
+            panic!("expected not exists condition");
+        };
+        let ConditionGroup::Leaf(exists) = exists_group.as_ref() else {
+            panic!("expected exists leaf");
+        };
+        assert_eq!(exists.target.as_deref(), Some("AETERM"));
+        assert_eq!(exists.operator, Operator::Exists);
+
+        let ConditionGroup::Leaf(contains) = &groups[1] else {
+            panic!("expected contains leaf");
+        };
+        assert_eq!(contains.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(contains.operator, Operator::ContainsCaseInsensitive);
+        assert_eq!(contains.comparator, ValueExpr::Literal(json!("ae")));
+    }
+
+    #[test]
+    fn normalize_jsonata_regex_literals_exists_comparisons_and_length_ranges() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!(
+            "$exists(AETERM) = false or $match($lowercase(AEDECOD), /^head/i) or $length(AEDECOD) >= 4"
+        );
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Any(groups) = rule.conditions else {
+            panic!("expected any condition group");
+        };
+
+        let ConditionGroup::Leaf(exists) = &groups[0] else {
+            panic!("expected exists comparison leaf");
+        };
+        assert_eq!(exists.target.as_deref(), Some("AETERM"));
+        assert_eq!(exists.operator, Operator::NotExists);
+
+        let ConditionGroup::Leaf(matches) = &groups[1] else {
+            panic!("expected regex leaf");
+        };
+        assert_eq!(matches.target.as_deref(), Some("AEDECOD"));
+        assert_eq!(matches.operator, Operator::MatchesRegex);
+        assert_eq!(matches.comparator, ValueExpr::Literal(json!("(?i)^head")));
+
+        let ConditionGroup::Leaf(length) = &groups[2] else {
+            panic!("expected length regex leaf");
+        };
+        assert_eq!(length.target.as_deref(), Some("AEDECOD"));
+        assert_eq!(length.operator, Operator::MatchesRegex);
+        assert_eq!(length.comparator, ValueExpr::Literal(json!("(?s)^.{4,}$")));
     }
 
     #[test]
