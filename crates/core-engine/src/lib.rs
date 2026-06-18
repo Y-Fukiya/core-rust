@@ -51,6 +51,11 @@ pub enum ExecutionStatus {
 #[serde(rename_all = "snake_case")]
 pub enum SkippedReason {
     RuleNotFound,
+    UnsupportedRuleType,
+    UnsupportedOperator,
+    OperationsNotSupported,
+    JsonataNotSupported,
+    DatasetJoinNotSupported,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

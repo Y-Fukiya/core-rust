@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use core_data::{load_datasets_from_paths, DataError};
 use core_engine::{validate_rule, EngineError, RuleValidationResult, SkippedReason};
 use core_report::{write_reports, ReportError, WrittenReports};
-use core_rule_model::{load_rules_from_paths, ExecutableRule, RuleModelError};
+use core_rule_model::{
+    load_rules_from_paths, ConditionGroup, ExecutableRule, Operator, RuleModelError, RuleType,
+    Sensitivity,
+};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
@@ -67,6 +70,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
 
     let mut results = selection.skipped;
     for rule in &selection.selected {
+        if let Some(skipped) = skipped_unsupported_rule(rule) {
+            results.push(skipped);
+            continue;
+        }
+
         for dataset in &datasets {
             results.push(validate_rule(rule, dataset)?);
         }
@@ -122,6 +130,109 @@ pub fn select_rules(
     Ok(RuleSelection { selected, skipped })
 }
 
+fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResult> {
+    if matches!(rule.rule_type, RuleType::Jsonata) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::JsonataNotSupported,
+            format!("Rule {} uses JSONata, which is not supported", rule.core_id),
+        ));
+    }
+
+    if !matches!(rule.rule_type, RuleType::RecordData) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedRuleType,
+            format!(
+                "Rule {} has unsupported rule type {}",
+                rule.core_id,
+                rule.rule_type.as_name()
+            ),
+        ));
+    }
+
+    if !matches!(
+        rule.sensitivity,
+        Some(Sensitivity::Record | Sensitivity::Dataset)
+    ) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedRuleType,
+            format!("Rule {} has unsupported sensitivity", rule.core_id),
+        ));
+    }
+
+    if !rule.operations.is_empty() {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::OperationsNotSupported,
+            format!(
+                "Rule {} uses Operations, which are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if rule
+        .datasets
+        .as_ref()
+        .is_some_and(|datasets| !datasets.is_empty())
+    {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::DatasetJoinNotSupported,
+            format!(
+                "Rule {} uses Match Datasets, which are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    unsupported_operator(&rule.conditions).map(|operator| {
+        RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses unsupported operator {}",
+                rule.core_id,
+                operator.as_name()
+            ),
+        )
+    })
+}
+
+fn unsupported_operator(group: &ConditionGroup) -> Option<&Operator> {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().find_map(unsupported_operator)
+        }
+        ConditionGroup::Not(group) => unsupported_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            (!is_supported_basic_operator(&condition.operator)).then_some(&condition.operator)
+        }
+    }
+}
+
+fn is_supported_basic_operator(operator: &Operator) -> bool {
+    matches!(
+        operator,
+        Operator::Exists
+            | Operator::NotExists
+            | Operator::EqualTo
+            | Operator::NotEqualTo
+            | Operator::Contains
+            | Operator::DoesNotContain
+            | Operator::LessThan
+            | Operator::LessThanOrEqualTo
+            | Operator::GreaterThan
+            | Operator::GreaterThanOrEqualTo
+            | Operator::MatchesRegex
+            | Operator::DoesNotMatchRegex
+            | Operator::IsEmpty
+            | Operator::IsNotEmpty
+    )
+}
+
 fn missing_rule_ids<'a>(
     requested: &'a [String],
     available_ids: &BTreeSet<&str>,
@@ -135,7 +246,7 @@ fn missing_rule_ids<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeSet, fs};
 
     use core_engine::ExecutionStatus;
     use core_rule_model::{load_rules_from_paths, Sensitivity};
@@ -298,5 +409,104 @@ mod tests {
         let rules = load_rules_from_paths(&[dir.path().to_path_buf()]).expect("load rules");
 
         assert_eq!(rules[0].sensitivity, Some(Sensitivity::Record));
+    }
+
+    #[test]
+    fn run_validation_skips_unsupported_rules_before_engine_execution() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        write_raw_rule(
+            &rules_dir,
+            "CORE-JSONATA",
+            r#""Rule Type": "JSONATA""#,
+            "",
+            r#""operator": "equal_to""#,
+        );
+        write_raw_rule(
+            &rules_dir,
+            "CORE-OPERATIONS",
+            r#""Rule Type": "Record Data""#,
+            r#""Operations": [{ "name": "join" }],"#,
+            r#""operator": "equal_to""#,
+        );
+        write_raw_rule(
+            &rules_dir,
+            "CORE-JOIN",
+            r#""Rule Type": "Record Data""#,
+            r#""Match Datasets": [{ "domain": "SUPPAE" }],"#,
+            r#""operator": "equal_to""#,
+        );
+        write_raw_rule(
+            &rules_dir,
+            "CORE-OPERATOR",
+            r#""Rule Type": "Record Data""#,
+            "",
+            r#""operator": "equal_to_case_insensitive""#,
+        );
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: Vec::new(),
+            exclude_rules: Vec::new(),
+            output_dir: None,
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 4);
+        let reasons = outcome
+            .results
+            .iter()
+            .map(|result| result.skipped_reason.as_ref().expect("skipped reason"))
+            .map(|reason| serde_json::to_string(reason).expect("serialize reason"))
+            .map(|reason| reason.trim_matches('"').to_owned())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            reasons,
+            BTreeSet::from([
+                "dataset_join_not_supported".to_owned(),
+                "jsonata_not_supported".to_owned(),
+                "operations_not_supported".to_owned(),
+                "unsupported_operator".to_owned(),
+            ])
+        );
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.execution_status == ExecutionStatus::Skipped));
+    }
+
+    fn write_raw_rule(
+        dir: &std::path::Path,
+        id: &str,
+        rule_type: &str,
+        extra_rule_field: &str,
+        operator: &str,
+    ) {
+        fs::write(
+            dir.join(format!("{id}.json")),
+            format!(
+                r#"{{
+  "Core": {{ "Id": "{id}", "Status": "Published" }},
+  "Scope": {{ "Domains": {{}}, "Classes": {{}} }},
+  "Sensitivity": "Record",
+  {rule_type},
+  {extra_rule_field}
+  "Check": {{
+    "name": "DOMAIN",
+    {operator},
+    "value": "AE"
+  }},
+  "Outcome": {{ "Message": "DOMAIN must be AE" }}
+}}"#
+            ),
+        )
+        .expect("write raw rule");
     }
 }
