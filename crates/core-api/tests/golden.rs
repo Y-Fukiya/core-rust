@@ -8,7 +8,10 @@ use serde_json::{json, Value};
 fn golden_validates_supported_rules_against_csv_fixture() {
     let fixtures = fixture_root();
     let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![fixtures.join("rules")],
+        rule_paths: vec![
+            fixtures.join("rules/CORE-TEST-0001.json"),
+            fixtures.join("rules/CORE-TEST-0002.yaml"),
+        ],
         dataset_paths: vec![fixtures.join("datasets/AE.csv")],
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
@@ -18,6 +21,27 @@ fn golden_validates_supported_rules_against_csv_fixture() {
 
     let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
     let expected = read_json(&fixtures.join("expected/later_validation_output.json"));
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn golden_validates_record_rule_pass_and_failure_cases() {
+    let fixtures = fixture_root();
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/CORE-TEST-0003.json")],
+        dataset_paths: vec![
+            fixtures.join("datasets/AE.csv"),
+            fixtures.join("datasets/mixed/AE.csv"),
+        ],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+    })
+    .expect("run record pass/fail golden validation");
+
+    let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
+    let expected = read_json(&fixtures.join("expected/record_pass_fail_validation_output.json"));
 
     assert_eq!(actual, expected);
 }

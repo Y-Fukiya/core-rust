@@ -1,0 +1,20 @@
+{
+  "Core": {
+    "Id": "CORE-TEST-0003",
+    "Status": "Published"
+  },
+  "Scope": {
+    "Domains": {},
+    "Classes": {}
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": {
+    "Message": "DOMAIN must be AE"
+  }
+}

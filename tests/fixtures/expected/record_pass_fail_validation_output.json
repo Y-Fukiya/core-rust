@@ -1,0 +1,33 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-TEST-0003",
+      "execution_status": "passed",
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must be AE",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-TEST-0003",
+      "execution_status": "failed",
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must be AE",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-TEST-0003",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 2,
+          "variables": [
+            "DOMAIN"
+          ],
+          "message": "DOMAIN must be AE"
+        }
+      ]
+    }
+  ]
+}
