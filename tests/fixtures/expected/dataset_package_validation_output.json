@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-TEST-0003",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must be AE",
+      "error_count": 0,
+      "errors": []
+    }
+  ]
+}

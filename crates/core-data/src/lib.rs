@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -420,6 +420,110 @@ pub fn dataset_names(datasets: &[LoadedDataset]) -> BTreeSet<String> {
         .collect()
 }
 
+pub fn left_join_dataset(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    keys: &[String],
+    right_prefix: &str,
+) -> Result<LoadedDataset> {
+    if keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "join requires at least one key".to_owned(),
+        ));
+    }
+
+    for key in keys {
+        if left.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "left join key not found: {key}"
+            )));
+        }
+        if right.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "right join key not found: {key}"
+            )));
+        }
+    }
+
+    let mut index = HashMap::new();
+    for row in 0..right.frame.height() {
+        index
+            .entry(row_key(&right.frame, keys, row)?)
+            .or_insert(row);
+    }
+
+    let mut frame = left.frame.clone();
+    let left_columns = left
+        .frame
+        .get_column_names()
+        .into_iter()
+        .map(|name| name.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+
+    let mut joined_columns = Vec::new();
+    for right_column in right.frame.get_column_names() {
+        let right_column = right_column.as_str();
+        if keys.iter().any(|key| key == right_column) {
+            continue;
+        }
+
+        let joined_name = format!("{right_prefix}{right_column}");
+        if left_columns.contains(&joined_name) {
+            continue;
+        }
+
+        let mut values = Vec::with_capacity(left.frame.height());
+        for left_row in 0..left.frame.height() {
+            let key = row_key(&left.frame, keys, left_row)?;
+            let value = if let Some(right_row) = index.get(&key) {
+                cell_to_string(&right.frame, right_column, *right_row)?
+            } else {
+                None
+            };
+            values.push(value);
+        }
+        joined_columns.push(Series::new(joined_name.into(), values).into());
+    }
+
+    frame
+        .hstack_mut(&joined_columns)
+        .map_err(|source| DataError::Polars {
+            path: left.metadata.full_path.clone(),
+            source,
+        })?;
+
+    Ok(LoadedDataset::new(left.metadata.clone(), frame))
+}
+
+fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<String>> {
+    keys.iter()
+        .map(|key| {
+            cell_to_string(frame, key, row)
+                .map(|value| value.unwrap_or_else(|| "<NULL>".to_owned()))
+        })
+        .collect()
+}
+
+fn cell_to_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Option<String>> {
+    let column = frame
+        .column(column_name)
+        .map_err(|source| DataError::Polars {
+            path: PathBuf::from(column_name),
+            source,
+        })?;
+    let value = column.get(row).map_err(|source| DataError::Polars {
+        path: PathBuf::from(column_name),
+        source,
+    })?;
+    if value.is_null() {
+        Ok(None)
+    } else if let Some(value) = value.extract_str() {
+        Ok(Some(value.to_owned()))
+    } else {
+        Ok(Some(value.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -566,5 +670,68 @@ mod tests {
         let error = load_dataset_package_json(&path).expect_err("mismatched lengths fail");
 
         assert!(matches!(error, DataError::Polars { .. }));
+    }
+
+    #[test]
+    fn left_join_dataset_adds_prefixed_right_columns() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "DOMAIN": ["AE", "AE", "AE"],
+        "AESEQ": [1, 2, 3]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "USUBJID": ["S1", "S3"],
+        "QNAM": ["AESPID", "AESPID"],
+        "QVAL": ["A", "C"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let joined = left_join_dataset(
+            &datasets[0],
+            &datasets[1],
+            &["USUBJID".to_owned()],
+            "SUPPAE.",
+        )
+        .expect("join datasets");
+
+        assert_eq!(
+            joined.summary().columns,
+            vec!["AESEQ", "DOMAIN", "USUBJID", "SUPPAE.QNAM", "SUPPAE.QVAL"]
+        );
+        assert_eq!(
+            joined
+                .frame()
+                .column("SUPPAE.QVAL")
+                .expect("joined QVAL")
+                .get(0)
+                .expect("row 1")
+                .extract_str(),
+            Some("A")
+        );
+        assert!(joined
+            .frame()
+            .column("SUPPAE.QVAL")
+            .expect("joined QVAL")
+            .get(1)
+            .expect("row 2")
+            .is_null());
     }
 }

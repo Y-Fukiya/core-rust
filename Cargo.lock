@@ -515,6 +515,14 @@ version = "0.1.0"
 [[package]]
 name = "core-cdisc-library"
 version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "core-cli"

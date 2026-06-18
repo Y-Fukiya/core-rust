@@ -3,6 +3,7 @@
     {
       "rule_id": "CORE-TEST-0001",
       "execution_status": "failed",
+      "skipped_reason": null,
       "dataset": "AE",
       "domain": "AE",
       "message": "DOMAIN must be AE",
@@ -33,6 +34,7 @@
     {
       "rule_id": "CORE-TEST-0002",
       "execution_status": "failed",
+      "skipped_reason": null,
       "dataset": "AE",
       "domain": "AE",
       "message": "DOMAIN must be AE",

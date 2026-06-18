@@ -214,23 +214,71 @@ pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Res
         .map_err(|_| EngineError::MissingColumn(target.to_owned()))?;
 
     match operator {
-        Operator::EqualTo | Operator::NotEqualTo => {
+        Operator::EqualTo
+        | Operator::NotEqualTo
+        | Operator::EqualToCaseInsensitive
+        | Operator::NotEqualToCaseInsensitive => {
             let comparator = required_comparator(operator, &condition.comparator)?;
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
-                let right = resolve_scalar_comparator(comparator, frame, row)?;
-                let equal = scalar_equal(&left, &right);
-                Ok(matches!(operator, Operator::EqualTo) == equal)
+                let equal = scalar_matches_comparator(
+                    &left,
+                    comparator,
+                    frame,
+                    row,
+                    is_case_insensitive_operator(operator),
+                )?;
+                Ok(matches!(
+                    operator,
+                    Operator::EqualTo | Operator::EqualToCaseInsensitive
+                ) == equal)
             })
         }
-        Operator::Contains | Operator::DoesNotContain => {
+        Operator::Contains
+        | Operator::DoesNotContain
+        | Operator::ContainsCaseInsensitive
+        | Operator::DoesNotContainCaseInsensitive => {
             let needle = string_comparator(operator, &condition.comparator)?;
+            let needle = if is_case_insensitive_operator(operator) {
+                needle.to_ascii_lowercase()
+            } else {
+                needle
+            };
             evaluate_column(column, row_count, |value, _row| {
                 let contains = ScalarValue::from_any_value(value)
                     .into_string()
-                    .map(|haystack| haystack.contains(&needle))
+                    .map(|haystack| {
+                        if is_case_insensitive_operator(operator) {
+                            haystack.to_ascii_lowercase().contains(&needle)
+                        } else {
+                            haystack.contains(&needle)
+                        }
+                    })
                     .unwrap_or(false);
-                Ok(matches!(operator, Operator::Contains) == contains)
+                Ok(matches!(
+                    operator,
+                    Operator::Contains | Operator::ContainsCaseInsensitive
+                ) == contains)
+            })
+        }
+        Operator::IsContainedBy
+        | Operator::IsNotContainedBy
+        | Operator::IsContainedByCaseInsensitive
+        | Operator::IsNotContainedByCaseInsensitive => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let contained = scalar_matches_comparator(
+                    &left,
+                    comparator,
+                    frame,
+                    row,
+                    is_case_insensitive_operator(operator),
+                )?;
+                Ok(matches!(
+                    operator,
+                    Operator::IsContainedBy | Operator::IsContainedByCaseInsensitive
+                ) == contained)
             })
         }
         Operator::LessThan
@@ -422,7 +470,10 @@ fn required_comparator<'a>(
 ) -> Result<&'a ValueExpr> {
     if matches!(comparator, ValueExpr::Null) {
         match operator {
-            Operator::EqualTo | Operator::NotEqualTo => Ok(comparator),
+            Operator::EqualTo
+            | Operator::NotEqualTo
+            | Operator::EqualToCaseInsensitive
+            | Operator::NotEqualToCaseInsensitive => Ok(comparator),
             _ => Err(EngineError::MissingComparator {
                 operator: operator.as_name().to_owned(),
             }),
@@ -442,6 +493,25 @@ fn string_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<Stri
             operator: operator.as_name().to_owned(),
             comparator: comparator.clone(),
         }),
+    }
+}
+
+fn scalar_matches_comparator(
+    left: &ScalarValue,
+    comparator: &ValueExpr,
+    frame: &DataFrame,
+    row: usize,
+    case_insensitive: bool,
+) -> Result<bool> {
+    match comparator {
+        ValueExpr::List(values) => Ok(values
+            .iter()
+            .map(json_value_to_scalar)
+            .any(|right| scalar_equal_with_mode(left, &right, case_insensitive))),
+        _ => {
+            let right = resolve_scalar_comparator(comparator, frame, row)?;
+            Ok(scalar_equal_with_mode(left, &right, case_insensitive))
+        }
     }
 }
 
@@ -553,16 +623,31 @@ impl std::fmt::Display for ScalarValue {
     }
 }
 
-fn scalar_equal(left: &ScalarValue, right: &ScalarValue) -> bool {
+fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensitive: bool) -> bool {
     match (left, right) {
         (ScalarValue::Null, ScalarValue::Null) => true,
         (ScalarValue::Null, _) | (_, ScalarValue::Null) => false,
         (ScalarValue::Bool(left), ScalarValue::Bool(right)) => left == right,
+        (ScalarValue::String(left), ScalarValue::String(right)) if case_insensitive => {
+            left.eq_ignore_ascii_case(right)
+        }
         _ => match (left.as_number(), right.as_number()) {
             (Some(left), Some(right)) => left == right,
             _ => left.as_string() == right.as_string(),
         },
     }
+}
+
+fn is_case_insensitive_operator(operator: &Operator) -> bool {
+    matches!(
+        operator,
+        Operator::EqualToCaseInsensitive
+            | Operator::NotEqualToCaseInsensitive
+            | Operator::ContainsCaseInsensitive
+            | Operator::DoesNotContainCaseInsensitive
+            | Operator::IsContainedByCaseInsensitive
+            | Operator::IsNotContainedByCaseInsensitive
+    )
 }
 
 fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> {
@@ -747,6 +832,60 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_case_insensitive_equality_and_list_comparators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::EqualToCaseInsensitive,
+                    literal("headache")
+                ),
+                &dataset
+            )
+            .expect("case-insensitive equal"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::NotEqualToCaseInsensitive,
+                    literal("HEADACHE")
+                ),
+                &dataset
+            )
+            .expect("case-insensitive not equal"),
+            vec![false, true, true, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "DOMAIN",
+                    Operator::EqualTo,
+                    ValueExpr::List(vec![json!("AE"), json!("VS")])
+                ),
+                &dataset
+            )
+            .expect("equal list comparator"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::EqualToCaseInsensitive,
+                    ValueExpr::List(vec![json!("HEADACHE"), json!("DIZZINESS")])
+                ),
+                &dataset
+            )
+            .expect("case-insensitive equal list comparator"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
     fn evaluates_contains_and_regex() {
         let dataset = test_dataset();
 
@@ -768,6 +907,26 @@ mod tests {
         );
         assert_eq!(
             evaluate_condition(
+                &condition("TERM", Operator::ContainsCaseInsensitive, literal("ACHE")),
+                &dataset
+            )
+            .expect("case-insensitive contains"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::DoesNotContainCaseInsensitive,
+                    literal("ACHE")
+                ),
+                &dataset
+            )
+            .expect("case-insensitive does not contain"),
+            vec![false, true, true, true]
+        );
+        assert_eq!(
+            evaluate_condition(
                 &condition("TERM", Operator::MatchesRegex, literal("^[A-Z][a-z]+$")),
                 &dataset
             )
@@ -785,6 +944,60 @@ mod tests {
             )
             .expect("does not match regex"),
             vec![false, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_contained_by_operators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "DOMAIN",
+                    Operator::IsContainedBy,
+                    ValueExpr::List(vec![json!("AE"), json!("CM")])
+                ),
+                &dataset
+            )
+            .expect("is contained by"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "DOMAIN",
+                    Operator::IsNotContainedBy,
+                    ValueExpr::List(vec![json!("AE"), json!("CM")])
+                ),
+                &dataset
+            )
+            .expect("is not contained by"),
+            vec![false, false, true, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::IsContainedByCaseInsensitive,
+                    ValueExpr::List(vec![json!("HEADACHE"), json!("NAUSEA")])
+                ),
+                &dataset
+            )
+            .expect("case-insensitive is contained by"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::IsNotContainedByCaseInsensitive,
+                    ValueExpr::List(vec![json!("HEADACHE"), json!("NAUSEA")])
+                ),
+                &dataset
+            )
+            .expect("case-insensitive is not contained by"),
+            vec![false, false, true, true]
         );
     }
 

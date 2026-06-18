@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-MISSING",
+      "execution_status": "skipped",
+      "skipped_reason": "rule_not_found",
+      "dataset": "",
+      "domain": null,
+      "message": "Requested rule CORE-MISSING was not found",
+      "error_count": 0,
+      "errors": []
+    }
+  ]
+}

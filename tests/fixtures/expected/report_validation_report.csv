@@ -1,0 +1,2 @@
+rule_id,execution_status,skipped_reason,dataset,domain,row,variables,message,error_count,usubjid,seq
+CORE-TEST-0003,failed,,AE,AE,2,DOMAIN,DOMAIN must be AE,1,SUBJ2,2

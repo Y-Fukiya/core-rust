@@ -3,13 +3,14 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use core_data::{load_datasets_from_paths, DataError};
+use core_data::{left_join_dataset, load_datasets_from_paths, DataError, LoadedDataset};
 use core_engine::{validate_rule, EngineError, RuleValidationResult, SkippedReason};
 use core_report::{write_reports, ReportError, WrittenReports};
 use core_rule_model::{
-    load_rules_from_paths, ConditionGroup, ExecutableRule, Operator, RuleModelError, RuleType,
-    Sensitivity,
+    load_rules_from_paths, ConditionGroup, ExecutableRule, OperationSpec, Operator, RuleModelError,
+    RuleType, Sensitivity,
 };
+use serde_json::Value;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
@@ -75,7 +76,15 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             continue;
         }
 
-        for dataset in &datasets {
+        let execution_datasets = match execution_datasets_for_rule(rule, &datasets) {
+            Ok(datasets) => datasets,
+            Err(skipped) => {
+                results.push(skipped);
+                continue;
+            }
+        };
+
+        for dataset in &execution_datasets {
             results.push(validate_rule(rule, dataset)?);
         }
     }
@@ -131,15 +140,7 @@ pub fn select_rules(
 }
 
 fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResult> {
-    if matches!(rule.rule_type, RuleType::Jsonata) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::JsonataNotSupported,
-            format!("Rule {} uses JSONata, which is not supported", rule.core_id),
-        ));
-    }
-
-    if !matches!(rule.rule_type, RuleType::RecordData) {
+    if !matches!(rule.rule_type, RuleType::RecordData | RuleType::Jsonata) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::UnsupportedRuleType,
@@ -162,7 +163,7 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if !rule.operations.is_empty() {
+    if !rule.operations.is_empty() && supported_join_operation(rule).is_none() {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::OperationsNotSupported,
@@ -177,6 +178,7 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         .datasets
         .as_ref()
         .is_some_and(|datasets| !datasets.is_empty())
+        && supported_join_operation(rule).is_none()
     {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -201,6 +203,142 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
     })
 }
 
+fn execution_datasets_for_rule(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let Some(operation) = supported_join_operation(rule) else {
+        return Ok(datasets.to_vec());
+    };
+
+    let Some(keys) = string_array_field(operation, &["by", "keys", "on"]) else {
+        return Err(join_skipped_result(rule, "join operation is missing keys"));
+    };
+    let Some(left_name) = string_field(operation, &["left", "primary", "dataset"]) else {
+        return Err(join_skipped_result(
+            rule,
+            "join operation is missing left dataset",
+        ));
+    };
+    let Some(right_name) = string_field(operation, &["right", "with", "secondary"]) else {
+        return Err(join_skipped_result(
+            rule,
+            "join operation is missing right dataset",
+        ));
+    };
+
+    let Some(left) = find_dataset(datasets, &left_name) else {
+        return Err(join_skipped_result(
+            rule,
+            format!("left dataset {left_name} was not loaded"),
+        ));
+    };
+    let Some(right) = find_dataset(datasets, &right_name) else {
+        return Err(join_skipped_result(
+            rule,
+            format!("right dataset {right_name} was not loaded"),
+        ));
+    };
+
+    let prefix =
+        string_field(operation, &["prefix"]).unwrap_or_else(|| format!("{}.", right.metadata.name));
+    left_join_dataset(left, right, &keys, &prefix)
+        .map(|dataset| vec![dataset])
+        .map_err(|source| join_skipped_result(rule, source.to_string()))
+}
+
+fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> RuleValidationResult {
+    RuleValidationResult::skipped_rule(
+        rule.core_id.clone(),
+        SkippedReason::DatasetJoinNotSupported,
+        format!(
+            "Rule {} cannot run dataset join: {}",
+            rule.core_id,
+            message.into()
+        ),
+    )
+}
+
+fn supported_join_operation(rule: &ExecutableRule) -> Option<&OperationSpec> {
+    rule.operations.iter().find(|operation| {
+        matches!(
+            operation_name(operation).as_deref(),
+            Some("join" | "left_join" | "dataset_join")
+        )
+    })
+}
+
+fn operation_name(operation: &OperationSpec) -> Option<String> {
+    string_field(operation, &["name", "type", "operation"]).map(|value| {
+        value
+            .trim()
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+            .split('_')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("_")
+    })
+}
+
+fn string_field(operation: &OperationSpec, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| {
+            operation
+                .fields
+                .get(*key)
+                .or_else(|| field_case_insensitive(operation, key))
+        })
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn string_array_field(operation: &OperationSpec, keys: &[&str]) -> Option<Vec<String>> {
+    keys.iter()
+        .find_map(|key| {
+            operation
+                .fields
+                .get(*key)
+                .or_else(|| field_case_insensitive(operation, key))
+        })
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|values| !values.is_empty())
+}
+
+fn field_case_insensitive<'a>(operation: &'a OperationSpec, key: &str) -> Option<&'a Value> {
+    operation
+        .fields
+        .iter()
+        .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+        .map(|(_key, value)| value)
+}
+
+fn find_dataset<'a>(datasets: &'a [LoadedDataset], name: &str) -> Option<&'a LoadedDataset> {
+    datasets.iter().find(|dataset| {
+        dataset.metadata.name.eq_ignore_ascii_case(name)
+            || dataset
+                .metadata
+                .domain
+                .as_deref()
+                .is_some_and(|domain| domain.eq_ignore_ascii_case(name))
+            || dataset.metadata.filename.eq_ignore_ascii_case(name)
+    })
+}
+
 fn unsupported_operator(group: &ConditionGroup) -> Option<&Operator> {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
@@ -220,8 +358,16 @@ fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::NotExists
             | Operator::EqualTo
             | Operator::NotEqualTo
+            | Operator::EqualToCaseInsensitive
+            | Operator::NotEqualToCaseInsensitive
             | Operator::Contains
             | Operator::DoesNotContain
+            | Operator::ContainsCaseInsensitive
+            | Operator::DoesNotContainCaseInsensitive
+            | Operator::IsContainedBy
+            | Operator::IsNotContainedBy
+            | Operator::IsContainedByCaseInsensitive
+            | Operator::IsNotContainedByCaseInsensitive
             | Operator::LessThan
             | Operator::LessThanOrEqualTo
             | Operator::GreaterThan
@@ -422,16 +568,9 @@ mod tests {
 
         write_raw_rule(
             &rules_dir,
-            "CORE-JSONATA",
-            r#""Rule Type": "JSONATA""#,
-            "",
-            r#""operator": "equal_to""#,
-        );
-        write_raw_rule(
-            &rules_dir,
             "CORE-OPERATIONS",
             r#""Rule Type": "Record Data""#,
-            r#""Operations": [{ "name": "join" }],"#,
+            r#""Operations": [{ "name": "aggregate" }],"#,
             r#""operator": "equal_to""#,
         );
         write_raw_rule(
@@ -446,7 +585,7 @@ mod tests {
             "CORE-OPERATOR",
             r#""Rule Type": "Record Data""#,
             "",
-            r#""operator": "equal_to_case_insensitive""#,
+            r#""operator": "future_operator""#,
         );
 
         let outcome = run_validation(ValidateRequest {
@@ -458,7 +597,7 @@ mod tests {
         })
         .expect("run validation");
 
-        assert_eq!(outcome.results.len(), 4);
+        assert_eq!(outcome.results.len(), 3);
         let reasons = outcome
             .results
             .iter()
@@ -471,7 +610,6 @@ mod tests {
             reasons,
             BTreeSet::from([
                 "dataset_join_not_supported".to_owned(),
-                "jsonata_not_supported".to_owned(),
                 "operations_not_supported".to_owned(),
                 "unsupported_operator".to_owned(),
             ])
@@ -480,6 +618,118 @@ mod tests {
             .results
             .iter()
             .all(|result| result.execution_status == ExecutionStatus::Skipped));
+    }
+
+    #[test]
+    fn run_validation_executes_jsonata_rules_when_conditions_are_normalized() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        write_raw_rule(
+            &rules_dir,
+            "CORE-JSONATA",
+            r#""Rule Type": "JSONATA""#,
+            "",
+            r#""operator": "not_equal_to""#,
+        );
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: Vec::new(),
+            exclude_rules: Vec::new(),
+            output_dir: None,
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].rule_id, "CORE-JSONATA");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_executes_supported_dataset_join_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-JOIN-SUPP.json"),
+            r#"{
+  "Core": { "Id": "CORE-JOIN-SUPP", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [{ "domain": "AE" }, { "domain": "SUPPAE" }],
+  "Operations": [
+    {
+      "name": "left_join",
+      "left": "AE",
+      "right": "SUPPAE",
+      "by": ["USUBJID"],
+      "prefix": "SUPP."
+    }
+  ],
+  "Check": {
+    "name": "SUPP.QVAL",
+    "operator": "equal_to",
+    "value": "BAD"
+  },
+  "Outcome": { "Message": "SUPPAE QVAL must not be BAD" }
+}"#,
+        )
+        .expect("write join rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "USUBJID": ["S2"],
+        "QNAM": ["AESPID"],
+        "QVAL": ["BAD"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write join data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: Vec::new(),
+            exclude_rules: Vec::new(),
+            output_dir: None,
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
     }
 
     fn write_raw_rule(

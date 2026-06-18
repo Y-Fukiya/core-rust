@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-TEST-0004",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "Dataset must not contain AESEQ greater than 2",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-TEST-0004",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": null,
+          "variables": [
+            "AESEQ"
+          ],
+          "message": "Dataset must not contain AESEQ greater than 2"
+        }
+      ]
+    }
+  ]
+}
