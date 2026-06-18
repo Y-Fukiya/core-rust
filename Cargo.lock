@@ -3965,6 +3965,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "core-api",
+ "core-report",
  "csv",
  "pretty_assertions",
  "serde",
