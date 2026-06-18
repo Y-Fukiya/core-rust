@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use regex::Regex;
+use roxmltree::{Document, Node};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -27,8 +27,8 @@ pub enum CdiscLibraryError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("invalid regular expression: {0}")]
-    Regex(#[from] regex::Error),
+    #[error("failed to parse Define-XML: {0}")]
+    Xml(#[from] roxmltree::Error),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -186,232 +186,112 @@ pub fn load_define_xml_file(path: impl AsRef<Path>) -> Result<DefineXmlMetadata>
 }
 
 pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
-    let item_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?ItemDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ItemDef>"#,
-    )?;
-    let self_closing_item_def = Regex::new(r#"<(?:[\w.-]+:)?ItemDef\b(?P<attrs>[^>]*)/>"#)?;
-    let item_group_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?ItemGroupDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ItemGroupDef>"#,
-    )?;
-    let value_list_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?ValueListDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ValueListDef>"#,
-    )?;
-    let where_clause_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?WhereClauseDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?WhereClauseDef>"#,
-    )?;
-    let range_check = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?RangeCheck\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?RangeCheck>"#,
-    )?;
-    let check_value = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?CheckValue\b[^>]*>(?P<value>.*?)</(?:[\w.-]+:)?CheckValue>"#,
-    )?;
-    let method_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?MethodDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?MethodDef>"#,
-    )?;
-    let formal_expression = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?FormalExpression\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?FormalExpression>"#,
-    )?;
-    let comment_def = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?CommentDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?CommentDef>"#,
-    )?;
-    let document_ref = Regex::new(r#"<(?:[\w.-]+:)?DocumentRef\b(?P<attrs>[^>]*)/?>"#)?;
-    let leaf = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?leaf\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?leaf>"#,
-    )?;
-    let title = Regex::new(r#"(?s)<(?:[\w.-]+:)?title\b[^>]*>(?P<body>.*?)</(?:[\w.-]+:)?title>"#)?;
-    let translated_text = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?TranslatedText\b[^>]*>(?P<body>.*?)</(?:[\w.-]+:)?TranslatedText>"#,
-    )?;
-    let item_ref = Regex::new(r#"<(?:[\w.-]+:)?ItemRef\b(?P<attrs>[^>]*)/?>"#)?;
-    let codelist_ref = Regex::new(r#"<(?:[\w.-]+:)?CodeListRef\b(?P<attrs>[^>]*)/?>"#)?;
-    let codelist = Regex::new(
-        r#"(?s)<(?:[\w.-]+:)?CodeList\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?CodeList>"#,
-    )?;
-    let codelist_item =
-        Regex::new(r#"<(?:[\w.-]+:)?(?:CodeListItem|EnumeratedItem)\b(?P<attrs>[^>]*)/?>"#)?;
+    let document = Document::parse(source)?;
 
-    let mut variables = item_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            define_variable_from_item(attrs, body, &codelist_ref)
-        })
+    let variables = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "ItemDef"))
+        .map(define_variable_from_item)
         .filter(|variable| !variable.name.is_empty())
         .collect::<Vec<_>>();
-    variables.extend(
-        self_closing_item_def
-            .captures_iter(source)
-            .map(|capture| {
-                let attrs = capture
-                    .name("attrs")
-                    .map(|value| value.as_str())
-                    .unwrap_or("");
-                define_variable_from_item(attrs, "", &codelist_ref)
-            })
-            .filter(|variable| !variable.name.is_empty()),
-    );
 
     let mut codelist_aliases = BTreeMap::new();
-    let codelists = codelist
-        .captures_iter(source)
-        .flat_map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let codelist_id = xml_attr(attrs, "OID")
-                .or_else(|| xml_attr(attrs, "Name"))
-                .unwrap_or_default();
-            for alias in codelist_aliases_from_attrs(attrs, &codelist_id) {
-                codelist_aliases
-                    .entry(codelist_id.clone())
-                    .or_insert_with(BTreeSet::new)
-                    .insert(alias);
-            }
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            codelist_item.captures_iter(body).filter_map(move |item| {
-                let item_attrs = item.name("attrs")?.as_str();
-                Some(ControlledTerm {
-                    codelist: codelist_id.clone(),
-                    value: xml_attr(item_attrs, "CodedValue")
-                        .or_else(|| xml_attr(item_attrs, "SubmissionValue"))?,
+    let mut codelists = Vec::new();
+    for codelist in document
+        .descendants()
+        .filter(|node| has_local_name(*node, "CodeList"))
+    {
+        let codelist_id = attr(codelist, "OID")
+            .or_else(|| attr(codelist, "Name"))
+            .unwrap_or_default();
+        for alias in codelist_aliases_from_node(codelist, &codelist_id) {
+            codelist_aliases
+                .entry(codelist_id.clone())
+                .or_insert_with(BTreeSet::new)
+                .insert(alias);
+        }
+
+        codelists.extend(
+            codelist
+                .descendants()
+                .filter(|node| {
+                    has_local_name(*node, "CodeListItem") || has_local_name(*node, "EnumeratedItem")
                 })
-            })
+                .filter_map(|item| {
+                    Some(ControlledTerm {
+                        codelist: codelist_id.clone(),
+                        value: attr(item, "CodedValue")
+                            .or_else(|| attr(item, "SubmissionValue"))?,
+                    })
+                }),
+        );
+    }
+
+    let datasets = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "ItemGroupDef"))
+        .map(|node| DefineDataset {
+            oid: attr(node, "OID"),
+            name: attr(node, "Name"),
+            domain: attr(node, "Domain"),
+            purpose: attr(node, "Purpose"),
+            repeating: attr(node, "Repeating"),
+            comment_oid: attr(node, "CommentOID"),
+            leaf_id: attr(node, "leafID"),
+            item_refs: parse_item_refs(node),
         })
         .collect();
 
-    let datasets = item_group_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineDataset {
-                oid: xml_attr(attrs, "OID"),
-                name: xml_attr(attrs, "Name"),
-                domain: xml_attr(attrs, "Domain"),
-                purpose: xml_attr(attrs, "Purpose"),
-                repeating: xml_attr(attrs, "Repeating"),
-                comment_oid: xml_attr(attrs, "CommentOID"),
-                leaf_id: xml_attr(attrs, "leafID"),
-                item_refs: parse_item_refs(body, &item_ref),
-            }
+    let value_lists = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "ValueListDef"))
+        .map(|node| DefineValueList {
+            oid: attr(node, "OID"),
+            item_refs: parse_item_refs(node),
         })
         .collect();
 
-    let value_lists = value_list_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineValueList {
-                oid: xml_attr(attrs, "OID"),
-                item_refs: parse_item_refs(body, &item_ref),
-            }
+    let where_clauses = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "WhereClauseDef"))
+        .map(|node| DefineWhereClause {
+            oid: attr(node, "OID"),
+            range_checks: parse_range_checks(node),
         })
         .collect();
 
-    let where_clauses = where_clause_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineWhereClause {
-                oid: xml_attr(attrs, "OID"),
-                range_checks: parse_range_checks(body, &range_check, &check_value),
-            }
+    let methods = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "MethodDef"))
+        .map(|node| DefineMethod {
+            oid: attr(node, "OID"),
+            name: attr(node, "Name"),
+            method_type: attr(node, "Type"),
+            formal_expressions: parse_formal_expressions(node),
         })
         .collect();
 
-    let methods = method_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineMethod {
-                oid: xml_attr(attrs, "OID"),
-                name: xml_attr(attrs, "Name"),
-                method_type: xml_attr(attrs, "Type"),
-                formal_expressions: parse_formal_expressions(body, &formal_expression),
-            }
+    let comments = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "CommentDef"))
+        .map(|node| DefineComment {
+            oid: attr(node, "OID"),
+            text: first_descendant_text(node, "TranslatedText"),
+            document_refs: node
+                .descendants()
+                .filter(|child| has_local_name(*child, "DocumentRef"))
+                .filter_map(|document_ref| attr(document_ref, "leafID"))
+                .collect(),
         })
         .collect();
 
-    let comments = comment_def
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineComment {
-                oid: xml_attr(attrs, "OID"),
-                text: first_translated_text(body, &translated_text),
-                document_refs: document_ref
-                    .captures_iter(body)
-                    .filter_map(|capture| capture.name("attrs"))
-                    .filter_map(|attrs| xml_attr(attrs.as_str(), "leafID"))
-                    .collect(),
-            }
-        })
-        .collect();
-
-    let documents = leaf
-        .captures_iter(source)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineDocument {
-                id: xml_attr(attrs, "ID"),
-                href: xml_attr(attrs, "href"),
-                title: title
-                    .captures(body)
-                    .and_then(|capture| capture.name("body"))
-                    .map(|value| xml_text(value.as_str())),
-            }
+    let documents = document
+        .descendants()
+        .filter(|node| has_local_name(*node, "leaf"))
+        .map(|node| DefineDocument {
+            id: attr(node, "ID"),
+            href: attr(node, "href"),
+            title: first_descendant_text(node, "title"),
         })
         .collect();
 
@@ -428,102 +308,76 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
     })
 }
 
-fn define_variable_from_item(attrs: &str, body: &str, codelist_ref: &Regex) -> DefineVariable {
-    let codelist_oid = xml_attr(attrs, "CodeListOID").or_else(|| {
-        codelist_ref
-            .captures(body)
-            .and_then(|capture| capture.name("attrs"))
-            .and_then(|attrs| xml_attr(attrs.as_str(), "CodeListOID"))
+fn define_variable_from_item(node: Node<'_, '_>) -> DefineVariable {
+    let codelist_oid = attr(node, "CodeListOID").or_else(|| {
+        node.descendants()
+            .find(|child| has_local_name(*child, "CodeListRef"))
+            .and_then(|child| attr(child, "CodeListOID"))
     });
 
     DefineVariable {
-        oid: xml_attr(attrs, "OID"),
-        name: xml_attr(attrs, "Name").unwrap_or_default(),
-        data_type: xml_attr(attrs, "DataType"),
-        length: xml_attr(attrs, "Length"),
+        oid: attr(node, "OID"),
+        name: attr(node, "Name").unwrap_or_default(),
+        data_type: attr(node, "DataType"),
+        length: attr(node, "Length"),
         codelist_oid,
     }
 }
 
-fn parse_item_refs(body: &str, item_ref: &Regex) -> Vec<DefineItemRef> {
-    item_ref
-        .captures_iter(body)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineItemRef {
-                item_oid: xml_attr(attrs, "ItemOID"),
-                order_number: xml_attr(attrs, "OrderNumber"),
-                mandatory: xml_attr(attrs, "Mandatory"),
-                method_oid: xml_attr(attrs, "MethodOID"),
-                where_clause_oid: xml_attr(attrs, "WhereClauseOID"),
-                value_list_oid: xml_attr(attrs, "ValueListOID"),
-            }
+fn parse_item_refs(node: Node<'_, '_>) -> Vec<DefineItemRef> {
+    node.descendants()
+        .filter(|child| has_local_name(*child, "ItemRef"))
+        .map(|child| DefineItemRef {
+            item_oid: attr(child, "ItemOID"),
+            order_number: attr(child, "OrderNumber"),
+            mandatory: attr(child, "Mandatory"),
+            method_oid: attr(child, "MethodOID"),
+            where_clause_oid: attr(child, "WhereClauseOID"),
+            value_list_oid: attr(child, "ValueListOID"),
         })
         .collect()
 }
 
-fn parse_range_checks(
-    body: &str,
-    range_check: &Regex,
-    check_value: &Regex,
-) -> Vec<DefineRangeCheck> {
-    range_check
-        .captures_iter(body)
-        .map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let body = capture
-                .name("body")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            DefineRangeCheck {
-                item_oid: xml_attr(attrs, "def:ItemOID").or_else(|| xml_attr(attrs, "ItemOID")),
-                comparator: xml_attr(attrs, "Comparator"),
-                soft_hard: xml_attr(attrs, "SoftHard"),
-                check_values: check_value
-                    .captures_iter(body)
-                    .filter_map(|capture| capture.name("value"))
-                    .map(|value| value.as_str().trim().to_owned())
-                    .filter(|value| !value.is_empty())
-                    .collect(),
-            }
+fn parse_range_checks(node: Node<'_, '_>) -> Vec<DefineRangeCheck> {
+    node.descendants()
+        .filter(|child| has_local_name(*child, "RangeCheck"))
+        .map(|child| DefineRangeCheck {
+            item_oid: attr(child, "ItemOID"),
+            comparator: attr(child, "Comparator"),
+            soft_hard: attr(child, "SoftHard"),
+            check_values: child
+                .descendants()
+                .filter(|value| has_local_name(*value, "CheckValue"))
+                .map(text_content)
+                .filter(|value| !value.is_empty())
+                .collect(),
         })
         .collect()
 }
 
-fn parse_formal_expressions(body: &str, formal_expression: &Regex) -> Vec<DefineFormalExpression> {
-    formal_expression
-        .captures_iter(body)
-        .filter_map(|capture| {
-            let attrs = capture
-                .name("attrs")
-                .map(|value| value.as_str())
-                .unwrap_or("");
-            let expression = xml_text(capture.name("body")?.as_str().trim());
+fn parse_formal_expressions(node: Node<'_, '_>) -> Vec<DefineFormalExpression> {
+    node.descendants()
+        .filter(|child| has_local_name(*child, "FormalExpression"))
+        .filter_map(|child| {
+            let expression = text_content(child);
             (!expression.is_empty()).then_some(DefineFormalExpression {
-                context: xml_attr(attrs, "Context"),
+                context: attr(child, "Context"),
                 expression,
             })
         })
         .collect()
 }
 
-fn codelist_aliases_from_attrs(attrs: &str, canonical: &str) -> BTreeSet<String> {
+fn codelist_aliases_from_node(node: Node<'_, '_>, canonical: &str) -> BTreeSet<String> {
     let mut aliases = BTreeSet::new();
     for key in [
         "OID",
         "Name",
         "SASFormatName",
-        "def:SASFormatName",
         "SubmissionValue",
         "NCIExtCodeID",
     ] {
-        if let Some(value) = xml_attr(attrs, key) {
+        if let Some(value) = attr(node, key) {
             aliases.insert(value);
         }
     }
@@ -535,12 +389,30 @@ fn codelist_aliases_from_attrs(attrs: &str, canonical: &str) -> BTreeSet<String>
     aliases
 }
 
-fn first_translated_text(source: &str, translated_text: &Regex) -> Option<String> {
-    translated_text
-        .captures(source)
-        .and_then(|capture| capture.name("body"))
-        .map(|value| xml_text(value.as_str()))
+fn first_descendant_text(node: Node<'_, '_>, name: &str) -> Option<String> {
+    node.descendants()
+        .find(|child| has_local_name(*child, name))
+        .map(text_content)
         .filter(|value| !value.is_empty())
+}
+
+fn has_local_name(node: Node<'_, '_>, name: &str) -> bool {
+    node.is_element() && node.tag_name().name() == name
+}
+
+fn attr(node: Node<'_, '_>, name: &str) -> Option<String> {
+    node.attributes()
+        .find(|attribute| attribute.name() == name)
+        .map(|attribute| attribute.value().to_owned())
+}
+
+fn text_content(node: Node<'_, '_>) -> String {
+    node.descendants()
+        .filter(|child| child.is_text())
+        .filter_map(|child| child.text())
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 pub fn load_ct_json_file(path: impl AsRef<Path>) -> Result<ControlledTerminology> {
@@ -902,29 +774,6 @@ fn string_fields(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Vec<
         .collect()
 }
 
-fn xml_attr(attrs: &str, name: &str) -> Option<String> {
-    let escaped = regex::escape(name);
-    let name_pattern = if name.contains(':') {
-        escaped
-    } else {
-        format!(r#"(?:[\w.-]+:)?{escaped}"#)
-    };
-    let pattern = Regex::new(&format!(r#"{name_pattern}\s*=\s*["']([^"']*)["']"#)).ok()?;
-    pattern
-        .captures(attrs)
-        .and_then(|capture| capture.get(1))
-        .map(|value| xml_text(value.as_str()))
-}
-
-fn xml_text(value: &str) -> String {
-    value
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
-}
-
 fn extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -1092,6 +941,35 @@ mod tests {
         assert_eq!(
             metadata.documents[0].title.as_deref(),
             Some("Annotated Define")
+        );
+    }
+
+    #[test]
+    fn parse_define_xml_decodes_cdata_and_attribute_entities() {
+        let define = r#"
+<ODM xmlns:def="http://www.cdisc.org/ns/def/v2.1">
+  <MethodDef OID="MT.COMPARE" Name="Derive A &gt; B" Type="Computation">
+    <FormalExpression Context="Python"><![CDATA[AVAL = 1 if A > B and C < D else 0]]></FormalExpression>
+  </MethodDef>
+  <CommentDef OID="COM.COMPARE">
+    <Description>
+      <TranslatedText><![CDATA[Use derivation when A > B & C < D.]]></TranslatedText>
+    </Description>
+  </CommentDef>
+</ODM>
+"#;
+
+        let metadata = parse_define_xml(define).expect("parse define");
+
+        assert_eq!(metadata.methods.len(), 1);
+        assert_eq!(metadata.methods[0].name.as_deref(), Some("Derive A > B"));
+        assert_eq!(
+            metadata.methods[0].formal_expressions[0].expression,
+            "AVAL = 1 if A > B and C < D else 0"
+        );
+        assert_eq!(
+            metadata.comments[0].text.as_deref(),
+            Some("Use derivation when A > B & C < D.")
         );
     }
 
