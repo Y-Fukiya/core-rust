@@ -256,12 +256,13 @@ impl CdiscContext {
         let mut terminology = ControlledTerminology::default();
 
         for define in &define_xml {
+            for (canonical, aliases) in &define.codelist_aliases {
+                for alias in aliases {
+                    terminology.insert_alias(canonical, alias);
+                }
+            }
             for term in &define.codelists {
-                terminology
-                    .codelists
-                    .entry(term.codelist.clone())
-                    .or_default()
-                    .insert(term.value.clone());
+                terminology.insert_term(&term.codelist, term.value.clone());
             }
         }
 
@@ -278,8 +279,13 @@ impl CdiscContext {
 }
 
 fn merge_terminology(target: &mut ControlledTerminology, source: ControlledTerminology) {
+    for (alias, canonical) in source.aliases {
+        target.insert_alias(canonical, alias);
+    }
     for (codelist, values) in source.codelists {
-        target.codelists.entry(codelist).or_default().extend(values);
+        for value in values {
+            target.insert_term(&codelist, value);
+        }
     }
 }
 
@@ -345,7 +351,7 @@ fn apply_cdisc_context_to_condition(condition: &mut Condition, context: &CdiscCo
         return;
     };
 
-    let Some(values) = context.terminology.codelists.get(&codelist) else {
+    let Some(values) = context.terminology.values(&codelist) else {
         return;
     };
 
@@ -361,18 +367,38 @@ fn apply_cdisc_context_to_condition(condition: &mut Condition, context: &CdiscCo
 fn condition_codelist(condition: &Condition) -> Option<String> {
     option_string_field(
         &condition.options.extra,
-        &["codelist", "ct_codelist", "define_codelist", "CodeListOID"],
+        &[
+            "codelist",
+            "codelist_oid",
+            "ct_codelist",
+            "define_codelist",
+            "CodeListOID",
+            "CodeList",
+        ],
     )
 }
 
 fn define_codelist_for_condition(condition: &Condition, context: &CdiscContext) -> Option<String> {
     let target = condition.target.as_deref()?;
+    let target_candidates = target_name_candidates(target);
     context
         .define_xml
         .iter()
         .flat_map(|define| &define.variables)
-        .find(|variable| variable.name.eq_ignore_ascii_case(target))
+        .find(|variable| {
+            target_candidates
+                .iter()
+                .any(|target| variable.name.eq_ignore_ascii_case(target))
+        })
         .and_then(|variable| variable.codelist_oid.clone())
+}
+
+fn target_name_candidates(target: &str) -> Vec<&str> {
+    let mut candidates = vec![target];
+    if let Some((_prefix, unqualified)) = target.rsplit_once('.') {
+        candidates.push(unqualified);
+    }
+    candidates
 }
 
 fn option_string_field(map: &BTreeMap<String, Value>, keys: &[&str]) -> Option<String> {
@@ -1438,6 +1464,96 @@ mod tests {
         .expect("write define xml");
         let ct_path = dir.path().join("ct.json");
         fs::write(&ct_path, r#"{ "CL.DOMAIN": ["CM"] }"#).expect("write ct");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            define_xml_paths: vec![define_xml_path],
+            ct_paths: vec![ct_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(3));
+    }
+
+    #[test]
+    fn run_validation_resolves_define_and_ct_codelist_aliases() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-CT-ALIAS.json"),
+            r#"{
+  "Core": { "Id": "CORE-CT-ALIAS", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AE.DOMAIN",
+    "operator": "is_not_contained_by"
+  },
+  "Outcome": { "Message": "DOMAIN must use Define-XML and CT terminology" }
+}"#,
+        )
+        .expect("write codelist rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "AE.DOMAIN": ["AE", "CM", "XX"],
+        "AESEQ": [1, 2, 3]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write codelist data");
+
+        let define_xml_path = dir.path().join("define.xml");
+        fs::write(
+            &define_xml_path,
+            r#"
+<odm:ODM xmlns:odm="http://www.cdisc.org/ns/odm/v1.3">
+  <odm:ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text">
+    <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+  </odm:ItemDef>
+  <odm:CodeList OID="CL.DOMAIN" Name="Domain Abbreviation" SASFormatName="DOMAIN">
+    <odm:CodeListItem CodedValue="AE"/>
+  </odm:CodeList>
+</odm:ODM>
+"#,
+        )
+        .expect("write define xml");
+        let ct_path = dir.path().join("ct.json");
+        fs::write(
+            &ct_path,
+            r#"{
+  "codelists": [
+    {
+      "submissionValue": "DOMAIN",
+      "conceptId": "C66734",
+      "terms": [
+        { "submissionValue": "CM" }
+      ]
+    }
+  ]
+}"#,
+        )
+        .expect("write ct");
 
         let outcome = run_validation(ValidateRequest {
             rule_paths: vec![rules_dir],

@@ -33,10 +33,13 @@ pub enum CdiscLibraryError {
 pub struct DefineXmlMetadata {
     pub variables: Vec<DefineVariable>,
     pub codelists: Vec<ControlledTerm>,
+    pub codelist_aliases: BTreeMap<String, BTreeSet<String>>,
     pub datasets: Vec<DefineDataset>,
     pub value_lists: Vec<DefineValueList>,
     pub where_clauses: Vec<DefineWhereClause>,
     pub methods: Vec<DefineMethod>,
+    pub comments: Vec<DefineComment>,
+    pub documents: Vec<DefineDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,6 +64,8 @@ pub struct DefineDataset {
     pub domain: Option<String>,
     pub purpose: Option<String>,
     pub repeating: Option<String>,
+    pub comment_oid: Option<String>,
+    pub leaf_id: Option<String>,
     pub item_refs: Vec<DefineItemRef>,
 }
 
@@ -108,16 +113,64 @@ pub struct DefineFormalExpression {
     pub expression: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefineComment {
+    pub oid: Option<String>,
+    pub text: Option<String>,
+    pub document_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefineDocument {
+    pub id: Option<String>,
+    pub href: Option<String>,
+    pub title: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ControlledTerminology {
     pub codelists: BTreeMap<String, BTreeSet<String>>,
+    pub aliases: BTreeMap<String, String>,
 }
 
 impl ControlledTerminology {
     pub fn contains(&self, codelist: &str, value: &str) -> bool {
-        self.codelists
-            .get(codelist)
+        self.values(codelist)
             .is_some_and(|values| values.contains(value))
+    }
+
+    pub fn values(&self, codelist: &str) -> Option<&BTreeSet<String>> {
+        self.codelists.get(codelist).or_else(|| {
+            self.aliases
+                .get(&lookup_key(codelist))
+                .and_then(|key| self.codelists.get(key))
+        })
+    }
+
+    pub fn insert_term(&mut self, codelist: impl AsRef<str>, value: impl Into<String>) {
+        let codelist = self.canonical_or_input(codelist.as_ref());
+        self.codelists
+            .entry(codelist)
+            .or_default()
+            .insert(value.into());
+    }
+
+    pub fn insert_alias(&mut self, canonical: impl AsRef<str>, alias: impl AsRef<str>) {
+        let canonical = canonical.as_ref().trim();
+        let alias = alias.as_ref().trim();
+        if canonical.is_empty() || alias.is_empty() {
+            return;
+        }
+        let canonical = self.canonical_or_input(canonical);
+        self.codelists.entry(canonical.clone()).or_default();
+        self.aliases.insert(lookup_key(alias), canonical);
+    }
+
+    fn canonical_or_input(&self, codelist: &str) -> String {
+        self.aliases
+            .get(&lookup_key(codelist))
+            .cloned()
+            .unwrap_or_else(|| codelist.to_owned())
     }
 }
 
@@ -131,24 +184,49 @@ pub fn load_define_xml_file(path: impl AsRef<Path>) -> Result<DefineXmlMetadata>
 }
 
 pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
-    let item_def = Regex::new(r#"(?s)<ItemDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</ItemDef>"#)?;
-    let self_closing_item_def = Regex::new(r#"<ItemDef\b(?P<attrs>[^>]*)/>"#)?;
-    let item_group_def =
-        Regex::new(r#"(?s)<ItemGroupDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</ItemGroupDef>"#)?;
-    let value_list_def =
-        Regex::new(r#"(?s)<ValueListDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</ValueListDef>"#)?;
-    let where_clause_def =
-        Regex::new(r#"(?s)<WhereClauseDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</WhereClauseDef>"#)?;
-    let range_check =
-        Regex::new(r#"(?s)<RangeCheck\b(?P<attrs>[^>]*)>(?P<body>.*?)</RangeCheck>"#)?;
-    let check_value = Regex::new(r#"(?s)<CheckValue\b[^>]*>(?P<value>.*?)</CheckValue>"#)?;
-    let method_def = Regex::new(r#"(?s)<MethodDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</MethodDef>"#)?;
-    let formal_expression =
-        Regex::new(r#"(?s)<FormalExpression\b(?P<attrs>[^>]*)>(?P<body>.*?)</FormalExpression>"#)?;
-    let item_ref = Regex::new(r#"<ItemRef\b(?P<attrs>[^>]*)/?>"#)?;
-    let codelist_ref = Regex::new(r#"<CodeListRef\b(?P<attrs>[^>]*)/?>"#)?;
-    let codelist = Regex::new(r#"(?s)<CodeList\b(?P<attrs>[^>]*)>(?P<body>.*?)</CodeList>"#)?;
-    let codelist_item = Regex::new(r#"<(?:CodeListItem|EnumeratedItem)\b(?P<attrs>[^>]*)/?>"#)?;
+    let item_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?ItemDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ItemDef>"#,
+    )?;
+    let self_closing_item_def = Regex::new(r#"<(?:[\w.-]+:)?ItemDef\b(?P<attrs>[^>]*)/>"#)?;
+    let item_group_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?ItemGroupDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ItemGroupDef>"#,
+    )?;
+    let value_list_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?ValueListDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?ValueListDef>"#,
+    )?;
+    let where_clause_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?WhereClauseDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?WhereClauseDef>"#,
+    )?;
+    let range_check = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?RangeCheck\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?RangeCheck>"#,
+    )?;
+    let check_value = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?CheckValue\b[^>]*>(?P<value>.*?)</(?:[\w.-]+:)?CheckValue>"#,
+    )?;
+    let method_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?MethodDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?MethodDef>"#,
+    )?;
+    let formal_expression = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?FormalExpression\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?FormalExpression>"#,
+    )?;
+    let comment_def = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?CommentDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?CommentDef>"#,
+    )?;
+    let document_ref = Regex::new(r#"<(?:[\w.-]+:)?DocumentRef\b(?P<attrs>[^>]*)/?>"#)?;
+    let leaf = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?leaf\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?leaf>"#,
+    )?;
+    let title = Regex::new(r#"(?s)<(?:[\w.-]+:)?title\b[^>]*>(?P<body>.*?)</(?:[\w.-]+:)?title>"#)?;
+    let translated_text = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?TranslatedText\b[^>]*>(?P<body>.*?)</(?:[\w.-]+:)?TranslatedText>"#,
+    )?;
+    let item_ref = Regex::new(r#"<(?:[\w.-]+:)?ItemRef\b(?P<attrs>[^>]*)/?>"#)?;
+    let codelist_ref = Regex::new(r#"<(?:[\w.-]+:)?CodeListRef\b(?P<attrs>[^>]*)/?>"#)?;
+    let codelist = Regex::new(
+        r#"(?s)<(?:[\w.-]+:)?CodeList\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?:[\w.-]+:)?CodeList>"#,
+    )?;
+    let codelist_item =
+        Regex::new(r#"<(?:[\w.-]+:)?(?:CodeListItem|EnumeratedItem)\b(?P<attrs>[^>]*)/?>"#)?;
 
     let mut variables = item_def
         .captures_iter(source)
@@ -178,6 +256,7 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
             .filter(|variable| !variable.name.is_empty()),
     );
 
+    let mut codelist_aliases = BTreeMap::new();
     let codelists = codelist
         .captures_iter(source)
         .flat_map(|capture| {
@@ -188,6 +267,12 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
             let codelist_id = xml_attr(attrs, "OID")
                 .or_else(|| xml_attr(attrs, "Name"))
                 .unwrap_or_default();
+            for alias in codelist_aliases_from_attrs(attrs, &codelist_id) {
+                codelist_aliases
+                    .entry(codelist_id.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .insert(alias);
+            }
             let body = capture
                 .name("body")
                 .map(|value| value.as_str())
@@ -196,7 +281,8 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
                 let item_attrs = item.name("attrs")?.as_str();
                 Some(ControlledTerm {
                     codelist: codelist_id.clone(),
-                    value: xml_attr(item_attrs, "CodedValue")?,
+                    value: xml_attr(item_attrs, "CodedValue")
+                        .or_else(|| xml_attr(item_attrs, "SubmissionValue"))?,
                 })
             })
         })
@@ -219,6 +305,8 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
                 domain: xml_attr(attrs, "Domain"),
                 purpose: xml_attr(attrs, "Purpose"),
                 repeating: xml_attr(attrs, "Repeating"),
+                comment_oid: xml_attr(attrs, "CommentOID"),
+                leaf_id: xml_attr(attrs, "leafID"),
                 item_refs: parse_item_refs(body, &item_ref),
             }
         })
@@ -280,13 +368,61 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
         })
         .collect();
 
+    let comments = comment_def
+        .captures_iter(source)
+        .map(|capture| {
+            let attrs = capture
+                .name("attrs")
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            let body = capture
+                .name("body")
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            DefineComment {
+                oid: xml_attr(attrs, "OID"),
+                text: first_translated_text(body, &translated_text),
+                document_refs: document_ref
+                    .captures_iter(body)
+                    .filter_map(|capture| capture.name("attrs"))
+                    .filter_map(|attrs| xml_attr(attrs.as_str(), "leafID"))
+                    .collect(),
+            }
+        })
+        .collect();
+
+    let documents = leaf
+        .captures_iter(source)
+        .map(|capture| {
+            let attrs = capture
+                .name("attrs")
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            let body = capture
+                .name("body")
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            DefineDocument {
+                id: xml_attr(attrs, "ID"),
+                href: xml_attr(attrs, "href"),
+                title: title
+                    .captures(body)
+                    .and_then(|capture| capture.name("body"))
+                    .map(|value| xml_text(value.as_str())),
+            }
+        })
+        .collect();
+
     Ok(DefineXmlMetadata {
         variables,
         codelists,
+        codelist_aliases,
         datasets,
         value_lists,
         where_clauses,
         methods,
+        comments,
+        documents,
     })
 }
 
@@ -366,13 +502,43 @@ fn parse_formal_expressions(body: &str, formal_expression: &Regex) -> Vec<Define
                 .name("attrs")
                 .map(|value| value.as_str())
                 .unwrap_or("");
-            let expression = capture.name("body")?.as_str().trim().to_owned();
+            let expression = xml_text(capture.name("body")?.as_str().trim());
             (!expression.is_empty()).then_some(DefineFormalExpression {
                 context: xml_attr(attrs, "Context"),
                 expression,
             })
         })
         .collect()
+}
+
+fn codelist_aliases_from_attrs(attrs: &str, canonical: &str) -> BTreeSet<String> {
+    let mut aliases = BTreeSet::new();
+    for key in [
+        "OID",
+        "Name",
+        "SASFormatName",
+        "def:SASFormatName",
+        "SubmissionValue",
+        "NCIExtCodeID",
+    ] {
+        if let Some(value) = xml_attr(attrs, key) {
+            aliases.insert(value);
+        }
+    }
+    if let Some(last) = canonical.rsplit(['.', '-']).next() {
+        if !last.is_empty() {
+            aliases.insert(last.to_owned());
+        }
+    }
+    aliases
+}
+
+fn first_translated_text(source: &str, translated_text: &Regex) -> Option<String> {
+    translated_text
+        .captures(source)
+        .and_then(|capture| capture.name("body"))
+        .map(|value| xml_text(value.as_str()))
+        .filter(|value| !value.is_empty())
 }
 
 pub fn load_ct_json_file(path: impl AsRef<Path>) -> Result<ControlledTerminology> {
@@ -390,14 +556,23 @@ pub fn load_ct_json_file(path: impl AsRef<Path>) -> Result<ControlledTerminology
 
 pub fn parse_ct_json_value(value: &Value) -> ControlledTerminology {
     let mut terminology = ControlledTerminology::default();
-    if let Some(object) = value.as_object() {
-        if let Some(codelists) = object.get("codelists").and_then(Value::as_array) {
-            insert_cdisc_ct_codelists(&mut terminology, codelists);
+    match value {
+        Value::Array(codelists) => insert_cdisc_ct_codelists(&mut terminology, codelists),
+        Value::Object(object) => {
+            if let Some(codelists) =
+                object_array_field(object, &["codelists", "codeLists", "Codelists"])
+            {
+                insert_cdisc_ct_codelists(&mut terminology, codelists);
+            }
+            for (codelist, values) in object {
+                if lookup_key(codelist) == "codelists" {
+                    continue;
+                }
+                insert_ct_values(&mut terminology, codelist, values);
+            }
         }
-        for (codelist, values) in object {
-            insert_ct_values(&mut terminology, codelist, values);
-        }
-    }
+        _ => {}
+    };
     terminology
 }
 
@@ -406,18 +581,44 @@ fn insert_cdisc_ct_codelists(terminology: &mut ControlledTerminology, codelists:
         let Some(object) = codelist.as_object() else {
             continue;
         };
-        let Some(codelist_name) = object
-            .get("submissionValue")
-            .or_else(|| object.get("name"))
-            .or_else(|| object.get("conceptId"))
-            .or_else(|| object.get("codelist"))
-            .and_then(Value::as_str)
-        else {
+        let Some(codelist_name) = string_field(
+            object,
+            &[
+                "submissionValue",
+                "codedValue",
+                "name",
+                "conceptId",
+                "codelist",
+                "codelistCode",
+                "nciCode",
+            ],
+        ) else {
             continue;
         };
+        for alias in string_fields(
+            object,
+            &[
+                "submissionValue",
+                "codedValue",
+                "name",
+                "conceptId",
+                "codelist",
+                "codelistCode",
+                "nciCode",
+                "preferredTerm",
+            ],
+        ) {
+            terminology.insert_alias(codelist_name, alias);
+        }
 
-        for key in ["terms", "enumeratedItems", "codeListItems"] {
-            if let Some(terms) = object.get(key).and_then(Value::as_array) {
+        for key in [
+            "terms",
+            "enumeratedItems",
+            "codeListItems",
+            "items",
+            "concepts",
+        ] {
+            if let Some(terms) = object_array_field(object, &[key]) {
                 insert_ct_values(terminology, codelist_name, &Value::Array(terms.clone()));
             }
         }
@@ -428,19 +629,22 @@ fn insert_ct_values(terminology: &mut ControlledTerminology, codelist: &str, val
     match values {
         Value::Array(values) => {
             for value in values {
-                if let Some(term) = value
-                    .as_str()
-                    .or_else(|| value.get("value").and_then(Value::as_str))
-                    .or_else(|| value.get("CodedValue").and_then(Value::as_str))
-                    .or_else(|| value.get("codedValue").and_then(Value::as_str))
-                    .or_else(|| value.get("submissionValue").and_then(Value::as_str))
-                    .or_else(|| value.get("code").and_then(Value::as_str))
-                {
-                    terminology
-                        .codelists
-                        .entry(codelist.to_owned())
-                        .or_default()
-                        .insert(term.to_owned());
+                if let Some(term) = value.as_str().or_else(|| {
+                    value.as_object().and_then(|object| {
+                        string_field(
+                            object,
+                            &[
+                                "value",
+                                "CodedValue",
+                                "codedValue",
+                                "submissionValue",
+                                "code",
+                                "term",
+                            ],
+                        )
+                    })
+                }) {
+                    terminology.insert_term(codelist, term);
                 }
             }
         }
@@ -453,12 +657,80 @@ fn insert_ct_values(terminology: &mut ControlledTerminology, codelist: &str, val
     }
 }
 
+fn object_array_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    keys: &[&str],
+) -> Option<&'a Vec<Value>> {
+    keys.iter()
+        .find_map(|key| {
+            object.get(*key).or_else(|| {
+                object
+                    .iter()
+                    .find(|(candidate, _)| lookup_key(candidate) == lookup_key(key))
+                    .map(|(_, value)| value)
+            })
+        })
+        .and_then(Value::as_array)
+}
+
+fn string_field<'a>(object: &'a serde_json::Map<String, Value>, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| {
+            object.get(*key).or_else(|| {
+                object
+                    .iter()
+                    .find(|(candidate, _)| lookup_key(candidate) == lookup_key(key))
+                    .map(|(_, value)| value)
+            })
+        })
+        .and_then(Value::as_str)
+}
+
+fn string_fields(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| {
+            object.get(*key).or_else(|| {
+                object
+                    .iter()
+                    .find(|(candidate, _)| lookup_key(candidate) == lookup_key(key))
+                    .map(|(_, value)| value)
+            })
+        })
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
 fn xml_attr(attrs: &str, name: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(r#"{name}\s*=\s*["']([^"']*)["']"#)).ok()?;
+    let escaped = regex::escape(name);
+    let name_pattern = if name.contains(':') {
+        escaped
+    } else {
+        format!(r#"(?:[\w.-]+:)?{escaped}"#)
+    };
+    let pattern = Regex::new(&format!(r#"{name_pattern}\s*=\s*["']([^"']*)["']"#)).ok()?;
     pattern
         .captures(attrs)
         .and_then(|capture| capture.get(1))
-        .map(|value| value.as_str().to_owned())
+        .map(|value| xml_text(value.as_str()))
+}
+
+fn xml_text(value: &str) -> String {
+    value
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+fn lookup_key(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 #[cfg(test)]
@@ -564,6 +836,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_define_xml_accepts_namespaced_metadata_aliases_comments_and_documents() {
+        let define = r#"
+<odm:ODM xmlns:odm="http://www.cdisc.org/ns/odm/v1.3" xmlns:def="http://www.cdisc.org/ns/def/v2.1" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <def:leaf ID="LF.DEFINE" xlink:href="define.pdf">
+    <def:title>Annotated Define</def:title>
+  </def:leaf>
+  <odm:ItemGroupDef OID="IG.AE" Name="AE" Domain="AE" Purpose="Tabulation" Repeating="Yes" def:CommentOID="COM.AE" def:leafID="LF.DEFINE">
+    <odm:ItemRef ItemOID="IT.AE.DOMAIN" OrderNumber="1" Mandatory="Yes"/>
+  </odm:ItemGroupDef>
+  <odm:ItemDef OID="IT.AE.DOMAIN" Name="DOMAIN" DataType="text">
+    <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+  </odm:ItemDef>
+  <odm:CodeList OID="CL.DOMAIN" Name="Domain Abbreviation" SASFormatName="DOMAIN">
+    <odm:CodeListItem CodedValue="AE"/>
+  </odm:CodeList>
+  <odm:CommentDef OID="COM.AE">
+    <odm:Description>
+      <odm:TranslatedText>AE dataset comment &amp; note</odm:TranslatedText>
+    </odm:Description>
+    <def:DocumentRef leafID="LF.DEFINE"/>
+  </odm:CommentDef>
+</odm:ODM>
+"#;
+
+        let metadata = parse_define_xml(define).expect("parse define");
+
+        assert_eq!(metadata.datasets.len(), 1);
+        assert_eq!(metadata.datasets[0].comment_oid.as_deref(), Some("COM.AE"));
+        assert_eq!(metadata.datasets[0].leaf_id.as_deref(), Some("LF.DEFINE"));
+        assert_eq!(
+            metadata.variables[0].codelist_oid.as_deref(),
+            Some("CL.DOMAIN")
+        );
+        assert!(metadata
+            .codelist_aliases
+            .get("CL.DOMAIN")
+            .expect("codelist aliases")
+            .contains("DOMAIN"));
+        assert_eq!(metadata.comments.len(), 1);
+        assert_eq!(
+            metadata.comments[0].text.as_deref(),
+            Some("AE dataset comment & note")
+        );
+        assert_eq!(metadata.comments[0].document_refs, vec!["LF.DEFINE"]);
+        assert_eq!(metadata.documents.len(), 1);
+        assert_eq!(metadata.documents[0].href.as_deref(), Some("define.pdf"));
+        assert_eq!(
+            metadata.documents[0].title.as_deref(),
+            Some("Annotated Define")
+        );
+    }
+
+    #[test]
     fn parse_ct_json_value_accepts_simple_and_object_terms() {
         let terminology = parse_ct_json_value(&json!({
             "DOMAIN": ["AE", { "CodedValue": "CM" }],
@@ -603,5 +928,26 @@ mod tests {
         assert!(terminology.contains("DOMAIN", "CM"));
         assert!(terminology.contains("NY", "N"));
         assert!(terminology.contains("NY", "Y"));
+    }
+
+    #[test]
+    fn parse_ct_json_value_resolves_codelist_aliases() {
+        let terminology = parse_ct_json_value(&json!({
+            "codelists": [
+                {
+                    "conceptId": "C66734",
+                    "submissionValue": "DOMAIN",
+                    "name": "Domain Abbreviation",
+                    "terms": [
+                        { "submissionValue": "AE" },
+                        { "submissionValue": "CM" }
+                    ]
+                }
+            ]
+        }));
+
+        assert!(terminology.contains("DOMAIN", "AE"));
+        assert!(terminology.contains("C66734", "CM"));
+        assert!(terminology.contains("Domain Abbreviation", "AE"));
     }
 }
