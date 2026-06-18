@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-SDTM-ADAM-0007",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "CM",
+      "columns": ["USUBJID", "CMSEQ", "CMDECOD"]
+    }
+  ],
+  "Check": {
+    "name": "CMDECOD",
+    "operator": "is_not_contained_by",
+    "dictionary": "WHODD"
+  },
+  "Outcome": {
+    "Message": "CMDECOD must be present in WHODrug"
+  }
+}

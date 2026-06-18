@@ -1,0 +1,21 @@
+{
+  "dictionaries": [
+    {
+      "dictionary": "MEDDRA",
+      "version": "26.1",
+      "terms": [
+        { "code": "10019211", "preferredTerm": "Headache", "decode": "HEADACHE", "synonyms": ["CEPHALALGIA"] },
+        { "code": "10028813", "preferredTerm": "Nausea", "decode": "NAUSEA" },
+        { "code": "10013573", "preferredTerm": "Dizziness", "decode": "DIZZINESS" }
+      ]
+    },
+    {
+      "dictionary": "WHODD",
+      "version": "2024-03",
+      "terms": [
+        { "code": "N02BA01", "preferredTerm": "Aspirin", "decode": "ASPIRIN" },
+        { "code": "INVDRUG", "preferredTerm": "Investigational Product", "decode": "INVESTIGATIONAL PRODUCT" }
+      ]
+    }
+  ]
+}

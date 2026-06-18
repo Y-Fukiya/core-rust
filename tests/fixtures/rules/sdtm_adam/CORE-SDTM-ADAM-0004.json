@@ -1,0 +1,34 @@
+{
+  "Core": {
+    "Id": "CORE-SDTM-ADAM-0004",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "JSONATA",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "AE",
+      "columns": ["USUBJID", "AESEQ", "AESEV"]
+    }
+  ],
+  "Check": "$not($contains(['MILD', 'MODERATE', 'SEVERE'], AESEV)) or $substring(USUBJID, 0, 4) != 'SUBJ'",
+  "Outcome": {
+    "Message": "AE severity and subject identifier must match expected SDTM patterns"
+  }
+}

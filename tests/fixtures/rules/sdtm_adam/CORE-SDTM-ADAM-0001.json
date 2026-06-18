@@ -1,0 +1,30 @@
+{
+  "Core": {
+    "Id": "CORE-SDTM-ADAM-0001",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "is_not_contained_by"
+  },
+  "Outcome": {
+    "Message": "DOMAIN must use Define-XML/CT controlled terminology"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "Core": {
+    "Id": "CORE-SDTM-ADAM-0005",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "filter",
+      "dataset": "ADAE",
+      "where": {
+        "name": "TRTEMFL",
+        "operator": "equal_to",
+        "value": "Y"
+      }
+    },
+    {
+      "name": "sort",
+      "by": ["USUBJID", "AESEQ"]
+    },
+    {
+      "name": "aggregate",
+      "by": ["USUBJID"],
+      "function": "sum",
+      "source_column": "AVAL",
+      "as": "AVAL_SUM"
+    },
+    {
+      "name": "row_number",
+      "by": ["USUBJID"],
+      "as": "ROW_NUMBER"
+    }
+  ],
+  "Check": {
+    "all": [
+      {
+        "name": "AVAL_SUM",
+        "operator": "greater_than",
+        "value": 6
+      },
+      {
+        "name": "ROW_NUMBER",
+        "operator": "equal_to",
+        "value": 1
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "Treatment-emergent AE aggregate count requires review"
+  }
+}

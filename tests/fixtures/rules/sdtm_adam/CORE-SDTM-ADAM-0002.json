@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-SDTM-ADAM-0002",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "AE",
+      "columns": ["USUBJID", "AESEQ", "AEDECOD"]
+    }
+  ],
+  "Check": {
+    "name": "AEDECOD",
+    "operator": "is_not_contained_by",
+    "dictionary": "MEDDRA"
+  },
+  "Outcome": {
+    "Message": "AEDECOD must be present in MedDRA"
+  }
+}

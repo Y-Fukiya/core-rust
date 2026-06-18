@@ -1,0 +1,186 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "DM",
+      "domain": "DM",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0001",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 4,
+          "variables": ["DOMAIN"],
+          "message": "DOMAIN must use Define-XML/CT controlled terminology"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "CM",
+      "domain": "CM",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "SUPPAE",
+      "domain": "SUPPAE",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADAE",
+      "domain": "ADAE",
+      "message": "DOMAIN must use Define-XML/CT controlled terminology",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0002",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AEDECOD must be present in MedDRA",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0002",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 3,
+          "variables": ["AEDECOD"],
+          "message": "AEDECOD must be present in MedDRA"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0003",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AE subject must be in the safety population",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0003",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 2,
+          "variables": ["ADSL.SAFFL"],
+          "message": "AE subject must be in the safety population"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0004",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AE severity and subject identifier must match expected SDTM patterns",
+      "error_count": 2,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0004",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 3,
+          "variables": ["AESEV", "USUBJID"],
+          "message": "AE severity and subject identifier must match expected SDTM patterns"
+        },
+        {
+          "rule_id": "CORE-SDTM-ADAM-0004",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 4,
+          "variables": ["AESEV", "USUBJID"],
+          "message": "AE severity and subject identifier must match expected SDTM patterns"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0005",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "ADAE",
+      "domain": "ADAE",
+      "message": "Treatment-emergent AE aggregate count requires review",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0005",
+          "dataset": "ADAE",
+          "domain": "ADAE",
+          "row": 2,
+          "variables": ["AVAL_SUM", "ROW_NUMBER"],
+          "message": "Treatment-emergent AE aggregate count requires review"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0006",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "ADSL SEX must use controlled terminology",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-SDTM-ADAM-0006",
+          "dataset": "ADSL",
+          "domain": "ADSL",
+          "row": 4,
+          "variables": ["SEX"],
+          "message": "ADSL SEX must use controlled terminology"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-SDTM-ADAM-0007",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "CM",
+      "domain": "CM",
+      "message": "CMDECOD must be present in WHODrug",
+      "error_count": 0,
+      "errors": []
+    }
+  ]
+}

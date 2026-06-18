@@ -162,6 +162,29 @@ fn golden_validates_integrated_study_package_with_define_xml_and_ct() {
     assert_eq!(actual, expected);
 }
 
+#[test]
+fn golden_validates_sdtm_adam_like_study_package() {
+    let fixtures = fixture_root();
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/sdtm_adam")],
+        dataset_paths: vec![fixtures.join("datasets/sdtm_adam/study_package.json")],
+        define_xml_paths: vec![fixtures.join("cdisc/sdtm_adam_define.xml")],
+        ct_paths: vec![fixtures.join("cdisc/sdtm_adam_ct.json")],
+        external_dictionary_paths: vec![fixtures.join("cdisc/sdtm_adam_external_dictionary.json")],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        ..Default::default()
+    })
+    .expect("run SDTM/ADaM-like golden validation");
+
+    let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
+    let expected =
+        read_json(&fixtures.join("python_compat/expected/sdtm_adam_full_study_package.json"));
+
+    assert_eq!(actual, expected);
+}
+
 fn comparable_validation_output(results: &Value) -> Value {
     let results = results.as_array().expect("results are an array");
     let comparable_results = results

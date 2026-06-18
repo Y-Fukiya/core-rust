@@ -1,0 +1,48 @@
+<odm:ODM xmlns:odm="http://www.cdisc.org/ns/odm/v1.3" xmlns:def="http://www.cdisc.org/ns/def/v2.1">
+  <odm:ItemGroupDef OID="IG.DM" Name="DM" Domain="DM" Purpose="Tabulation" Repeating="No">
+    <odm:ItemRef ItemOID="IT.DOMAIN" OrderNumber="1" Mandatory="Yes"/>
+    <odm:ItemRef ItemOID="IT.SEX" OrderNumber="2" Mandatory="Yes"/>
+  </odm:ItemGroupDef>
+  <odm:ItemGroupDef OID="IG.AE" Name="AE" Domain="AE" Purpose="Tabulation" Repeating="Yes">
+    <odm:ItemRef ItemOID="IT.DOMAIN" OrderNumber="1" Mandatory="Yes"/>
+    <odm:ItemRef ItemOID="IT.AESEV" OrderNumber="2" Mandatory="No"/>
+  </odm:ItemGroupDef>
+  <odm:ItemGroupDef OID="IG.ADSL" Name="ADSL" Domain="ADSL" Purpose="Analysis" Repeating="No">
+    <odm:ItemRef ItemOID="IT.DOMAIN" OrderNumber="1" Mandatory="Yes"/>
+    <odm:ItemRef ItemOID="IT.SEX" OrderNumber="2" Mandatory="No"/>
+    <odm:ItemRef ItemOID="IT.SAFFL" OrderNumber="3" Mandatory="No"/>
+  </odm:ItemGroupDef>
+  <odm:ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text" Length="8">
+    <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+  </odm:ItemDef>
+  <odm:ItemDef OID="IT.SEX" Name="SEX" DataType="text" Length="1">
+    <odm:CodeListRef CodeListOID="CL.SEX"/>
+  </odm:ItemDef>
+  <odm:ItemDef OID="IT.AESEV" Name="AESEV" DataType="text" Length="12">
+    <odm:CodeListRef CodeListOID="CL.AESEV"/>
+  </odm:ItemDef>
+  <odm:ItemDef OID="IT.SAFFL" Name="SAFFL" DataType="text" Length="1">
+    <odm:CodeListRef CodeListOID="CL.NY"/>
+  </odm:ItemDef>
+  <odm:CodeList OID="CL.DOMAIN" Name="Domain Abbreviation" SASFormatName="DOMAIN">
+    <odm:CodeListItem CodedValue="DM"/>
+    <odm:CodeListItem CodedValue="AE"/>
+    <odm:CodeListItem CodedValue="CM"/>
+    <odm:CodeListItem CodedValue="SUPPAE"/>
+    <odm:CodeListItem CodedValue="ADSL"/>
+    <odm:CodeListItem CodedValue="ADAE"/>
+  </odm:CodeList>
+  <odm:CodeList OID="CL.SEX" Name="Sex" SASFormatName="SEX">
+    <odm:CodeListItem CodedValue="M"/>
+    <odm:CodeListItem CodedValue="F"/>
+  </odm:CodeList>
+  <odm:CodeList OID="CL.AESEV" Name="Severity" SASFormatName="AESEV">
+    <odm:CodeListItem CodedValue="MILD"/>
+    <odm:CodeListItem CodedValue="MODERATE"/>
+    <odm:CodeListItem CodedValue="SEVERE"/>
+  </odm:CodeList>
+  <odm:CodeList OID="CL.NY" Name="No Yes Response" SASFormatName="NY">
+    <odm:CodeListItem CodedValue="N"/>
+    <odm:CodeListItem CodedValue="Y"/>
+  </odm:CodeList>
+</odm:ODM>

@@ -1,0 +1,134 @@
+{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "label": "Demographics",
+      "domain": "DM",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "SEX", "label": "Sex", "type": "Char", "length": 1 },
+        { "name": "AGE", "label": "Age", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["DM", "DM", "DM"],
+        "SEX": ["M", "F", "F"],
+        "AGE": [34, 47, 59]
+      }
+    },
+    {
+      "filename": "ae.xpt",
+      "label": "Adverse Events",
+      "domain": "AE",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "AESEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "AETERM", "label": "Reported Term", "type": "Char", "length": 80 },
+        { "name": "AEDECOD", "label": "Dictionary-Derived Term", "type": "Char", "length": 80 },
+        { "name": "AESEV", "label": "Severity", "type": "Char", "length": 12 },
+        { "name": "AESER", "label": "Serious Event", "type": "Char", "length": 1 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST", "CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003", "BAD001"],
+        "DOMAIN": ["AE", "AE", "AE", "XX"],
+        "AESEQ": [1, 1, 1, 2],
+        "AETERM": ["Headache", "Nausea", "Mystery event", "Dizziness"],
+        "AEDECOD": ["HEADACHE", "NAUSEA", "UNKNOWN", "DIZZINESS"],
+        "AESEV": ["MILD", "SEVERE", "EXTREME", "MILD"],
+        "AESER": ["N", "Y", "N", "Y"]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "label": "Concomitant Medications",
+      "domain": "CM",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "CMSEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "CMDECOD", "label": "Medication Dictionary Term", "type": "Char", "length": 80 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ001", "SUBJ003"],
+        "DOMAIN": ["CM", "CM"],
+        "CMSEQ": [1, 1],
+        "CMDECOD": ["ASPIRIN", "INVESTIGATIONAL PRODUCT"]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "label": "Supplemental Qualifiers for AE",
+      "domain": "SUPPAE",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "IDVAR", "label": "Identifying Variable", "type": "Char", "length": 8 },
+        { "name": "IDVARVAL", "label": "Identifying Variable Value", "type": "Char", "length": 20 },
+        { "name": "QNAM", "label": "Qualifier Variable Name", "type": "Char", "length": 8 },
+        { "name": "QVAL", "label": "Data Value", "type": "Char", "length": 80 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ002", "BAD001"],
+        "DOMAIN": ["SUPPAE", "SUPPAE"],
+        "IDVAR": ["AESEQ", "AESEQ"],
+        "IDVARVAL": ["1", "2"],
+        "QNAM": ["AESPID", "AESPID"],
+        "QVAL": ["BAD", "TRACE"]
+      }
+    },
+    {
+      "filename": "adsl.xpt",
+      "label": "Subject-Level Analysis Dataset",
+      "domain": "ADSL",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "SAFFL", "label": "Safety Population Flag", "type": "Char", "length": 1 },
+        { "name": "SEX", "label": "Sex", "type": "Char", "length": 1 },
+        { "name": "AGE", "label": "Age", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST", "CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003", "BAD001"],
+        "DOMAIN": ["ADSL", "ADSL", "ADSL", "ADSL"],
+        "SAFFL": ["Y", "N", "Y", "Y"],
+        "SEX": ["M", "F", "F", "X"],
+        "AGE": [34, 47, 59, 41]
+      }
+    },
+    {
+      "filename": "adae.xpt",
+      "label": "Adverse Events Analysis Dataset",
+      "domain": "ADAE",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "AESEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "PARAMCD", "label": "Parameter Code", "type": "Char", "length": 8 },
+        { "name": "TRTEMFL", "label": "Treatment-Emergent Analysis Flag", "type": "Char", "length": 1 },
+        { "name": "AVAL", "label": "Analysis Value", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST", "CDISC-TEST", "CDISC-TEST"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["ADAE", "ADAE", "ADAE", "ADAE"],
+        "AESEQ": [1, 1, 2, 1],
+        "PARAMCD": ["AECOUNT", "AECOUNT", "AECOUNT", "AECOUNT"],
+        "TRTEMFL": ["Y", "Y", "Y", "N"],
+        "AVAL": [2, 3, 4, 1]
+      }
+    }
+  ]
+}

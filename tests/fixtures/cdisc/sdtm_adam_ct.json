@@ -1,0 +1,39 @@
+{
+  "codelists": [
+    {
+      "submissionValue": "DOMAIN",
+      "conceptId": "C66734",
+      "terms": [
+        { "submissionValue": "DM" },
+        { "submissionValue": "AE" },
+        { "submissionValue": "CM" },
+        { "submissionValue": "SUPPAE" },
+        { "submissionValue": "ADSL" },
+        { "submissionValue": "ADAE" }
+      ]
+    },
+    {
+      "submissionValue": "SEX",
+      "conceptId": "C66731",
+      "terms": [
+        { "submissionValue": "M", "preferredTerm": "Male" },
+        { "submissionValue": "F", "preferredTerm": "Female" }
+      ]
+    },
+    {
+      "submissionValue": "AESEV",
+      "terms": [
+        { "submissionValue": "MILD" },
+        { "submissionValue": "MODERATE" },
+        { "submissionValue": "SEVERE" }
+      ]
+    },
+    {
+      "submissionValue": "NY",
+      "terms": [
+        { "submissionValue": "N", "preferredTerm": "No" },
+        { "submissionValue": "Y", "preferredTerm": "Yes" }
+      ]
+    }
+  ]
+}

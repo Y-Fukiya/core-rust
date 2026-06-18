@@ -8,6 +8,7 @@ Each `cases/*.json` file defines one comparison case:
 - `dataset_paths`: dataset files or direct-child dataset directories, relative to `tests/fixtures`
 - `define_xml_paths`: optional Define-XML files, relative to `tests/fixtures`
 - `ct_paths`: optional controlled terminology JSON files, relative to `tests/fixtures`
+- `external_dictionary_paths`: optional external dictionary JSON/CSV files, relative to `tests/fixtures`
 - `include_rules` / `exclude_rules`: optional rule filters
 - `standard` / `standard_version`: optional standard filters
 - `expected_path`: stored Python/CDISC expected output, relative to `tests/fixtures`

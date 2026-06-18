@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -19,6 +20,8 @@ struct PythonCompatCase {
     define_xml_paths: Vec<PathBuf>,
     #[serde(default)]
     ct_paths: Vec<PathBuf>,
+    #[serde(default)]
+    external_dictionary_paths: Vec<PathBuf>,
     #[serde(default)]
     include_rules: Vec<String>,
     #[serde(default)]
@@ -44,8 +47,8 @@ fn python_compat_cases_match_stored_expected_outputs() {
     case_paths.sort();
 
     assert!(
-        !case_paths.is_empty(),
-        "expected at least one Python compat case"
+        case_paths.len() >= 3,
+        "expected at least three Python compat cases"
     );
 
     for case_path in case_paths {
@@ -55,6 +58,7 @@ fn python_compat_cases_match_stored_expected_outputs() {
             dataset_paths: absolute_paths(&fixtures, &case.dataset_paths),
             define_xml_paths: absolute_paths(&fixtures, &case.define_xml_paths),
             ct_paths: absolute_paths(&fixtures, &case.ct_paths),
+            external_dictionary_paths: absolute_paths(&fixtures, &case.external_dictionary_paths),
             include_rules: case.include_rules,
             exclude_rules: case.exclude_rules,
             standard: case.standard,
@@ -77,6 +81,45 @@ fn python_compat_cases_match_stored_expected_outputs() {
                 .unwrap_or_default()
         );
     }
+}
+
+#[test]
+fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
+    let fixtures = fixture_root();
+    let case_names = fs::read_dir(fixtures.join("python_compat/cases"))
+        .expect("read python compat cases")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("read case entries")
+        .into_iter()
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+        .map(|entry| read_case(&entry.path()).name)
+        .collect::<BTreeSet<_>>();
+
+    assert!(case_names.contains("integrated_study_package"));
+    assert!(case_names.contains("sdtm_adam_full_study_package"));
+    assert!(case_names.contains("sdtm_adam_sdtmig_filter"));
+
+    let package = read_json(&fixtures.join("datasets/sdtm_adam/study_package.json"));
+    let domains = package["datasets"]
+        .as_array()
+        .expect("datasets array")
+        .iter()
+        .filter_map(|dataset| dataset["domain"].as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        domains,
+        BTreeSet::from(["ADAE", "ADSL", "AE", "CM", "DM", "SUPPAE"])
+    );
+
+    let rule_count = fs::read_dir(fixtures.join("rules/sdtm_adam"))
+        .expect("read SDTM/ADaM rules")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+        .count();
+    assert!(
+        rule_count >= 7,
+        "expected at least seven SDTM/ADaM compatibility rules"
+    );
 }
 
 fn absolute_paths(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
