@@ -1103,6 +1103,44 @@ mod tests {
     }
 
     #[test]
+    fn null_values_are_detected_by_not_equal_and_ignored_by_ordering() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("DOMAIN", Operator::NotEqualTo, literal("AE")),
+                &dataset
+            )
+            .expect("null string not equal"),
+            vec![false, true, true, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("DOMAIN", Operator::EqualTo, literal("AE")),
+                &dataset
+            )
+            .expect("null string equal"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::GreaterThan, literal(1)),
+                &dataset
+            )
+            .expect("null number greater than"),
+            vec![false, true, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::LessThan, literal(3)),
+                &dataset
+            )
+            .expect("null number less than"),
+            vec![true, true, false, false]
+        );
+    }
+
+    #[test]
     fn evaluates_empty_and_not_empty() {
         let dataset = test_dataset();
 
