@@ -539,6 +539,7 @@ dependencies = [
 name = "core-data"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "polars",
  "pretty_assertions",
  "serde",

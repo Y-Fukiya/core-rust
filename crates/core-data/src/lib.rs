@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -321,7 +322,7 @@ struct ParsedXpt {
     dataset_name: Option<String>,
     dataset_label: Option<String>,
     variables: Vec<DatasetVariable>,
-    records: BTreeMap<String, Vec<Value>>,
+    records: IndexMap<String, Vec<Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -404,7 +405,7 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
     let mut records = variables
         .iter()
         .map(|variable| (variable.name.clone(), Vec::with_capacity(row_chunks.len())))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<IndexMap<_, _>>();
 
     for row in row_chunks {
         let mut offset = 0;
@@ -594,7 +595,7 @@ fn round_up_to_card(value: usize) -> usize {
     value.div_ceil(XPT_CARD_LEN) * XPT_CARD_LEN
 }
 
-fn records_to_frame(records: &BTreeMap<String, Vec<Value>>) -> PolarsResult<DataFrame> {
+fn records_to_frame(records: &IndexMap<String, Vec<Value>>) -> PolarsResult<DataFrame> {
     if records.is_empty() {
         return Ok(DataFrame::empty());
     }
@@ -677,7 +678,7 @@ struct DatasetPackageDataset {
     domain: Option<String>,
     #[serde(default)]
     variables: Vec<DatasetVariable>,
-    records: BTreeMap<String, Vec<Value>>,
+    records: IndexMap<String, Vec<Value>>,
 }
 
 fn file_name(path: &Path) -> Result<String> {
@@ -1551,7 +1552,7 @@ mod tests {
         assert_eq!(dataset.metadata().filename, "ae.xpt");
         assert_eq!(dataset.metadata().variables.len(), 2);
         assert_eq!(summary.row_count, 2);
-        assert_eq!(summary.columns, vec!["AESEQ", "DOMAIN", "STUDYID"]);
+        assert_eq!(summary.columns, vec!["STUDYID", "DOMAIN", "AESEQ"]);
     }
 
     #[test]
@@ -1588,7 +1589,7 @@ mod tests {
         assert_eq!(dataset.metadata().source_format, DatasetSourceFormat::Xpt);
         assert_eq!(dataset.metadata().variables.len(), 3);
         assert_eq!(summary.row_count, 2);
-        assert_eq!(summary.columns, vec!["AESEQ", "DOMAIN", "STUDYID"]);
+        assert_eq!(summary.columns, vec!["STUDYID", "DOMAIN", "AESEQ"]);
         assert_eq!(
             dataset
                 .frame()
@@ -1777,7 +1778,7 @@ mod tests {
 
         assert_eq!(
             joined.summary().columns,
-            vec!["AESEQ", "DOMAIN", "USUBJID", "SUPPAE.QNAM", "SUPPAE.QVAL"]
+            vec!["USUBJID", "DOMAIN", "AESEQ", "SUPPAE.QNAM", "SUPPAE.QVAL"]
         );
         assert_eq!(
             joined
@@ -1839,7 +1840,7 @@ mod tests {
 
         assert_eq!(
             joined.summary().columns,
-            vec!["DOMAIN", "USUBJID", "LOOKUP.FLAG"]
+            vec!["USUBJID", "DOMAIN", "LOOKUP.FLAG"]
         );
         assert!(joined
             .frame()
