@@ -28,6 +28,8 @@ struct OpenRulesCommand {
 
 #[derive(Debug, Subcommand)]
 enum OpenRulesSubcommand {
+    /// Compare an Open Rules scoreboard against an accepted baseline.
+    Baseline(open_rules::BaselineArgs),
     /// Run core-rust against Open Rules cases and write candidate reports.
     Run(open_rules::RunArgs),
     /// Run core-rust against Open Rules cases, then score candidate reports.
@@ -40,6 +42,7 @@ fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     let should_fail = match cli.command {
         Commands::OpenRules(command) => match command.command {
+            OpenRulesSubcommand::Baseline(args) => open_rules::baseline(args)?,
             OpenRulesSubcommand::Run(args) => open_rules::run(args)?,
             OpenRulesSubcommand::RunScore(args) => open_rules::run_score(args)?,
             OpenRulesSubcommand::Score(args) => open_rules::score(args)?,
