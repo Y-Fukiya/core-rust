@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::open_rules::discovery::OpenRulesCase;
+use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
 use crate::open_rules::normalize::{normalize_csv, IssueKey, ReportSource};
+use crate::open_rules::report::write_scoreboard;
+use crate::open_rules::upstream::{load_upstream_info, UpstreamInfo};
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreArgs {
@@ -70,8 +72,28 @@ pub struct ScoreSummary {
     pub coverage: Option<f64>,
 }
 
-pub fn run(_args: ScoreArgs) -> anyhow::Result<bool> {
-    Ok(false)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Scoreboard {
+    pub upstream: UpstreamInfo,
+    pub summary: ScoreSummary,
+    pub by_scope: Vec<GroupSummary>,
+    pub by_case_kind: Vec<GroupSummary>,
+    pub cases: Vec<ScoredCase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GroupSummary {
+    pub name: String,
+    pub summary: ScoreSummary,
+}
+
+pub fn run(args: ScoreArgs) -> anyhow::Result<bool> {
+    let cases = discover_cases(&args.open_rules_root, &args.scope)?;
+    let scored = score_cases(&cases, &args.core_rs_results_root);
+    let upstream = load_upstream_info(&args.open_rules_root)?;
+    let scoreboard = Scoreboard::new(upstream, scored);
+    write_scoreboard(&args.out, &scoreboard)?;
+    Ok(scoreboard.summary.should_fail())
 }
 
 pub fn score_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Vec<ScoredCase> {
@@ -209,6 +231,38 @@ impl ScoreSummary {
     pub fn should_fail(&self) -> bool {
         self.supported_mismatch > 0 || self.harness_error > 0
     }
+}
+
+impl Scoreboard {
+    pub fn new(upstream: UpstreamInfo, cases: Vec<ScoredCase>) -> Self {
+        let summary = ScoreSummary::from_cases(&cases);
+        let by_scope = grouped_summary(&cases, |case| case.scope.clone());
+        let by_case_kind = grouped_summary(&cases, |case| case.case_kind.clone());
+        Self {
+            upstream,
+            summary,
+            by_scope,
+            by_case_kind,
+            cases,
+        }
+    }
+}
+
+fn grouped_summary(
+    cases: &[ScoredCase],
+    mut key: impl FnMut(&ScoredCase) -> String,
+) -> Vec<GroupSummary> {
+    let mut groups = BTreeMap::<String, Vec<ScoredCase>>::new();
+    for case in cases {
+        groups.entry(key(case)).or_default().push(case.clone());
+    }
+    groups
+        .into_iter()
+        .map(|(name, cases)| GroupSummary {
+            name,
+            summary: ScoreSummary::from_cases(&cases),
+        })
+        .collect()
 }
 
 #[cfg(test)]
