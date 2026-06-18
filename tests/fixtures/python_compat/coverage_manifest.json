@@ -199,13 +199,15 @@
     {
       "name": "json_csv_log_reports",
       "evidence": [
-        "expected/regulatory_validation_report.csv"
+        "expected/regulatory_validation_report.csv",
+        "expected/regulatory_validation_report.log"
       ]
     },
     {
       "name": "cli_full_report_output",
       "evidence": [
-        "expected/regulatory_validation_report.csv"
+        "expected/regulatory_validation_report.csv",
+        "expected/regulatory_validation_report.log"
       ]
     }
   ]

@@ -255,14 +255,15 @@ fn golden_writes_regulatory_json_csv_and_log_reports() {
             .expect("read expected csv");
     assert_eq!(actual_csv, expected_csv);
 
-    let log = fs::read_to_string(reports.log.as_ref().expect("log report")).expect("read log");
-    assert!(log.contains("log_level=info"));
-    assert!(log.contains("rule_count=10"));
-    assert!(log.contains("dataset_count=8"));
-    assert!(log.contains("external_dictionary_count=1"));
-    assert!(log.contains("summary total_results=17 passed=8 failed=9 skipped=0 error_count=9"));
+    let actual_log =
+        fs::read_to_string(reports.log.as_ref().expect("log report")).expect("read log");
+    let expected_log =
+        fs::read_to_string(fixtures.join("expected/regulatory_validation_report.log"))
+            .expect("read expected log");
+    assert_eq!(normalize_log(&actual_log), expected_log);
     assert_eq!(
-        log.lines()
+        actual_log
+            .lines()
             .filter(|line| line.starts_with("result rule_id="))
             .count(),
         17
@@ -309,6 +310,21 @@ fn comparable_validation_output(results: &Value) -> Value {
 fn read_json(path: &Path) -> Value {
     let source = std::fs::read_to_string(path).expect("read golden fixture");
     serde_json::from_str(&source).expect("parse golden fixture")
+}
+
+fn normalize_log(source: &str) -> String {
+    source
+        .lines()
+        .map(|line| {
+            if line.starts_with("engine_version=") {
+                "engine_version=<engine_version>"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn fixture_root() -> PathBuf {

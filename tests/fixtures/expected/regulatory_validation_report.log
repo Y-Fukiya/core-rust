@@ -1,0 +1,27 @@
+schema_version=1.0
+engine=core-rs
+engine_version=<engine_version>
+log_level=info
+rule_count=10
+dataset_count=8
+define_xml_count=1
+ct_count=1
+external_dictionary_count=1
+summary total_results=17 passed=8 failed=9 skipped=0 error_count=9
+result rule_id=CORE-REG-0001 status=passed dataset=DM domain=DM errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=AE domain=AE errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=LB domain=LB errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=VS domain=VS errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=EX domain=EX errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=RELREC domain=RELREC errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=ADSL domain=ADSL errors=0 skipped_reason=
+result rule_id=CORE-REG-0001 status=passed dataset=ADLB domain=ADLB errors=0 skipped_reason=
+result rule_id=CORE-REG-0002 status=failed dataset=LB domain=LB errors=1 skipped_reason=
+result rule_id=CORE-REG-0003 status=failed dataset=LB domain=LB errors=1 skipped_reason=
+result rule_id=CORE-REG-0004 status=failed dataset=EX domain=EX errors=1 skipped_reason=
+result rule_id=CORE-REG-0005 status=failed dataset=VS domain=VS errors=1 skipped_reason=
+result rule_id=CORE-REG-0006 status=failed dataset=LB domain=LB errors=1 skipped_reason=
+result rule_id=CORE-REG-0007 status=failed dataset=LB domain=LB errors=1 skipped_reason=
+result rule_id=CORE-REG-0008 status=failed dataset=ADLB domain=ADLB errors=1 skipped_reason=
+result rule_id=CORE-REG-0009 status=failed dataset=RELREC domain=RELREC errors=1 skipped_reason=
+result rule_id=CORE-REG-0010 status=failed dataset=AE domain=AE errors=1 skipped_reason=

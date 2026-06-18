@@ -23,5 +23,7 @@ The Rust harness compares only stable validation fields:
 - message
 - error_count
 - issue row, variables, and message
+- issue identity fields (`usubjid`, `seq`) through `identity_manifest.json`
+- regulatory CSV/log report structure through golden report fixtures
 
 It intentionally ignores JSON key order, elapsed time, warning wording, and output paths.

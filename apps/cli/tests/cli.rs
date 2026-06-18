@@ -246,10 +246,27 @@ fn validate_regulatory_fixture_writes_full_report_set() {
             .expect("read expected regulatory report csv");
     assert_eq!(actual_csv, expected_csv);
 
-    let log =
+    let actual_log =
         fs::read_to_string(output_dir.path().join("validation.log")).expect("read validation log");
-    assert!(log.contains("summary total_results=17 passed=8 failed=9 skipped=0 error_count=9"));
-    assert!(log.contains("result rule_id=CORE-REG-0010 status=failed dataset=AE"));
+    let expected_log =
+        fs::read_to_string(fixtures.join("expected/regulatory_validation_report.log"))
+            .expect("read expected regulatory validation log");
+    assert_eq!(normalize_log(&actual_log), expected_log);
+}
+
+fn normalize_log(source: &str) -> String {
+    source
+        .lines()
+        .map(|line| {
+            if line.starts_with("engine_version=") {
+                "engine_version=<engine_version>"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn fixture_root() -> PathBuf {
