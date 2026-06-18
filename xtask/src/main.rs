@@ -30,6 +30,8 @@ struct OpenRulesCommand {
 enum OpenRulesSubcommand {
     /// Run core-rust against Open Rules cases and write candidate reports.
     Run(open_rules::RunArgs),
+    /// Run core-rust against Open Rules cases, then score candidate reports.
+    RunScore(open_rules::RunScoreArgs),
     /// Score existing core-rust reports against official Open Rules results.
     Score(open_rules::ScoreArgs),
 }
@@ -39,6 +41,7 @@ fn main() -> Result<ExitCode> {
     let should_fail = match cli.command {
         Commands::OpenRules(command) => match command.command {
             OpenRulesSubcommand::Run(args) => open_rules::run(args)?,
+            OpenRulesSubcommand::RunScore(args) => open_rules::run_score(args)?,
             OpenRulesSubcommand::Score(args) => open_rules::score(args)?,
         },
     };

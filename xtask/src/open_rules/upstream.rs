@@ -74,6 +74,15 @@ pub fn load_upstream_info_from_paths(
     })
 }
 
+pub fn ensure_strict_lock_matches(info: &UpstreamInfo) -> Result<()> {
+    if let (Some(expected), Some(observed)) = (&info.expected_sha, &info.observed_sha) {
+        if expected != observed {
+            anyhow::bail!("upstream lock SHA {expected} does not match checkout SHA {observed}");
+        }
+    }
+    Ok(())
+}
+
 pub fn read_upstream_lock(path: &Path) -> Result<UpstreamLock> {
     let source = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let mut repo = None;
@@ -158,5 +167,34 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("git rev-parse")));
+    }
+
+    #[test]
+    fn strict_lock_rejects_mismatched_expected_and_observed_sha() {
+        let info = UpstreamInfo {
+            repo: "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned(),
+            expected_sha: Some("expected".to_owned()),
+            observed_sha: Some("observed".to_owned()),
+            lock_path: "tests/open_rules/upstream.lock".into(),
+            warnings: Vec::new(),
+        };
+
+        let error = ensure_strict_lock_matches(&info).expect_err("strict lock mismatch");
+
+        assert!(error.to_string().contains("expected"));
+        assert!(error.to_string().contains("observed"));
+    }
+
+    #[test]
+    fn strict_lock_allows_missing_observed_sha() {
+        let info = UpstreamInfo {
+            repo: "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned(),
+            expected_sha: Some("expected".to_owned()),
+            observed_sha: None,
+            lock_path: "tests/open_rules/upstream.lock".into(),
+            warnings: Vec::new(),
+        };
+
+        ensure_strict_lock_matches(&info).expect("missing observed sha is warning-only");
     }
 }

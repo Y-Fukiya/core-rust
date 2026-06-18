@@ -9,7 +9,8 @@ use core_report::ReportOutputFormat;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
-use crate::open_rules::score::relative_candidate_report_path;
+use crate::open_rules::score::{relative_candidate_report_path, ScoreArgs};
+use crate::open_rules::upstream::{ensure_strict_lock_matches, load_upstream_info};
 
 #[derive(Debug, Clone, Parser)]
 pub struct RunArgs {
@@ -21,6 +22,24 @@ pub struct RunArgs {
 
     #[arg(long, value_name = "SCOPE")]
     pub scope: Vec<String>,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct RunScoreArgs {
+    #[arg(long, value_name = "DIR")]
+    pub open_rules_root: PathBuf,
+
+    #[arg(long, value_name = "DIR")]
+    pub core_rs_results_root: PathBuf,
+
+    #[arg(long, value_name = "DIR")]
+    pub out: PathBuf,
+
+    #[arg(long, value_name = "SCOPE")]
+    pub scope: Vec<String>,
+
+    #[arg(long)]
+    pub strict_lock: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,6 +67,24 @@ pub fn run(args: RunArgs) -> Result<bool> {
         summary.succeeded, summary.failed, summary.total_cases
     );
     Ok(summary.failed > 0)
+}
+
+pub fn run_score(args: RunScoreArgs) -> Result<bool> {
+    if args.strict_lock {
+        let upstream = load_upstream_info(&args.open_rules_root)?;
+        ensure_strict_lock_matches(&upstream)?;
+    }
+
+    let cases = discover_cases(&args.open_rules_root, &args.scope)?;
+    let run_summary = run_cases(&cases, &args.core_rs_results_root)?;
+    let score_failed = crate::open_rules::score::run(ScoreArgs {
+        open_rules_root: args.open_rules_root,
+        core_rs_results_root: args.core_rs_results_root,
+        out: args.out,
+        scope: args.scope,
+    })?;
+
+    Ok(run_summary.failed > 0 || score_failed)
 }
 
 pub fn run_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Result<RunSummary> {
@@ -143,5 +180,27 @@ mod tests {
             .path()
             .join("Published/CORE-OPEN-0001/negative/01/report.csv")
             .is_file());
+    }
+
+    #[test]
+    fn run_score_generates_reports_and_scoreboard() {
+        let open_rules_root = repo_root().join("tests/fixtures/open_rules_executable");
+        let candidate_root = tempdir().expect("candidate root");
+        let scoreboard_root = tempdir().expect("scoreboard root");
+
+        let should_fail = run_score(RunScoreArgs {
+            open_rules_root,
+            core_rs_results_root: candidate_root.path().to_path_buf(),
+            out: scoreboard_root.path().to_path_buf(),
+            scope: Vec::new(),
+            strict_lock: false,
+        })
+        .expect("run score");
+
+        assert!(!should_fail);
+        let scoreboard = std::fs::read_to_string(scoreboard_root.path().join("scoreboard.json"))
+            .expect("read scoreboard");
+        assert!(scoreboard.contains("\"total_cases\": 2"));
+        assert!(scoreboard.contains("\"supported_match\": 2"));
     }
 }
