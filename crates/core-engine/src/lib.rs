@@ -590,9 +590,7 @@ impl ScalarValue {
     fn as_number(&self) -> Option<f64> {
         match self {
             Self::Number(value) => Some(*value),
-            Self::String(value) => value.parse().ok(),
-            Self::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
-            Self::Null => None,
+            _ => None,
         }
     }
 
@@ -632,10 +630,9 @@ fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensit
         (ScalarValue::String(left), ScalarValue::String(right)) if case_insensitive => {
             left.eq_ignore_ascii_case(right)
         }
-        _ => match (left.as_number(), right.as_number()) {
-            (Some(left), Some(right)) => left == right,
-            _ => left.as_string() == right.as_string(),
-        },
+        (ScalarValue::String(left), ScalarValue::String(right)) => left == right,
+        (ScalarValue::Number(left), ScalarValue::Number(right)) => left == right,
+        _ => false,
     }
 }
 
@@ -830,6 +827,70 @@ mod tests {
             .expect("column ref equal"),
             vec![true, false, true, true]
         );
+    }
+
+    #[test]
+    fn equality_respects_string_and_numeric_types() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "CODE": ["01", "1", "1.0"],
+        "AVAL": [1, 2, 10]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("CODE", Operator::EqualTo, literal("1")),
+                &dataset
+            )
+            .expect("string equal"),
+            vec![false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(&condition("CODE", Operator::EqualTo, literal(1)), &dataset)
+                .expect("string not coerced to number"),
+            vec![false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(&condition("AVAL", Operator::EqualTo, literal(1)), &dataset)
+                .expect("numeric equal"),
+            vec![true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AVAL", Operator::EqualTo, literal("1")),
+                &dataset
+            )
+            .expect("number not coerced to string"),
+            vec![false, false, false]
+        );
+        assert!(!scalar_equal_with_mode(
+            &ScalarValue::Bool(true),
+            &ScalarValue::Number(1.0),
+            false
+        ));
+        assert!(!scalar_equal_with_mode(
+            &ScalarValue::Bool(false),
+            &ScalarValue::String("false".to_owned()),
+            false
+        ));
     }
 
     #[test]

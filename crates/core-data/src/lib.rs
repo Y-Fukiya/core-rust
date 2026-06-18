@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -919,7 +920,7 @@ pub fn group_stat_dataset(
         }
     }
 
-    let mut groups: HashMap<Vec<String>, GroupAccumulator> = HashMap::new();
+    let mut groups: HashMap<Vec<RowKeyValue>, GroupAccumulator> = HashMap::new();
     for row in 0..dataset.frame.height() {
         let key = row_key(&dataset.frame, keys, row)?;
         let accumulator = groups.entry(key).or_default();
@@ -1010,11 +1011,11 @@ pub fn row_number_dataset(
         }
     }
 
-    let mut counters: HashMap<Vec<String>, i64> = HashMap::new();
+    let mut counters: HashMap<Vec<RowKeyValue>, i64> = HashMap::new();
     let values = (0..dataset.frame.height())
         .map(|row| {
             let key = if keys.is_empty() {
-                vec!["<ALL>".to_owned()]
+                vec![RowKeyValue::String("<ALL>".to_owned())]
             } else {
                 row_key(&dataset.frame, keys, row)?
             };
@@ -1380,13 +1381,76 @@ fn validate_join_keys(
     Ok(())
 }
 
-fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<String>> {
+fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
     keys.iter()
-        .map(|key| {
-            cell_to_string(frame, key, row)
-                .map(|value| value.unwrap_or_else(|| "<NULL>".to_owned()))
-        })
+        .map(|key| cell_to_key(frame, key, row))
         .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum RowKeyValue {
+    Null,
+    Bool(bool),
+    Number(NumberKey),
+    String(String),
+}
+
+impl RowKeyValue {
+    fn from_any_value(value: AnyValue<'_>) -> Self {
+        if value.is_null() {
+            return Self::Null;
+        }
+        if let Some(value) = value.extract_bool() {
+            return Self::Bool(value);
+        }
+        if let Some(value) = value.extract_str() {
+            return Self::String(value.to_owned());
+        }
+        if let Some(value) = value.extract::<f64>() {
+            return Self::Number(NumberKey::new(value));
+        }
+        Self::String(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct NumberKey(u64);
+
+impl NumberKey {
+    fn new(value: f64) -> Self {
+        let value = if value == 0.0 { 0.0 } else { value };
+        Self(value.to_bits())
+    }
+
+    fn value(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl PartialOrd for NumberKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for NumberKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value().total_cmp(&other.value())
+    }
+}
+
+fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKeyValue> {
+    let column = frame
+        .column(column_name)
+        .map_err(|source| DataError::Polars {
+            path: PathBuf::from(column_name),
+            source,
+        })?;
+    let value = column.get(row).map_err(|source| DataError::Polars {
+        path: PathBuf::from(column_name),
+        source,
+    })?;
+    Ok(RowKeyValue::from_any_value(value))
 }
 
 fn cell_to_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Option<String>> {
@@ -1846,6 +1910,78 @@ mod tests {
                 .extract_str(),
             Some("S1")
         );
+    }
+
+    #[test]
+    fn join_keys_respect_value_types() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "PARAMN": [1, 2],
+        "AVAL": [10, 20]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "PARAMN": ["1", "2"],
+        "FLAG": ["Y", "N"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let keys = ["PARAMN".to_owned()];
+        let joined = left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+            .expect("left join");
+        let flag = joined.frame().column("LOOKUP.FLAG").expect("joined flag");
+
+        assert!(flag.get(0).expect("row 1").is_null());
+        assert!(flag.get(1).expect("row 2").is_null());
+    }
+
+    #[test]
+    fn sort_dataset_by_columns_uses_numeric_order() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "USUBJID": ["S10", "S2", "S1"],
+        "AVAL": [10, 2, 1]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let dataset = load_dataset_package_json(&path)
+            .expect("load package")
+            .remove(0);
+        let sorted =
+            sort_dataset_by_columns(&dataset, &["AVAL".to_owned()], false).expect("sort rows");
+        let subjects = sorted.frame().column("USUBJID").expect("subject");
+
+        assert_eq!(subjects.get(0).expect("row 1").extract_str(), Some("S1"));
+        assert_eq!(subjects.get(1).expect("row 2").extract_str(), Some("S2"));
+        assert_eq!(subjects.get(2).expect("row 3").extract_str(), Some("S10"));
     }
 
     #[test]

@@ -81,7 +81,7 @@ large real-world study datasets.
 
 ## Quick Start
 
-Requires Rust 1.85 or newer.
+Requires Rust 1.93 or newer.
 
 Build and test:
 
