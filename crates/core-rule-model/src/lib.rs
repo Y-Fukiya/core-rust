@@ -1,0 +1,1178 @@
+#![forbid(unsafe_code)]
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::de::{self, Deserializer};
+use serde::ser::{SerializeMap, Serializer};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, RuleModelError>;
+
+#[derive(Debug, Error)]
+pub enum RuleModelError {
+    #[error("unsupported rule file extension: {0}")]
+    UnsupportedExtension(String),
+    #[error("failed to read file {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse JSON rule {path}: {source}")]
+    JsonParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to parse YAML rule {path}: {message}")]
+    YamlParse { path: PathBuf, message: String },
+    #[error("missing required field: {0}")]
+    MissingField(&'static str),
+    #[error("invalid rule format: {0}")]
+    InvalidRuleFormat(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExecutableRule {
+    pub core_id: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub sensitivity: Option<Sensitivity>,
+    #[serde(default)]
+    pub executability: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub authorities: Vec<Value>,
+    #[serde(default)]
+    pub standards: Vec<StandardRef>,
+    #[serde(default)]
+    pub classes: Option<Value>,
+    #[serde(default)]
+    pub domains: Option<Value>,
+    #[serde(default)]
+    pub datasets: Option<Vec<MatchDataset>>,
+    #[serde(default)]
+    pub entities: Option<Value>,
+    pub rule_type: RuleType,
+    pub conditions: ConditionGroup,
+    #[serde(default)]
+    pub actions: Vec<ActionSpec>,
+    #[serde(default)]
+    pub operations: Vec<OperationSpec>,
+    #[serde(default)]
+    pub output_variables: Vec<String>,
+    #[serde(default)]
+    pub grouping_variables: Vec<String>,
+    #[serde(default)]
+    pub use_case: Option<String>,
+    #[serde(default)]
+    pub status: Option<RuleStatus>,
+    #[serde(default)]
+    pub raw: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConditionGroup {
+    All(Vec<ConditionGroup>),
+    Any(Vec<ConditionGroup>),
+    Not(Box<ConditionGroup>),
+    Leaf(Condition),
+}
+
+impl Serialize for ConditionGroup {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(1))?;
+        match self {
+            ConditionGroup::All(conditions) => map.serialize_entry("all", conditions)?,
+            ConditionGroup::Any(conditions) => map.serialize_entry("any", conditions)?,
+            ConditionGroup::Not(condition) => map.serialize_entry("not", condition)?,
+            ConditionGroup::Leaf(condition) => map.serialize_entry("leaf", condition)?,
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ConditionGroup {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        deserialize_condition_group_value(value).map_err(de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Condition {
+    #[serde(default)]
+    pub target: Option<String>,
+    pub operator: Operator,
+    #[serde(default)]
+    pub comparator: ValueExpr,
+    #[serde(default)]
+    pub options: OperatorOptions,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValueExpr {
+    Literal(Value),
+    ColumnRef(String),
+    List(Vec<Value>),
+    Null,
+}
+
+impl Default for ValueExpr {
+    fn default() -> Self {
+        Self::Null
+    }
+}
+
+impl Serialize for ValueExpr {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ValueExpr::Literal(value) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("literal", value)?;
+                map.end()
+            }
+            ValueExpr::ColumnRef(column) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("column_ref", column)?;
+                map.end()
+            }
+            ValueExpr::List(values) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("list", values)?;
+                map.end()
+            }
+            ValueExpr::Null => serializer.serialize_none(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ValueExpr {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(value_expr_from_value(Value::deserialize(deserializer)?))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct OperatorOptions {
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Operator {
+    Exists,
+    NotExists,
+    EqualTo,
+    NotEqualTo,
+    EqualToCaseInsensitive,
+    NotEqualToCaseInsensitive,
+    Contains,
+    DoesNotContain,
+    ContainsCaseInsensitive,
+    DoesNotContainCaseInsensitive,
+    IsContainedBy,
+    IsNotContainedBy,
+    IsContainedByCaseInsensitive,
+    IsNotContainedByCaseInsensitive,
+    LessThan,
+    LessThanOrEqualTo,
+    GreaterThan,
+    GreaterThanOrEqualTo,
+    MatchesRegex,
+    DoesNotMatchRegex,
+    IsEmpty,
+    IsNotEmpty,
+    Unsupported(String),
+}
+
+impl Operator {
+    pub fn from_name(name: impl AsRef<str>) -> Self {
+        let original = name.as_ref();
+        match normalize_name(original).as_str() {
+            "exists" => Self::Exists,
+            "not_exists" => Self::NotExists,
+            "equal_to" => Self::EqualTo,
+            "not_equal_to" => Self::NotEqualTo,
+            "equal_to_case_insensitive" => Self::EqualToCaseInsensitive,
+            "not_equal_to_case_insensitive" => Self::NotEqualToCaseInsensitive,
+            "contains" => Self::Contains,
+            "does_not_contain" => Self::DoesNotContain,
+            "contains_case_insensitive" => Self::ContainsCaseInsensitive,
+            "does_not_contain_case_insensitive" => Self::DoesNotContainCaseInsensitive,
+            "is_contained_by" => Self::IsContainedBy,
+            "is_not_contained_by" => Self::IsNotContainedBy,
+            "is_contained_by_case_insensitive" => Self::IsContainedByCaseInsensitive,
+            "is_not_contained_by_case_insensitive" => Self::IsNotContainedByCaseInsensitive,
+            "less_than" => Self::LessThan,
+            "less_than_or_equal_to" => Self::LessThanOrEqualTo,
+            "greater_than" => Self::GreaterThan,
+            "greater_than_or_equal_to" => Self::GreaterThanOrEqualTo,
+            "matches_regex" => Self::MatchesRegex,
+            "does_not_match_regex" => Self::DoesNotMatchRegex,
+            "is_empty" => Self::IsEmpty,
+            "is_not_empty" => Self::IsNotEmpty,
+            _ => Self::Unsupported(original.to_owned()),
+        }
+    }
+
+    pub fn as_name(&self) -> &str {
+        match self {
+            Self::Exists => "exists",
+            Self::NotExists => "not_exists",
+            Self::EqualTo => "equal_to",
+            Self::NotEqualTo => "not_equal_to",
+            Self::EqualToCaseInsensitive => "equal_to_case_insensitive",
+            Self::NotEqualToCaseInsensitive => "not_equal_to_case_insensitive",
+            Self::Contains => "contains",
+            Self::DoesNotContain => "does_not_contain",
+            Self::ContainsCaseInsensitive => "contains_case_insensitive",
+            Self::DoesNotContainCaseInsensitive => "does_not_contain_case_insensitive",
+            Self::IsContainedBy => "is_contained_by",
+            Self::IsNotContainedBy => "is_not_contained_by",
+            Self::IsContainedByCaseInsensitive => "is_contained_by_case_insensitive",
+            Self::IsNotContainedByCaseInsensitive => "is_not_contained_by_case_insensitive",
+            Self::LessThan => "less_than",
+            Self::LessThanOrEqualTo => "less_than_or_equal_to",
+            Self::GreaterThan => "greater_than",
+            Self::GreaterThanOrEqualTo => "greater_than_or_equal_to",
+            Self::MatchesRegex => "matches_regex",
+            Self::DoesNotMatchRegex => "does_not_match_regex",
+            Self::IsEmpty => "is_empty",
+            Self::IsNotEmpty => "is_not_empty",
+            Self::Unsupported(name) => name.as_str(),
+        }
+    }
+}
+
+impl Serialize for Operator {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Operator {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self::from_name(name))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RuleType {
+    RecordData,
+    DatasetMetadata,
+    VariableMetadata,
+    DomainPresence,
+    ValueLevelMetadata,
+    Jsonata,
+    Unsupported(String),
+}
+
+impl RuleType {
+    pub fn from_name(name: impl AsRef<str>) -> Self {
+        let original = name.as_ref();
+        match normalize_name(original).as_str() {
+            "record_data" => Self::RecordData,
+            "dataset_metadata" => Self::DatasetMetadata,
+            "variable_metadata" => Self::VariableMetadata,
+            "domain_presence" => Self::DomainPresence,
+            "value_level_metadata" => Self::ValueLevelMetadata,
+            "jsonata" => Self::Jsonata,
+            _ => Self::Unsupported(original.to_owned()),
+        }
+    }
+
+    pub fn as_name(&self) -> &str {
+        match self {
+            Self::RecordData => "record_data",
+            Self::DatasetMetadata => "dataset_metadata",
+            Self::VariableMetadata => "variable_metadata",
+            Self::DomainPresence => "domain_presence",
+            Self::ValueLevelMetadata => "value_level_metadata",
+            Self::Jsonata => "jsonata",
+            Self::Unsupported(name) => name.as_str(),
+        }
+    }
+}
+
+impl Serialize for RuleType {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for RuleType {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self::from_name(name))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Sensitivity {
+    Record,
+    Dataset,
+    Group,
+    Study,
+    Unsupported(String),
+}
+
+impl Sensitivity {
+    pub fn from_name(name: impl AsRef<str>) -> Self {
+        let original = name.as_ref();
+        match normalize_name(original).as_str() {
+            "record" => Self::Record,
+            "dataset" => Self::Dataset,
+            "group" => Self::Group,
+            "study" => Self::Study,
+            _ => Self::Unsupported(original.to_owned()),
+        }
+    }
+
+    pub fn as_name(&self) -> &str {
+        match self {
+            Self::Record => "record",
+            Self::Dataset => "dataset",
+            Self::Group => "group",
+            Self::Study => "study",
+            Self::Unsupported(name) => name.as_str(),
+        }
+    }
+}
+
+impl Serialize for Sensitivity {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Sensitivity {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self::from_name(name))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ActionSpec {
+    pub name: String,
+    pub params: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct StandardRef {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct MatchDataset {
+    #[serde(default, flatten)]
+    pub fields: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct OperationSpec {
+    #[serde(default, flatten)]
+    pub fields: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RuleStatus {
+    Published,
+    Draft,
+    Retired,
+    Disabled,
+    Unsupported(String),
+}
+
+impl RuleStatus {
+    pub fn from_name(name: impl AsRef<str>) -> Self {
+        let original = name.as_ref();
+        match normalize_name(original).as_str() {
+            "published" => Self::Published,
+            "draft" => Self::Draft,
+            "retired" => Self::Retired,
+            "disabled" => Self::Disabled,
+            _ => Self::Unsupported(original.to_owned()),
+        }
+    }
+
+    pub fn as_name(&self) -> &str {
+        match self {
+            Self::Published => "published",
+            Self::Draft => "draft",
+            Self::Retired => "retired",
+            Self::Disabled => "disabled",
+            Self::Unsupported(name) => name.as_str(),
+        }
+    }
+}
+
+impl Serialize for RuleStatus {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for RuleStatus {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self::from_name(name))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadWarning {
+    pub path: PathBuf,
+    pub kind: LoadWarningKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadWarningKind {
+    UnsupportedExtension(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadRulesResult {
+    pub rules: Vec<ExecutableRule>,
+    pub warnings: Vec<LoadWarning>,
+}
+
+pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
+    let path = path.as_ref();
+    let source = fs::read_to_string(path).map_err(|source| RuleModelError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let value = match extension(path).as_deref() {
+        Some("json") => {
+            serde_json::from_str(&source).map_err(|source| RuleModelError::JsonParse {
+                path: path.to_path_buf(),
+                source,
+            })?
+        }
+        Some("yaml" | "yml") => {
+            serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
+                path: path.to_path_buf(),
+                message: source.to_string(),
+            })?
+        }
+        Some(other) => return Err(RuleModelError::UnsupportedExtension(other.to_owned())),
+        None => return Err(RuleModelError::UnsupportedExtension(String::new())),
+    };
+
+    normalize_rule(value)
+}
+
+pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
+    Ok(load_rules_from_paths_with_warnings(paths)?.rules)
+}
+
+pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRulesResult> {
+    let mut rules = Vec::new();
+    let mut warnings = Vec::new();
+
+    for path in paths {
+        if path.is_file() {
+            if is_supported_rule_file(path) {
+                rules.push(load_rule_file(path)?);
+            } else {
+                warnings.push(unsupported_extension_warning(path));
+            }
+        } else if path.is_dir() {
+            let mut entries = fs::read_dir(path)
+                .map_err(|source| RuleModelError::Io {
+                    path: path.clone(),
+                    source,
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|source| RuleModelError::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+
+            entries.sort_by_key(|entry| entry.path());
+
+            for entry in entries {
+                let child = entry.path();
+                if !child.is_file() {
+                    continue;
+                }
+
+                if is_supported_rule_file(&child) {
+                    rules.push(load_rule_file(&child)?);
+                } else {
+                    warnings.push(unsupported_extension_warning(&child));
+                }
+            }
+        } else {
+            return Err(RuleModelError::Io {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::NotFound, "path not found"),
+            });
+        }
+    }
+
+    Ok(LoadRulesResult { rules, warnings })
+}
+
+pub fn normalize_rule(value: Value) -> Result<ExecutableRule> {
+    let object = value.as_object().ok_or_else(|| {
+        RuleModelError::InvalidRuleFormat("rule root must be a JSON object".to_owned())
+    })?;
+
+    if object.contains_key("Core") && object.contains_key("Check") && object.contains_key("Outcome")
+    {
+        normalize_cdisc_metadata_rule(value)
+    } else if object.contains_key("core_id")
+        && object.contains_key("conditions")
+        && object.contains_key("actions")
+    {
+        serde_json::from_value(value)
+            .map_err(|source| RuleModelError::InvalidRuleFormat(source.to_string()))
+    } else {
+        Err(RuleModelError::InvalidRuleFormat(
+            "expected CDISC metadata rule or executable rule".to_owned(),
+        ))
+    }
+}
+
+fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
+    let object = value.as_object().ok_or_else(|| {
+        RuleModelError::InvalidRuleFormat("rule root must be a JSON object".to_owned())
+    })?;
+
+    let core = object
+        .get("Core")
+        .and_then(Value::as_object)
+        .ok_or(RuleModelError::MissingField("Core"))?;
+    let core_id = string_field(core, "Id").ok_or(RuleModelError::MissingField("Core.Id"))?;
+    let status = string_field(core, "Status").map(RuleStatus::from_name);
+
+    let authorities = array_field(object, "Authorities").unwrap_or_default();
+    let standards = extract_standards(&authorities);
+
+    let scope = object.get("Scope").and_then(Value::as_object);
+    let conditions = normalize_condition(
+        object
+            .get("Check")
+            .ok_or(RuleModelError::MissingField("Check"))?,
+    )?;
+    let actions = vec![ActionSpec {
+        name: "generate_dataset_error_objects".to_owned(),
+        params: serde_json::json!({
+            "message": object
+                .get("Outcome")
+                .and_then(Value::as_object)
+                .and_then(|outcome| string_field(outcome, "Message"))
+                .ok_or(RuleModelError::MissingField("Outcome.Message"))?
+        }),
+    }];
+
+    Ok(ExecutableRule {
+        core_id,
+        author: string_value(object.get("Author")),
+        sensitivity: string_value(object.get("Sensitivity")).map(Sensitivity::from_name),
+        executability: string_value(object.get("Executability")),
+        description: string_value(object.get("Description")),
+        authorities,
+        standards,
+        classes: scope.and_then(|scope| scope.get("Classes")).cloned(),
+        domains: scope.and_then(|scope| scope.get("Domains")).cloned(),
+        datasets: object
+            .get("Match Datasets")
+            .map(match_datasets_from_value)
+            .transpose()?,
+        entities: scope.and_then(|scope| scope.get("Entities")).cloned(),
+        rule_type: string_value(object.get("Rule Type"))
+            .map(RuleType::from_name)
+            .unwrap_or_else(|| RuleType::Unsupported(String::new())),
+        conditions,
+        actions,
+        operations: object
+            .get("Operations")
+            .map(operation_specs_from_value)
+            .transpose()?
+            .unwrap_or_default(),
+        output_variables: string_vec_field(object, "Output Variables"),
+        grouping_variables: string_vec_field(object, "Grouping Variables"),
+        use_case: scope.and_then(|scope| string_field(scope, "Use Case")),
+        status,
+        raw: Some(value),
+    })
+}
+
+fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
+    let object = value.as_object().ok_or_else(|| {
+        RuleModelError::InvalidRuleFormat("condition must be an object".to_owned())
+    })?;
+
+    if let Some(all) = object.get("all") {
+        return Ok(ConditionGroup::All(normalize_condition_list(
+            all,
+            "Check.all",
+        )?));
+    }
+
+    if let Some(any) = object.get("any") {
+        return Ok(ConditionGroup::Any(normalize_condition_list(
+            any,
+            "Check.any",
+        )?));
+    }
+
+    if let Some(not) = object.get("not") {
+        return Ok(ConditionGroup::Not(Box::new(normalize_not_condition(not)?)));
+    }
+
+    let operator_name =
+        string_field(object, "operator").ok_or(RuleModelError::MissingField("Check.operator"))?;
+    let mut extra = BTreeMap::new();
+    for (key, value) in object {
+        if !matches!(key.as_str(), "name" | "target" | "operator" | "value") {
+            extra.insert(key.clone(), value.clone());
+        }
+    }
+
+    Ok(ConditionGroup::Leaf(Condition {
+        target: string_field(object, "name").or_else(|| string_field(object, "target")),
+        operator: Operator::from_name(operator_name),
+        comparator: object
+            .get("value")
+            .cloned()
+            .map(value_expr_from_value)
+            .unwrap_or(ValueExpr::Null),
+        options: OperatorOptions { extra },
+    }))
+}
+
+fn normalize_condition_list(value: &Value, field: &'static str) -> Result<Vec<ConditionGroup>> {
+    let items = value
+        .as_array()
+        .ok_or(RuleModelError::MissingField(field))?;
+    items.iter().map(normalize_condition).collect()
+}
+
+fn normalize_not_condition(value: &Value) -> Result<ConditionGroup> {
+    if let Some(items) = value.as_array() {
+        if items.len() == 1 {
+            normalize_condition(&items[0])
+        } else {
+            Ok(ConditionGroup::All(
+                items
+                    .iter()
+                    .map(normalize_condition)
+                    .collect::<Result<Vec<_>>>()?,
+            ))
+        }
+    } else {
+        normalize_condition(value)
+    }
+}
+
+fn deserialize_condition_group_value(value: Value) -> std::result::Result<ConditionGroup, String> {
+    if let Some(object) = value.as_object() {
+        if let Some(all) = object.get("all") {
+            let values = all
+                .as_array()
+                .ok_or_else(|| "conditions.all must be an array".to_owned())?;
+            return values
+                .iter()
+                .cloned()
+                .map(deserialize_condition_group_value)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map(ConditionGroup::All);
+        }
+
+        if let Some(any) = object.get("any") {
+            let values = any
+                .as_array()
+                .ok_or_else(|| "conditions.any must be an array".to_owned())?;
+            return values
+                .iter()
+                .cloned()
+                .map(deserialize_condition_group_value)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map(ConditionGroup::Any);
+        }
+
+        if let Some(not) = object.get("not") {
+            return deserialize_condition_group_value(not.clone())
+                .map(Box::new)
+                .map(ConditionGroup::Not);
+        }
+
+        if let Some(leaf) = object.get("leaf") {
+            return serde_json::from_value(leaf.clone())
+                .map(ConditionGroup::Leaf)
+                .map_err(|source| format!("conditions.leaf is not a valid condition: {source}"));
+        }
+
+        if object.contains_key("operator") {
+            return serde_json::from_value(Value::Object(object.clone()))
+                .map(ConditionGroup::Leaf)
+                .map_err(|source| format!("condition is not valid: {source}"));
+        }
+    }
+
+    Err("condition group must contain all, any, not, or leaf".to_owned())
+}
+
+fn value_expr_from_value(value: Value) -> ValueExpr {
+    match value {
+        Value::Null => ValueExpr::Null,
+        Value::Array(values) => ValueExpr::List(values),
+        Value::Object(object) => {
+            if let Some(value) = object.get("literal") {
+                ValueExpr::Literal(value.clone())
+            } else if let Some(Value::String(column)) = object.get("column_ref") {
+                ValueExpr::ColumnRef(column.clone())
+            } else if let Some(Value::String(column)) = object.get("column") {
+                ValueExpr::ColumnRef(column.clone())
+            } else if let Some(Value::Array(values)) = object.get("list") {
+                ValueExpr::List(values.clone())
+            } else if object.contains_key("null") {
+                ValueExpr::Null
+            } else {
+                ValueExpr::Literal(Value::Object(object))
+            }
+        }
+        other => ValueExpr::Literal(other),
+    }
+}
+
+fn operation_specs_from_value(value: &Value) -> Result<Vec<OperationSpec>> {
+    specs_from_value(value, "Operations")
+}
+
+fn match_datasets_from_value(value: &Value) -> Result<Vec<MatchDataset>> {
+    specs_from_value(value, "Match Datasets")
+}
+
+fn specs_from_value<T>(value: &Value, field: &'static str) -> Result<Vec<T>>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let items = value
+        .as_array()
+        .ok_or(RuleModelError::MissingField(field))?;
+    items
+        .iter()
+        .cloned()
+        .map(|item| {
+            serde_json::from_value(item)
+                .map_err(|source| RuleModelError::InvalidRuleFormat(source.to_string()))
+        })
+        .collect()
+}
+
+fn extract_standards(authorities: &[Value]) -> Vec<StandardRef> {
+    authorities
+        .iter()
+        .filter_map(Value::as_object)
+        .flat_map(|authority| {
+            authority
+                .get("Standards")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|standard| {
+            let object = standard.as_object()?;
+            let mut extra = BTreeMap::new();
+            for (key, value) in object {
+                if !matches!(key.as_str(), "Name" | "Version" | "name" | "version") {
+                    extra.insert(key.clone(), value.clone());
+                }
+            }
+
+            Some(StandardRef {
+                name: string_field(object, "Name").or_else(|| string_field(object, "name")),
+                version: string_field(object, "Version")
+                    .or_else(|| string_field(object, "version")),
+                extra,
+            })
+        })
+        .collect()
+}
+
+fn string_vec_field(object: &Map<String, Value>, field: &str) -> Vec<String> {
+    object
+        .get(field)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| string_value(Some(value)))
+        .collect()
+}
+
+fn array_field(object: &Map<String, Value>, field: &str) -> Option<Vec<Value>> {
+    object.get(field)?.as_array().cloned()
+}
+
+fn string_field(object: &Map<String, Value>, field: &str) -> Option<String> {
+    string_value(object.get(field))
+}
+
+fn string_value(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+pub fn normalize_key(key: &str) -> String {
+    normalize_name(key)
+}
+
+fn normalize_name(name: &str) -> String {
+    name.trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+}
+
+fn is_supported_rule_file(path: &Path) -> bool {
+    matches!(extension(path).as_deref(), Some("json" | "yaml" | "yml"))
+}
+
+fn unsupported_extension_warning(path: &Path) -> LoadWarning {
+    LoadWarning {
+        path: path.to_path_buf(),
+        kind: LoadWarningKind::UnsupportedExtension(extension(path).unwrap_or_default()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use pretty_assertions::assert_eq;
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn sample_metadata_rule() -> Value {
+        json!({
+            "Core": {
+                "Id": "CORE-TEST-0001",
+                "Status": "Published"
+            },
+            "Authorities": [
+                {
+                    "Standards": [
+                        {
+                            "Name": "SDTMIG",
+                            "Version": "3.4"
+                        }
+                    ]
+                }
+            ],
+            "Scope": {
+                "Domains": {},
+                "Classes": {},
+                "Entities": {},
+                "Use Case": "Validation"
+            },
+            "Sensitivity": "Record",
+            "Rule Type": "Record Data",
+            "Check": {
+                "all": [
+                    {
+                        "name": "DOMAIN",
+                        "operator": "equal_to",
+                        "value": "AE"
+                    }
+                ]
+            },
+            "Outcome": {
+                "Message": "DOMAIN must be AE"
+            }
+        })
+    }
+
+    #[test]
+    fn load_json_rule() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.json");
+        fs::write(&path, sample_metadata_rule().to_string()).expect("write rule");
+
+        let rule = load_rule_file(path).expect("load JSON rule");
+
+        assert_eq!(rule.core_id, "CORE-TEST-0001");
+    }
+
+    #[test]
+    fn load_yaml_rule() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0002.yaml");
+        fs::write(
+            &path,
+            r#"
+Core:
+  Id: CORE-TEST-0002
+  Status: Published
+Scope:
+  Domains: {}
+  Classes: {}
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  all:
+    - name: DOMAIN
+      operator: equal_to
+      value: AE
+Outcome:
+  Message: DOMAIN must be AE
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(path).expect("load YAML rule");
+
+        assert_eq!(rule.core_id, "CORE-TEST-0002");
+    }
+
+    #[test]
+    fn normalize_core_id_to_core_id() {
+        let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
+
+        assert_eq!(rule.core_id, "CORE-TEST-0001");
+    }
+
+    #[test]
+    fn normalize_rule_type_to_rule_type() {
+        let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
+
+        assert_eq!(rule.rule_type, RuleType::RecordData);
+    }
+
+    #[test]
+    fn normalize_check_all_to_condition_group_all() {
+        let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
+
+        assert!(matches!(rule.conditions, ConditionGroup::All(_)));
+    }
+
+    #[test]
+    fn normalize_check_any_to_condition_group_any() {
+        let mut value = sample_metadata_rule();
+        value["Check"] = json!({
+            "any": [
+                {
+                    "name": "DOMAIN",
+                    "operator": "equal_to",
+                    "value": "AE"
+                }
+            ]
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert!(matches!(rule.conditions, ConditionGroup::Any(_)));
+    }
+
+    #[test]
+    fn normalize_check_not_to_condition_group_not() {
+        let mut value = sample_metadata_rule();
+        value["Check"] = json!({
+            "not": {
+                "name": "DOMAIN",
+                "operator": "equal_to",
+                "value": "AE"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert!(matches!(rule.conditions, ConditionGroup::Not(_)));
+    }
+
+    #[test]
+    fn normalize_leaf_condition() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DOMAIN",
+                "operator": "equal_to",
+                "value": "AE",
+                "case_sensitive": false
+            },
+            "Outcome": {
+                "Message": "DOMAIN must be AE"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(condition.operator, Operator::EqualTo);
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("AE")));
+        assert_eq!(
+            condition.options.extra.get("case_sensitive"),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn normalize_outcome_message_to_generate_dataset_error_objects_action() {
+        let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
+
+        assert_eq!(rule.actions.len(), 1);
+        assert_eq!(rule.actions[0].name, "generate_dataset_error_objects");
+        assert_eq!(rule.actions[0].params["message"], "DOMAIN must be AE");
+    }
+
+    #[test]
+    fn unknown_operator_becomes_unsupported() {
+        let mut value = sample_metadata_rule();
+        value["Check"] = json!({
+            "name": "DOMAIN",
+            "operator": "mystery_operator",
+            "value": "AE"
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.operator,
+            Operator::Unsupported("mystery_operator".to_owned())
+        );
+    }
+
+    #[test]
+    fn jsonata_rule_type_becomes_jsonata() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.rule_type, RuleType::Jsonata);
+    }
+
+    #[test]
+    fn executable_format_passes_through_without_cdisc_metadata_normalization() {
+        let value = json!({
+            "core_id": "CORE-EXEC-0001",
+            "rule_type": "record_data",
+            "conditions": {
+                "leaf": {
+                    "target": "DOMAIN",
+                    "operator": "equal_to",
+                    "comparator": {
+                        "literal": "AE"
+                    }
+                }
+            },
+            "actions": [
+                {
+                    "name": "generate_dataset_error_objects",
+                    "params": {
+                        "message": "DOMAIN must be AE"
+                    }
+                }
+            ]
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.core_id, "CORE-EXEC-0001");
+        assert_eq!(rule.rule_type, RuleType::RecordData);
+        assert_eq!(rule.raw, None);
+    }
+
+    #[test]
+    fn load_rules_from_directory_returns_warnings_for_unsupported_extensions() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("CORE-TEST-0001.json"),
+            sample_metadata_rule().to_string(),
+        )
+        .expect("write rule");
+        fs::write(dir.path().join("notes.txt"), "not a rule").expect("write notes");
+
+        let result = load_rules_from_paths_with_warnings(&[dir.path().to_path_buf()])
+            .expect("load rules from dir");
+
+        assert_eq!(result.rules.len(), 1);
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(
+            result.warnings[0].kind,
+            LoadWarningKind::UnsupportedExtension("txt".to_owned())
+        );
+    }
+}

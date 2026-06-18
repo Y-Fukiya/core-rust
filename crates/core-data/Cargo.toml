@@ -1,0 +1,14 @@
+[package]
+name = "core-data"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+polars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "core-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+core-data.workspace = true
+core-rule-model.workspace = true
+polars.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true

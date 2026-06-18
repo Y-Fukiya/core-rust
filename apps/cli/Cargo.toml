@@ -1,0 +1,18 @@
+[package]
+name = "core-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "core-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+core-api.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true

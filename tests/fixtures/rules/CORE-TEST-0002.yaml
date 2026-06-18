@@ -1,0 +1,15 @@
+Core:
+  Id: CORE-TEST-0002
+  Status: Published
+Scope:
+  Domains: {}
+  Classes: {}
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  all:
+    - name: DOMAIN
+      operator: equal_to
+      value: AE
+Outcome:
+  Message: DOMAIN must be AE

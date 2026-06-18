@@ -1,0 +1,55 @@
+{
+  "core_id": "CORE-TEST-0001",
+  "author": null,
+  "sensitivity": "record",
+  "executability": null,
+  "description": null,
+  "authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "standards": [
+    {
+      "name": "SDTMIG",
+      "version": "3.4"
+    }
+  ],
+  "classes": {},
+  "domains": {},
+  "datasets": null,
+  "entities": null,
+  "rule_type": "record_data",
+  "conditions": {
+    "all": [
+      {
+        "leaf": {
+          "target": "DOMAIN",
+          "operator": "equal_to",
+          "comparator": {
+            "literal": "AE"
+          },
+          "options": {}
+        }
+      }
+    ]
+  },
+  "actions": [
+    {
+      "name": "generate_dataset_error_objects",
+      "params": {
+        "message": "DOMAIN must be AE"
+      }
+    }
+  ],
+  "operations": [],
+  "output_variables": [],
+  "grouping_variables": [],
+  "use_case": null,
+  "status": "published"
+}

@@ -1,0 +1,15 @@
+[package]
+name = "core-rule-model"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+camino.workspace = true
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true

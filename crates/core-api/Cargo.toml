@@ -1,0 +1,16 @@
+[package]
+name = "core-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+core-data.workspace = true
+core-engine.workspace = true
+core-report.workspace = true
+core-rule-model.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

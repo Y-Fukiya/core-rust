@@ -1,0 +1,37 @@
+[workspace]
+members = [
+    "apps/cli",
+    "crates/core-api",
+    "crates/core-cache",
+    "crates/core-cdisc-library",
+    "crates/core-data",
+    "crates/core-engine",
+    "crates/core-report",
+    "crates/core-rule-model",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+anyhow = "1"
+assert_cmd = "2"
+camino = "1"
+clap = { version = "4", features = ["derive", "env"] }
+predicates = "3"
+pretty_assertions = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = "0.0.27"
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+
+core-api = { path = "crates/core-api" }
+core-data = { path = "crates/core-data" }
+core-engine = { path = "crates/core-engine" }
+core-report = { path = "crates/core-report" }
+core-rule-model = { path = "crates/core-rule-model" }
+polars = { version = "0.54", default-features = false, features = ["csv"] }
