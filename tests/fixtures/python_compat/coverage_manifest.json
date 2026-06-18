@@ -191,6 +191,12 @@
       ]
     },
     {
+      "name": "issue_identity_traceability",
+      "evidence": [
+        "python_compat/identity_manifest.json"
+      ]
+    },
+    {
       "name": "json_csv_log_reports",
       "evidence": [
         "expected/regulatory_validation_report.csv"

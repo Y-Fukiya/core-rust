@@ -59,6 +59,11 @@ struct CoverageCapability {
     evidence: Vec<PathBuf>,
 }
 
+#[derive(Debug, Deserialize)]
+struct IdentityManifest {
+    expected_issue_identities: BTreeMap<String, Value>,
+}
+
 #[test]
 fn python_compat_cases_match_stored_expected_outputs() {
     let fixtures = fixture_root();
@@ -105,6 +110,29 @@ fn python_compat_cases_match_stored_expected_outputs() {
                 .as_deref()
                 .map(|description| format!(": {description}"))
                 .unwrap_or_default()
+        );
+    }
+}
+
+#[test]
+fn python_compat_cases_match_issue_identity_manifest() {
+    let fixtures = fixture_root();
+    let manifest: IdentityManifest = serde_json::from_str(
+        &fs::read_to_string(fixtures.join("python_compat/identity_manifest.json"))
+            .expect("read identity manifest"),
+    )
+    .expect("parse identity manifest");
+    let cases = read_cases_by_name(&fixtures);
+
+    for (case_name, expected) in &manifest.expected_issue_identities {
+        let case = cases
+            .get(case_name)
+            .unwrap_or_else(|| panic!("identity manifest references unknown case {case_name}"));
+        let actual =
+            issue_identity_output(&serde_json::to_value(run_case(&fixtures, case)).unwrap());
+        assert_eq!(
+            &actual, expected,
+            "issue identity manifest did not match {case_name}"
         );
     }
 }
@@ -300,6 +328,24 @@ fn absolute_paths(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
     paths.iter().map(|path| root.join(path)).collect()
 }
 
+fn run_case(root: &Path, case: &PythonCompatCase) -> Vec<core_engine::RuleValidationResult> {
+    let request = ValidateRequest {
+        rule_paths: absolute_paths(root, &case.rule_paths),
+        dataset_paths: absolute_paths(root, &case.dataset_paths),
+        define_xml_paths: absolute_paths(root, &case.define_xml_paths),
+        ct_paths: absolute_paths(root, &case.ct_paths),
+        external_dictionary_paths: absolute_paths(root, &case.external_dictionary_paths),
+        include_rules: case.include_rules.clone(),
+        exclude_rules: case.exclude_rules.clone(),
+        standard: case.standard.clone(),
+        standard_version: case.standard_version.clone(),
+        ..Default::default()
+    };
+    run_validation(request)
+        .unwrap_or_else(|source| panic!("case {} failed to run: {source}", case.name))
+        .results
+}
+
 fn comparable_validation_output(results: &Value) -> Value {
     let results = results.as_array().expect("results are an array");
     let comparable_results = results
@@ -335,6 +381,39 @@ fn comparable_validation_output(results: &Value) -> Value {
         .collect::<Vec<_>>();
 
     json!({ "results": comparable_results })
+}
+
+fn issue_identity_output(results: &Value) -> Value {
+    let results = results.as_array().expect("results are an array");
+    Value::Array(
+        results
+            .iter()
+            .filter(|result| result["execution_status"] != "passed")
+            .map(|result| {
+                let identities = result["errors"]
+                    .as_array()
+                    .expect("errors are an array")
+                    .iter()
+                    .map(|error| {
+                        json!({
+                            "row": error["row"],
+                            "usubjid": error.get("usubjid").cloned().unwrap_or(Value::Null),
+                            "seq": error.get("seq").cloned().unwrap_or(Value::Null),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                json!({
+                    "rule_id": result["rule_id"],
+                    "execution_status": result["execution_status"],
+                    "skipped_reason": result.get("skipped_reason").cloned().unwrap_or(Value::Null),
+                    "dataset": result["dataset"],
+                    "error_count": result["error_count"],
+                    "identities": identities,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn read_case(path: &Path) -> PythonCompatCase {

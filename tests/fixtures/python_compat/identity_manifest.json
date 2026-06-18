@@ -1,0 +1,378 @@
+{
+  "expected_issue_identities": {
+    "integrated_study_package": [
+      {
+        "rule_id": "CORE-GOLDEN-0001",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ3", "seq": "3" }
+        ]
+      },
+      {
+        "rule_id": "CORE-GOLDEN-0002",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ2", "seq": "2" }
+        ]
+      },
+      {
+        "rule_id": "CORE-GOLDEN-0003",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ3", "seq": "3" }
+        ]
+      }
+    ],
+    "sdtm_adam_full_study_package": [
+      {
+        "rule_id": "CORE-SDTM-ADAM-0001",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 4, "usubjid": "BAD001", "seq": "2" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0002",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0003",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0004",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 2,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" },
+          { "row": 4, "usubjid": "BAD001", "seq": "2" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0005",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "ADAE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0006",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "ADSL",
+        "error_count": 1,
+        "identities": [
+          { "row": 4, "usubjid": "BAD001", "seq": null }
+        ]
+      }
+    ],
+    "sdtm_adam_sdtmig_filter": [
+      {
+        "rule_id": "CORE-SDTM-ADAM-0001",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 4, "usubjid": "BAD001", "seq": "2" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0002",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0003",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-SDTM-ADAM-0004",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 2,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" },
+          { "row": 4, "usubjid": "BAD001", "seq": "2" }
+        ]
+      }
+    ],
+    "regulatory_full_study_package": [
+      {
+        "rule_id": "CORE-REG-0002",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0003",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0004",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "EX",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0005",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "VS",
+        "error_count": 1,
+        "identities": [
+          { "row": 4, "usubjid": "XYZ004", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0006",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 1, "usubjid": "GHOST01", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0007",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0008",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "ADLB",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": null }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0009",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "RELREC",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": null }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0010",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      }
+    ],
+    "regulatory_sdtmig_filter": [
+      {
+        "rule_id": "CORE-REG-0002",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0003",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0004",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "EX",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0005",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "VS",
+        "error_count": 1,
+        "identities": [
+          { "row": 4, "usubjid": "XYZ004", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0006",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 1, "usubjid": "GHOST01", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0007",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0009",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "RELREC",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": null }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0010",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      }
+    ],
+    "regulatory_adamig_filter": [
+      {
+        "rule_id": "CORE-REG-0006",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 1, "usubjid": "GHOST01", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0007",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "LB",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0008",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "ADLB",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ002", "seq": null }
+        ]
+      }
+    ],
+    "regulatory_include_missing_rules": [
+      {
+        "rule_id": "CORE-MISSING",
+        "execution_status": "skipped",
+        "skipped_reason": "rule_not_found",
+        "dataset": "",
+        "error_count": 0,
+        "identities": []
+      },
+      {
+        "rule_id": "CORE-REG-0004",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "EX",
+        "error_count": 1,
+        "identities": [
+          { "row": 3, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      },
+      {
+        "rule_id": "CORE-REG-0010",
+        "execution_status": "failed",
+        "skipped_reason": null,
+        "dataset": "AE",
+        "error_count": 1,
+        "identities": [
+          { "row": 2, "usubjid": "SUBJ003", "seq": "1" }
+        ]
+      }
+    ]
+  }
+}
