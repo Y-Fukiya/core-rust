@@ -1,6 +1,9 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tempfile::tempdir;
 
 #[test]
@@ -180,4 +183,77 @@ fn validate_honors_json_output_format() {
     assert!(report_json.contains("\"standard_version\": \"3.4\""));
     assert!(report_json.contains("\"log_level\": \"info\""));
     assert!(!output_dir.join("report.csv").exists());
+}
+
+#[test]
+fn validate_regulatory_fixture_writes_full_report_set() {
+    let fixtures = fixture_root();
+    let output_dir = tempdir().expect("tempdir");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        fixtures
+            .join("rules/regulatory")
+            .to_str()
+            .expect("rules dir path"),
+        "--dataset-path",
+        fixtures
+            .join("datasets/regulatory/study_package.json")
+            .to_str()
+            .expect("dataset path"),
+        "--define-xml",
+        fixtures
+            .join("cdisc/regulatory_define.xml")
+            .to_str()
+            .expect("define path"),
+        "--ct",
+        fixtures
+            .join("cdisc/regulatory_ct.json")
+            .to_str()
+            .expect("ct path"),
+        "--external-dictionary",
+        fixtures
+            .join("cdisc/regulatory_external_dictionary.csv")
+            .to_str()
+            .expect("dictionary path"),
+        "--log-level",
+        "info",
+        "--output",
+        output_dir.path().to_str().expect("output path"),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "validation completed: 17 result(s)",
+    ))
+    .stdout(predicate::str::contains("report.json"))
+    .stdout(predicate::str::contains("report.csv"))
+    .stdout(predicate::str::contains("validation.log"));
+
+    let report_json = fs::read_to_string(output_dir.path().join("report.json"))
+        .expect("read regulatory report json");
+    assert!(report_json.contains("\"total_results\": 17"));
+    assert!(report_json.contains("\"failed\": 9"));
+    assert!(report_json.contains("\"external_dictionary_count\": 1"));
+    assert!(report_json.contains("\"rule_id\": \"CORE-REG-0010\""));
+
+    let actual_csv = fs::read_to_string(output_dir.path().join("report.csv"))
+        .expect("read regulatory report csv");
+    let expected_csv =
+        fs::read_to_string(fixtures.join("expected/regulatory_validation_report.csv"))
+            .expect("read expected regulatory report csv");
+    assert_eq!(actual_csv, expected_csv);
+
+    let log =
+        fs::read_to_string(output_dir.path().join("validation.log")).expect("read validation log");
+    assert!(log.contains("summary total_results=17 passed=8 failed=9 skipped=0 error_count=9"));
+    assert!(log.contains("result rule_id=CORE-REG-0010 status=failed dataset=AE"));
+}
+
+fn fixture_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("tests/fixtures")
 }

@@ -208,6 +208,67 @@ fn golden_validates_regulatory_like_study_package() {
     assert_eq!(actual, expected);
 }
 
+#[test]
+fn golden_writes_regulatory_json_csv_and_log_reports() {
+    let fixtures = fixture_root();
+    let output_dir = tempdir().expect("tempdir");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/regulatory")],
+        dataset_paths: vec![fixtures.join("datasets/regulatory/study_package.json")],
+        define_xml_paths: vec![fixtures.join("cdisc/regulatory_define.xml")],
+        ct_paths: vec![fixtures.join("cdisc/regulatory_ct.json")],
+        external_dictionary_paths: vec![fixtures.join("cdisc/regulatory_external_dictionary.csv")],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: Some(output_dir.path().to_path_buf()),
+        log_level: Some("info".to_owned()),
+        ..Default::default()
+    })
+    .expect("run regulatory report golden validation");
+
+    let reports = outcome.reports.expect("reports");
+    let report_json = read_json(reports.json.as_ref().expect("json report"));
+    assert_eq!(report_json["metadata"]["schema_version"], "1.0");
+    assert_eq!(report_json["metadata"]["engine"], "core-rs");
+    assert_eq!(report_json["metadata"]["log_level"], "info");
+    assert_eq!(report_json["metadata"]["rule_count"], 10);
+    assert_eq!(report_json["metadata"]["dataset_count"], 8);
+    assert_eq!(report_json["metadata"]["define_xml_count"], 1);
+    assert_eq!(report_json["metadata"]["ct_count"], 1);
+    assert_eq!(report_json["metadata"]["external_dictionary_count"], 1);
+    assert_eq!(report_json["summary"]["total_results"], 17);
+    assert_eq!(report_json["summary"]["passed"], 8);
+    assert_eq!(report_json["summary"]["failed"], 9);
+    assert_eq!(report_json["summary"]["skipped"], 0);
+    assert_eq!(report_json["summary"]["error_count"], 9);
+
+    let actual_json = comparable_validation_output(&report_json["results"]);
+    let expected_json =
+        read_json(&fixtures.join("python_compat/expected/regulatory_full_study_package.json"));
+    assert_eq!(actual_json, expected_json);
+
+    let actual_csv =
+        fs::read_to_string(reports.csv.as_ref().expect("csv report")).expect("read report csv");
+    let expected_csv =
+        fs::read_to_string(fixtures.join("expected/regulatory_validation_report.csv"))
+            .expect("read expected csv");
+    assert_eq!(actual_csv, expected_csv);
+
+    let log = fs::read_to_string(reports.log.as_ref().expect("log report")).expect("read log");
+    assert!(log.contains("log_level=info"));
+    assert!(log.contains("rule_count=10"));
+    assert!(log.contains("dataset_count=8"));
+    assert!(log.contains("external_dictionary_count=1"));
+    assert!(log.contains("summary total_results=17 passed=8 failed=9 skipped=0 error_count=9"));
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.starts_with("result rule_id="))
+            .count(),
+        17
+    );
+}
+
 fn comparable_validation_output(results: &Value) -> Value {
     let results = results.as_array().expect("results are an array");
     let comparable_results = results
