@@ -20,6 +20,7 @@ fn golden_validates_supported_rules_against_csv_fixture() {
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
         output_dir: None,
+        ..Default::default()
     })
     .expect("run golden validation");
 
@@ -41,6 +42,7 @@ fn golden_validates_record_rule_pass_and_failure_cases() {
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
         output_dir: None,
+        ..Default::default()
     })
     .expect("run record pass/fail golden validation");
 
@@ -59,6 +61,7 @@ fn golden_validates_dataset_package_json_input() {
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
         output_dir: None,
+        ..Default::default()
     })
     .expect("run dataset package golden validation");
 
@@ -77,6 +80,7 @@ fn golden_validates_dataset_sensitivity_rule() {
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
         output_dir: None,
+        ..Default::default()
     })
     .expect("run dataset sensitivity golden validation");
 
@@ -95,6 +99,7 @@ fn golden_records_skipped_results() {
         include_rules: vec!["CORE-MISSING".to_owned()],
         exclude_rules: Vec::new(),
         output_dir: None,
+        ..Default::default()
     })
     .expect("run skipped golden validation");
 
@@ -115,16 +120,18 @@ fn golden_writes_json_and_csv_reports() {
         include_rules: Vec::new(),
         exclude_rules: Vec::new(),
         output_dir: Some(output_dir.path().to_path_buf()),
+        ..Default::default()
     })
     .expect("run report golden validation");
 
     let reports = outcome.reports.expect("reports");
-    let report_json = read_json(&reports.json);
+    let report_json = read_json(reports.json.as_ref().expect("json report"));
     let actual_json = comparable_validation_output(&report_json["results"]);
     let expected_json = read_json(&fixtures.join("expected/report_validation_report.json"));
     assert_eq!(actual_json, expected_json);
 
-    let actual_csv = fs::read_to_string(&reports.csv).expect("read report csv");
+    let actual_csv =
+        fs::read_to_string(reports.csv.as_ref().expect("csv report")).expect("read report csv");
     let expected_csv = fs::read_to_string(fixtures.join("expected/report_validation_report.csv"))
         .expect("read expected csv");
     assert_eq!(actual_csv, expected_csv);

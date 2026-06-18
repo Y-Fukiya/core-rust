@@ -40,13 +40,51 @@ pub enum ReportError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WrittenReports {
-    pub json: PathBuf,
-    pub csv: PathBuf,
+    pub json: Option<PathBuf>,
+    pub csv: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReportDocument {
+    pub metadata: ReportMetadata,
+    pub summary: ReportSummary,
     pub results: Vec<RuleValidationResult>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportOutputFormat {
+    Both,
+    Json,
+    Csv,
+}
+
+impl Default for ReportOutputFormat {
+    fn default() -> Self {
+        Self::Both
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReportOptions {
+    pub output_format: ReportOutputFormat,
+    pub metadata: ReportMetadata,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReportMetadata {
+    pub standard: Option<String>,
+    pub standard_version: Option<String>,
+    pub log_level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReportSummary {
+    pub total_results: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    pub error_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,14 +106,40 @@ pub fn write_reports(
     output_dir: impl AsRef<Path>,
     results: &[RuleValidationResult],
 ) -> Result<WrittenReports> {
+    write_reports_with_options(output_dir, results, &ReportOptions::default())
+}
+
+pub fn write_reports_with_options(
+    output_dir: impl AsRef<Path>,
+    results: &[RuleValidationResult],
+    options: &ReportOptions,
+) -> Result<WrittenReports> {
     let output_dir = output_dir.as_ref();
     fs::create_dir_all(output_dir).map_err(|source| ReportError::CreateDir {
         path: output_dir.to_path_buf(),
         source,
     })?;
 
-    let json = write_json_report(output_dir.join("report.json"), results)?;
-    let csv = write_csv_report(output_dir.join("report.csv"), results)?;
+    let json = if matches!(
+        options.output_format,
+        ReportOutputFormat::Both | ReportOutputFormat::Json
+    ) {
+        Some(write_json_report_with_metadata(
+            output_dir.join("report.json"),
+            results,
+            options.metadata.clone(),
+        )?)
+    } else {
+        None
+    };
+    let csv = if matches!(
+        options.output_format,
+        ReportOutputFormat::Both | ReportOutputFormat::Csv
+    ) {
+        Some(write_csv_report(output_dir.join("report.csv"), results)?)
+    } else {
+        None
+    };
 
     Ok(WrittenReports { json, csv })
 }
@@ -83,6 +147,14 @@ pub fn write_reports(
 pub fn write_json_report(
     path: impl AsRef<Path>,
     results: &[RuleValidationResult],
+) -> Result<PathBuf> {
+    write_json_report_with_metadata(path, results, ReportMetadata::default())
+}
+
+pub fn write_json_report_with_metadata(
+    path: impl AsRef<Path>,
+    results: &[RuleValidationResult],
+    metadata: ReportMetadata,
 ) -> Result<PathBuf> {
     let path = path.as_ref();
     create_parent_dir(path)?;
@@ -92,6 +164,8 @@ pub fn write_json_report(
         source,
     })?;
     let document = ReportDocument {
+        metadata,
+        summary: ReportSummary::from_results(results),
         results: results.to_vec(),
     };
     serde_json::to_writer_pretty(file, &document).map_err(|source| ReportError::Json {
@@ -100,6 +174,27 @@ pub fn write_json_report(
     })?;
 
     Ok(path.to_path_buf())
+}
+
+impl ReportSummary {
+    pub fn from_results(results: &[RuleValidationResult]) -> Self {
+        Self {
+            total_results: results.len(),
+            passed: results
+                .iter()
+                .filter(|result| result.execution_status == ExecutionStatus::Passed)
+                .count(),
+            failed: results
+                .iter()
+                .filter(|result| result.execution_status == ExecutionStatus::Failed)
+                .count(),
+            skipped: results
+                .iter()
+                .filter(|result| result.execution_status == ExecutionStatus::Skipped)
+                .count(),
+            error_count: results.iter().map(|result| result.error_count).sum(),
+        }
+    }
 }
 
 pub fn write_csv_report(
@@ -327,6 +422,10 @@ mod tests {
         let source = fs::read_to_string(&written).expect("read json");
         let document: ReportDocument = serde_json::from_str(&source).expect("parse json");
 
+        assert_eq!(document.summary.total_results, 2);
+        assert_eq!(document.summary.passed, 1);
+        assert_eq!(document.summary.failed, 1);
+        assert_eq!(document.summary.error_count, 2);
         assert_eq!(document.results, results);
     }
 
@@ -353,10 +452,10 @@ CORE-TEST-0002,passed,,CM,CM,,,CM passed,0,,\n"
 
         let written = write_reports(dir.path(), &sample_results()).expect("write reports");
 
-        assert_eq!(written.json, dir.path().join("report.json"));
-        assert_eq!(written.csv, dir.path().join("report.csv"));
-        assert!(written.json.exists());
-        assert!(written.csv.exists());
+        assert_eq!(written.json, Some(dir.path().join("report.json")));
+        assert_eq!(written.csv, Some(dir.path().join("report.csv")));
+        assert!(written.json.expect("json report").exists());
+        assert!(written.csv.expect("csv report").exists());
     }
 
     #[test]
@@ -369,5 +468,35 @@ CORE-TEST-0002,passed,,CM,CM,,,CM passed,0,,\n"
         assert_eq!(rows[1].variables, "DOMAIN|AESEQ");
         assert_eq!(rows[2].execution_status, "passed");
         assert_eq!(rows[2].error_count, 0);
+    }
+
+    #[test]
+    fn write_reports_honors_selected_output_format() {
+        let dir = tempdir().expect("tempdir");
+
+        let written = write_reports_with_options(
+            dir.path(),
+            &sample_results(),
+            &ReportOptions {
+                output_format: ReportOutputFormat::Json,
+                metadata: ReportMetadata {
+                    standard: Some("SDTMIG".to_owned()),
+                    standard_version: Some("3.4".to_owned()),
+                    log_level: Some("info".to_owned()),
+                },
+            },
+        )
+        .expect("write json report");
+
+        assert!(written.json.expect("json").exists());
+        assert_eq!(written.csv, None);
+        assert!(!dir.path().join("report.csv").exists());
+
+        let document: ReportDocument =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("report.json")).unwrap())
+                .expect("document");
+        assert_eq!(document.metadata.standard.as_deref(), Some("SDTMIG"));
+        assert_eq!(document.metadata.standard_version.as_deref(), Some("3.4"));
+        assert_eq!(document.metadata.log_level.as_deref(), Some("info"));
     }
 }

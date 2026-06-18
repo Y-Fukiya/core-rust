@@ -30,6 +30,7 @@ tempfile = "3"
 thiserror = "2"
 
 core-api = { path = "crates/core-api" }
+core-cdisc-library = { path = "crates/core-cdisc-library" }
 core-data = { path = "crates/core-data" }
 core-engine = { path = "crates/core-engine" }
 core-report = { path = "crates/core-report" }

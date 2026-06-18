@@ -1,14 +1,20 @@
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use core_data::{left_join_dataset, load_datasets_from_paths, DataError, LoadedDataset};
+use core_cdisc_library::{
+    load_ct_json_file, load_define_xml_file, ControlledTerminology, DefineXmlMetadata,
+};
+use core_data::{left_join_dataset_on, load_datasets_from_paths, DataError, LoadedDataset};
 use core_engine::{validate_rule, EngineError, RuleValidationResult, SkippedReason};
-use core_report::{write_reports, ReportError, WrittenReports};
+use core_report::{
+    write_reports_with_options, ReportError, ReportMetadata, ReportOptions, ReportOutputFormat,
+    WrittenReports,
+};
 use core_rule_model::{
-    load_rules_from_paths, ConditionGroup, ExecutableRule, OperationSpec, Operator, RuleModelError,
-    RuleType, Sensitivity,
+    load_rules_from_paths, Condition, ConditionGroup, ExecutableRule, OperationSpec, Operator,
+    RuleModelError, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -27,6 +33,8 @@ pub enum ApiError {
     RuleLoad(#[from] RuleModelError),
     #[error("failed to load datasets: {0}")]
     DataLoad(#[from] DataError),
+    #[error("failed to load CDISC metadata: {0}")]
+    CdiscLibrary(#[from] core_cdisc_library::CdiscLibraryError),
     #[error("failed to validate rule: {0}")]
     Engine(#[from] EngineError),
     #[error("failed to write reports: {0}")]
@@ -37,8 +45,14 @@ pub enum ApiError {
 pub struct ValidateRequest {
     pub rule_paths: Vec<PathBuf>,
     pub dataset_paths: Vec<PathBuf>,
+    pub define_xml_paths: Vec<PathBuf>,
+    pub ct_paths: Vec<PathBuf>,
     pub include_rules: Vec<String>,
     pub exclude_rules: Vec<String>,
+    pub standard: Option<String>,
+    pub standard_version: Option<String>,
+    pub output_format: ReportOutputFormat,
+    pub log_level: Option<String>,
     pub output_dir: Option<PathBuf>,
 }
 
@@ -67,7 +81,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
     let datasets = load_datasets_from_paths(&request.dataset_paths)?;
-    let selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
+    let cdisc_context = CdiscContext::load(&request.define_xml_paths, &request.ct_paths)?;
+    let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
+    selection
+        .selected
+        .retain(|rule| rule_matches_standard(rule, &request.standard, &request.standard_version));
 
     let mut results = selection.skipped;
     for rule in &selection.selected {
@@ -76,7 +94,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             continue;
         }
 
-        let execution_datasets = match execution_datasets_for_rule(rule, &datasets) {
+        let rule = prepare_rule_with_cdisc_context(rule, &cdisc_context);
+        let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
             Err(skipped) => {
                 results.push(skipped);
@@ -85,13 +104,26 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         };
 
         for dataset in &execution_datasets {
-            results.push(validate_rule(rule, dataset)?);
+            results.push(validate_rule(&rule, dataset)?);
         }
     }
 
     let reports = request
         .output_dir
-        .map(|output_dir| write_reports(output_dir, &results))
+        .map(|output_dir| {
+            write_reports_with_options(
+                output_dir,
+                &results,
+                &ReportOptions {
+                    output_format: request.output_format,
+                    metadata: ReportMetadata {
+                        standard: request.standard.clone(),
+                        standard_version: request.standard_version.clone(),
+                        log_level: request.log_level.clone(),
+                    },
+                },
+            )
+        })
         .transpose()?;
 
     Ok(ValidateOutcome { results, reports })
@@ -203,6 +235,153 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
     })
 }
 
+#[derive(Debug, Clone, Default)]
+struct CdiscContext {
+    define_xml: Vec<DefineXmlMetadata>,
+    terminology: ControlledTerminology,
+}
+
+impl CdiscContext {
+    fn load(define_xml_paths: &[PathBuf], ct_paths: &[PathBuf]) -> Result<Self> {
+        let define_xml = define_xml_paths
+            .iter()
+            .map(load_define_xml_file)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut terminology = ControlledTerminology::default();
+
+        for define in &define_xml {
+            for term in &define.codelists {
+                terminology
+                    .codelists
+                    .entry(term.codelist.clone())
+                    .or_default()
+                    .insert(term.value.clone());
+            }
+        }
+
+        for path in ct_paths {
+            let ct = load_ct_json_file(path)?;
+            merge_terminology(&mut terminology, ct);
+        }
+
+        Ok(Self {
+            define_xml,
+            terminology,
+        })
+    }
+}
+
+fn merge_terminology(target: &mut ControlledTerminology, source: ControlledTerminology) {
+    for (codelist, values) in source.codelists {
+        target.codelists.entry(codelist).or_default().extend(values);
+    }
+}
+
+fn rule_matches_standard(
+    rule: &ExecutableRule,
+    standard: &Option<String>,
+    standard_version: &Option<String>,
+) -> bool {
+    let Some(standard) = standard.as_deref() else {
+        return true;
+    };
+
+    rule.standards.iter().any(|rule_standard| {
+        rule_standard
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(standard))
+            && standard_version.as_deref().map_or(true, |version| {
+                rule_standard
+                    .version
+                    .as_deref()
+                    .is_some_and(|rule_version| rule_version.eq_ignore_ascii_case(version))
+            })
+    })
+}
+
+fn prepare_rule_with_cdisc_context(
+    rule: &ExecutableRule,
+    context: &CdiscContext,
+) -> ExecutableRule {
+    let mut rule = rule.clone();
+    apply_cdisc_context_to_group(&mut rule.conditions, context);
+    rule
+}
+
+fn apply_cdisc_context_to_group(group: &mut ConditionGroup, context: &CdiscContext) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                apply_cdisc_context_to_group(group, context);
+            }
+        }
+        ConditionGroup::Not(group) => apply_cdisc_context_to_group(group, context),
+        ConditionGroup::Leaf(condition) => apply_cdisc_context_to_condition(condition, context),
+    }
+}
+
+fn apply_cdisc_context_to_condition(condition: &mut Condition, context: &CdiscContext) {
+    if !matches!(
+        condition.operator,
+        Operator::IsContainedBy
+            | Operator::IsNotContainedBy
+            | Operator::IsContainedByCaseInsensitive
+            | Operator::IsNotContainedByCaseInsensitive
+    ) || !matches!(condition.comparator, ValueExpr::Null)
+    {
+        return;
+    }
+
+    let Some(codelist) =
+        condition_codelist(condition).or_else(|| define_codelist_for_condition(condition, context))
+    else {
+        return;
+    };
+
+    let Some(values) = context.terminology.codelists.get(&codelist) else {
+        return;
+    };
+
+    condition.comparator = ValueExpr::List(
+        values
+            .iter()
+            .cloned()
+            .map(Value::String)
+            .collect::<Vec<_>>(),
+    );
+}
+
+fn condition_codelist(condition: &Condition) -> Option<String> {
+    option_string_field(
+        &condition.options.extra,
+        &["codelist", "ct_codelist", "define_codelist", "CodeListOID"],
+    )
+}
+
+fn define_codelist_for_condition(condition: &Condition, context: &CdiscContext) -> Option<String> {
+    let target = condition.target.as_deref()?;
+    context
+        .define_xml
+        .iter()
+        .flat_map(|define| &define.variables)
+        .find(|variable| variable.name.eq_ignore_ascii_case(target))
+        .and_then(|variable| variable.codelist_oid.clone())
+}
+
+fn option_string_field(map: &BTreeMap<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| {
+            map.get(*key).or_else(|| {
+                map.iter()
+                    .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+                    .map(|(_key, value)| value)
+            })
+        })
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
 fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
@@ -211,16 +390,34 @@ fn execution_datasets_for_rule(
         return Ok(datasets.to_vec());
     };
 
-    let Some(keys) = string_array_field(operation, &["by", "keys", "on"]) else {
+    let Some((left_keys, right_keys)) = join_keys(operation) else {
         return Err(join_skipped_result(rule, "join operation is missing keys"));
     };
-    let Some(left_name) = string_field(operation, &["left", "primary", "dataset"]) else {
+    let Some(left_name) = string_field(
+        operation,
+        &[
+            "left",
+            "left_dataset",
+            "primary",
+            "primary_dataset",
+            "dataset",
+        ],
+    ) else {
         return Err(join_skipped_result(
             rule,
             "join operation is missing left dataset",
         ));
     };
-    let Some(right_name) = string_field(operation, &["right", "with", "secondary"]) else {
+    let Some(right_name) = string_field(
+        operation,
+        &[
+            "right",
+            "right_dataset",
+            "with",
+            "secondary",
+            "secondary_dataset",
+        ],
+    ) else {
         return Err(join_skipped_result(
             rule,
             "join operation is missing right dataset",
@@ -242,9 +439,40 @@ fn execution_datasets_for_rule(
 
     let prefix =
         string_field(operation, &["prefix"]).unwrap_or_else(|| format!("{}.", right.metadata.name));
-    left_join_dataset(left, right, &keys, &prefix)
+    left_join_dataset_on(left, right, &left_keys, &right_keys, &prefix)
         .map(|dataset| vec![dataset])
         .map_err(|source| join_skipped_result(rule, source.to_string()))
+}
+
+fn join_keys(operation: &OperationSpec) -> Option<(Vec<String>, Vec<String>)> {
+    let common_keys = string_list_field(
+        operation,
+        &["by", "keys", "on", "join_keys", "match_keys", "key"],
+    );
+    let left_keys = string_list_field(
+        operation,
+        &[
+            "left_by",
+            "left_keys",
+            "left_on",
+            "left_key",
+            "left_join_keys",
+        ],
+    )
+    .or_else(|| common_keys.clone());
+    let right_keys = string_list_field(
+        operation,
+        &[
+            "right_by",
+            "right_keys",
+            "right_on",
+            "right_key",
+            "right_join_keys",
+        ],
+    )
+    .or(common_keys);
+
+    left_keys.zip(right_keys)
 }
 
 fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> RuleValidationResult {
@@ -263,7 +491,15 @@ fn supported_join_operation(rule: &ExecutableRule) -> Option<&OperationSpec> {
     rule.operations.iter().find(|operation| {
         matches!(
             operation_name(operation).as_deref(),
-            Some("join" | "left_join" | "dataset_join")
+            Some(
+                "join"
+                    | "left_join"
+                    | "dataset_join"
+                    | "merge"
+                    | "lookup"
+                    | "match_dataset"
+                    | "match_datasets"
+            )
         )
     })
 }
@@ -294,37 +530,71 @@ fn string_field(operation: &OperationSpec, keys: &[&str]) -> Option<String> {
             operation
                 .fields
                 .get(*key)
-                .or_else(|| field_case_insensitive(operation, key))
+                .or_else(|| field_normalized(operation, key))
         })
         .and_then(Value::as_str)
         .map(str::to_owned)
 }
 
-fn string_array_field(operation: &OperationSpec, keys: &[&str]) -> Option<Vec<String>> {
+fn string_list_field(operation: &OperationSpec, keys: &[&str]) -> Option<Vec<String>> {
     keys.iter()
         .find_map(|key| {
             operation
                 .fields
                 .get(*key)
-                .or_else(|| field_case_insensitive(operation, key))
+                .or_else(|| field_normalized(operation, key))
         })
-        .and_then(Value::as_array)
-        .map(|values| {
+        .and_then(strings_from_value)
+        .filter(|values| !values.is_empty())
+}
+
+fn strings_from_value(value: &Value) -> Option<Vec<String>> {
+    match value {
+        Value::String(value) => Some(vec![value.clone()]),
+        Value::Array(values) => Some(
             values
                 .iter()
                 .filter_map(Value::as_str)
                 .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .filter(|values| !values.is_empty())
+                .collect::<Vec<_>>(),
+        ),
+        _ => None,
+    }
 }
 
-fn field_case_insensitive<'a>(operation: &'a OperationSpec, key: &str) -> Option<&'a Value> {
+fn field_normalized<'a>(operation: &'a OperationSpec, key: &str) -> Option<&'a Value> {
+    let normalized_key = normalize_operation_key(key);
     operation
         .fields
         .iter()
-        .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+        .find(|(candidate, _value)| normalize_operation_key(candidate) == normalized_key)
         .map(|(_key, value)| value)
+}
+
+fn normalize_operation_key(value: &str) -> String {
+    let mut normalized = String::new();
+    let mut previous_was_word = false;
+    for ch in value.trim().chars() {
+        if ch.is_ascii_uppercase() {
+            if previous_was_word {
+                normalized.push('_');
+            }
+            normalized.push(ch.to_ascii_lowercase());
+            previous_was_word = true;
+        } else if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            previous_was_word = true;
+        } else {
+            normalized.push('_');
+            previous_was_word = false;
+        }
+    }
+
+    normalized
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 fn find_dataset<'a>(datasets: &'a [LoadedDataset], name: &str) -> Option<&'a LoadedDataset> {
@@ -518,6 +788,7 @@ mod tests {
             include_rules: vec!["CORE-TEST-0001".to_owned(), "CORE-MISSING".to_owned()],
             exclude_rules: Vec::new(),
             output_dir: Some(output_dir.clone()),
+            ..Default::default()
         })
         .expect("run validation");
 
@@ -530,7 +801,12 @@ mod tests {
         assert_eq!(outcome.results[1].rule_id, "CORE-TEST-0001");
         assert_eq!(outcome.results[1].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[1].error_count, 1);
-        assert!(outcome.reports.expect("reports").json.exists());
+        assert!(outcome
+            .reports
+            .expect("reports")
+            .json
+            .expect("json report")
+            .exists());
         assert!(output_dir.join("report.csv").exists());
     }
 
@@ -542,6 +818,7 @@ mod tests {
             output_dir: None,
             rule_paths: Vec::new(),
             dataset_paths: Vec::new(),
+            ..Default::default()
         };
 
         let error = run_validation(request).expect_err("missing rule paths");
@@ -594,6 +871,7 @@ mod tests {
             include_rules: Vec::new(),
             exclude_rules: Vec::new(),
             output_dir: None,
+            ..Default::default()
         })
         .expect("run validation");
 
@@ -643,6 +921,7 @@ mod tests {
             include_rules: Vec::new(),
             exclude_rules: Vec::new(),
             output_dir: None,
+            ..Default::default()
         })
         .expect("run validation");
 
@@ -722,6 +1001,7 @@ mod tests {
             include_rules: Vec::new(),
             exclude_rules: Vec::new(),
             output_dir: None,
+            ..Default::default()
         })
         .expect("run validation");
 
@@ -730,6 +1010,254 @@ mod tests {
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
         assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_executes_join_operation_with_different_key_names() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-JOIN-LOOKUP.json"),
+            r#"{
+  "Core": { "Id": "CORE-JOIN-LOOKUP", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "type": "lookup",
+      "leftDataset": "AE",
+      "rightDataset": "LOOKUP",
+      "leftKeys": ["USUBJID"],
+      "rightKeys": ["SUBJECT"],
+      "prefix": "LOOKUP."
+    }
+  ],
+  "Check": {
+    "name": "LOOKUP.FLAG",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": { "Message": "Lookup flag must not be Y" }
+}"#,
+        )
+        .expect("write lookup rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "SUBJECT": ["S2"],
+        "FLAG": ["Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write lookup data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_executes_jsonata_string_rule() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-JSONATA-STRING.json"),
+            r#"{
+  "Core": { "Id": "CORE-JSONATA-STRING", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "JSONATA",
+  "Check": "$exists(DOMAIN) and DOMAIN != 'AE'",
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+        )
+        .expect("write jsonata string rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_uses_define_xml_and_ct_for_codelist_checks() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-CT-DOMAIN.json"),
+            r#"{
+  "Core": { "Id": "CORE-CT-DOMAIN", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "is_not_contained_by"
+  },
+  "Outcome": { "Message": "DOMAIN must use controlled terminology" }
+}"#,
+        )
+        .expect("write codelist rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "DOMAIN": ["AE", "CM", "XX"],
+        "AESEQ": [1, 2, 3]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write codelist data");
+
+        let define_xml_path = dir.path().join("define.xml");
+        fs::write(
+            &define_xml_path,
+            r#"
+<ODM>
+  <ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text">
+    <CodeListRef CodeListOID="CL.DOMAIN"/>
+  </ItemDef>
+  <CodeList OID="CL.DOMAIN">
+    <CodeListItem CodedValue="AE"/>
+  </CodeList>
+</ODM>
+"#,
+        )
+        .expect("write define xml");
+        let ct_path = dir.path().join("ct.json");
+        fs::write(&ct_path, r#"{ "CL.DOMAIN": ["CM"] }"#).expect("write ct");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            define_xml_paths: vec![define_xml_path],
+            ct_paths: vec![ct_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(3));
+    }
+
+    #[test]
+    fn run_validation_filters_rules_by_standard_and_version() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-STANDARD-34.json"),
+            r#"{
+  "Core": { "Id": "CORE-STANDARD-34", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SDTMIG", "Version": "3.4" }] }
+  ],
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+        )
+        .expect("write matching standard rule");
+        fs::write(
+            rules_dir.join("CORE-STANDARD-33.json"),
+            r#"{
+  "Core": { "Id": "CORE-STANDARD-33", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SDTMIG", "Version": "3.3" }] }
+  ],
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "CM"
+  },
+  "Outcome": { "Message": "DOMAIN must be CM" }
+}"#,
+        )
+        .expect("write nonmatching standard rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some("3.4".to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].rule_id, "CORE-STANDARD-34");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     }
 
     fn write_raw_rule(

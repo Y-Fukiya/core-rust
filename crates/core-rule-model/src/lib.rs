@@ -652,6 +652,10 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
 }
 
 fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
+    if let Some(expression) = value.as_str() {
+        return normalize_jsonata_expression(expression);
+    }
+
     let object = value.as_object().ok_or_else(|| {
         RuleModelError::InvalidRuleFormat("condition must be an object".to_owned())
     })?;
@@ -693,6 +697,346 @@ fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
             .unwrap_or(ValueExpr::Null),
         options: OperatorOptions { extra },
     }))
+}
+
+fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
+    let expression = trim_wrapping_parens(expression.trim());
+    if expression.is_empty() {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "JSONATA expression must not be empty".to_owned(),
+        ));
+    }
+
+    if let Some(parts) = split_top_level_expression(expression, " or ") {
+        return parts
+            .into_iter()
+            .map(normalize_jsonata_expression)
+            .collect::<Result<Vec<_>>>()
+            .map(ConditionGroup::Any);
+    }
+
+    if let Some(parts) = split_top_level_expression(expression, " and ") {
+        return parts
+            .into_iter()
+            .map(normalize_jsonata_expression)
+            .collect::<Result<Vec<_>>>()
+            .map(ConditionGroup::All);
+    }
+
+    normalize_jsonata_leaf(expression)
+}
+
+fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
+    let expression = trim_wrapping_parens(expression.trim());
+    if let Some(argument) = jsonata_function_argument(expression, "$exists") {
+        return Ok(ConditionGroup::Leaf(Condition {
+            target: Some(clean_jsonata_identifier(argument)),
+            operator: Operator::Exists,
+            comparator: ValueExpr::Null,
+            options: OperatorOptions::default(),
+        }));
+    }
+
+    if let Some(index) = find_top_level_operator(expression, " not in ") {
+        let target = clean_jsonata_identifier(&expression[..index]);
+        let comparator = jsonata_list_comparator(&expression[index + " not in ".len()..])?;
+        return Ok(jsonata_leaf(target, Operator::IsNotContainedBy, comparator));
+    }
+
+    if let Some(index) = find_top_level_operator(expression, " in ") {
+        let target = clean_jsonata_identifier(&expression[..index]);
+        let comparator = jsonata_list_comparator(&expression[index + " in ".len()..])?;
+        return Ok(jsonata_leaf(target, Operator::IsContainedBy, comparator));
+    }
+
+    for (token, operator) in [
+        (">=", Operator::GreaterThanOrEqualTo),
+        ("<=", Operator::LessThanOrEqualTo),
+        ("!=", Operator::NotEqualTo),
+        ("=", Operator::EqualTo),
+        (">", Operator::GreaterThan),
+        ("<", Operator::LessThan),
+    ] {
+        if let Some(index) = find_top_level_operator(expression, token) {
+            let target = clean_jsonata_identifier(&expression[..index]);
+            let comparator = jsonata_comparator(&expression[index + token.len()..])?;
+            return Ok(jsonata_leaf(target, operator, comparator));
+        }
+    }
+
+    Err(RuleModelError::InvalidRuleFormat(format!(
+        "unsupported JSONATA expression: {expression}"
+    )))
+}
+
+fn jsonata_leaf(target: String, operator: Operator, comparator: ValueExpr) -> ConditionGroup {
+    ConditionGroup::Leaf(Condition {
+        target: Some(target),
+        operator,
+        comparator,
+        options: OperatorOptions::default(),
+    })
+}
+
+fn jsonata_function_argument<'a>(expression: &'a str, name: &str) -> Option<&'a str> {
+    let expression = expression.trim();
+    let open = expression.find('(')?;
+    if !expression[..open].trim().eq_ignore_ascii_case(name) || !expression.ends_with(')') {
+        return None;
+    }
+    let argument = &expression[open + 1..expression.len() - 1];
+    Some(argument.trim())
+}
+
+fn jsonata_list_comparator(value: &str) -> Result<ValueExpr> {
+    match jsonata_value(value.trim())? {
+        Value::Array(values) => Ok(ValueExpr::List(values)),
+        value => Ok(ValueExpr::List(vec![value])),
+    }
+}
+
+fn jsonata_comparator(value: &str) -> Result<ValueExpr> {
+    let value = value.trim();
+    if is_jsonata_identifier(value) {
+        Ok(ValueExpr::ColumnRef(clean_jsonata_identifier(value)))
+    } else {
+        Ok(value_expr_from_value(jsonata_value(value)?))
+    }
+}
+
+fn jsonata_value(value: &str) -> Result<Value> {
+    let value = value.trim();
+    if value.starts_with('[') && value.ends_with(']') {
+        let inner = &value[1..value.len() - 1];
+        return split_top_level_commas(inner)
+            .into_iter()
+            .map(jsonata_value)
+            .collect::<Result<Vec<_>>>()
+            .map(Value::Array);
+    }
+
+    if value.starts_with('"') {
+        return serde_json::from_str(value)
+            .map_err(|source| RuleModelError::InvalidRuleFormat(source.to_string()));
+    }
+
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
+        return Ok(Value::String(
+            value[1..value.len() - 1]
+                .replace("\\'", "'")
+                .replace("\\\\", "\\"),
+        ));
+    }
+
+    match value {
+        "true" => return Ok(Value::Bool(true)),
+        "false" => return Ok(Value::Bool(false)),
+        "null" => return Ok(Value::Null),
+        _ => {}
+    }
+
+    match serde_json::from_str(value) {
+        Ok(value) => Ok(value),
+        Err(_) => Ok(Value::String(clean_jsonata_identifier(value))),
+    }
+}
+
+fn clean_jsonata_identifier(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches('$')
+        .trim_matches('`')
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_owned()
+}
+
+fn is_jsonata_identifier(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty()
+        || value.starts_with('"')
+        || value.starts_with('\'')
+        || value.starts_with('[')
+        || matches!(value, "true" | "false" | "null")
+        || serde_json::from_str::<Value>(value).is_ok()
+    {
+        return false;
+    }
+
+    value
+        .trim_start_matches('$')
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '`'))
+}
+
+fn split_top_level_expression<'a>(expression: &'a str, token: &str) -> Option<Vec<&'a str>> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    let chars = expression.char_indices().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < chars.len() {
+        let (byte_index, ch) = chars[index];
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+
+        if depth == 0 && expression[byte_index..].len() >= token.len() {
+            let candidate = &expression[byte_index..byte_index + token.len()];
+            if candidate.eq_ignore_ascii_case(token) {
+                parts.push(expression[start..byte_index].trim());
+                start = byte_index + token.len();
+                while index + 1 < chars.len() && chars[index + 1].0 < start {
+                    index += 1;
+                }
+            }
+        }
+        index += 1;
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        parts.push(expression[start..].trim());
+        Some(parts)
+    }
+}
+
+fn split_top_level_commas(expression: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (byte_index, ch) in expression.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(expression[start..byte_index].trim());
+                start = byte_index + 1;
+            }
+            _ => {}
+        }
+    }
+    if !expression[start..].trim().is_empty() {
+        parts.push(expression[start..].trim());
+    }
+    parts
+}
+
+fn find_top_level_operator(expression: &str, token: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (byte_index, ch) in expression.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+
+        if depth == 0 && expression[byte_index..].len() >= token.len() {
+            let candidate = &expression[byte_index..byte_index + token.len()];
+            if candidate.eq_ignore_ascii_case(token) {
+                return Some(byte_index);
+            }
+        }
+    }
+    None
+}
+
+fn trim_wrapping_parens(mut expression: &str) -> &str {
+    loop {
+        let trimmed = expression.trim();
+        if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
+            return trimmed;
+        }
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if outer_parens_enclose_expression(trimmed) {
+            expression = inner;
+        } else {
+            return trimmed;
+        }
+    }
+}
+
+fn outer_parens_enclose_expression(expression: &str) -> bool {
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    let last = expression.len() - 1;
+
+    for (byte_index, ch) in expression.char_indices() {
+        if let Some(quote_char) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' => depth += 1,
+            ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && byte_index != last {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    depth == 0
 }
 
 fn normalize_condition_list(value: &Value, field: &'static str) -> Result<Vec<ConditionGroup>> {
@@ -1122,6 +1466,51 @@ Outcome:
         let rule = normalize_rule(value).expect("normalize rule");
 
         assert_eq!(rule.rule_type, RuleType::Jsonata);
+    }
+
+    #[test]
+    fn normalize_jsonata_string_expression_to_condition_tree() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("$exists(DOMAIN) and DOMAIN != 'AE'");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::All(groups) = rule.conditions else {
+            panic!("expected all condition group");
+        };
+
+        assert_eq!(groups.len(), 2);
+        let ConditionGroup::Leaf(exists) = &groups[0] else {
+            panic!("expected exists leaf");
+        };
+        assert_eq!(exists.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(exists.operator, Operator::Exists);
+
+        let ConditionGroup::Leaf(compare) = &groups[1] else {
+            panic!("expected comparison leaf");
+        };
+        assert_eq!(compare.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(compare.operator, Operator::NotEqualTo);
+        assert_eq!(compare.comparator, ValueExpr::Literal(json!("AE")));
+    }
+
+    #[test]
+    fn normalize_jsonata_in_expression_to_list_comparator() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("DOMAIN not in ['AE', 'CM']");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(condition.operator, Operator::IsNotContainedBy);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::List(vec![json!("AE"), json!("CM")])
+        );
     }
 
     #[test]

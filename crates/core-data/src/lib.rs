@@ -426,18 +426,35 @@ pub fn left_join_dataset(
     keys: &[String],
     right_prefix: &str,
 ) -> Result<LoadedDataset> {
-    if keys.is_empty() {
+    left_join_dataset_on(left, right, keys, keys, right_prefix)
+}
+
+pub fn left_join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+    right_prefix: &str,
+) -> Result<LoadedDataset> {
+    if left_keys.is_empty() || right_keys.is_empty() {
         return Err(DataError::InvalidDatasetPackage(
             "join requires at least one key".to_owned(),
         ));
     }
+    if left_keys.len() != right_keys.len() {
+        return Err(DataError::InvalidDatasetPackage(
+            "left and right join keys must have the same length".to_owned(),
+        ));
+    }
 
-    for key in keys {
+    for key in left_keys {
         if left.frame.column(key).is_err() {
             return Err(DataError::InvalidDatasetPackage(format!(
                 "left join key not found: {key}"
             )));
         }
+    }
+    for key in right_keys {
         if right.frame.column(key).is_err() {
             return Err(DataError::InvalidDatasetPackage(format!(
                 "right join key not found: {key}"
@@ -448,7 +465,7 @@ pub fn left_join_dataset(
     let mut index = HashMap::new();
     for row in 0..right.frame.height() {
         index
-            .entry(row_key(&right.frame, keys, row)?)
+            .entry(row_key(&right.frame, right_keys, row)?)
             .or_insert(row);
     }
 
@@ -463,7 +480,7 @@ pub fn left_join_dataset(
     let mut joined_columns = Vec::new();
     for right_column in right.frame.get_column_names() {
         let right_column = right_column.as_str();
-        if keys.iter().any(|key| key == right_column) {
+        if right_keys.iter().any(|key| key == right_column) {
             continue;
         }
 
@@ -474,7 +491,7 @@ pub fn left_join_dataset(
 
         let mut values = Vec::with_capacity(left.frame.height());
         for left_row in 0..left.frame.height() {
-            let key = row_key(&left.frame, keys, left_row)?;
+            let key = row_key(&left.frame, left_keys, left_row)?;
             let value = if let Some(right_row) = index.get(&key) {
                 cell_to_string(&right.frame, right_column, *right_row)?
             } else {
@@ -733,5 +750,67 @@ mod tests {
             .get(1)
             .expect("row 2")
             .is_null());
+    }
+
+    #[test]
+    fn left_join_dataset_on_allows_different_left_and_right_key_names() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "SUBJECT": ["S2"],
+        "FLAG": ["Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let joined = left_join_dataset_on(
+            &datasets[0],
+            &datasets[1],
+            &["USUBJID".to_owned()],
+            &["SUBJECT".to_owned()],
+            "LOOKUP.",
+        )
+        .expect("join datasets");
+
+        assert_eq!(
+            joined.summary().columns,
+            vec!["DOMAIN", "USUBJID", "LOOKUP.FLAG"]
+        );
+        assert!(joined
+            .frame()
+            .column("LOOKUP.FLAG")
+            .expect("joined flag")
+            .get(0)
+            .expect("row 1")
+            .is_null());
+        assert_eq!(
+            joined
+                .frame()
+                .column("LOOKUP.FLAG")
+                .expect("joined flag")
+                .get(1)
+                .expect("row 2")
+                .extract_str(),
+            Some("Y")
+        );
     }
 }

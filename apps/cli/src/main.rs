@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use core_api::{run_validation, ValidateRequest};
+use core_report::ReportOutputFormat;
 
 #[derive(Debug, Parser)]
 #[command(name = "core-rs", version, about = "CDISC Rules Engine Rust port")]
@@ -35,6 +36,12 @@ struct ValidateArgs {
 
     #[arg(long, value_name = "DIR_OR_FILE", num_args = 1..)]
     local_rules: Vec<PathBuf>,
+
+    #[arg(long, value_name = "FILE", num_args = 1..)]
+    define_xml: Vec<PathBuf>,
+
+    #[arg(long, alias = "controlled-terminology", value_name = "FILE", num_args = 1..)]
+    ct: Vec<PathBuf>,
 
     #[arg(short = 'r', long, value_name = "RULE_ID", num_args = 1..)]
     rules: Vec<String>,
@@ -92,16 +99,50 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
     let outcome = run_validation(ValidateRequest {
         rule_paths: args.local_rules,
         dataset_paths,
+        define_xml_paths: args.define_xml,
+        ct_paths: args.ct,
         include_rules: args.rules,
         exclude_rules: args.exclude_rules,
+        standard: args.standard,
+        standard_version: args.standard_version,
+        output_format: args
+            .output_format
+            .map(ReportOutputFormat::from)
+            .unwrap_or_default(),
+        log_level: args.log_level.map(|level| level.as_name().to_owned()),
         output_dir: args.output,
     })?;
 
     println!("validation completed: {} result(s)", outcome.results.len());
     if let Some(reports) = outcome.reports {
-        println!("wrote {}", reports.json.display());
-        println!("wrote {}", reports.csv.display());
+        if let Some(json) = reports.json {
+            println!("wrote {}", json.display());
+        }
+        if let Some(csv) = reports.csv {
+            println!("wrote {}", csv.display());
+        }
     }
 
     Ok(())
+}
+
+impl From<OutputFormat> for ReportOutputFormat {
+    fn from(value: OutputFormat) -> Self {
+        match value {
+            OutputFormat::Json => Self::Json,
+            OutputFormat::Csv => Self::Csv,
+        }
+    }
+}
+
+impl LogLevel {
+    fn as_name(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
 }

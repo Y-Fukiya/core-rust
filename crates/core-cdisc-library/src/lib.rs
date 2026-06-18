@@ -73,32 +73,39 @@ pub fn load_define_xml_file(path: impl AsRef<Path>) -> Result<DefineXmlMetadata>
 }
 
 pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
-    let item_def = Regex::new(r#"<ItemDef\b(?P<attrs>[^>]*)>"#)?;
+    let item_def = Regex::new(r#"(?s)<ItemDef\b(?P<attrs>[^>]*)>(?P<body>.*?)</ItemDef>"#)?;
+    let self_closing_item_def = Regex::new(r#"<ItemDef\b(?P<attrs>[^>]*)/>"#)?;
     let codelist_ref = Regex::new(r#"<CodeListRef\b(?P<attrs>[^>]*)/?>"#)?;
     let codelist = Regex::new(r#"(?s)<CodeList\b(?P<attrs>[^>]*)>(?P<body>.*?)</CodeList>"#)?;
-    let codelist_item = Regex::new(r#"<CodeListItem\b(?P<attrs>[^>]*)/?>"#)?;
+    let codelist_item = Regex::new(r#"<(?:CodeListItem|EnumeratedItem)\b(?P<attrs>[^>]*)/?>"#)?;
 
-    let variables = item_def
+    let mut variables = item_def
         .captures_iter(source)
         .map(|capture| {
             let attrs = capture
                 .name("attrs")
                 .map(|value| value.as_str())
                 .unwrap_or("");
-            let codelist_oid = codelist_ref
-                .captures(attrs)
-                .and_then(|capture| capture.name("attrs"))
-                .and_then(|attrs| xml_attr(attrs.as_str(), "CodeListOID"));
-            DefineVariable {
-                oid: xml_attr(attrs, "OID"),
-                name: xml_attr(attrs, "Name").unwrap_or_default(),
-                data_type: xml_attr(attrs, "DataType"),
-                length: xml_attr(attrs, "Length"),
-                codelist_oid,
-            }
+            let body = capture
+                .name("body")
+                .map(|value| value.as_str())
+                .unwrap_or("");
+            define_variable_from_item(attrs, body, &codelist_ref)
         })
         .filter(|variable| !variable.name.is_empty())
-        .collect();
+        .collect::<Vec<_>>();
+    variables.extend(
+        self_closing_item_def
+            .captures_iter(source)
+            .map(|capture| {
+                let attrs = capture
+                    .name("attrs")
+                    .map(|value| value.as_str())
+                    .unwrap_or("");
+                define_variable_from_item(attrs, "", &codelist_ref)
+            })
+            .filter(|variable| !variable.name.is_empty()),
+    );
 
     let codelists = codelist
         .captures_iter(source)
@@ -128,6 +135,23 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
         variables,
         codelists,
     })
+}
+
+fn define_variable_from_item(attrs: &str, body: &str, codelist_ref: &Regex) -> DefineVariable {
+    let codelist_oid = xml_attr(attrs, "CodeListOID").or_else(|| {
+        codelist_ref
+            .captures(body)
+            .and_then(|capture| capture.name("attrs"))
+            .and_then(|attrs| xml_attr(attrs.as_str(), "CodeListOID"))
+    });
+
+    DefineVariable {
+        oid: xml_attr(attrs, "OID"),
+        name: xml_attr(attrs, "Name").unwrap_or_default(),
+        data_type: xml_attr(attrs, "DataType"),
+        length: xml_attr(attrs, "Length"),
+        codelist_oid,
+    }
 }
 
 pub fn load_ct_json_file(path: impl AsRef<Path>) -> Result<ControlledTerminology> {
@@ -180,7 +204,7 @@ fn insert_ct_values(terminology: &mut ControlledTerminology, codelist: &str, val
 }
 
 fn xml_attr(attrs: &str, name: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(r#"{name}\s*=\s*"([^"]*)""#)).ok()?;
+    let pattern = Regex::new(&format!(r#"{name}\s*=\s*["']([^"']*)["']"#)).ok()?;
     pattern
         .captures(attrs)
         .and_then(|capture| capture.get(1))
@@ -213,6 +237,32 @@ mod tests {
         assert_eq!(metadata.variables[0].data_type.as_deref(), Some("text"));
         assert_eq!(metadata.codelists.len(), 2);
         assert_eq!(metadata.codelists[0].value, "AE");
+    }
+
+    #[test]
+    fn parse_define_xml_extracts_nested_codelist_refs() {
+        let define = r#"
+<ODM>
+  <ItemDef OID='IT.AE.DOMAIN' Name='DOMAIN' DataType='text'>
+    <CodeListRef CodeListOID='CL.DOMAIN'/>
+  </ItemDef>
+  <CodeList OID='CL.DOMAIN'>
+    <EnumeratedItem CodedValue='AE'/>
+    <CodeListItem CodedValue='CM'/>
+  </CodeList>
+</ODM>
+"#;
+
+        let metadata = parse_define_xml(define).expect("parse define");
+
+        assert_eq!(metadata.variables.len(), 1);
+        assert_eq!(
+            metadata.variables[0].codelist_oid.as_deref(),
+            Some("CL.DOMAIN")
+        );
+        assert_eq!(metadata.codelists.len(), 2);
+        assert_eq!(metadata.codelists[0].value, "AE");
+        assert_eq!(metadata.codelists[1].value, "CM");
     }
 
     #[test]
