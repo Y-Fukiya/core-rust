@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -31,6 +31,32 @@ struct PythonCompatCase {
     #[serde(default)]
     standard_version: Option<String>,
     expected_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct CoverageManifest {
+    minimum_case_count: usize,
+    minimum_rule_count: usize,
+    required_cases: Vec<String>,
+    required_domains: Vec<String>,
+    required_rule_ids: Vec<String>,
+    expected_result_counts: BTreeMap<String, ExpectedResultCounts>,
+    required_capabilities: Vec<CoverageCapability>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct ExpectedResultCounts {
+    total: usize,
+    passed: usize,
+    failed: usize,
+    skipped: usize,
+    errors: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct CoverageCapability {
+    name: String,
+    evidence: Vec<PathBuf>,
 }
 
 #[test]
@@ -179,6 +205,97 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     );
 }
 
+#[test]
+fn python_compat_coverage_manifest_matches_fixture_matrix() {
+    let fixtures = fixture_root();
+    let manifest: CoverageManifest = serde_json::from_str(
+        &fs::read_to_string(fixtures.join("python_compat/coverage_manifest.json"))
+            .expect("read coverage manifest"),
+    )
+    .expect("parse coverage manifest");
+    let cases = read_cases_by_name(&fixtures);
+
+    assert!(
+        cases.len() >= manifest.minimum_case_count,
+        "expected at least {} compatibility cases",
+        manifest.minimum_case_count
+    );
+    for required_case in &manifest.required_cases {
+        assert!(
+            cases.contains_key(required_case),
+            "coverage manifest requires missing case {required_case}"
+        );
+        assert!(
+            manifest.expected_result_counts.contains_key(required_case),
+            "coverage manifest requires result counts for {required_case}"
+        );
+    }
+
+    for (case_name, expected_counts) in &manifest.expected_result_counts {
+        let case = cases
+            .get(case_name)
+            .unwrap_or_else(|| panic!("expected result count for unknown case {case_name}"));
+        let expected = read_json(&fixtures.join(&case.expected_path));
+        assert_eq!(
+            &result_counts(&expected),
+            expected_counts,
+            "coverage manifest result counts did not match {case_name}"
+        );
+    }
+
+    let covered_domains = cases
+        .values()
+        .flat_map(|case| case.dataset_paths.iter())
+        .flat_map(|path| dataset_domains(&fixtures.join(path)))
+        .collect::<BTreeSet<_>>();
+    for domain in &manifest.required_domains {
+        assert!(
+            covered_domains.contains(domain),
+            "coverage manifest requires uncovered domain {domain}"
+        );
+    }
+
+    let mut covered_rule_ids = BTreeSet::new();
+    for case in cases.values() {
+        for path in &case.rule_paths {
+            collect_rule_ids(&fixtures.join(path), &mut covered_rule_ids);
+        }
+    }
+    assert!(
+        covered_rule_ids.len() >= manifest.minimum_rule_count,
+        "expected at least {} covered rules",
+        manifest.minimum_rule_count
+    );
+    for rule_id in &manifest.required_rule_ids {
+        assert!(
+            covered_rule_ids.contains(rule_id),
+            "coverage manifest requires uncovered rule {rule_id}"
+        );
+    }
+
+    let mut capability_names = BTreeSet::new();
+    for capability in &manifest.required_capabilities {
+        assert!(
+            capability_names.insert(capability.name.as_str()),
+            "duplicate capability {}",
+            capability.name
+        );
+        assert!(
+            !capability.evidence.is_empty(),
+            "capability {} needs at least one evidence path",
+            capability.name
+        );
+        for evidence in &capability.evidence {
+            assert!(
+                fixtures.join(evidence).exists(),
+                "capability {} evidence path does not exist: {}",
+                capability.name,
+                evidence.display()
+            );
+        }
+    }
+}
+
 fn absolute_paths(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
     paths.iter().map(|path| root.join(path)).collect()
 }
@@ -225,9 +342,82 @@ fn read_case(path: &Path) -> PythonCompatCase {
         .expect("parse python compat case")
 }
 
+fn read_cases_by_name(root: &Path) -> BTreeMap<String, PythonCompatCase> {
+    fs::read_dir(root.join("python_compat/cases"))
+        .expect("read python compat cases")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("read case entries")
+        .into_iter()
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+        .map(|entry| {
+            let case = read_case(&entry.path());
+            (case.name.clone(), case)
+        })
+        .collect()
+}
+
 fn read_json(path: &Path) -> Value {
     let source = fs::read_to_string(path).expect("read python compat expected output");
     serde_json::from_str(&source).expect("parse python compat expected output")
+}
+
+fn result_counts(expected: &Value) -> ExpectedResultCounts {
+    let results = expected["results"].as_array().expect("results array");
+    ExpectedResultCounts {
+        total: results.len(),
+        passed: results
+            .iter()
+            .filter(|result| result["execution_status"] == "passed")
+            .count(),
+        failed: results
+            .iter()
+            .filter(|result| result["execution_status"] == "failed")
+            .count(),
+        skipped: results
+            .iter()
+            .filter(|result| result["execution_status"] == "skipped")
+            .count(),
+        errors: results
+            .iter()
+            .map(|result| result["error_count"].as_u64().unwrap_or_default() as usize)
+            .sum(),
+    }
+}
+
+fn dataset_domains(path: &Path) -> Vec<String> {
+    read_json(path)["datasets"]
+        .as_array()
+        .expect("datasets array")
+        .iter()
+        .filter_map(|dataset| dataset["domain"].as_str())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn collect_rule_ids(path: &Path, ids: &mut BTreeSet<String>) {
+    if path.is_dir() {
+        let mut entries = fs::read_dir(path)
+            .expect("read rule dir")
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("read rule dir entries");
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            collect_rule_ids(&entry.path(), ids);
+        }
+        return;
+    }
+
+    if path.extension().and_then(|value| value.to_str()) != Some("json") {
+        return;
+    }
+
+    let rule = read_json(path);
+    if let Some(rule_id) = rule["Core"]["Id"]
+        .as_str()
+        .or_else(|| rule["core_id"].as_str())
+    {
+        ids.insert(rule_id.to_owned());
+    }
 }
 
 fn fixture_root() -> PathBuf {

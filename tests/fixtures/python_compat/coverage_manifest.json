@@ -1,0 +1,206 @@
+{
+  "minimum_case_count": 7,
+  "minimum_rule_count": 20,
+  "required_cases": [
+    "integrated_study_package",
+    "sdtm_adam_full_study_package",
+    "sdtm_adam_sdtmig_filter",
+    "regulatory_full_study_package",
+    "regulatory_sdtmig_filter",
+    "regulatory_adamig_filter",
+    "regulatory_include_missing_rules"
+  ],
+  "required_domains": [
+    "ADAE",
+    "ADLB",
+    "ADSL",
+    "AE",
+    "CM",
+    "DM",
+    "EX",
+    "LB",
+    "RELREC",
+    "SUPPAE",
+    "VS"
+  ],
+  "required_rule_ids": [
+    "CORE-GOLDEN-0001",
+    "CORE-GOLDEN-0002",
+    "CORE-GOLDEN-0003",
+    "CORE-SDTM-ADAM-0001",
+    "CORE-SDTM-ADAM-0002",
+    "CORE-SDTM-ADAM-0003",
+    "CORE-SDTM-ADAM-0004",
+    "CORE-SDTM-ADAM-0005",
+    "CORE-SDTM-ADAM-0006",
+    "CORE-SDTM-ADAM-0007",
+    "CORE-REG-0001",
+    "CORE-REG-0002",
+    "CORE-REG-0003",
+    "CORE-REG-0004",
+    "CORE-REG-0005",
+    "CORE-REG-0006",
+    "CORE-REG-0007",
+    "CORE-REG-0008",
+    "CORE-REG-0009",
+    "CORE-REG-0010"
+  ],
+  "expected_result_counts": {
+    "integrated_study_package": {
+      "total": 7,
+      "passed": 4,
+      "failed": 3,
+      "skipped": 0,
+      "errors": 3
+    },
+    "sdtm_adam_full_study_package": {
+      "total": 12,
+      "passed": 6,
+      "failed": 6,
+      "skipped": 0,
+      "errors": 7
+    },
+    "sdtm_adam_sdtmig_filter": {
+      "total": 10,
+      "passed": 6,
+      "failed": 4,
+      "skipped": 0,
+      "errors": 5
+    },
+    "regulatory_full_study_package": {
+      "total": 17,
+      "passed": 8,
+      "failed": 9,
+      "skipped": 0,
+      "errors": 9
+    },
+    "regulatory_sdtmig_filter": {
+      "total": 16,
+      "passed": 8,
+      "failed": 8,
+      "skipped": 0,
+      "errors": 8
+    },
+    "regulatory_adamig_filter": {
+      "total": 11,
+      "passed": 8,
+      "failed": 3,
+      "skipped": 0,
+      "errors": 3
+    },
+    "regulatory_include_missing_rules": {
+      "total": 3,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 1,
+      "errors": 2
+    }
+  },
+  "required_capabilities": [
+    {
+      "name": "dataset_package_json",
+      "evidence": [
+        "datasets/sdtm_adam/study_package.json",
+        "datasets/regulatory/study_package.json"
+      ]
+    },
+    {
+      "name": "multi_domain_sdtm_adam",
+      "evidence": [
+        "datasets/sdtm_adam/study_package.json",
+        "datasets/regulatory/study_package.json"
+      ]
+    },
+    {
+      "name": "define_xml",
+      "evidence": [
+        "cdisc/sdtm_adam_define.xml",
+        "cdisc/regulatory_define.xml"
+      ]
+    },
+    {
+      "name": "controlled_terminology_json",
+      "evidence": [
+        "cdisc/sdtm_adam_ct.json",
+        "cdisc/regulatory_ct.json"
+      ]
+    },
+    {
+      "name": "external_dictionary_json",
+      "evidence": [
+        "cdisc/sdtm_adam_external_dictionary.json"
+      ]
+    },
+    {
+      "name": "external_dictionary_csv",
+      "evidence": [
+        "cdisc/regulatory_external_dictionary.csv"
+      ]
+    },
+    {
+      "name": "jsonata_rule",
+      "evidence": [
+        "rules/sdtm_adam/CORE-SDTM-ADAM-0004.json",
+        "rules/regulatory/CORE-REG-0005.json"
+      ]
+    },
+    {
+      "name": "operations_filter_sort_aggregate_row_number",
+      "evidence": [
+        "rules/sdtm_adam/CORE-SDTM-ADAM-0005.json",
+        "rules/regulatory/CORE-REG-0008.json"
+      ]
+    },
+    {
+      "name": "inner_join",
+      "evidence": [
+        "rules/sdtm_adam/CORE-SDTM-ADAM-0003.json",
+        "rules/regulatory/CORE-REG-0007.json"
+      ]
+    },
+    {
+      "name": "anti_join",
+      "evidence": [
+        "rules/regulatory/CORE-REG-0006.json"
+      ]
+    },
+    {
+      "name": "match_datasets",
+      "evidence": [
+        "rules/regulatory/CORE-REG-0010.json"
+      ]
+    },
+    {
+      "name": "standard_filter_sdtmig",
+      "evidence": [
+        "python_compat/cases/sdtm_adam_sdtmig_filter.json",
+        "python_compat/cases/regulatory_sdtmig_filter.json"
+      ]
+    },
+    {
+      "name": "standard_filter_adamig",
+      "evidence": [
+        "python_compat/cases/regulatory_adamig_filter.json"
+      ]
+    },
+    {
+      "name": "include_rules_and_missing_rule_skip",
+      "evidence": [
+        "python_compat/cases/regulatory_include_missing_rules.json",
+        "python_compat/expected/regulatory_include_missing_rules.json"
+      ]
+    },
+    {
+      "name": "json_csv_log_reports",
+      "evidence": [
+        "expected/regulatory_validation_report.csv"
+      ]
+    },
+    {
+      "name": "cli_full_report_output",
+      "evidence": [
+        "expected/regulatory_validation_report.csv"
+      ]
+    }
+  ]
+}
