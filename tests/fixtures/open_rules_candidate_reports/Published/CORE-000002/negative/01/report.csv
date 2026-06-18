@@ -1,0 +1,2 @@
+rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq
+CORE-000002,skipped,,,,,unsupported operator fixture,0,unsupported_operator,,
