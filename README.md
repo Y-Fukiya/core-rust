@@ -141,9 +141,7 @@ Compatibility should be treated as evidence-based rather than guaranteed:
 
 ## License
 
-No open source license has been selected yet. Until a license file is added,
-treat this repository as source-available for review and experimentation only.
-Choose and add a license before inviting external reuse or contributions.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Acknowledgment
 
