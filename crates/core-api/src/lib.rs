@@ -12,9 +12,9 @@ use core_data::{
     anti_join_dataset_on, dataset_column_values, deduplicate_dataset_by_columns,
     derive_column_from_column, derive_column_from_values, derive_literal_column,
     drop_dataset_columns, filter_dataset_by_mask, group_count_dataset, group_stat_dataset,
-    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths, rename_dataset_columns,
-    row_number_dataset, select_dataset_columns, semi_join_dataset_on, sort_dataset_by_columns,
-    DataError, LoadedDataset,
+    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths,
+    load_open_rules_data_dir, rename_dataset_columns, row_number_dataset, select_dataset_columns,
+    semi_join_dataset_on, sort_dataset_by_columns, DataError, LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -53,9 +53,17 @@ pub enum ApiError {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum DatasetLoader {
+    #[default]
+    Generic,
+    OpenRulesDataDir,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValidateRequest {
     pub rule_paths: Vec<PathBuf>,
     pub dataset_paths: Vec<PathBuf>,
+    pub dataset_loader: DatasetLoader,
     pub define_xml_paths: Vec<PathBuf>,
     pub ct_paths: Vec<PathBuf>,
     pub external_dictionary_paths: Vec<PathBuf>,
@@ -92,7 +100,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
-    let datasets = load_datasets_from_paths(&request.dataset_paths)?;
+    let datasets = load_request_datasets(&request)?;
     let cdisc_context = CdiscContext::load(
         &request.define_xml_paths,
         &request.ct_paths,
@@ -158,6 +166,19 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         .transpose()?;
 
     Ok(ValidateOutcome { results, reports })
+}
+
+fn load_request_datasets(request: &ValidateRequest) -> Result<Vec<LoadedDataset>> {
+    match request.dataset_loader {
+        DatasetLoader::Generic => Ok(load_datasets_from_paths(&request.dataset_paths)?),
+        DatasetLoader::OpenRulesDataDir => {
+            let mut datasets = Vec::new();
+            for path in &request.dataset_paths {
+                datasets.extend(load_open_rules_data_dir(path)?);
+            }
+            Ok(datasets)
+        }
+    }
 }
 
 pub fn select_rules(
@@ -1558,6 +1579,60 @@ mod tests {
         )
         .expect("write dataset");
         path
+    }
+
+    #[test]
+    fn run_validation_uses_open_rules_data_loader_when_requested() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("create rules dir");
+        fs::create_dir_all(&data_dir).expect("create data dir");
+        fs::write(
+            rules_dir.join("CORE-OPEN-0001.yml"),
+            r#"Core:
+  Id: CORE-OPEN-0001
+  Status: Published
+Scope:
+  Domains: {}
+  Classes: {}
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  name: CMSEQ
+  operator: less_than_or_equal_to
+  value: 0
+Outcome:
+  Message: CMSEQ must be greater than zero
+"#,
+        )
+        .expect("write rule");
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Label\ncm,Concomitant Medications\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nCM,CMSEQ,Sequence Number,Num,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(data_dir.join("cm.csv"), "CMSEQ\n001\n").expect("write dataset csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            include_rules: Vec::new(),
+            exclude_rules: Vec::new(),
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+        assert_eq!(outcome.results[0].error_count, 0);
     }
 
     #[test]
