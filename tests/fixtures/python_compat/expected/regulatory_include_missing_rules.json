@@ -1,0 +1,56 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-MISSING",
+      "execution_status": "skipped",
+      "skipped_reason": "rule_not_found",
+      "dataset": "",
+      "domain": null,
+      "message": "Requested rule CORE-MISSING was not found",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0004",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "EX",
+      "domain": "EX",
+      "message": "EXTRT must be present in WHODrug dictionary",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0004",
+          "dataset": "EX",
+          "domain": "EX",
+          "row": 3,
+          "variables": [
+            "EXTRT"
+          ],
+          "message": "EXTRT must be present in WHODrug dictionary"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0010",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AE related record must not point to an unknown domain",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0010",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 2,
+          "variables": [
+            "RELREC.RDOMAIN"
+          ],
+          "message": "AE related record must not point to an unknown domain"
+        }
+      ]
+    }
+  ]
+}

@@ -47,8 +47,8 @@ fn python_compat_cases_match_stored_expected_outputs() {
     case_paths.sort();
 
     assert!(
-        case_paths.len() >= 5,
-        "expected at least five Python compat cases"
+        case_paths.len() >= 7,
+        "expected at least seven Python compat cases"
     );
 
     for case_path in case_paths {
@@ -100,6 +100,8 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     assert!(case_names.contains("sdtm_adam_sdtmig_filter"));
     assert!(case_names.contains("regulatory_full_study_package"));
     assert!(case_names.contains("regulatory_adamig_filter"));
+    assert!(case_names.contains("regulatory_sdtmig_filter"));
+    assert!(case_names.contains("regulatory_include_missing_rules"));
 
     let package = read_json(&fixtures.join("datasets/sdtm_adam/study_package.json"));
     let domains = package["datasets"]
@@ -153,6 +155,27 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
             .iter()
             .any(|path| path.extension().and_then(|value| value.to_str()) == Some("csv")),
         "expected regulatory compat case to cover CSV external dictionaries"
+    );
+
+    let regulatory_filters = [
+        read_case(&fixtures.join("python_compat/cases/regulatory_adamig_filter.json")),
+        read_case(&fixtures.join("python_compat/cases/regulatory_sdtmig_filter.json")),
+    ];
+    assert!(
+        regulatory_filters.iter().all(|case| case.standard.is_some()
+            && case.standard_version.is_some()
+            && case.external_dictionary_paths.len() == 1),
+        "expected regulatory standard filter cases to include standard, version, and dictionary inputs"
+    );
+
+    let regulatory_include =
+        read_case(&fixtures.join("python_compat/cases/regulatory_include_missing_rules.json"));
+    assert!(
+        regulatory_include
+            .include_rules
+            .iter()
+            .any(|rule| rule == "CORE-MISSING"),
+        "expected regulatory include case to cover missing requested rules"
     );
 }
 

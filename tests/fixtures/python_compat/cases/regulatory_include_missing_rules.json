@@ -1,0 +1,11 @@
+{
+  "name": "regulatory_include_missing_rules",
+  "description": "Regulatory-style package with explicit include rules and a missing requested rule.",
+  "rule_paths": ["rules/regulatory"],
+  "dataset_paths": ["datasets/regulatory/study_package.json"],
+  "define_xml_paths": ["cdisc/regulatory_define.xml"],
+  "ct_paths": ["cdisc/regulatory_ct.json"],
+  "external_dictionary_paths": ["cdisc/regulatory_external_dictionary.csv"],
+  "include_rules": ["CORE-REG-0004", "CORE-REG-0010", "CORE-MISSING"],
+  "expected_path": "python_compat/expected/regulatory_include_missing_rules.json"
+}

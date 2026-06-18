@@ -1,0 +1,253 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "DM",
+      "domain": "DM",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "VS",
+      "domain": "VS",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "EX",
+      "domain": "EX",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "RELREC",
+      "domain": "RELREC",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADLB",
+      "domain": "ADLB",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0002",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LBTESTCD must use lab test controlled terminology",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0002",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 3,
+          "variables": [
+            "LBTESTCD"
+          ],
+          "message": "LBTESTCD must use lab test controlled terminology"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0003",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LBSTRESU must use unit controlled terminology",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0003",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 3,
+          "variables": [
+            "LBSTRESU"
+          ],
+          "message": "LBSTRESU must use unit controlled terminology"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0004",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "EX",
+      "domain": "EX",
+      "message": "EXTRT must be present in WHODrug dictionary",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0004",
+          "dataset": "EX",
+          "domain": "EX",
+          "row": 3,
+          "variables": [
+            "EXTRT"
+          ],
+          "message": "EXTRT must be present in WHODrug dictionary"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0005",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "VS",
+      "domain": "VS",
+      "message": "VS test code and subject identifier must match expected SDTM patterns",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0005",
+          "dataset": "VS",
+          "domain": "VS",
+          "row": 4,
+          "variables": [
+            "VSTESTCD",
+            "USUBJID"
+          ],
+          "message": "VS test code and subject identifier must match expected SDTM patterns"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0006",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LB subject must exist in ADSL",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0006",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 1,
+          "variables": [
+            "USUBJID"
+          ],
+          "message": "LB subject must exist in ADSL"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0007",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LB subject must be in the safety population",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0007",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 2,
+          "variables": [
+            "ADSL.SAFFL"
+          ],
+          "message": "LB subject must be in the safety population"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0009",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "RELREC",
+      "domain": "RELREC",
+      "message": "RELREC RDOMAIN must refer to a known domain",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0009",
+          "dataset": "RELREC",
+          "domain": "RELREC",
+          "row": 3,
+          "variables": [
+            "RDOMAIN"
+          ],
+          "message": "RELREC RDOMAIN must refer to a known domain"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0010",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "AE related record must not point to an unknown domain",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0010",
+          "dataset": "AE",
+          "domain": "AE",
+          "row": 2,
+          "variables": [
+            "RELREC.RDOMAIN"
+          ],
+          "message": "AE related record must not point to an unknown domain"
+        }
+      ]
+    }
+  ]
+}
