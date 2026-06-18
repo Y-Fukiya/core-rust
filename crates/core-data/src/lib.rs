@@ -196,7 +196,8 @@ pub fn load_datasets_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadD
 
 pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
     let path = path.as_ref();
-    let frame = CsvReadOptions::default()
+    let raw_frame = CsvReadOptions::default()
+        .with_infer_schema_length(Some(0))
         .try_into_reader_with_file_path(Some(path.to_path_buf()))
         .map_err(|source| DataError::Polars {
             path: path.to_path_buf(),
@@ -207,6 +208,7 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
             path: path.to_path_buf(),
             source,
         })?;
+    let frame = normalize_csv_frame_types(raw_frame, path)?;
 
     let filename = file_name(path)?;
     let name = file_stem(path)?.to_ascii_uppercase();
@@ -232,6 +234,120 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
     };
 
     Ok(LoadedDataset::new(metadata, frame))
+}
+
+fn normalize_csv_frame_types(frame: DataFrame, path: &Path) -> Result<DataFrame> {
+    let height = frame.height();
+    let mut columns = Vec::with_capacity(frame.width());
+    for name in column_names(&frame) {
+        let values = (0..height)
+            .map(|row| cell_to_string(&frame, &name, row))
+            .collect::<Result<Vec<_>>>()?;
+        let inferred = infer_csv_column_values(&values);
+        columns.push(series_from_json_values(&name, &inferred).into());
+    }
+    DataFrame::new(height, columns).map_err(|source| DataError::Polars {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn infer_csv_column_values(values: &[Option<String>]) -> Vec<Value> {
+    if let Some(parsed) = parse_csv_column(values, parse_csv_bool) {
+        return parsed
+            .into_iter()
+            .map(|value| value.map_or(Value::Null, Value::Bool))
+            .collect();
+    }
+    if let Some(parsed) = parse_csv_column(values, parse_csv_i64) {
+        return parsed
+            .into_iter()
+            .map(|value| {
+                value.map_or(Value::Null, |value| {
+                    Value::Number(serde_json::Number::from(value))
+                })
+            })
+            .collect();
+    }
+    if let Some(parsed) = parse_csv_column(values, parse_csv_f64) {
+        return parsed
+            .into_iter()
+            .map(|value| value.map_or(Value::Null, number_value))
+            .collect();
+    }
+
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_ref()
+                .map_or(Value::Null, |value| Value::String(value.clone()))
+        })
+        .collect()
+}
+
+fn parse_csv_column<T>(
+    values: &[Option<String>],
+    parser: impl Fn(&str) -> Option<T>,
+) -> Option<Vec<Option<T>>> {
+    let mut parsed = Vec::with_capacity(values.len());
+    let mut saw_value = false;
+    for value in values {
+        let Some(value) = value else {
+            parsed.push(None);
+            continue;
+        };
+        let parsed_value = parser(value)?;
+        saw_value = true;
+        parsed.push(Some(parsed_value));
+    }
+    saw_value.then_some(parsed)
+}
+
+fn parse_csv_bool(value: &str) -> Option<bool> {
+    if value != value.trim() {
+        return None;
+    }
+    match value {
+        "true" | "TRUE" | "True" => Some(true),
+        "false" | "FALSE" | "False" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_csv_i64(value: &str) -> Option<i64> {
+    if value != value.trim() || value.contains('.') || value.contains('e') || value.contains('E') {
+        return None;
+    }
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    if !is_canonical_integer_digits(digits) {
+        return None;
+    }
+    value.parse().ok()
+}
+
+fn parse_csv_f64(value: &str) -> Option<f64> {
+    let has_float_marker = value.contains('.') || value.contains('e') || value.contains('E');
+    if value != value.trim() || !has_float_marker {
+        return None;
+    }
+    let exponent_index = value.find('e').or_else(|| value.find('E'));
+    let mantissa = exponent_index.map_or(value, |index| &value[..index]);
+    let unsigned_mantissa = mantissa.strip_prefix('-').unwrap_or(mantissa);
+    let integer_part = unsigned_mantissa
+        .split_once('.')
+        .map_or(unsigned_mantissa, |(integer, _fraction)| integer);
+    if !is_canonical_integer_digits(integer_part) {
+        return None;
+    }
+    value.parse::<f64>().ok().filter(|value| value.is_finite())
+}
+
+fn is_canonical_integer_digits(value: &str) -> bool {
+    if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+    value == "0" || !value.starts_with('0')
 }
 
 pub fn load_dataset_package_json(path: impl AsRef<Path>) -> Result<Vec<LoadedDataset>> {
@@ -799,10 +915,7 @@ pub fn derive_column_from_column(
     }
 
     let values = (0..dataset.frame.height())
-        .map(|row| {
-            cell_to_string(&dataset.frame, source_column, row)
-                .map(|value| value.map(Value::String).unwrap_or(Value::Null))
-        })
+        .map(|row| cell_to_json_value(&dataset.frame, source_column, row))
         .collect::<Result<Vec<_>>>()?;
     derive_column_from_values(dataset, column_name, &values)
 }
@@ -829,10 +942,7 @@ pub fn dataset_column_values(dataset: &LoadedDataset, column_name: &str) -> Resu
         )));
     }
     (0..dataset.frame.height())
-        .map(|row| {
-            cell_to_string(&dataset.frame, column_name, row)
-                .map(|value| value.map(Value::String).unwrap_or(Value::Null))
-        })
+        .map(|row| cell_to_json_value(&dataset.frame, column_name, row))
         .collect()
 }
 
@@ -983,10 +1093,14 @@ pub fn sort_dataset_by_columns(
     let mut keyed_rows = (0..dataset.frame.height())
         .map(|row| row_key(&dataset.frame, keys, row).map(|key| (key, row as u32)))
         .collect::<Result<Vec<_>>>()?;
-    keyed_rows.sort_by(|left, right| left.0.cmp(&right.0));
-    if descending {
-        keyed_rows.reverse();
-    }
+    keyed_rows.sort_by(|left, right| {
+        let key_order = if descending {
+            right.0.cmp(&left.0)
+        } else {
+            left.0.cmp(&right.0)
+        };
+        key_order.then_with(|| left.1.cmp(&right.1))
+    });
     let indices = keyed_rows
         .into_iter()
         .map(|(_key, row)| row)
@@ -1071,6 +1185,11 @@ pub fn drop_dataset_columns(dataset: &LoadedDataset, columns: &[String]) -> Resu
         .map(|name| name.as_str().to_owned())
         .filter(|name| !drop.contains(&name.to_ascii_lowercase()))
         .collect::<Vec<_>>();
+    if keep.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "drop operation cannot remove all columns".to_owned(),
+        ));
+    }
     select_dataset_columns(dataset, &keep)
 }
 
@@ -1244,16 +1363,60 @@ pub fn left_join_dataset_on(
     right_keys: &[String],
     right_prefix: &str,
 ) -> Result<LoadedDataset> {
+    join_dataset_on(left, right, left_keys, right_keys, right_prefix, true)
+}
+
+pub fn inner_join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+    right_prefix: &str,
+) -> Result<LoadedDataset> {
+    join_dataset_on(left, right, left_keys, right_keys, right_prefix, false)
+}
+
+fn join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+    right_prefix: &str,
+    include_unmatched_left: bool,
+) -> Result<LoadedDataset> {
     validate_join_keys(left, right, left_keys, right_keys)?;
 
-    let mut index = HashMap::new();
+    let mut index: HashMap<Vec<RowKeyValue>, Vec<usize>> = HashMap::new();
     for row in 0..right.frame.height() {
         index
             .entry(row_key(&right.frame, right_keys, row)?)
-            .or_insert(row);
+            .or_default()
+            .push(row);
     }
 
-    let mut frame = left.frame.clone();
+    let mut left_rows = Vec::new();
+    let mut right_rows = Vec::new();
+    for left_row in 0..left.frame.height() {
+        let key = row_key(&left.frame, left_keys, left_row)?;
+        if let Some(matches) = index.get(&key) {
+            for right_row in matches {
+                left_rows.push(left_row as u32);
+                right_rows.push(Some(*right_row));
+            }
+        } else if include_unmatched_left {
+            left_rows.push(left_row as u32);
+            right_rows.push(None);
+        }
+    }
+
+    let left_indices = UInt32Chunked::from_vec("row_index".into(), left_rows);
+    let mut frame = left
+        .frame
+        .take(&left_indices)
+        .map_err(|source| DataError::Polars {
+            path: left.metadata.full_path.clone(),
+            source,
+        })?;
     let left_columns = left
         .frame
         .get_column_names()
@@ -1273,17 +1436,15 @@ pub fn left_join_dataset_on(
             continue;
         }
 
-        let mut values = Vec::with_capacity(left.frame.height());
-        for left_row in 0..left.frame.height() {
-            let key = row_key(&left.frame, left_keys, left_row)?;
-            let value = if let Some(right_row) = index.get(&key) {
-                cell_to_string(&right.frame, right_column, *right_row)?
-            } else {
-                None
-            };
-            values.push(value);
-        }
-        joined_columns.push(Series::new(joined_name.into(), values).into());
+        let values = right_rows
+            .iter()
+            .map(|right_row| {
+                right_row.map_or(Ok(Value::Null), |row| {
+                    cell_to_json_value(&right.frame, right_column, row)
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        joined_columns.push(series_from_json_values(&joined_name, &values).into());
     }
 
     frame
@@ -1294,17 +1455,6 @@ pub fn left_join_dataset_on(
         })?;
 
     Ok(LoadedDataset::new(left.metadata.clone(), frame))
-}
-
-pub fn inner_join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-    right_prefix: &str,
-) -> Result<LoadedDataset> {
-    let matched = filter_join_matches(left, right, left_keys, right_keys, true)?;
-    left_join_dataset_on(&matched, right, left_keys, right_keys, right_prefix)
 }
 
 pub fn semi_join_dataset_on(
@@ -1454,6 +1604,38 @@ fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKe
     Ok(RowKeyValue::from_any_value(value))
 }
 
+fn cell_to_json_value(frame: &DataFrame, column_name: &str, row: usize) -> Result<Value> {
+    let column = frame
+        .column(column_name)
+        .map_err(|source| DataError::Polars {
+            path: PathBuf::from(column_name),
+            source,
+        })?;
+    let value = column.get(row).map_err(|source| DataError::Polars {
+        path: PathBuf::from(column_name),
+        source,
+    })?;
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+    if let Some(value) = value.extract_bool() {
+        return Ok(Value::Bool(value));
+    }
+    if let Some(value) = value.extract_str() {
+        return Ok(Value::String(value.to_owned()));
+    }
+    if let Some(value) = value.extract::<i64>() {
+        return Ok(Value::Number(serde_json::Number::from(value)));
+    }
+    if let Some(value) = value.extract::<u64>() {
+        return Ok(Value::Number(serde_json::Number::from(value)));
+    }
+    if let Some(value) = value.extract::<f64>() {
+        return Ok(number_value(value));
+    }
+    Ok(Value::String(value.to_string()))
+}
+
 fn cell_to_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Option<String>> {
     let column = frame
         .column(column_name)
@@ -1502,6 +1684,21 @@ mod tests {
         assert_eq!(summary.row_count, 2);
         assert_eq!(summary.columns, vec!["STUDYID", "DOMAIN", "AESEQ"]);
         assert_eq!(dataset.frame().height(), 2);
+    }
+
+    #[test]
+    fn load_csv_dataset_preserves_leading_zero_codes_as_strings() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("AE.csv");
+        fs::write(&path, "CODE,COUNT\n01,1\n001,2\n").expect("write csv");
+
+        let dataset = load_csv_dataset(&path).expect("load csv");
+        let code = dataset.frame().column("CODE").expect("code column");
+        let count = dataset.frame().column("COUNT").expect("count column");
+
+        assert_eq!(code.get(0).expect("row 1").extract_str(), Some("01"));
+        assert_eq!(code.get(1).expect("row 2").extract_str(), Some("001"));
+        assert_eq!(count.get(0).expect("row 1"), AnyValue::Int64(1));
     }
 
     #[test]
@@ -1862,6 +2059,50 @@ mod tests {
     }
 
     #[test]
+    fn joins_fan_out_duplicate_right_keys_and_preserve_value_types() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "FLAGN": [10, 20]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let keys = ["USUBJID".to_owned()];
+        let left = left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+            .expect("left join");
+        let inner = inner_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+            .expect("inner join");
+        let joined_flag = left.frame().column("LOOKUP.FLAGN").expect("joined flag");
+
+        assert_eq!(left.summary().row_count, 3);
+        assert_eq!(inner.summary().row_count, 2);
+        assert_eq!(joined_flag.get(0).expect("row 1"), AnyValue::Int64(10));
+        assert_eq!(joined_flag.get(1).expect("row 2"), AnyValue::Int64(20));
+        assert!(joined_flag.get(2).expect("row 3").is_null());
+    }
+
+    #[test]
     fn join_variants_filter_rows_by_match_presence() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("datasets.json");
@@ -1983,6 +2224,101 @@ mod tests {
         assert_eq!(subjects.get(0).expect("row 1").extract_str(), Some("S1"));
         assert_eq!(subjects.get(1).expect("row 2").extract_str(), Some("S2"));
         assert_eq!(subjects.get(2).expect("row 3").extract_str(), Some("S10"));
+    }
+
+    #[test]
+    fn sort_dataset_by_columns_keeps_tie_order_when_descending() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "AVAL": [1, 2, 2]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let dataset = load_dataset_package_json(&path)
+            .expect("load package")
+            .remove(0);
+        let sorted =
+            sort_dataset_by_columns(&dataset, &["AVAL".to_owned()], true).expect("sort rows");
+        let subjects = sorted.frame().column("USUBJID").expect("subject");
+
+        assert_eq!(subjects.get(0).expect("row 1").extract_str(), Some("S2"));
+        assert_eq!(subjects.get(1).expect("row 2").extract_str(), Some("S3"));
+        assert_eq!(subjects.get(2).expect("row 3").extract_str(), Some("S1"));
+    }
+
+    #[test]
+    fn derive_column_from_column_preserves_numeric_values() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "AVAL": [1, 2]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let dataset = load_dataset_package_json(&path)
+            .expect("load package")
+            .remove(0);
+        let derived =
+            derive_column_from_column(&dataset, "AVAL_COPY", "AVAL").expect("derive column");
+        let copy = derived.frame().column("AVAL_COPY").expect("copy");
+
+        assert_eq!(copy.get(0).expect("row 1"), AnyValue::Int64(1));
+        assert_eq!(copy.get(1).expect("row 2"), AnyValue::Int64(2));
+    }
+
+    #[test]
+    fn drop_dataset_columns_reports_all_columns_removed() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "DOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let dataset = load_dataset_package_json(&path)
+            .expect("load package")
+            .remove(0);
+        let error = drop_dataset_columns(&dataset, &["DOMAIN".to_owned()])
+            .expect_err("drop all columns fails clearly");
+
+        assert!(
+            matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("cannot remove all columns"))
+        );
     }
 
     #[test]

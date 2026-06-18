@@ -21,6 +21,7 @@ anyhow = "1"
 assert_cmd = "2"
 camino = "1"
 clap = { version = "4", features = ["derive", "env"] }
+csv = "1"
 indexmap = { version = "2", features = ["serde"] }
 predicates = "3"
 pretty_assertions = "1"

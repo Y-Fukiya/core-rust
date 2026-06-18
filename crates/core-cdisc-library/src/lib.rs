@@ -555,11 +555,13 @@ fn insert_external_dictionary_value(
 
 fn parse_external_dictionary_csv(source: &str, fallback_name: &str) -> ControlledTerminology {
     let mut terminology = ControlledTerminology::default();
-    let mut lines = source.lines().filter(|line| !line.trim().is_empty());
-    let Some(header) = lines.next() else {
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::Headers)
+        .from_reader(source.as_bytes());
+    let Ok(headers) = reader.headers() else {
         return terminology;
     };
-    let headers = split_csv_line(header);
+    let headers = headers.iter().map(str::to_owned).collect::<Vec<_>>();
     let dictionary_index = find_header_index(
         &headers,
         &[
@@ -583,12 +585,10 @@ fn parse_external_dictionary_csv(source: &str, fallback_name: &str) -> Controlle
     )
     .unwrap_or_else(|| if dictionary_index == Some(0) { 1 } else { 0 });
 
-    for line in lines {
-        let row = split_csv_line(line);
+    for row in reader.records().flatten() {
         let dictionary = dictionary_index
             .and_then(|index| row.get(index))
             .filter(|value| !value.trim().is_empty())
-            .map(String::as_str)
             .unwrap_or(fallback_name);
         let Some(value) = row
             .get(value_index)
@@ -600,30 +600,6 @@ fn parse_external_dictionary_csv(source: &str, fallback_name: &str) -> Controlle
     }
 
     terminology
-}
-
-fn split_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
-    let mut chars = line.chars().peekable();
-    let mut quoted = false;
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' if quoted && chars.peek() == Some(&'"') => {
-                current.push('"');
-                chars.next();
-            }
-            '"' => quoted = !quoted,
-            ',' if !quoted => {
-                fields.push(current.trim().to_owned());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    fields.push(current.trim().to_owned());
-    fields
 }
 
 fn find_header_index(headers: &[String], candidates: &[&str]) -> Option<usize> {
@@ -1122,5 +1098,21 @@ mod tests {
         assert!(terminology.contains("MEDDRA", "HEADACHE"));
         assert!(terminology.contains("MEDDRA", "NAUSEA"));
         assert!(terminology.contains("UNII", "ABC123"));
+    }
+
+    #[test]
+    fn load_external_dictionary_csv_handles_quoted_commas_and_newlines() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("dictionaries.csv");
+        std::fs::write(
+            &path,
+            "dictionary,term\nMEDDRA,\"HEAD,ACHE\"\nMEDDRA,\"LINE\nBREAK\"\n",
+        )
+        .expect("write dictionary");
+
+        let terminology = load_external_dictionary_file(&path).expect("load dictionary");
+
+        assert!(terminology.contains("MEDDRA", "HEAD,ACHE"));
+        assert!(terminology.contains("MEDDRA", "LINE\nBREAK"));
     }
 }

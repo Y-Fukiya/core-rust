@@ -51,6 +51,7 @@ pub enum ExecutionStatus {
 #[serde(rename_all = "snake_case")]
 pub enum SkippedReason {
     RuleNotFound,
+    StandardMismatch,
     UnsupportedRuleType,
     UnsupportedOperator,
     OperationsNotSupported,

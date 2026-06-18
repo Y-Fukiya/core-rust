@@ -99,9 +99,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         &request.external_dictionary_paths,
     )?;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
-    selection
-        .selected
-        .retain(|rule| rule_matches_standard(rule, &request.standard, &request.standard_version));
+    apply_standard_filter(
+        &mut selection,
+        &request.include_rules,
+        &request.standard,
+        &request.standard_version,
+    );
     let selected_rule_count = selection.selected.len();
     let skipped_selection_count = selection.skipped.len();
 
@@ -327,6 +330,51 @@ fn rule_matches_standard(
     })
 }
 
+fn apply_standard_filter(
+    selection: &mut RuleSelection,
+    include_rules: &[String],
+    standard: &Option<String>,
+    standard_version: &Option<String>,
+) {
+    if standard.is_none() {
+        return;
+    }
+
+    let mut selected = Vec::with_capacity(selection.selected.len());
+    for rule in std::mem::take(&mut selection.selected) {
+        if rule_matches_standard(&rule, standard, standard_version) {
+            selected.push(rule);
+        } else if !include_rules.is_empty() {
+            selection.skipped.push(standard_mismatch_result(
+                &rule,
+                standard.as_deref(),
+                standard_version.as_deref(),
+            ));
+        }
+    }
+    selection.selected = selected;
+}
+
+fn standard_mismatch_result(
+    rule: &ExecutableRule,
+    standard: Option<&str>,
+    standard_version: Option<&str>,
+) -> RuleValidationResult {
+    let requested = match (standard, standard_version) {
+        (Some(standard), Some(version)) => format!("{standard} {version}"),
+        (Some(standard), None) => standard.to_owned(),
+        _ => "requested standard".to_owned(),
+    };
+    RuleValidationResult::skipped_rule(
+        rule.core_id.clone(),
+        SkippedReason::StandardMismatch,
+        format!(
+            "Requested rule {} does not match standard filter {}",
+            rule.core_id, requested
+        ),
+    )
+}
+
 fn prepare_rule_with_cdisc_context(
     rule: &ExecutableRule,
     context: &CdiscContext,
@@ -401,16 +449,60 @@ fn condition_codelist(condition: &Condition) -> Option<String> {
 fn define_codelist_for_condition(condition: &Condition, context: &CdiscContext) -> Option<String> {
     let target = condition.target.as_deref()?;
     let target_candidates = target_name_candidates(target);
-    context
+    if let Some((domain, _unqualified)) = target.rsplit_once('.') {
+        let domain_matches = context
+            .define_xml
+            .iter()
+            .flat_map(|define| {
+                define
+                    .datasets
+                    .iter()
+                    .filter(move |dataset| {
+                        dataset
+                            .domain
+                            .as_deref()
+                            .or(dataset.name.as_deref())
+                            .is_some_and(|name| name.eq_ignore_ascii_case(domain))
+                    })
+                    .flat_map(|dataset| {
+                        dataset.item_refs.iter().filter_map(|item_ref| {
+                            let item_oid = item_ref.item_oid.as_deref()?;
+                            define
+                                .variables
+                                .iter()
+                                .find(|variable| {
+                                    variable.oid.as_deref() == Some(item_oid)
+                                        && target_candidates.iter().any(|target| {
+                                            variable.name.eq_ignore_ascii_case(target)
+                                        })
+                                })
+                                .and_then(|variable| variable.codelist_oid.clone())
+                        })
+                    })
+            })
+            .collect::<Vec<_>>();
+        if let Some(codelist) = unique_codelist(domain_matches) {
+            return Some(codelist);
+        }
+    }
+
+    let global_matches = context
         .define_xml
         .iter()
         .flat_map(|define| &define.variables)
-        .find(|variable| {
+        .filter(|variable| {
             target_candidates
                 .iter()
                 .any(|target| variable.name.eq_ignore_ascii_case(target))
         })
-        .and_then(|variable| variable.codelist_oid.clone())
+        .filter_map(|variable| variable.codelist_oid.clone())
+        .collect::<Vec<_>>();
+    unique_codelist(global_matches)
+}
+
+fn unique_codelist(codelists: Vec<String>) -> Option<String> {
+    let unique = codelists.into_iter().collect::<BTreeSet<_>>();
+    (unique.len() == 1).then(|| unique.into_iter().next().expect("one codelist"))
 }
 
 fn target_name_candidates(target: &str) -> Vec<&str> {
@@ -452,7 +544,8 @@ fn execution_datasets_for_rule(
     let mut execution_datasets = initial_operation_datasets(rule, datasets)?;
     for operation in &rule.operations {
         if is_join_operation(operation) {
-            execution_datasets = execute_join_operation(rule, operation, datasets)?;
+            execution_datasets =
+                execute_join_operation(rule, operation, &execution_datasets, datasets)?;
         } else {
             execution_datasets = execute_dataset_operation(rule, operation, &execution_datasets)?;
         }
@@ -594,7 +687,8 @@ fn common_join_keys(left: &LoadedDataset, right: &LoadedDataset) -> Option<Vec<S
 fn execute_join_operation(
     rule: &ExecutableRule,
     operation: &OperationSpec,
-    datasets: &[LoadedDataset],
+    current_datasets: &[LoadedDataset],
+    original_datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     let Some((left_keys, right_keys)) = join_keys(operation) else {
         return Err(join_skipped_result(rule, "join operation is missing keys"));
@@ -630,13 +724,15 @@ fn execute_join_operation(
         ));
     };
 
-    let Some(left) = find_dataset(datasets, &left_name) else {
+    let Some(left) = find_dataset(current_datasets, &left_name) else {
         return Err(join_skipped_result(
             rule,
             format!("left dataset {left_name} was not loaded"),
         ));
     };
-    let Some(right) = find_dataset(datasets, &right_name) else {
+    let Some(right) = find_dataset(current_datasets, &right_name)
+        .or_else(|| find_dataset(original_datasets, &right_name))
+    else {
         return Err(join_skipped_result(
             rule,
             format!("right dataset {right_name} was not loaded"),
@@ -1923,6 +2019,87 @@ mod tests {
     }
 
     #[test]
+    fn run_validation_join_operation_uses_current_pipeline_left_dataset() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-FILTER-JOIN.json"),
+            r#"{
+  "Core": { "Id": "CORE-FILTER-JOIN", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "filter",
+      "dataset": "AE",
+      "where": {
+        "name": "AESEQ",
+        "operator": "greater_than",
+        "value": 1
+      }
+    },
+    {
+      "name": "left_join",
+      "left": "AE",
+      "right": "SUPPAE",
+      "by": ["USUBJID"],
+      "prefix": "SUPP."
+    }
+  ],
+  "Check": {
+    "name": "SUPP.QVAL",
+    "operator": "equal_to",
+    "value": "BAD"
+  },
+  "Outcome": { "Message": "Filtered-out supplemental values must not reappear" }
+}"#,
+        )
+        .expect("write filter join rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "QVAL": ["BAD", "OK"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write filter join data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+        assert_eq!(outcome.results[0].error_count, 0);
+    }
+
+    #[test]
     fn run_validation_executes_match_datasets_without_explicit_operation() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -2267,6 +2444,52 @@ mod tests {
     }
 
     #[test]
+    fn define_codelist_resolution_uses_domain_and_avoids_ambiguous_globals() {
+        let dir = tempdir().expect("tempdir");
+        let define_xml_path = dir.path().join("define.xml");
+        fs::write(
+            &define_xml_path,
+            r#"
+<ODM>
+  <ItemGroupDef OID="IG.AE" Name="AE" Domain="AE">
+    <ItemRef ItemOID="IT.AE.PARAMCD"/>
+  </ItemGroupDef>
+  <ItemGroupDef OID="IG.CM" Name="CM" Domain="CM">
+    <ItemRef ItemOID="IT.CM.PARAMCD"/>
+  </ItemGroupDef>
+  <ItemDef OID="IT.AE.PARAMCD" Name="PARAMCD" DataType="text">
+    <CodeListRef CodeListOID="CL.AE.PARAMCD"/>
+  </ItemDef>
+  <ItemDef OID="IT.CM.PARAMCD" Name="PARAMCD" DataType="text">
+    <CodeListRef CodeListOID="CL.CM.PARAMCD"/>
+  </ItemDef>
+</ODM>
+"#,
+        )
+        .expect("write define xml");
+        let context = CdiscContext::load(&[define_xml_path], &[], &[]).expect("load context");
+
+        let unqualified = Condition {
+            target: Some("PARAMCD".to_owned()),
+            operator: Operator::IsContainedBy,
+            comparator: ValueExpr::Null,
+            options: Default::default(),
+        };
+        assert_eq!(define_codelist_for_condition(&unqualified, &context), None);
+
+        let qualified = Condition {
+            target: Some("AE.PARAMCD".to_owned()),
+            operator: Operator::IsContainedBy,
+            comparator: ValueExpr::Null,
+            options: Default::default(),
+        };
+        assert_eq!(
+            define_codelist_for_condition(&qualified, &context),
+            Some("CL.AE.PARAMCD".to_owned())
+        );
+    }
+
+    #[test]
     fn run_validation_uses_external_dictionary_for_term_checks() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -2401,6 +2624,57 @@ mod tests {
         assert_eq!(outcome.results.len(), 1);
         assert_eq!(outcome.results[0].rule_id, "CORE-STANDARD-34");
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn run_validation_reports_explicit_rule_standard_mismatch_as_skipped() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-STANDARD-33.json"),
+            r#"{
+  "Core": { "Id": "CORE-STANDARD-33", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SDTMIG", "Version": "3.3" }] }
+  ],
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+        )
+        .expect("write nonmatching standard rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: vec!["CORE-STANDARD-33".to_owned()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some("3.4".to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].rule_id, "CORE-STANDARD-33");
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::StandardMismatch)
+        );
     }
 
     #[test]
