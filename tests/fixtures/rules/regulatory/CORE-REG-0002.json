@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0002",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "LB",
+      "columns": ["USUBJID", "LBSEQ", "LBTESTCD"]
+    }
+  ],
+  "Check": {
+    "name": "LBTESTCD",
+    "operator": "is_not_contained_by",
+    "define_codelist": "CL.LBTESTCD"
+  },
+  "Outcome": {
+    "Message": "LBTESTCD must use lab test controlled terminology"
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "label": "Demographics",
+      "domain": "DM",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "SEX", "label": "Sex", "type": "Char", "length": 1 },
+        { "name": "AGE", "label": "Age", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["DM", "DM", "DM"],
+        "SEX": ["M", "F", "U"],
+        "AGE": [44, 55, 61]
+      }
+    },
+    {
+      "filename": "ae.xpt",
+      "label": "Adverse Events",
+      "domain": "AE",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "AESEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "AEDECOD", "label": "Dictionary-Derived Term", "type": "Char", "length": 80 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ003"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 1],
+        "AEDECOD": ["HEADACHE", "NAUSEA"]
+      }
+    },
+    {
+      "filename": "lb.xpt",
+      "label": "Laboratory Test Results",
+      "domain": "LB",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "LBSEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "LBTESTCD", "label": "Lab Test Short Name", "type": "Char", "length": 8 },
+        { "name": "LBORRES", "label": "Result or Finding in Original Units", "type": "Char", "length": 40 },
+        { "name": "LBSTRESN", "label": "Numeric Result in Standard Units", "type": "Num", "length": 8 },
+        { "name": "LBSTRESU", "label": "Standard Units", "type": "Char", "length": 20 },
+        { "name": "VISITNUM", "label": "Visit Number", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003", "GHOST01"],
+        "DOMAIN": ["LB", "LB", "LB", "LB"],
+        "LBSEQ": [1, 1, 1, 1],
+        "LBTESTCD": ["HGB", "WBC", "BADTEST", "HGB"],
+        "LBORRES": ["13.4", "5.2", "1.0", "11.2"],
+        "LBSTRESN": [13.4, 5.2, 1.0, 11.2],
+        "LBSTRESU": ["g/dL", "10^9/L", "mg/mL", "g/dL"],
+        "VISITNUM": [1, 1, 1, 1]
+      }
+    },
+    {
+      "filename": "vs.xpt",
+      "label": "Vital Signs",
+      "domain": "VS",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "VSSEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "VSTESTCD", "label": "Vital Signs Test Short Name", "type": "Char", "length": 8 },
+        { "name": "VSSTRESN", "label": "Numeric Result in Standard Units", "type": "Num", "length": 8 },
+        { "name": "VSSTRESU", "label": "Standard Units", "type": "Char", "length": 20 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003", "XYZ004"],
+        "DOMAIN": ["VS", "VS", "VS", "VS"],
+        "VSSEQ": [1, 1, 1, 1],
+        "VSTESTCD": ["SYSBP", "DIABP", "PULSE", "TEMP"],
+        "VSSTRESN": [120, 80, 70, 37],
+        "VSSTRESU": ["mmHg", "mmHg", "beats/min", "C"]
+      }
+    },
+    {
+      "filename": "ex.xpt",
+      "label": "Exposure",
+      "domain": "EX",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "EXSEQ", "label": "Sequence Number", "type": "Num", "length": 8 },
+        { "name": "EXTRT", "label": "Name of Treatment", "type": "Char", "length": 80 },
+        { "name": "EXDOSE", "label": "Dose", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["EX", "EX", "EX"],
+        "EXSEQ": [1, 1, 1],
+        "EXTRT": ["ACTIVE DRUG", "PLACEBO", "UNKNOWN TREATMENT"],
+        "EXDOSE": [50, 0, 25]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "label": "Related Records",
+      "domain": "RELREC",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "RDOMAIN", "label": "Related Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "IDVAR", "label": "Identifying Variable", "type": "Char", "length": 8 },
+        { "name": "IDVARVAL", "label": "Identifying Variable Value", "type": "Char", "length": 20 },
+        { "name": "RELTYPE", "label": "Relationship Type", "type": "Char", "length": 12 },
+        { "name": "RELID", "label": "Relationship Identifier", "type": "Char", "length": 20 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["RELREC", "RELREC", "RELREC"],
+        "RDOMAIN": ["AE", "LB", "XX"],
+        "IDVAR": ["AESEQ", "LBSEQ", "LBSEQ"],
+        "IDVARVAL": ["1", "1", "1"],
+        "RELTYPE": ["ONE", "ONE", "ONE"],
+        "RELID": ["REL1", "REL2", "REL3"]
+      }
+    },
+    {
+      "filename": "adsl.xpt",
+      "label": "Subject-Level Analysis Dataset",
+      "domain": "ADSL",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "SAFFL", "label": "Safety Population Flag", "type": "Char", "length": 1 },
+        { "name": "ARM", "label": "Planned Arm", "type": "Char", "length": 20 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["ADSL", "ADSL", "ADSL"],
+        "SAFFL": ["Y", "N", "Y"],
+        "ARM": ["ACTIVE DRUG", "PLACEBO", "ACTIVE DRUG"]
+      }
+    },
+    {
+      "filename": "adlb.xpt",
+      "label": "Laboratory Analysis Dataset",
+      "domain": "ADLB",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 20 },
+        { "name": "USUBJID", "label": "Unique Subject Identifier", "type": "Char", "length": 20 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 8 },
+        { "name": "PARAMCD", "label": "Parameter Code", "type": "Char", "length": 8 },
+        { "name": "ANL01FL", "label": "Analysis Record Flag 01", "type": "Char", "length": 1 },
+        { "name": "AVAL", "label": "Analysis Value", "type": "Num", "length": 8 }
+      ],
+      "records": {
+        "STUDYID": ["REG-001", "REG-001", "REG-001", "REG-001"],
+        "USUBJID": ["SUBJ001", "SUBJ002", "SUBJ002", "SUBJ003"],
+        "DOMAIN": ["ADLB", "ADLB", "ADLB", "ADLB"],
+        "PARAMCD": ["HGB", "WBC", "HGB", "HGB"],
+        "ANL01FL": ["Y", "Y", "Y", "N"],
+        "AVAL": [13.4, 5.2, 15.0, 11.5]
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "results": [
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "DM",
+      "domain": "DM",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "AE",
+      "domain": "AE",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "VS",
+      "domain": "VS",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "EX",
+      "domain": "EX",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "RELREC",
+      "domain": "RELREC",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADSL",
+      "domain": "ADSL",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0001",
+      "execution_status": "passed",
+      "skipped_reason": null,
+      "dataset": "ADLB",
+      "domain": "ADLB",
+      "message": "DOMAIN must use regulatory CT",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "rule_id": "CORE-REG-0006",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LB subject must exist in ADSL",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0006",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 1,
+          "variables": [
+            "USUBJID"
+          ],
+          "message": "LB subject must exist in ADSL"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0007",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "LB",
+      "domain": "LB",
+      "message": "LB subject must be in the safety population",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0007",
+          "dataset": "LB",
+          "domain": "LB",
+          "row": 2,
+          "variables": [
+            "ADSL.SAFFL"
+          ],
+          "message": "LB subject must be in the safety population"
+        }
+      ]
+    },
+    {
+      "rule_id": "CORE-REG-0008",
+      "execution_status": "failed",
+      "skipped_reason": null,
+      "dataset": "ADLB",
+      "domain": "ADLB",
+      "message": "ADLB high maximum value requires review",
+      "error_count": 1,
+      "errors": [
+        {
+          "rule_id": "CORE-REG-0008",
+          "dataset": "ADLB",
+          "domain": "ADLB",
+          "row": 2,
+          "variables": [
+            "AVAL_MAX",
+            "ROW_NUMBER"
+          ],
+          "message": "ADLB high maximum value requires review"
+        }
+      ]
+    }
+  ]
+}

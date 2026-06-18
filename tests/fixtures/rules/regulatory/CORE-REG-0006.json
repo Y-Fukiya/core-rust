@@ -1,0 +1,42 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0006",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        },
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "anti_join",
+      "left": "LB",
+      "right": "ADSL",
+      "by": ["USUBJID"]
+    }
+  ],
+  "Check": {
+    "name": "USUBJID",
+    "operator": "is_not_empty"
+  },
+  "Outcome": {
+    "Message": "LB subject must exist in ADSL"
+  }
+}

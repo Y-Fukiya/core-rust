@@ -1,0 +1,12 @@
+{
+  "name": "regulatory_adamig_filter",
+  "description": "Regulatory-style package filtered to ADaMIG rules, preserving cross-standard joins and ADLB operations.",
+  "rule_paths": ["rules/regulatory"],
+  "dataset_paths": ["datasets/regulatory/study_package.json"],
+  "define_xml_paths": ["cdisc/regulatory_define.xml"],
+  "ct_paths": ["cdisc/regulatory_ct.json"],
+  "external_dictionary_paths": ["cdisc/regulatory_external_dictionary.csv"],
+  "standard": "ADaMIG",
+  "standard_version": "1.3",
+  "expected_path": "python_compat/expected/regulatory_adamig_filter.json"
+}

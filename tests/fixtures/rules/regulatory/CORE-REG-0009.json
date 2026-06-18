@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0009",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "RELREC",
+      "columns": ["USUBJID", "RDOMAIN", "IDVAR", "IDVARVAL", "RELID"]
+    }
+  ],
+  "Check": {
+    "name": "RDOMAIN",
+    "operator": "is_not_contained_by",
+    "ct_codelist": "DOMAIN"
+  },
+  "Outcome": {
+    "Message": "RELREC RDOMAIN must refer to a known domain"
+  }
+}

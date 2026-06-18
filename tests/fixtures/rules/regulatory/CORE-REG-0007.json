@@ -1,0 +1,44 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0007",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        },
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "inner_join",
+      "left": "LB",
+      "right": "ADSL",
+      "by": ["USUBJID"],
+      "prefix": "ADSL."
+    }
+  ],
+  "Check": {
+    "name": "ADSL.SAFFL",
+    "operator": "equal_to",
+    "value": "N"
+  },
+  "Outcome": {
+    "Message": "LB subject must be in the safety population"
+  }
+}

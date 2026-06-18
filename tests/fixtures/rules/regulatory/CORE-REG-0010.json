@@ -1,0 +1,42 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0010",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "domain": "AE",
+      "by": ["STUDYID", "USUBJID"]
+    },
+    {
+      "domain": "RELREC",
+      "by": ["STUDYID", "USUBJID"],
+      "prefix": "RELREC."
+    }
+  ],
+  "Check": {
+    "name": "RELREC.RDOMAIN",
+    "operator": "equal_to",
+    "value": "XX"
+  },
+  "Outcome": {
+    "Message": "AE related record must not point to an unknown domain"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "codelists": [
+    {
+      "codelistCode": "C66734",
+      "submissionValue": "DOMAIN",
+      "name": "Domain Abbreviation",
+      "terms": [
+        { "submissionValue": "DM" },
+        { "submissionValue": "AE" },
+        { "submissionValue": "LB" },
+        { "submissionValue": "VS" },
+        { "submissionValue": "EX" },
+        { "submissionValue": "RELREC" },
+        { "submissionValue": "ADSL" },
+        { "submissionValue": "ADLB" }
+      ]
+    },
+    {
+      "submissionValue": "LBTESTCD",
+      "terms": [
+        { "submissionValue": "HGB", "preferredTerm": "Hemoglobin" },
+        { "submissionValue": "WBC", "preferredTerm": "Leukocytes" }
+      ]
+    },
+    {
+      "submissionValue": "VSTESTCD",
+      "terms": [
+        { "submissionValue": "SYSBP" },
+        { "submissionValue": "DIABP" },
+        { "submissionValue": "PULSE" }
+      ]
+    },
+    {
+      "submissionValue": "UNIT",
+      "terms": [
+        { "submissionValue": "g/dL" },
+        { "submissionValue": "10^9/L" },
+        { "submissionValue": "mmHg" },
+        { "submissionValue": "beats/min" }
+      ]
+    },
+    {
+      "submissionValue": "NY",
+      "terms": [
+        { "submissionValue": "N" },
+        { "submissionValue": "Y" }
+      ]
+    }
+  ]
+}

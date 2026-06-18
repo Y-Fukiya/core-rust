@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0004",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "EX",
+      "columns": ["USUBJID", "EXSEQ", "EXTRT"]
+    }
+  ],
+  "Check": {
+    "name": "EXTRT",
+    "operator": "is_not_contained_by",
+    "dictionary": "WHODD"
+  },
+  "Outcome": {
+    "Message": "EXTRT must be present in WHODrug dictionary"
+  }
+}

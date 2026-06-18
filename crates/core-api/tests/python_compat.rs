@@ -47,8 +47,8 @@ fn python_compat_cases_match_stored_expected_outputs() {
     case_paths.sort();
 
     assert!(
-        case_paths.len() >= 3,
-        "expected at least three Python compat cases"
+        case_paths.len() >= 5,
+        "expected at least five Python compat cases"
     );
 
     for case_path in case_paths {
@@ -98,6 +98,8 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     assert!(case_names.contains("integrated_study_package"));
     assert!(case_names.contains("sdtm_adam_full_study_package"));
     assert!(case_names.contains("sdtm_adam_sdtmig_filter"));
+    assert!(case_names.contains("regulatory_full_study_package"));
+    assert!(case_names.contains("regulatory_adamig_filter"));
 
     let package = read_json(&fixtures.join("datasets/sdtm_adam/study_package.json"));
     let domains = package["datasets"]
@@ -119,6 +121,38 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     assert!(
         rule_count >= 7,
         "expected at least seven SDTM/ADaM compatibility rules"
+    );
+
+    let regulatory_package = read_json(&fixtures.join("datasets/regulatory/study_package.json"));
+    let regulatory_domains = regulatory_package["datasets"]
+        .as_array()
+        .expect("regulatory datasets array")
+        .iter()
+        .filter_map(|dataset| dataset["domain"].as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        regulatory_domains,
+        BTreeSet::from(["ADLB", "ADSL", "AE", "DM", "EX", "LB", "RELREC", "VS"])
+    );
+
+    let regulatory_rule_count = fs::read_dir(fixtures.join("rules/regulatory"))
+        .expect("read regulatory rules")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+        .count();
+    assert!(
+        regulatory_rule_count >= 10,
+        "expected at least ten regulatory compatibility rules"
+    );
+
+    let regulatory_full =
+        read_case(&fixtures.join("python_compat/cases/regulatory_full_study_package.json"));
+    assert!(
+        regulatory_full
+            .external_dictionary_paths
+            .iter()
+            .any(|path| path.extension().and_then(|value| value.to_str()) == Some("csv")),
+        "expected regulatory compat case to cover CSV external dictionaries"
     );
 }
 

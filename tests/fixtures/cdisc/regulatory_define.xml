@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odm:ODM xmlns:odm="http://www.cdisc.org/ns/odm/v1.3" xmlns:def="http://www.cdisc.org/ns/def/v2.1">
+  <odm:Study OID="REG-001">
+    <odm:MetaDataVersion OID="MDV.REG.001" Name="Regulatory Edge Fixture">
+      <odm:ItemGroupDef OID="IG.DM" Name="DM" Domain="DM" Purpose="Tabulation" Repeating="No">
+        <odm:ItemRef ItemOID="IT.DM.DOMAIN" OrderNumber="1" Mandatory="Yes"/>
+        <odm:ItemRef ItemOID="IT.DM.SEX" OrderNumber="2" Mandatory="Yes"/>
+      </odm:ItemGroupDef>
+      <odm:ItemGroupDef OID="IG.LB" Name="LB" Domain="LB" Purpose="Tabulation" Repeating="Yes">
+        <odm:ItemRef ItemOID="IT.LB.LBTESTCD" OrderNumber="1" Mandatory="Yes" MethodOID="MT.LB.LBTESTCD"/>
+        <odm:ItemRef ItemOID="IT.LB.LBSTRESU" OrderNumber="2" Mandatory="Yes" WhereClauseOID="WC.LB.HGB"/>
+      </odm:ItemGroupDef>
+      <odm:ItemGroupDef OID="IG.VS" Name="VS" Domain="VS" Purpose="Tabulation" Repeating="Yes">
+        <odm:ItemRef ItemOID="IT.VS.VSTESTCD" OrderNumber="1" Mandatory="Yes"/>
+      </odm:ItemGroupDef>
+      <odm:ItemGroupDef OID="IG.RELREC" Name="RELREC" Domain="RELREC" Purpose="Tabulation" Repeating="Yes">
+        <odm:ItemRef ItemOID="IT.RELREC.RDOMAIN" OrderNumber="1" Mandatory="Yes"/>
+      </odm:ItemGroupDef>
+      <odm:ItemGroupDef OID="IG.ADLB" Name="ADLB" Domain="ADLB" Purpose="Analysis" Repeating="Yes">
+        <odm:ItemRef ItemOID="IT.ADLB.PARAMCD" OrderNumber="1" Mandatory="Yes" ValueListOID="VL.ADLB.PARAMCD"/>
+      </odm:ItemGroupDef>
+      <odm:ItemDef OID="IT.DM.DOMAIN" Name="DOMAIN" DataType="text" Length="8">
+        <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.DM.SEX" Name="SEX" DataType="text" Length="1">
+        <odm:CodeListRef CodeListOID="CL.SEX"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.LB.LBTESTCD" Name="LBTESTCD" DataType="text" Length="8">
+        <odm:CodeListRef CodeListOID="CL.LBTESTCD"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.LB.LBSTRESU" Name="LBSTRESU" DataType="text" Length="20">
+        <odm:CodeListRef CodeListOID="CL.UNIT"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.VS.VSTESTCD" Name="VSTESTCD" DataType="text" Length="8">
+        <odm:CodeListRef CodeListOID="CL.VSTESTCD"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.RELREC.RDOMAIN" Name="RDOMAIN" DataType="text" Length="8">
+        <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+      </odm:ItemDef>
+      <odm:ItemDef OID="IT.ADLB.PARAMCD" Name="PARAMCD" DataType="text" Length="8">
+        <odm:CodeListRef CodeListOID="CL.LBTESTCD"/>
+      </odm:ItemDef>
+      <odm:ValueListDef OID="VL.ADLB.PARAMCD">
+        <odm:ItemRef ItemOID="IT.ADLB.PARAMCD" OrderNumber="1" Mandatory="Yes" WhereClauseOID="WC.LB.HGB"/>
+      </odm:ValueListDef>
+      <odm:WhereClauseDef OID="WC.LB.HGB">
+        <odm:RangeCheck Comparator="EQ" SoftHard="Soft">
+          <odm:CheckValue>HGB</odm:CheckValue>
+        </odm:RangeCheck>
+      </odm:WhereClauseDef>
+      <odm:MethodDef OID="MT.LB.LBTESTCD" Name="Lab Test Mapping" Type="Computation">
+        <odm:FormalExpression Context="JSONATA">LBTESTCD</odm:FormalExpression>
+      </odm:MethodDef>
+      <odm:CodeList OID="CL.DOMAIN" Name="Domain Abbreviation" DataType="text" def:NCIodmExtCodeID="C66734">
+        <odm:CodeListItem CodedValue="DM"/>
+        <odm:CodeListItem CodedValue="AE"/>
+        <odm:CodeListItem CodedValue="LB"/>
+        <odm:CodeListItem CodedValue="VS"/>
+        <odm:CodeListItem CodedValue="EX"/>
+        <odm:CodeListItem CodedValue="RELREC"/>
+        <odm:CodeListItem CodedValue="ADSL"/>
+        <odm:CodeListItem CodedValue="ADLB"/>
+      </odm:CodeList>
+      <odm:CodeList OID="CL.SEX" Name="Sex" DataType="text" def:NCIodmExtCodeID="C66731">
+        <odm:CodeListItem CodedValue="F"/>
+        <odm:CodeListItem CodedValue="M"/>
+        <odm:CodeListItem CodedValue="U"/>
+      </odm:CodeList>
+      <odm:CodeList OID="CL.LBTESTCD" Name="Laboratory Test Code" DataType="text">
+        <odm:CodeListItem CodedValue="HGB"/>
+        <odm:CodeListItem CodedValue="WBC"/>
+      </odm:CodeList>
+      <odm:CodeList OID="CL.VSTESTCD" Name="Vital Signs Test Code" DataType="text">
+        <odm:CodeListItem CodedValue="SYSBP"/>
+        <odm:CodeListItem CodedValue="DIABP"/>
+        <odm:CodeListItem CodedValue="PULSE"/>
+      </odm:CodeList>
+      <odm:CodeList OID="CL.UNIT" Name="Unit" DataType="text">
+        <odm:CodeListItem CodedValue="g/dL"/>
+        <odm:CodeListItem CodedValue="10^9/L"/>
+        <odm:CodeListItem CodedValue="mmHg"/>
+        <odm:CodeListItem CodedValue="beats/min"/>
+      </odm:CodeList>
+    </odm:MetaDataVersion>
+  </odm:Study>
+</odm:ODM>

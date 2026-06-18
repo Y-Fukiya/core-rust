@@ -1,0 +1,67 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0008",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "filter",
+      "dataset": "ADLB",
+      "where": {
+        "name": "ANL01FL",
+        "operator": "equal_to",
+        "value": "Y"
+      }
+    },
+    {
+      "name": "sort",
+      "by": ["USUBJID", "PARAMCD"]
+    },
+    {
+      "name": "aggregate",
+      "by": ["USUBJID"],
+      "function": "max",
+      "source_column": "AVAL",
+      "as": "AVAL_MAX"
+    },
+    {
+      "name": "row_number",
+      "by": ["USUBJID"],
+      "as": "ROW_NUMBER"
+    }
+  ],
+  "Check": {
+    "all": [
+      {
+        "name": "AVAL_MAX",
+        "operator": "greater_than",
+        "value": 14
+      },
+      {
+        "name": "ROW_NUMBER",
+        "operator": "equal_to",
+        "value": 1
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "ADLB high maximum value requires review"
+  }
+}

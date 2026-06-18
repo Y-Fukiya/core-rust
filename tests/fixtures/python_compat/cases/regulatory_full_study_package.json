@@ -1,0 +1,10 @@
+{
+  "name": "regulatory_full_study_package",
+  "description": "Regulatory-style SDTM/ADaM package with LB, VS, EX, RELREC, ADLB, CSV external dictionary, joins, JSONATA, and operations.",
+  "rule_paths": ["rules/regulatory"],
+  "dataset_paths": ["datasets/regulatory/study_package.json"],
+  "define_xml_paths": ["cdisc/regulatory_define.xml"],
+  "ct_paths": ["cdisc/regulatory_ct.json"],
+  "external_dictionary_paths": ["cdisc/regulatory_external_dictionary.csv"],
+  "expected_path": "python_compat/expected/regulatory_full_study_package.json"
+}

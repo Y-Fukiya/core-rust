@@ -1,0 +1,38 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0003",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "LB",
+      "columns": ["USUBJID", "LBSEQ", "LBSTRESU"]
+    }
+  ],
+  "Check": {
+    "name": "LBSTRESU",
+    "operator": "is_not_contained_by",
+    "ct_codelist": "UNIT"
+  },
+  "Outcome": {
+    "Message": "LBSTRESU must use unit controlled terminology"
+  }
+}

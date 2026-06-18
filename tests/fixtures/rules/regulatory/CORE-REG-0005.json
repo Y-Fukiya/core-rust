@@ -1,0 +1,34 @@
+{
+  "Core": {
+    "Id": "CORE-REG-0005",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "JSONATA",
+  "Operations": [
+    {
+      "name": "select",
+      "dataset": "VS",
+      "columns": ["USUBJID", "VSSEQ", "VSTESTCD"]
+    }
+  ],
+  "Check": "$not($contains(['SYSBP', 'DIABP', 'PULSE'], VSTESTCD)) or $substring(USUBJID, 0, 4) != 'SUBJ'",
+  "Outcome": {
+    "Message": "VS test code and subject identifier must match expected SDTM patterns"
+  }
+}
