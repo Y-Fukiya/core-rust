@@ -1,0 +1,14 @@
+Core:
+  Id: CORE-OPEN-0001
+  Status: Published
+Scope:
+  Domains: {}
+  Classes: {}
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  name: CMSEQ
+  operator: less_than_or_equal_to
+  value: 0
+Outcome:
+  Message: CMSEQ must be greater than zero
