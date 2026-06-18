@@ -8,11 +8,12 @@ use core_cdisc_library::{
     DefineXmlMetadata,
 };
 use core_data::{
-    dataset_column_values, deduplicate_dataset_by_columns, derive_column_from_column,
-    derive_column_from_values, derive_literal_column, drop_dataset_columns, filter_dataset_by_mask,
-    group_count_dataset, group_stat_dataset, left_join_dataset_on, load_datasets_from_paths,
-    rename_dataset_columns, select_dataset_columns, sort_dataset_by_columns, DataError,
-    LoadedDataset,
+    anti_join_dataset_on, dataset_column_values, deduplicate_dataset_by_columns,
+    derive_column_from_column, derive_column_from_values, derive_literal_column,
+    drop_dataset_columns, filter_dataset_by_mask, group_count_dataset, group_stat_dataset,
+    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths, rename_dataset_columns,
+    row_number_dataset, select_dataset_columns, semi_join_dataset_on, sort_dataset_by_columns,
+    DataError, LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -100,6 +101,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     selection
         .selected
         .retain(|rule| rule_matches_standard(rule, &request.standard, &request.standard_version));
+    let selected_rule_count = selection.selected.len();
+    let skipped_selection_count = selection.skipped.len();
 
     let mut results = selection.skipped;
     for rule in &selection.selected {
@@ -131,9 +134,15 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 &ReportOptions {
                     output_format: request.output_format,
                     metadata: ReportMetadata {
+                        engine_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
                         standard: request.standard.clone(),
                         standard_version: request.standard_version.clone(),
                         log_level: request.log_level.clone(),
+                        rule_count: Some(selected_rule_count + skipped_selection_count),
+                        dataset_count: Some(datasets.len()),
+                        define_xml_count: Some(request.define_xml_paths.len()),
+                        ct_count: Some(request.ct_paths.len()),
+                        external_dictionary_count: Some(request.external_dictionary_paths.len()),
                         ..Default::default()
                     },
                 },
@@ -632,7 +641,14 @@ fn execute_join_operation(
 
     let prefix =
         string_field(operation, &["prefix"]).unwrap_or_else(|| format!("{}.", right.metadata.name));
-    left_join_dataset_on(left, right, &left_keys, &right_keys, &prefix)
+    let name = operation_name(operation).unwrap_or_default();
+    let joined = match name.as_str() {
+        "inner_join" => inner_join_dataset_on(left, right, &left_keys, &right_keys, &prefix),
+        "semi_join" => semi_join_dataset_on(left, right, &left_keys, &right_keys),
+        "anti_join" => anti_join_dataset_on(left, right, &left_keys, &right_keys),
+        _ => left_join_dataset_on(left, right, &left_keys, &right_keys, &prefix),
+    };
+    joined
         .map(|dataset| vec![dataset])
         .map_err(|source| join_skipped_result(rule, source.to_string()))
 }
@@ -858,6 +874,19 @@ fn execute_dataset_operation(
                 })
                 .collect()
         }
+        "row_number" | "rank" => {
+            let column = string_field(operation, &["target", "as", "output", "column", "name"])
+                .unwrap_or_else(|| "ROW_NUMBER".to_owned());
+            let keys = string_list_field(operation, &["by", "keys", "group_by", "group_keys"])
+                .unwrap_or_default();
+            input
+                .iter()
+                .map(|dataset| {
+                    row_number_dataset(dataset, &column, &keys)
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
         _ => Err(operation_skipped_result(
             rule,
             format!("unsupported operation {name}"),
@@ -1054,6 +1083,8 @@ fn is_supported_operation_name(name: &str) -> bool {
                 | "distinct"
                 | "deduplicate"
                 | "unique"
+                | "row_number"
+                | "rank"
         )
 }
 
@@ -1063,6 +1094,9 @@ fn is_join_operation_name(name: &str) -> bool {
         "join"
             | "left_join"
             | "dataset_join"
+            | "inner_join"
+            | "semi_join"
+            | "anti_join"
             | "merge"
             | "lookup"
             | "match_dataset"
@@ -1878,6 +1912,80 @@ mod tests {
     }
 
     #[test]
+    fn run_validation_executes_inner_join_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-INNER-JOIN.json"),
+            r#"{
+  "Core": { "Id": "CORE-INNER-JOIN", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "inner_join",
+      "left": "AE",
+      "right": "LOOKUP",
+      "by": ["USUBJID"],
+      "prefix": "LOOKUP."
+    }
+  ],
+  "Check": {
+    "name": "LOOKUP.FLAG",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": { "Message": "Matched lookup flag must not be Y" }
+}"#,
+        )
+        .expect("write inner join rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": ["S2"],
+        "FLAG": ["Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write inner join data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
     fn run_validation_executes_jsonata_string_rule() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -2354,8 +2462,13 @@ mod tests {
       "columns": { "TERM_UP": "TERM" }
     },
     {
+      "name": "row_number",
+      "by": ["USUBJID"],
+      "as": "ROWNUM"
+    },
+    {
       "name": "select",
-      "columns": ["USUBJID", "AESEQ", "TERM", "AVAL_SUM"]
+      "columns": ["USUBJID", "AESEQ", "TERM", "AVAL_SUM", "ROWNUM"]
     }
   ],
   "Check": {
@@ -2369,6 +2482,11 @@ mod tests {
         "name": "TERM",
         "operator": "equal_to",
         "value": "HEADACHE"
+      },
+      {
+        "name": "ROWNUM",
+        "operator": "equal_to",
+        "value": 1
       }
     ]
   },

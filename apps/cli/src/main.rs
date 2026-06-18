@@ -125,6 +125,9 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         if let Some(csv) = reports.csv {
             println!("wrote {}", csv.display());
         }
+        if let Some(log) = reports.log {
+            println!("wrote {}", log.display());
+        }
     }
 
     Ok(())

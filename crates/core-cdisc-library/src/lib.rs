@@ -815,22 +815,37 @@ fn insert_ct_values(terminology: &mut ControlledTerminology, codelist: &str, val
     match values {
         Value::Array(values) => {
             for value in values {
-                if let Some(term) = value.as_str().or_else(|| {
-                    value.as_object().and_then(|object| {
-                        string_field(
-                            object,
-                            &[
-                                "value",
-                                "CodedValue",
-                                "codedValue",
-                                "submissionValue",
-                                "code",
-                                "term",
-                            ],
-                        )
-                    })
-                }) {
+                if let Some(term) = value.as_str() {
                     terminology.insert_term(codelist, term);
+                    continue;
+                }
+                if let Some(object) = value.as_object() {
+                    for term in string_fields(
+                        object,
+                        &[
+                            "value",
+                            "CodedValue",
+                            "codedValue",
+                            "submissionValue",
+                            "code",
+                            "term",
+                            "termCode",
+                            "conceptId",
+                            "preferredTerm",
+                            "decode",
+                        ],
+                    ) {
+                        terminology.insert_term(codelist, term);
+                    }
+                    for key in ["synonyms", "Synonyms", "aliases", "terms"] {
+                        if let Some(values) = object_array_field(object, &[key]) {
+                            for value in values {
+                                if let Some(value) = value.as_str() {
+                                    terminology.insert_term(codelist, value);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1168,6 +1183,50 @@ mod tests {
         assert!(terminology.contains("MEDDRA", "HEADACHE"));
         assert!(terminology.contains("26.1", "NAUSEA"));
         assert!(terminology.contains("UNII", "ABC123"));
+    }
+
+    #[test]
+    fn parse_ct_and_dictionary_terms_include_synonyms_and_decodes() {
+        let terminology = parse_ct_json_value(&json!({
+            "codelists": [
+                {
+                    "submissionValue": "NY",
+                    "terms": [
+                        {
+                            "submissionValue": "Y",
+                            "termCode": "C49488",
+                            "preferredTerm": "Yes",
+                            "synonyms": ["YES"]
+                        }
+                    ]
+                }
+            ]
+        }));
+
+        assert!(terminology.contains("NY", "Y"));
+        assert!(terminology.contains("NY", "C49488"));
+        assert!(terminology.contains("NY", "Yes"));
+        assert!(terminology.contains("NY", "YES"));
+
+        let dictionary = parse_external_dictionary_json_value(
+            &json!({
+                "dictionary": "MEDDRA",
+                "terms": [
+                    {
+                        "code": "10019211",
+                        "preferredTerm": "Headache",
+                        "decode": "HEADACHE",
+                        "synonyms": ["Cephalalgia"]
+                    }
+                ]
+            }),
+            "fallback",
+        );
+
+        assert!(dictionary.contains("MEDDRA", "10019211"));
+        assert!(dictionary.contains("MEDDRA", "Headache"));
+        assert!(dictionary.contains("MEDDRA", "HEADACHE"));
+        assert!(dictionary.contains("MEDDRA", "Cephalalgia"));
     }
 
     #[test]

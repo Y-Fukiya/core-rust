@@ -42,6 +42,7 @@ pub enum ReportError {
 pub struct WrittenReports {
     pub json: Option<PathBuf>,
     pub csv: Option<PathBuf>,
+    pub log: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,9 +76,15 @@ pub struct ReportOptions {
 pub struct ReportMetadata {
     pub schema_version: String,
     pub engine: String,
+    pub engine_version: Option<String>,
     pub standard: Option<String>,
     pub standard_version: Option<String>,
     pub log_level: Option<String>,
+    pub rule_count: Option<usize>,
+    pub dataset_count: Option<usize>,
+    pub define_xml_count: Option<usize>,
+    pub ct_count: Option<usize>,
+    pub external_dictionary_count: Option<usize>,
 }
 
 impl Default for ReportMetadata {
@@ -85,9 +92,15 @@ impl Default for ReportMetadata {
         Self {
             schema_version: "1.0".to_owned(),
             engine: "core-rs".to_owned(),
+            engine_version: None,
             standard: None,
             standard_version: None,
             log_level: None,
+            rule_count: None,
+            dataset_count: None,
+            define_xml_count: None,
+            ct_count: None,
+            external_dictionary_count: None,
         }
     }
 }
@@ -154,8 +167,17 @@ pub fn write_reports_with_options(
     } else {
         None
     };
+    let log = if should_write_log(&options.metadata) {
+        Some(write_log_report(
+            output_dir.join("validation.log"),
+            results,
+            &options.metadata,
+        )?)
+    } else {
+        None
+    };
 
-    Ok(WrittenReports { json, csv })
+    Ok(WrittenReports { json, csv, log })
 }
 
 pub fn write_json_report(
@@ -238,6 +260,99 @@ pub fn write_csv_report(
     Ok(path.to_path_buf())
 }
 
+pub fn write_log_report(
+    path: impl AsRef<Path>,
+    results: &[RuleValidationResult],
+    metadata: &ReportMetadata,
+) -> Result<PathBuf> {
+    let path = path.as_ref();
+    create_parent_dir(path)?;
+    let summary = ReportSummary::from_results(results);
+    let mut file = File::create(path).map_err(|source| ReportError::CreateFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    writeln!(file, "schema_version={}", metadata.schema_version).map_err(|source| {
+        ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    writeln!(file, "engine={}", metadata.engine).map_err(|source| ReportError::WriteFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if let Some(version) = &metadata.engine_version {
+        writeln!(file, "engine_version={version}").map_err(|source| ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    if let Some(level) = &metadata.log_level {
+        writeln!(file, "log_level={level}").map_err(|source| ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    if let Some(standard) = &metadata.standard {
+        writeln!(file, "standard={standard}").map_err(|source| ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    if let Some(version) = &metadata.standard_version {
+        writeln!(file, "standard_version={version}").map_err(|source| ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    for (name, value) in [
+        ("rule_count", metadata.rule_count),
+        ("dataset_count", metadata.dataset_count),
+        ("define_xml_count", metadata.define_xml_count),
+        ("ct_count", metadata.ct_count),
+        (
+            "external_dictionary_count",
+            metadata.external_dictionary_count,
+        ),
+    ] {
+        if let Some(value) = value {
+            writeln!(file, "{name}={value}").map_err(|source| ReportError::WriteFile {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+    }
+    writeln!(
+        file,
+        "summary total_results={} passed={} failed={} skipped={} error_count={}",
+        summary.total_results, summary.passed, summary.failed, summary.skipped, summary.error_count
+    )
+    .map_err(|source| ReportError::WriteFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    for result in results {
+        writeln!(
+            file,
+            "result rule_id={} status={} dataset={} domain={} errors={} skipped_reason={}",
+            result.rule_id,
+            execution_status_name(&result.execution_status),
+            result.dataset,
+            result.domain.clone().unwrap_or_default(),
+            result.error_count,
+            skipped_reason_name(result),
+        )
+        .map_err(|source| ReportError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+
+    Ok(path.to_path_buf())
+}
+
 pub fn flatten_csv_rows(results: &[RuleValidationResult]) -> Vec<CsvReportRow> {
     results
         .iter()
@@ -253,6 +368,13 @@ pub fn flatten_csv_rows(results: &[RuleValidationResult]) -> Vec<CsvReportRow> {
             }
         })
         .collect()
+}
+
+fn should_write_log(metadata: &ReportMetadata) -> bool {
+    metadata
+        .log_level
+        .as_deref()
+        .is_some_and(|level| !level.eq_ignore_ascii_case("disabled"))
 }
 
 const CSV_HEADERS: &[&str] = &[
@@ -468,6 +590,7 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
 
         assert_eq!(written.json, Some(dir.path().join("report.json")));
         assert_eq!(written.csv, Some(dir.path().join("report.csv")));
+        assert_eq!(written.log, None);
         assert!(written.json.expect("json report").exists());
         assert!(written.csv.expect("csv report").exists());
     }
@@ -494,9 +617,12 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
             &ReportOptions {
                 output_format: ReportOutputFormat::Json,
                 metadata: ReportMetadata {
+                    engine_version: Some("0.1.0".to_owned()),
                     standard: Some("SDTMIG".to_owned()),
                     standard_version: Some("3.4".to_owned()),
                     log_level: Some("info".to_owned()),
+                    rule_count: Some(2),
+                    dataset_count: Some(1),
                     ..Default::default()
                 },
             },
@@ -505,6 +631,7 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
 
         assert!(written.json.expect("json").exists());
         assert_eq!(written.csv, None);
+        assert!(written.log.expect("log").exists());
         assert!(!dir.path().join("report.csv").exists());
 
         let document: ReportDocument =
@@ -512,8 +639,17 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
                 .expect("document");
         assert_eq!(document.metadata.schema_version, "1.0");
         assert_eq!(document.metadata.engine, "core-rs");
+        assert_eq!(document.metadata.engine_version.as_deref(), Some("0.1.0"));
         assert_eq!(document.metadata.standard.as_deref(), Some("SDTMIG"));
         assert_eq!(document.metadata.standard_version.as_deref(), Some("3.4"));
         assert_eq!(document.metadata.log_level.as_deref(), Some("info"));
+        assert_eq!(document.metadata.rule_count, Some(2));
+        assert_eq!(document.metadata.dataset_count, Some(1));
+
+        let log = fs::read_to_string(dir.path().join("validation.log")).expect("read log");
+        assert!(log.contains("schema_version=1.0"));
+        assert!(log.contains("engine=core-rs"));
+        assert!(log.contains("summary total_results=2 passed=1 failed=1 skipped=0 error_count=2"));
+        assert!(log.contains("result rule_id=CORE-TEST-0001 status=failed dataset=AE"));
     }
 }

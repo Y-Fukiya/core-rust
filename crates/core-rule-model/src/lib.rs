@@ -751,6 +751,18 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
 
     if let Some(args) = jsonata_function_arguments(expression, &["$contains", "contains"]) {
         if args.len() == 2 {
+            if let Ok(Value::Array(values)) = jsonata_value(args[0].trim()) {
+                let (target, case_insensitive) = jsonata_target(args[1]);
+                return Ok(jsonata_leaf(
+                    target,
+                    if case_insensitive {
+                        Operator::IsContainedByCaseInsensitive
+                    } else {
+                        Operator::IsContainedBy
+                    },
+                    ValueExpr::List(values),
+                ));
+            }
             let (target, case_insensitive) = jsonata_target(args[0]);
             return Ok(jsonata_leaf(
                 target,
@@ -883,6 +895,10 @@ fn jsonata_comparison_leaf(
         }
     }
 
+    if let Some(args) = jsonata_function_arguments(target, &["$substring", "substring"]) {
+        return substring_jsonata_condition(&args, &operator, &comparator);
+    }
+
     if let Some(argument) = jsonata_function_argument(target, &["$uppercase", "uppercase"])
         .or_else(|| jsonata_function_argument(target, &["$lowercase", "lowercase"]))
     {
@@ -901,6 +917,56 @@ fn jsonata_comparison_leaf(
         clean_jsonata_identifier(target),
         operator,
         comparator,
+    ))
+}
+
+fn substring_jsonata_condition(
+    args: &[&str],
+    operator: &Operator,
+    comparator: &ValueExpr,
+) -> Result<ConditionGroup> {
+    if !matches!(operator, Operator::EqualTo | Operator::NotEqualTo) {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "$substring() currently supports equality comparisons".to_owned(),
+        ));
+    }
+    if args.len() < 2 {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "$substring() requires a target and start index".to_owned(),
+        ));
+    }
+    let Some(start) = jsonata_value(args[1])?.as_u64() else {
+        return Err(RuleModelError::InvalidRuleFormat(
+            "$substring() start index must be numeric".to_owned(),
+        ));
+    };
+    let literal = match comparator {
+        ValueExpr::Literal(Value::String(value)) => value.clone(),
+        _ => {
+            return Err(RuleModelError::InvalidRuleFormat(
+                "$substring() comparator must be a string".to_owned(),
+            ))
+        }
+    };
+    if let Some(length) = args.get(2).map(|value| jsonata_value(value)).transpose()? {
+        if let Some(length) = length.as_u64() {
+            if length as usize != literal.chars().count() {
+                return Err(RuleModelError::InvalidRuleFormat(
+                    "$substring() length must match the compared string length".to_owned(),
+                ));
+            }
+        }
+    }
+    let escaped = regex_escape(&literal);
+    let pattern = format!(r#"(?s)^.{{{start}}}{escaped}"#);
+    Ok(jsonata_leaf(
+        clean_jsonata_identifier(args[0]),
+        if matches!(operator, Operator::EqualTo) {
+            Operator::MatchesRegex
+        } else {
+            Operator::DoesNotMatchRegex
+        },
+        ValueExpr::Literal(Value::String(pattern)),
     ))
 }
 
@@ -1169,6 +1235,15 @@ fn jsonata_target(value: &str) -> (String, bool) {
     {
         return (clean_jsonata_identifier(argument), true);
     }
+    for names in [
+        &["$number", "number"][..],
+        &["$string", "string"][..],
+        &["$trim", "trim"][..],
+    ] {
+        if let Some(argument) = jsonata_function_argument(value, names) {
+            return (clean_jsonata_identifier(argument), false);
+        }
+    }
     (clean_jsonata_identifier(value), false)
 }
 
@@ -1189,6 +1264,20 @@ fn clean_jsonata_identifier(value: &str) -> String {
         .trim_matches('"')
         .trim_matches('\'')
         .to_owned()
+}
+
+fn regex_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        if matches!(
+            ch,
+            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 fn is_jsonata_identifier(value: &str) -> bool {
@@ -2046,6 +2135,39 @@ Outcome:
         assert_eq!(length.target.as_deref(), Some("AEDECOD"));
         assert_eq!(length.operator, Operator::MatchesRegex);
         assert_eq!(length.comparator, ValueExpr::Literal(json!("(?s)^.{4,}$")));
+    }
+
+    #[test]
+    fn normalize_jsonata_array_contains_and_substring_comparisons() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] =
+            json!("$contains(['AE', 'CM'], DOMAIN) and $substring(USUBJID, 0, 4) = 'SUBJ'");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::All(groups) = rule.conditions else {
+            panic!("expected all condition group");
+        };
+
+        let ConditionGroup::Leaf(contains) = &groups[0] else {
+            panic!("expected contains leaf");
+        };
+        assert_eq!(contains.target.as_deref(), Some("DOMAIN"));
+        assert_eq!(contains.operator, Operator::IsContainedBy);
+        assert_eq!(
+            contains.comparator,
+            ValueExpr::List(vec![json!("AE"), json!("CM")])
+        );
+
+        let ConditionGroup::Leaf(substring) = &groups[1] else {
+            panic!("expected substring leaf");
+        };
+        assert_eq!(substring.target.as_deref(), Some("USUBJID"));
+        assert_eq!(substring.operator, Operator::MatchesRegex);
+        assert_eq!(
+            substring.comparator,
+            ValueExpr::Literal(json!("(?s)^.{0}SUBJ"))
+        );
     }
 
     #[test]

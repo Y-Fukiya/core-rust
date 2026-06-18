@@ -988,6 +988,40 @@ pub fn sort_dataset_by_columns(
     take_dataset_rows(dataset, &indices)
 }
 
+pub fn row_number_dataset(
+    dataset: &LoadedDataset,
+    column_name: &str,
+    keys: &[String],
+) -> Result<LoadedDataset> {
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "row number operation requires an output column".to_owned(),
+        ));
+    }
+    for key in keys {
+        if dataset.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "row number key not found: {key}"
+            )));
+        }
+    }
+
+    let mut counters: HashMap<Vec<String>, i64> = HashMap::new();
+    let values = (0..dataset.frame.height())
+        .map(|row| {
+            let key = if keys.is_empty() {
+                vec!["<ALL>".to_owned()]
+            } else {
+                row_key(&dataset.frame, keys, row)?
+            };
+            let counter = counters.entry(key).or_insert(0);
+            *counter += 1;
+            Ok(Value::Number(serde_json::Number::from(*counter)))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    derive_column_from_values(dataset, column_name, &values)
+}
+
 pub fn select_dataset_columns(
     dataset: &LoadedDataset,
     columns: &[String],
@@ -1204,31 +1238,7 @@ pub fn left_join_dataset_on(
     right_keys: &[String],
     right_prefix: &str,
 ) -> Result<LoadedDataset> {
-    if left_keys.is_empty() || right_keys.is_empty() {
-        return Err(DataError::InvalidDatasetPackage(
-            "join requires at least one key".to_owned(),
-        ));
-    }
-    if left_keys.len() != right_keys.len() {
-        return Err(DataError::InvalidDatasetPackage(
-            "left and right join keys must have the same length".to_owned(),
-        ));
-    }
-
-    for key in left_keys {
-        if left.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "left join key not found: {key}"
-            )));
-        }
-    }
-    for key in right_keys {
-        if right.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "right join key not found: {key}"
-            )));
-        }
-    }
+    validate_join_keys(left, right, left_keys, right_keys)?;
 
     let mut index = HashMap::new();
     for row in 0..right.frame.height() {
@@ -1278,6 +1288,92 @@ pub fn left_join_dataset_on(
         })?;
 
     Ok(LoadedDataset::new(left.metadata.clone(), frame))
+}
+
+pub fn inner_join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+    right_prefix: &str,
+) -> Result<LoadedDataset> {
+    let matched = filter_join_matches(left, right, left_keys, right_keys, true)?;
+    left_join_dataset_on(&matched, right, left_keys, right_keys, right_prefix)
+}
+
+pub fn semi_join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+) -> Result<LoadedDataset> {
+    filter_join_matches(left, right, left_keys, right_keys, true)
+}
+
+pub fn anti_join_dataset_on(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+) -> Result<LoadedDataset> {
+    filter_join_matches(left, right, left_keys, right_keys, false)
+}
+
+fn filter_join_matches(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+    keep_matches: bool,
+) -> Result<LoadedDataset> {
+    validate_join_keys(left, right, left_keys, right_keys)?;
+    let mut index = HashSet::new();
+    for row in 0..right.frame.height() {
+        index.insert(row_key(&right.frame, right_keys, row)?);
+    }
+
+    let indices = (0..left.frame.height())
+        .filter_map(|row| {
+            row_key(&left.frame, left_keys, row)
+                .map(|key| (index.contains(&key) == keep_matches).then_some(row as u32))
+                .transpose()
+        })
+        .collect::<Result<Vec<_>>>()?;
+    take_dataset_rows(left, &indices)
+}
+
+fn validate_join_keys(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    left_keys: &[String],
+    right_keys: &[String],
+) -> Result<()> {
+    if left_keys.is_empty() || right_keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "join requires at least one key".to_owned(),
+        ));
+    }
+    if left_keys.len() != right_keys.len() {
+        return Err(DataError::InvalidDatasetPackage(
+            "left and right join keys must have the same length".to_owned(),
+        ));
+    }
+
+    for key in left_keys {
+        if left.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "left join key not found: {key}"
+            )));
+        }
+    }
+    for key in right_keys {
+        if right.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "right join key not found: {key}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<String>> {
@@ -1648,6 +1744,58 @@ mod tests {
     }
 
     #[test]
+    fn join_variants_filter_rows_by_match_presence() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "AESEQ": [1, 2, 3]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": ["S2", "S3"],
+        "FLAG": ["Y", "N"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let keys = ["USUBJID".to_owned()];
+        let inner = inner_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+            .expect("inner join");
+        let semi =
+            semi_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("semi join");
+        let anti =
+            anti_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("anti join");
+
+        assert_eq!(inner.summary().row_count, 2);
+        assert_eq!(semi.summary().row_count, 2);
+        assert_eq!(anti.summary().row_count, 1);
+        assert_eq!(
+            anti.frame()
+                .column("USUBJID")
+                .expect("subject")
+                .get(0)
+                .expect("anti row")
+                .extract_str(),
+            Some("S1")
+        );
+    }
+
+    #[test]
     fn dataset_operations_filter_derive_group_count_and_sort_rows() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("datasets.json");
@@ -1702,14 +1850,25 @@ mod tests {
 
         let sorted =
             sort_dataset_by_columns(&counted, &["AESEQ".to_owned()], true).expect("sort rows");
+        let numbered =
+            row_number_dataset(&sorted, "ROWNUM", &["USUBJID".to_owned()]).expect("row number");
         assert_eq!(
-            sorted
+            numbered
                 .frame()
                 .column("AESEQ")
                 .expect("seq column")
                 .get(0)
                 .expect("first seq"),
             AnyValue::Int64(3)
+        );
+        assert_eq!(
+            numbered
+                .frame()
+                .column("ROWNUM")
+                .expect("row number column")
+                .get(0)
+                .expect("row number"),
+            AnyValue::Int64(1)
         );
     }
 
