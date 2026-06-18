@@ -93,7 +93,8 @@ pub fn read_upstream_lock(path: &Path) -> Result<UpstreamLock> {
         }
     }
     Ok(UpstreamLock {
-        repo: repo.unwrap_or_else(|| "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned()),
+        repo: repo
+            .unwrap_or_else(|| "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned()),
         expected_sha,
     })
 }

@@ -40,7 +40,10 @@ pub fn normalize_csv(
     let rows = read_rows(path)?;
     let skipped_row_count = match source {
         ReportSource::Official => 0,
-        ReportSource::CoreRs => rows.iter().filter(|row| row_is_core_rs_skipped(row)).count(),
+        ReportSource::CoreRs => rows
+            .iter()
+            .filter(|row| row_is_core_rs_skipped(row))
+            .count(),
     };
     let issue_rows = rows
         .iter()
@@ -109,7 +112,13 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
     let dataset = normalize_dataset_like(
         &first(
             row,
-            &["dataset", "dataset_name", "Dataset", "domain", "domain_name"],
+            &[
+                "dataset",
+                "dataset_name",
+                "Dataset",
+                "domain",
+                "domain_name",
+            ],
         )
         .unwrap_or_default(),
     );
@@ -143,8 +152,7 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
         )
         .unwrap_or_default(),
     );
-    let usubjid =
-        first(row, &["usubjid", "USUBJID", "subject", "subject_id"]).unwrap_or_default();
+    let usubjid = first(row, &["usubjid", "USUBJID", "subject", "subject_id"]).unwrap_or_default();
     let seq = first(row, &["seq", "SEQ", "sequence", "sequence_number"]).unwrap_or_default();
 
     IssueKey {
@@ -227,12 +235,10 @@ mod tests {
         )
         .expect("write candidate");
 
-        let official =
-            normalize_csv(&official, ReportSource::Official, Some("CORE-000001"))
-                .expect("official");
-        let candidate =
-            normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000001"))
-                .expect("candidate");
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000001"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000001"))
+            .expect("candidate");
 
         assert_eq!(official.issues, candidate.issues);
         assert_eq!(official.issues[0].dataset, "CM");
