@@ -122,18 +122,13 @@ pub struct Condition {
     pub options: OperatorOptions,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum ValueExpr {
     Literal(Value),
     ColumnRef(String),
     List(Vec<Value>),
+    #[default]
     Null,
-}
-
-impl Default for ValueExpr {
-    fn default() -> Self {
-        Self::Null
-    }
 }
 
 impl Serialize for ValueExpr {

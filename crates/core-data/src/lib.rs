@@ -489,6 +489,11 @@ fn parse_xpt_namestr(bytes: &[u8]) -> Result<XptVariable> {
             )))
         }
     };
+    if matches!(variable_type, XptVariableType::Numeric) && length > 8 {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT numeric variable {name} has unsupported length {length}"
+        )));
+    }
 
     Ok(XptVariable {
         name,
@@ -524,11 +529,9 @@ fn observation_chunks(data: &[u8], observation_len: usize) -> Vec<&[u8]> {
 }
 
 fn decode_xpt_numeric(bytes: &[u8]) -> Value {
-    if bytes.iter().all(|byte| *byte == 0)
-        || bytes.split_first().is_some_and(|(first, rest)| {
-            matches!(*first, b'.' | b'_' | b'A'..=b'Z') && rest.iter().all(|byte| *byte == 0)
-        })
-    {
+    if bytes.split_first().is_some_and(|(first, rest)| {
+        matches!(*first, b'.' | b'_' | b'A'..=b'Z') && rest.iter().all(|byte| *byte == 0)
+    }) {
         return Value::Null;
     }
     let value = ibm_float_to_f64(bytes);
@@ -559,7 +562,8 @@ fn ibm_float_to_f64(bytes: &[u8]) -> f64 {
         return 0.0;
     }
 
-    sign * (fraction as f64 / 2_f64.powi(56)) * 16_f64.powi(exponent)
+    let fraction_bits = 8 * (bytes.len().saturating_sub(1) as i32);
+    sign * (fraction as f64 / 2_f64.powi(fraction_bits)) * 16_f64.powi(exponent)
 }
 
 fn read_xpt_u16(bytes: &[u8]) -> u16 {
@@ -1543,6 +1547,55 @@ mod tests {
     }
 
     #[test]
+    fn load_xpt_dataset_preserves_zero_numeric_values() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("ae.xpt");
+        write_test_xpt(
+            &path,
+            "AE",
+            &[
+                TestXptVariable::character("DOMAIN", 2, "Domain Abbreviation"),
+                TestXptVariable::numeric("AESEQ", "Sequence Number"),
+            ],
+            &[
+                vec![TestXptValue::Text("AE"), TestXptValue::Number(0.0)],
+                vec![TestXptValue::Text("AE"), TestXptValue::Number(1.0)],
+            ],
+        );
+
+        let dataset = load_xpt_dataset(&path).expect("load xpt");
+        let seq = dataset.frame().column("AESEQ").expect("seq column");
+
+        assert_eq!(seq.get(0).expect("row 1"), AnyValue::Int64(0));
+        assert_eq!(seq.get(1).expect("row 2"), AnyValue::Int64(1));
+    }
+
+    #[test]
+    fn load_xpt_dataset_decodes_short_numeric_lengths() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("ae.xpt");
+        write_test_xpt(
+            &path,
+            "AE",
+            &[
+                TestXptVariable::character("DOMAIN", 2, "Domain Abbreviation"),
+                TestXptVariable::numeric_with_length("AESEQ", 4, "Sequence Number"),
+            ],
+            &[
+                vec![TestXptValue::Text("AE"), TestXptValue::Number(1.0)],
+                vec![TestXptValue::Text("AE"), TestXptValue::Number(2.0)],
+            ],
+        );
+
+        let dataset = load_xpt_dataset(&path).expect("load xpt");
+        let seq = dataset.frame().column("AESEQ").expect("seq column");
+
+        assert_eq!(dataset.metadata().variables[1].length, Some(4));
+        assert_eq!(seq.get(0).expect("row 1"), AnyValue::Int64(1));
+        assert_eq!(seq.get(1).expect("row 2"), AnyValue::Int64(2));
+    }
+
+    #[test]
     fn load_datasets_from_directory_scans_direct_children_only() {
         let dir = tempdir().expect("tempdir");
         fs::write(dir.path().join("AE.csv"), "STUDYID,DOMAIN\nS1,AE\n").expect("write csv");
@@ -1891,11 +1944,15 @@ mod tests {
         }
 
         fn numeric(name: &'static str, label: &'static str) -> Self {
+            Self::numeric_with_length(name, 8, label)
+        }
+
+        fn numeric_with_length(name: &'static str, length: usize, label: &'static str) -> Self {
             Self {
                 name,
                 label,
                 variable_type: XptVariableType::Numeric,
-                length: 8,
+                length,
             }
         }
     }
@@ -1980,7 +2037,9 @@ mod tests {
                         write_padded(&mut bytes[start..start + variable.length], value);
                     }
                     (XptVariableType::Numeric, TestXptValue::Number(value)) => {
-                        bytes.extend(f64_to_ibm_float(*value));
+                        let encoded = f64_to_ibm_float(*value);
+                        assert!(variable.length <= encoded.len());
+                        bytes.extend(&encoded[..variable.length]);
                     }
                     _ => panic!("test XPT value type does not match variable type"),
                 }

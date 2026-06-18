@@ -56,6 +56,7 @@ pub enum SkippedReason {
     OperationsNotSupported,
     JsonataNotSupported,
     DatasetJoinNotSupported,
+    EvaluationError,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

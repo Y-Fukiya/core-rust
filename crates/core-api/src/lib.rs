@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![allow(clippy::result_large_err)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -121,7 +122,10 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         };
 
         for dataset in &execution_datasets {
-            results.push(validate_rule(&rule, dataset)?);
+            match validate_rule(&rule, dataset) {
+                Ok(result) => results.push(result),
+                Err(source) => results.push(evaluation_skipped_result(&rule, dataset, source)),
+            }
         }
     }
 
@@ -314,7 +318,7 @@ fn rule_matches_standard(
             .name
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(standard))
-            && standard_version.as_deref().map_or(true, |version| {
+            && standard_version.as_deref().is_none_or(|version| {
                 rule_standard
                     .version
                     .as_deref()
@@ -1045,6 +1049,27 @@ fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> Rul
     )
 }
 
+fn evaluation_skipped_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    source: EngineError,
+) -> RuleValidationResult {
+    RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Skipped,
+        skipped_reason: Some(SkippedReason::EvaluationError),
+        dataset: dataset.metadata().name.clone(),
+        domain: dataset.metadata().domain.clone(),
+        message: format!(
+            "Rule {} could not be evaluated for dataset {}: {source}",
+            rule.core_id,
+            dataset.metadata().name
+        ),
+        error_count: 0,
+        errors: Vec::new(),
+    }
+}
+
 fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
     rule.operations.iter().find_map(|operation| {
         let name = operation_name(operation).unwrap_or_else(|| "<missing>".to_owned());
@@ -1563,6 +1588,61 @@ mod tests {
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
         assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_records_engine_errors_as_skipped_results() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-MISSING-COLUMN.json"),
+            r#"{
+  "Core": { "Id": "CORE-MISSING-COLUMN", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AESTDTC",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "AESTDTC must be populated" }
+}"#,
+        )
+        .expect("write missing column rule");
+        write_rule(&rules_dir, "CORE-VALID", "AE");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        let skipped = outcome
+            .results
+            .iter()
+            .find(|result| result.rule_id == "CORE-MISSING-COLUMN")
+            .expect("skipped missing column result");
+        assert_eq!(skipped.execution_status, ExecutionStatus::Skipped);
+        assert_eq!(skipped.skipped_reason, Some(SkippedReason::EvaluationError));
+        assert_eq!(skipped.dataset, "AE");
+        assert!(skipped
+            .message
+            .contains("dataset is missing required column"));
+
+        let valid = outcome
+            .results
+            .iter()
+            .find(|result| result.rule_id == "CORE-VALID")
+            .expect("valid rule result");
+        assert_eq!(valid.execution_status, ExecutionStatus::Failed);
     }
 
     #[test]
