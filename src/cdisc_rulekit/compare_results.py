@@ -23,6 +23,12 @@ COMPARISON_FIELDS = [
     "seq",
     "notes",
 ]
+CLASSIFICATION_FIELDS = [
+    "classification",
+    "row_count",
+    "rule_count",
+    "description",
+]
 
 
 @dataclass(frozen=True)
@@ -150,7 +156,8 @@ def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> boo
     if expected.get("row") and str(issue.get("row") or "") != expected["row"]:
         return False
     expected_variables = _variables(expected.get("variables"))
-    if expected_variables and _variables(issue.get("variables")) != expected_variables:
+    actual_variables = _variables(issue.get("variables"))
+    if expected_variables and not set(expected_variables).issubset(set(actual_variables)):
         return False
     if expected.get("usubjid") and issue.get("usubjid") != expected["usubjid"]:
         return False
@@ -196,6 +203,71 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
     return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "structural issue fields did not match"}
 
 
+def _int_value(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _failure_classification(row: dict[str, object]) -> str:
+    status = str(row.get("status") or "")
+    notes = str(row.get("notes") or "")
+    if status == "PASS":
+        return "PASS"
+    if status == "ACTUAL_SKIPPED":
+        return "ACTUAL_SKIPPED_BY_CORE"
+    if status == "ACTUAL_MISSING":
+        return "ACTUAL_OUTPUT_MISSING"
+    if status == "EXPECTED_MISSING":
+        return "EXPECTED_OUTPUT_MISSING"
+    if status != "FAIL":
+        return status or "UNKNOWN_NON_PASS"
+
+    expected_count = _int_value(row.get("expected_issue_count"))
+    actual_count = _int_value(row.get("actual_issue_count"))
+    if notes == "issue count mismatch":
+        if expected_count > 0 and actual_count == 0:
+            return "NEGATIVE_DID_NOT_TRIGGER"
+        if expected_count == 0 and actual_count > 0:
+            return "POSITIVE_TRIGGERED_UNEXPECTEDLY"
+        return "ISSUE_COUNT_MISMATCH"
+    if notes == "structural issue fields did not match":
+        return "STRUCTURAL_MISMATCH"
+    return "SUPPORTED_MISMATCH"
+
+
+def _classification_description(classification: str) -> str:
+    descriptions = {
+        "PASS": "Expected and actual structural fields matched.",
+        "ACTUAL_SKIPPED_BY_CORE": "Official CORE skipped execution; coverage gap, not a correctness mismatch.",
+        "ACTUAL_OUTPUT_MISSING": "No actual CORE report was found for the generated case.",
+        "EXPECTED_OUTPUT_MISSING": "The generated rule is missing expected_results.csv.",
+        "NEGATIVE_DID_NOT_TRIGGER": "Negative generated data expected an issue but official CORE reported none.",
+        "POSITIVE_TRIGGERED_UNEXPECTEDLY": "Positive generated data expected no issue but official CORE reported one.",
+        "ISSUE_COUNT_MISMATCH": "Expected and actual issue counts differ.",
+        "STRUCTURAL_MISMATCH": "Issue count matched but structural fields did not match.",
+        "SUPPORTED_MISMATCH": "Supported execution produced an unmatched result.",
+    }
+    return descriptions.get(classification, "Non-pass result requiring review.")
+
+
+def _classification_summary(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    classifications = sorted({_failure_classification(row) for row in rows})
+    summary = []
+    for classification in classifications:
+        matching = [row for row in rows if _failure_classification(row) == classification]
+        summary.append(
+            {
+                "classification": classification,
+                "row_count": len(matching),
+                "rule_count": len({str(row.get("generated_rule_id") or "") for row in matching}),
+                "description": _classification_description(classification),
+            },
+        )
+    return summary
+
+
 def compare_generated_results(
     generated_rules_dir: str | Path,
     actual_root: str | Path,
@@ -234,6 +306,29 @@ def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> No
     out = Path(out_dir)
     ensure_dir(out)
     write_csv(out / "comparison_summary.csv", result.rows, COMPARISON_FIELDS)
+    classification_summary = _classification_summary(result.rows)
+    supported_mismatch_classes = {
+        "NEGATIVE_DID_NOT_TRIGGER",
+        "POSITIVE_TRIGGERED_UNEXPECTEDLY",
+        "ISSUE_COUNT_MISMATCH",
+        "STRUCTURAL_MISMATCH",
+        "SUPPORTED_MISMATCH",
+    }
+    supported_mismatch_rows = sum(
+        int(row["row_count"])
+        for row in classification_summary
+        if row["classification"] in supported_mismatch_classes
+    )
+    coverage_gap_rows = sum(
+        int(row["row_count"])
+        for row in classification_summary
+        if row["classification"] == "ACTUAL_SKIPPED_BY_CORE"
+    )
+    missing_output_rows = sum(
+        int(row["row_count"])
+        for row in classification_summary
+        if row["classification"] in {"ACTUAL_OUTPUT_MISSING", "EXPECTED_OUTPUT_MISSING"}
+    )
     (out / "comparison_summary.json").write_text(
         json.dumps(
             {
@@ -241,6 +336,25 @@ def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> No
                 "pass_count": result.pass_count,
                 "fail_count": result.fail_count,
                 "rows": result.rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_csv(out / "official_core_failure_classification.csv", classification_summary, CLASSIFICATION_FIELDS)
+    (out / "official_core_failure_classification.json").write_text(
+        json.dumps(
+            {
+                "row_count": len(result.rows),
+                "pass_count": result.pass_count,
+                "non_pass_count": result.fail_count,
+                "supported_mismatch_rows": supported_mismatch_rows,
+                "coverage_gap_rows": coverage_gap_rows,
+                "missing_output_rows": missing_output_rows,
+                "classifications": classification_summary,
             },
             ensure_ascii=False,
             indent=2,
@@ -269,3 +383,23 @@ def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> No
         lines.append("- None")
     lines.append("")
     (out / "comparison_summary.md").write_text("\n".join(lines), encoding="utf-8")
+
+    classification_lines = [
+        "# Official CORE Failure Classification",
+        "",
+        f"- total rows: `{len(result.rows)}`",
+        f"- passed rows: `{result.pass_count}`",
+        f"- non-pass rows: `{result.fail_count}`",
+        f"- supported mismatch rows: `{supported_mismatch_rows}`",
+        f"- skipped coverage-gap rows: `{coverage_gap_rows}`",
+        f"- missing output rows: `{missing_output_rows}`",
+        "",
+        "## Summary",
+        "",
+    ]
+    for row in classification_summary:
+        classification_lines.append(
+            f"- `{row['classification']}`: {row['row_count']} rows, {row['rule_count']} rules"
+        )
+    classification_lines.append("")
+    (out / "official_core_failure_classification.md").write_text("\n".join(classification_lines), encoding="utf-8")

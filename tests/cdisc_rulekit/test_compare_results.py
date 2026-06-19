@@ -166,6 +166,48 @@ def test_compare_generated_results_reads_official_core_json_report(tmp_path):
     assert result.rows[0]["status"] == "PASS"
 
 
+def test_compare_generated_results_allows_expected_variables_subset_for_official_core_json(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD1019-6683B90E"
+    rule_dir = generated_root / rule_id
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "expected_results.csv").write_text(
+        "\n".join(
+            [
+                "case_type,case_id,expected_issue_count,rule_id,dataset,row,variables",
+                f"negative,01,1,{rule_id},SV,1,VISITDY|DOMAIN",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    actual_dir = tmp_path / "core_runs" / rule_id / "negative" / "01"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "Issue_Details": [
+                    {
+                        "core_id": rule_id,
+                        "dataset": "SV",
+                        "USUBJID": "P21PORT-001",
+                        "row": 1,
+                        "SEQ": "",
+                        "variables": ["SVUPDES", "VISITDY", "DOMAIN"],
+                    },
+                ],
+                "Rules_Report": [{"core_id": rule_id, "status": "ISSUE REPORTED"}],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    result = compare_generated_results(generated_root, tmp_path / "core_runs")
+
+    assert result.ok
+    assert result.rows[0]["status"] == "PASS"
+
+
 def test_compare_generated_results_reports_actual_skipped_separately_from_failure(tmp_path):
     generated_root = tmp_path / "generated_rules"
     rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
@@ -214,3 +256,8 @@ def test_write_comparison_report_outputs_csv_json_and_markdown(tmp_path):
     assert (tmp_path / "reports" / "comparison_summary.csv").exists()
     assert (tmp_path / "reports" / "comparison_summary.json").exists()
     assert (tmp_path / "reports" / "comparison_summary.md").exists()
+    assert (tmp_path / "reports" / "official_core_failure_classification.csv").exists()
+    classification = json.loads((tmp_path / "reports" / "official_core_failure_classification.json").read_text(encoding="utf-8"))
+    assert classification["supported_mismatch_rows"] == 0
+    assert classification["coverage_gap_rows"] == 0
+    assert classification["missing_output_rows"] == 2

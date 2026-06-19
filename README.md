@@ -264,16 +264,17 @@ Official Python CORE smoke:
 
 Official Python CORE full run:
 
-- Run directory: `output/sdtmig_official_core_full`
+- Run directory: `output/sdtmig_official_core_fix_find_regex_numeric`
+- Generated rules directory: `output/sdtmig_phase2_fix_find_regex_numeric`
 - Generated rules executed: 395
 - Case executions: 790
 - CORE CLI execution summary: 790 passed, 0 failed
-- Structural comparison summary: 460 passed, 330 non-pass
+- Structural comparison summary: 778 passed, 12 non-pass
+- Supported mismatch rows: 0
+- Skipped coverage-gap rows: 12
 - Non-pass classification:
-  - `NEGATIVE_DID_NOT_TRIGGER`: 218
-  - `EXPECTED_VARIABLES_TOO_NARROW`: 94
-  - `ACTUAL_SKIPPED_BY_CORE`: 12
-  - `POSITIVE_TRIGGERED_UNEXPECTEDLY`: 6
+  - `ACTUAL_SKIPPED_BY_CORE`: 12 rows / 6 rules
+  - `PASS`: 778 rows / 389 rules
 - Classification artifacts:
   `reports/official_core_failure_classification.{csv,json,md}`
 

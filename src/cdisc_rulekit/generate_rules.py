@@ -118,11 +118,46 @@ def _unsupported_operator(required: set[str], allowed: set[str]) -> str | None:
     return None
 
 
+def _full_match_regex(pattern: object) -> object:
+    if not isinstance(pattern, str):
+        return pattern
+    if pattern.startswith("^") and pattern.endswith("$"):
+        return pattern
+    return f"^(?:{pattern})$"
+
+
+def _numeric_literal(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    if not re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value):
+        return value
+    return float(value) if "." in value else int(value)
+
+
+def _render_core_value(operator: str, key: str, value: object) -> object:
+    if key != "value":
+        return value
+    if operator == "does_not_match_regex":
+        return _full_match_regex(value)
+    if operator in {
+        "equal_to",
+        "equal_to_case_insensitive",
+        "not_equal_to",
+        "not_equal_to_case_insensitive",
+    }:
+        return _numeric_literal(value)
+    return value
+
+
 def _render_core_check(check: dict[str, Any]) -> dict[str, Any]:
     operator = check.get("operator")
     if operator:
-        rendered = dict(check)
-        rendered["operator"] = CORE_OPERATOR_ALIASES.get(str(operator), str(operator))
+        operator_name = str(operator)
+        rendered = {
+            key: _render_core_value(operator_name, key, value)
+            for key, value in check.items()
+        }
+        rendered["operator"] = CORE_OPERATOR_ALIASES.get(operator_name, operator_name)
         return rendered
 
     rendered: dict[str, Any] = {}
@@ -319,9 +354,13 @@ def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain
     positive_value, negative_value = _positive_negative_values(rule, variable)
     value = positive_value if case_type == "positive" else negative_value
     condition_values = _condition_case_values(rule, variable, case_type)
-    columns = list(dict.fromkeys([*BASE_COLUMNS, *condition_values.keys(), variable]))
+    include_target = not ((rule.p21_rule_type or "").upper() == "FIND" and case_type == "negative")
+    target_columns = [variable] if include_target else []
+    columns = list(dict.fromkeys([*BASE_COLUMNS, *condition_values.keys(), *target_columns]))
     row = {column: "" for column in columns}
-    row.update({"STUDYID": "CDISC-P21PORT", "DOMAIN": domain, "USUBJID": "P21PORT-001", variable: value})
+    row.update({"STUDYID": "CDISC-P21PORT", "DOMAIN": domain, "USUBJID": "P21PORT-001"})
+    if include_target:
+        row[variable] = value
     row.update(condition_values)
 
     (data_dir / ".env").write_text(
@@ -343,7 +382,8 @@ def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain
     write_csv(data_dir / f"{dataset}.csv", [row], columns)
 
 
-def _write_expected_results(rule_dir: Path, rule_id: str, domain: str, variable: str) -> None:
+def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
+    negative_variables = "DOMAIN" if (rule.p21_rule_type or "").upper() == "FIND" else f"{variable}|DOMAIN"
     rows = [
         {
             "case_type": "positive",
@@ -361,7 +401,7 @@ def _write_expected_results(rule_dir: Path, rule_id: str, domain: str, variable:
             "rule_id": rule_id,
             "dataset": domain,
             "row": 1,
-            "variables": f"{variable}|DOMAIN",
+            "variables": negative_variables,
         },
     ]
     write_csv(
@@ -443,7 +483,7 @@ def _generate_one(
     rule_payload = _rule_yml(rule, rule_id, domain, check)
     (rule_dir / "rule.yml").write_text(yaml.safe_dump(rule_payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
     _write_manifest(rule_dir, rule, rule_id, warnings)
-    _write_expected_results(rule_dir, rule_id, domain, variable)
+    _write_expected_results(rule_dir, rule_id, rule, domain, variable)
     _write_data_case(rule_dir, "positive", rule, domain, variable)
     _write_data_case(rule_dir, "negative", rule, domain, variable)
     return {

@@ -410,6 +410,80 @@ def test_generate_rules_writes_find_as_missing_presence_check(tmp_path):
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     assert _check("not_exists", name="DIPARMCD") in rule_yml["Check"]["all"]
 
+    with (generated_dir / "positive" / "01" / "data" / "di.csv").open(newline="", encoding="utf-8") as handle:
+        positive = next(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "di.csv").open(newline="", encoding="utf-8") as handle:
+        negative_reader = csv.DictReader(handle)
+        negative = next(negative_reader)
+
+    assert "DIPARMCD" in positive
+    assert "DIPARMCD" not in negative
+    with (generated_dir / "negative" / "01" / "data" / "_variables.csv").open(newline="", encoding="utf-8") as handle:
+        variable_names = {row["variable"] for row in csv.DictReader(handle)}
+    assert "DIPARMCD" not in variable_names
+
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
+    assert negative_expected["variables"] == "DOMAIN"
+
+
+def test_generate_rules_wraps_regex_patterns_for_official_core_full_match(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1221",
+        source_rule_key="condition-regex-key",
+        p21_rule_id="SD1221",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["TS"],
+        raw_condition={"when": "TSPARMCD == 'PLANSUB'", "test": "TSVAL @re '([0-9]*)'"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "does_not_match_regex"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    regex_check = next(payload for payload in _payloads(checks, "does_not_match_regex") if payload["name"] == "TSVAL")
+    assert regex_check["value"] == r"^(?:([0-9]*))$"
+
+
+def test_generate_rules_preserves_numeric_literals_for_official_core_comparison(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1249",
+        source_rule_key="condition-numeric-key",
+        p21_rule_id="SD1249",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["EX"],
+        raw_condition={"when": "EXTRT @eqic 'PLACEBO'", "test": "EXDOSE == '0'"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "equal_to_case_insensitive", "not_equal_to"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    dose_check = next(payload for payload in _payloads(checks, "not_equal_to") if payload["name"] == "EXDOSE")
+    assert dose_check["value"] == 0
+
 
 def test_generate_rules_uses_valid_duration_for_iso_duration_regex(tmp_path):
     rule = CanonicalRule(
