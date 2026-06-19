@@ -382,6 +382,17 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if is_sort_operator_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses sort oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     unsupported_operator(&rule.conditions).map(|operator| {
         RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -465,6 +476,12 @@ fn is_date_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     RULE_IDS.contains(&rule.core_id.as_str()) && contains_date_operator(&rule.conditions)
 }
 
+fn is_sort_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &["CORE-000535"];
+
+    RULE_IDS.contains(&rule.core_id.as_str()) && contains_sort_operator(&rule.conditions)
+}
+
 fn contains_empty_operator(group: &ConditionGroup) -> bool {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
@@ -473,6 +490,18 @@ fn contains_empty_operator(group: &ConditionGroup) -> bool {
         ConditionGroup::Not(group) => contains_empty_operator(group),
         ConditionGroup::Leaf(condition) => {
             matches!(condition.operator, Operator::IsEmpty | Operator::IsNotEmpty)
+        }
+    }
+}
+
+fn contains_sort_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_sort_operator)
+        }
+        ConditionGroup::Not(group) => contains_sort_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::TargetIsNotSortedBy)
         }
     }
 }
@@ -2972,6 +3001,70 @@ Outcome:
         "DVSEQ": [1],
         "DVSTDTC": ["2024-01-01"],
         "RFICDTC": ["2024-01-02"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_sort_operator_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000535.json"),
+            r#"{
+  "Core": { "Id": "CORE-000535", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "SMSEQ",
+    "operator": "target_is_not_sorted_by",
+    "within": "USUBJID",
+    "value": [
+      { "name": "SMSTDTC", "sort_order": "asc", "null_position": "last" }
+    ]
+  },
+  "Outcome": { "Message": "SMSEQ partial-date sort semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write sort gap rule");
+        let dataset_path = data_dir.join("sm.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "sm.csv",
+      "domain": "SM",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1"],
+        "SMSEQ": [1, 3, 2],
+        "SMSTDTC": ["2024-01-01", "2024-01-02", "2024-01-03"]
       }
     }
   ]
