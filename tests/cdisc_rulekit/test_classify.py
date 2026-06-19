@@ -117,6 +117,40 @@ def test_suppqual_only_rule_classifies_as_cross_dataset_manual():
     assert "CROSS_DATASET_DEPENDENCY" in classified[0].conversion_reasons
 
 
+def test_condition_with_inferable_test_target_classifies_as_auto_convertible():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1035",
+        p21_rule_id="SD1035",
+        standard_name="SDTM-IG",
+        p21_rule_type="Condition",
+        domains=["DS"],
+        raw_condition={"test": "DSCAT !=''"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "INFERRED_CONDITION_TARGET" in classified[0].conversion_reasons
+
+
+def test_condition_column_comparator_without_target_stays_skeleton_only():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1315",
+        p21_rule_id="SD1315",
+        standard_name="SDTM-IG",
+        p21_rule_type="Condition",
+        domains=["DS"],
+        raw_condition={"test": "DSDECOD == DSTERM"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "SKELETON_ONLY"
+    assert "NO_TARGET_VARIABLE" in classified[0].conversion_reasons
+
+
 def test_classification_uses_source_rule_key_when_rule_ids_are_duplicated():
     first = CanonicalRule(
         source="P21",

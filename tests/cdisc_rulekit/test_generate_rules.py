@@ -252,6 +252,116 @@ def test_generate_rules_supports_simple_same_record_condition(tmp_path):
     assert row["DSSTDTC"] == ""
 
 
+def test_generate_rules_infers_condition_target_and_inverts_empty_check(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1105",
+        source_rule_key="condition-empty-key",
+        p21_rule_id="SD1105",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["DS"],
+        raw_condition={"when": "DSCAT == 'PROTOCOL MILESTONE'", "test": "EPOCH == ''"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_not_empty"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    assert {"name": "DSCAT", "operator": "equal_to", "value": "PROTOCOL MILESTONE"} in checks
+    assert {"name": "EPOCH", "operator": "is_not_empty"} in checks
+
+    with (generated_dir / "positive" / "01" / "data" / "ds.csv").open(newline="", encoding="utf-8") as handle:
+        positive = next(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "ds.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+    assert positive["DSCAT"] == "PROTOCOL MILESTONE"
+    assert positive["EPOCH"] == ""
+    assert negative["DSCAT"] == "PROTOCOL MILESTONE"
+    assert negative["EPOCH"] == "Y"
+
+
+def test_generate_rules_supports_or_condition_guard(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1332",
+        source_rule_key="condition-or-key",
+        p21_rule_id="SD1332",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["AE"],
+        raw_condition={"when": "AEOUT == 'NOT RECOVERED/NOT RESOLVED' @or AEOUT == 'UNKNOWN'", "test": "AEENDTC == ''"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "any", "equal_to", "is_not_empty"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    assert {"any": [
+        {"name": "AEOUT", "operator": "equal_to", "value": "NOT RECOVERED/NOT RESOLVED"},
+        {"name": "AEOUT", "operator": "equal_to", "value": "UNKNOWN"},
+    ]} in checks
+
+    with (generated_dir / "negative" / "01" / "data" / "ae.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+    assert negative["AEOUT"] == "NOT RECOVERED/NOT RESOLVED"
+    assert negative["AEENDTC"] == "Y"
+
+
+def test_generate_rules_supports_and_condition_guard(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD2240",
+        source_rule_key="condition-and-key",
+        p21_rule_id="SD2240",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["TS"],
+        raw_condition={"when": "TSPARMCD == 'INDIC' @and TSVALNF == ''", "test": "TSVCDREF == 'SNOMED'"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_empty", "not_equal_to"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    assert {"name": "TSPARMCD", "operator": "equal_to", "value": "INDIC"} in checks
+    assert {"name": "TSVALNF", "operator": "is_empty"} in checks
+    assert {"name": "TSVCDREF", "operator": "not_equal_to", "value": "SNOMED"} in checks
+
+    with (generated_dir / "negative" / "01" / "data" / "ts.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+    assert negative["TSPARMCD"] == "INDIC"
+    assert negative["TSVALNF"] == ""
+    assert negative["TSVCDREF"] == "__INVALID__"
+
+
 def test_generate_rules_writes_find_as_missing_presence_check(tmp_path):
     rule = CanonicalRule(
         source="P21",

@@ -559,6 +559,13 @@ fn evaluate_condition_with_options(
             column,
             &condition.comparator,
         ),
+        Operator::IsInconsistentAcrossDataset => evaluate_inconsistent_across_dataset(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+        ),
         Operator::InconsistentEnumeratedColumns => {
             evaluate_inconsistent_enumerated_columns(frame, row_count, &target)
         }
@@ -966,6 +973,59 @@ fn evaluate_unique_set(
             let duplicate =
                 key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() > 1);
             matches!(operator, Operator::IsNotUniqueSet) == duplicate
+        })
+        .collect())
+}
+
+fn evaluate_inconsistent_across_dataset(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+) -> Result<BooleanMask> {
+    let group_columns =
+        column_name_comparators(&Operator::IsInconsistentAcrossDataset, comparator)?
+            .into_iter()
+            .map(|column| expand_domain_placeholder(dataset, &column))
+            .collect::<Vec<_>>();
+    for column in &group_columns {
+        if optional_column(frame, column)?.is_none() {
+            return Err(EngineError::MissingColumn(column.clone()));
+        }
+    }
+
+    let mut target_values_by_key =
+        std::collections::BTreeMap::<Vec<String>, std::collections::BTreeSet<String>>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+
+        let mut key = Vec::with_capacity(group_columns.len());
+        for column in &group_columns {
+            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        }
+        target_values_by_key
+            .entry(key.clone())
+            .or_default()
+            .insert(target.to_string());
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| {
+            key.is_some_and(|key| {
+                target_values_by_key
+                    .get(&key)
+                    .map(|values| values.len() > 1)
+                    .unwrap_or(false)
+            })
         })
         .collect())
 }
@@ -2629,6 +2689,24 @@ mod tests {
             )
             .expect("is unique set"),
             vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_inconsistent_across_dataset_within_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsInconsistentAcrossDataset,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is inconsistent across dataset"),
+            vec![true, true, true, false]
         );
     }
 

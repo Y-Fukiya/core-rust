@@ -5,6 +5,7 @@ import re
 from .map_rules import p21_mapping_key, standard_key
 from .macro_analysis import structural_blocking_macro_families
 from .models import CanonicalRule, RuleMapping
+from .p21_condition import infer_condition_target
 
 AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND"}
 SUPPORTED_STANDARDS = {"SDTMIG", "ADAMIG", "SENDIG"}
@@ -60,8 +61,14 @@ def _has_cross_dataset_dependency(rule: CanonicalRule) -> bool:
     return bool(re.search(r"\bRELREC\b|\bSUPP[A-Z0-9_]*\b", haystack))
 
 
+def _inferred_condition_target(rule: CanonicalRule) -> str | None:
+    if (rule.p21_rule_type or "").upper() != "CONDITION":
+        return None
+    return infer_condition_target(rule.raw_condition.get("test"))
+
+
 def _has_target_variable(rule: CanonicalRule) -> bool:
-    return bool(rule.target or rule.variables)
+    return bool(rule.target or rule.variables or _inferred_condition_target(rule))
 
 
 def _simple_reason(rule_type: str) -> str:
@@ -181,6 +188,8 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
                 conversion_reasons=reasons,
                 conversion_confidence=confidence,
             )
+        if _inferred_condition_target(rule):
+            reasons.append("INFERRED_CONDITION_TARGET")
         reasons.append(_simple_reason(rule_type))
         return rule.with_updates(
             core_rule_id=core_rule_id,

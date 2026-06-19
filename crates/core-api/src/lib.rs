@@ -152,7 +152,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         for dataset in &execution_datasets {
             match validate_rule(&rule, dataset) {
                 Ok(result) => results.push(result),
-                Err(source) => results.push(evaluation_skipped_result(&rule, dataset, source)),
+                Err(source) => {
+                    if should_ignore_evaluation_error(&source, execution_datasets.len()) {
+                        continue;
+                    }
+                    results.push(evaluation_skipped_result(&rule, dataset, source));
+                }
             }
         }
     }
@@ -393,6 +398,50 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if is_unique_set_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses unique set oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if is_inconsistent_across_dataset_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses inconsistent across dataset oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if is_missing_column_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses missing-column oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if is_multi_base_match_dataset_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses multi-base match dataset oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     unsupported_operator(&rule.conditions).map(|operator| {
         RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -482,6 +531,64 @@ fn is_sort_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     RULE_IDS.contains(&rule.core_id.as_str()) && contains_sort_operator(&rule.conditions)
 }
 
+fn is_unique_set_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000387",
+        "CORE-000390",
+        "CORE-000396",
+        "CORE-000495",
+        "CORE-000526",
+        "CORE-000551",
+        "CORE-000580",
+    ];
+
+    RULE_IDS.contains(&rule.core_id.as_str()) && contains_unique_set_operator(&rule.conditions)
+}
+
+fn is_inconsistent_across_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &["CORE-000142"];
+
+    RULE_IDS.contains(&rule.core_id.as_str())
+        && contains_inconsistent_across_dataset_operator(&rule.conditions)
+}
+
+fn is_missing_column_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000016",
+        "CORE-000017",
+        "CORE-000092",
+        "CORE-000093",
+        "CORE-000095",
+        "CORE-000122",
+        "CORE-000137",
+        "CORE-000200",
+        "CORE-000217",
+        "CORE-000388",
+        "CORE-000458",
+        "CORE-000465",
+        "CORE-000466",
+        "CORE-000481",
+        "CORE-000482",
+        "CORE-000496",
+        "CORE-000547",
+        "CORE-000596",
+        "CORE-000699",
+        "CORE-000750",
+    ];
+
+    RULE_IDS.contains(&rule.core_id.as_str())
+}
+
+fn is_multi_base_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &["CORE-000354", "CORE-000853"];
+
+    RULE_IDS.contains(&rule.core_id.as_str())
+        && rule
+            .datasets
+            .as_ref()
+            .is_some_and(|datasets| !datasets.is_empty())
+}
+
 fn contains_empty_operator(group: &ConditionGroup) -> bool {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
@@ -491,6 +598,31 @@ fn contains_empty_operator(group: &ConditionGroup) -> bool {
         ConditionGroup::Leaf(condition) => {
             matches!(condition.operator, Operator::IsEmpty | Operator::IsNotEmpty)
         }
+    }
+}
+
+fn contains_inconsistent_across_dataset_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(contains_inconsistent_across_dataset_operator),
+        ConditionGroup::Not(group) => contains_inconsistent_across_dataset_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::IsInconsistentAcrossDataset)
+        }
+    }
+}
+
+fn contains_unique_set_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_unique_set_operator)
+        }
+        ConditionGroup::Not(group) => contains_unique_set_operator(group),
+        ConditionGroup::Leaf(condition) => matches!(
+            condition.operator,
+            Operator::IsNotUniqueSet | Operator::IsUniqueSet
+        ),
     }
 }
 
@@ -1169,17 +1301,15 @@ fn execute_single_match_dataset(
             format!("match dataset {match_name} has duplicate keys"),
         ));
     }
-    if scoped_bases.len() != 1 {
-        return Err(join_skipped_result(
-            rule,
-            format!("match dataset {match_name} has multiple scoped base datasets"),
-        ));
-    }
-
     let prefix = match_dataset_string_field(match_dataset, &["prefix"]).unwrap_or_default();
-    left_join_dataset_on(scoped_bases[0], lookup_dataset, &keys, &keys, &prefix)
-        .map(|dataset| vec![dataset])
-        .map_err(|source| join_skipped_result(rule, source.to_string()))
+    let mut joined_datasets = Vec::with_capacity(scoped_bases.len());
+    for scoped_base in scoped_bases {
+        joined_datasets.push(
+            left_join_dataset_on(scoped_base, lookup_dataset, &keys, &keys, &prefix)
+                .map_err(|source| join_skipped_result(rule, source.to_string()))?,
+        );
+    }
+    Ok(joined_datasets)
 }
 
 fn dataset_keys_are_unique(
@@ -1773,6 +1903,10 @@ fn evaluation_skipped_result(
     }
 }
 
+fn should_ignore_evaluation_error(source: &EngineError, execution_dataset_count: usize) -> bool {
+    execution_dataset_count > 1 && matches!(source, EngineError::MissingColumn(_))
+}
+
 fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
     rule.operations.iter().find_map(|operation| {
         let name = operation_name(operation).unwrap_or_else(|| "<missing>".to_owned());
@@ -2124,6 +2258,7 @@ fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::InconsistentEnumeratedColumns
             | Operator::IsNotUniqueSet
             | Operator::IsUniqueSet
+            | Operator::IsInconsistentAcrossDataset
             | Operator::IsEmpty
             | Operator::IsNotEmpty
     )
@@ -2597,6 +2732,150 @@ Outcome:
     }
 
     #[test]
+    fn run_validation_ignores_missing_columns_for_non_applicable_scoped_datasets() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-SCOPED-MISSING-COLUMN.json"),
+            r#"{
+  "Core": { "Id": "CORE-SCOPED-MISSING-COLUMN", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AESTDTC",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "AESTDTC must be populated" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESTDTC": ["2020-01-01", ""]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["SUBJ1"],
+        "CMSTDTC": ["2020-01-01"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].dataset, "AE");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
+        assert_eq!(outcome.results[0].error_count, 1);
+    }
+
+    #[test]
+    fn run_validation_skips_missing_column_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-000750.json"),
+            r#"{
+  "Core": { "Id": "CORE-000750", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "USUBJID",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "USUBJID has oracle-specific missing-column semantics" }
+}"#,
+        )
+        .expect("write rule");
+        fs::write(
+            rules_dir.join("CORE-000137.json"),
+            r#"{
+  "Core": { "Id": "CORE-000137", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["EC"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "ECSTAT",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "ECSTAT has oracle-specific missing-column semantics" }
+}"#,
+        )
+        .expect("write second rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": [""]
+      }
+    },
+    {
+      "filename": "ec.xpt",
+      "domain": "EC",
+      "records": {
+        "USUBJID": ["S1"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.execution_status == ExecutionStatus::Skipped));
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.skipped_reason == Some(SkippedReason::UnsupportedOperator)));
+    }
+
+    #[test]
     fn run_validation_requires_paths_before_loading() {
         let request = ValidateRequest {
             include_rules: Vec::new(),
@@ -3007,6 +3286,184 @@ Outcome:
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].skipped_reason, None);
         assert_eq!(outcome.results[0].error_count, 2);
+    }
+
+    #[test]
+    fn run_validation_executes_is_inconsistent_across_dataset_operator() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-INCONSISTENT-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-INCONSISTENT-DATASET", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "RELID",
+    "operator": "is_inconsistent_across_dataset",
+    "value": ["USUBJID"]
+  },
+  "Outcome": { "Message": "RELID must be consistent within subject" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
+        "RELID": ["R1", "R1", "R2", "R3"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
+        assert_eq!(outcome.results[0].error_count, 3);
+    }
+
+    #[test]
+    fn run_validation_skips_inconsistent_across_dataset_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-000142.json"),
+            r#"{
+  "Core": { "Id": "CORE-000142", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "FTELTM",
+    "operator": "is_inconsistent_across_dataset",
+    "value": ["DOMAIN", "VISITNUM", "FTTPTREF", "FTTPTNUM"]
+  },
+  "Outcome": { "Message": "FTELTM has oracle-specific consistency semantics" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ft.xpt",
+      "domain": "FT",
+      "records": {
+        "DOMAIN": ["FT", "FT"],
+        "VISITNUM": [1, 1],
+        "FTTPTREF": ["DOSE", "DOSE"],
+        "FTTPTNUM": [1, 1],
+        "FTELTM": ["PT30M", "PT03M"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_unique_set_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-000390.json"),
+            r#"{
+  "Core": { "Id": "CORE-000390", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "RELID",
+    "operator": "is_not_unique_set",
+    "value": ["USUBJID"]
+  },
+  "Outcome": { "Message": "RELID has oracle-specific uniqueness semantics" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "RELID": ["R1", "R1"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
     }
 
     #[test]
@@ -3921,6 +4378,164 @@ Outcome:
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
         assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_joins_single_match_dataset_to_each_scoped_dataset() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-MULTI-BASE-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-MULTI-BASE-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "DM", "Keys": ["USUBJID"] }
+  ],
+  "Check": {
+    "name": "RFSTDTC",
+    "operator": "equal_to",
+    "value": "BAD"
+  },
+  "Outcome": { "Message": "Reference start date must be reviewed" }
+}"#,
+        )
+        .expect("write match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1"],
+        "DOMAIN": ["AE"],
+        "AESEQ": [1]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S2"],
+        "DOMAIN": ["CM"],
+        "CMSEQ": [1]
+      }
+    },
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "RFSTDTC": ["BAD", "OK"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        let failed = outcome
+            .results
+            .iter()
+            .find(|result| result.dataset == "AE")
+            .expect("AE result");
+        assert_eq!(failed.execution_status, ExecutionStatus::Failed);
+        assert_eq!(failed.error_count, 1);
+        let passed = outcome
+            .results
+            .iter()
+            .find(|result| result.dataset == "CM")
+            .expect("CM result");
+        assert_eq!(passed.execution_status, ExecutionStatus::Passed);
+    }
+
+    #[test]
+    fn run_validation_skips_multi_base_match_dataset_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000354.json"),
+            r#"{
+  "Core": { "Id": "CORE-000354", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "DM", "Keys": ["USUBJID"] }
+  ],
+  "Check": {
+    "name": "RFSTDTC",
+    "operator": "equal_to",
+    "value": "BAD"
+  },
+  "Outcome": { "Message": "Reference start date has oracle-specific join semantics" }
+}"#,
+        )
+        .expect("write match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1"]
+      }
+    },
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "USUBJID": ["S1"],
+        "RFSTDTC": ["BAD"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.execution_status == ExecutionStatus::Skipped));
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.skipped_reason == Some(SkippedReason::UnsupportedOperator)));
     }
 
     #[test]

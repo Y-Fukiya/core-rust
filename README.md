@@ -225,12 +225,12 @@ Latest SDTM-IG pilot result:
 
 Latest expanded SDTM-IG draft export:
 
-- Expanded run directory: `output/sdtmig_phase2_expanded`
-- Generated draft rules: 278
-- Structure validation: 278 rules checked, ok
+- Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
+- Generated draft rules: 395
+- Structure validation: 395 rules checked, ok
 - Export target:
-  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-EXPANDED`
-- Export result: 278 exported, 0 skipped
+  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-CONDITION-TARGET`
+- Export result: 395 exported, 0 skipped
 - `Published/` was not modified. Fuzzy-derived rules remain draft/review items
   through the `FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW` manifest warning.
 

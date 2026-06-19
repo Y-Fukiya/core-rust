@@ -13,6 +13,7 @@ import yaml
 from .io_utils import ensure_dir, split_semicolon_list, write_csv
 from .map_rules import standard_key
 from .models import CanonicalRule
+from .p21_condition import infer_condition_target, parse_expected_test, parse_when_guard_group
 
 GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND", "CONDITION"}
 BASE_COLUMNS = ["STUDYID", "DOMAIN", "USUBJID"]
@@ -67,6 +68,9 @@ def _domain(rule: CanonicalRule) -> str | None:
 
 def _variable(rule: CanonicalRule) -> str | None:
     candidates = [rule.target or "", *rule.variables]
+    inferred = infer_condition_target(rule.raw_condition.get("test"))
+    if inferred:
+        candidates.append(inferred)
     for variable in candidates:
         upper = variable.upper()
         if upper in {"DOMAIN", "DATASET", "METADATA", "VARIABLE"}:
@@ -87,8 +91,19 @@ def _required_operators(rule_type: str) -> set[str]:
     if rule_type == "FIND":
         return common | {"not_exists"}
     if rule_type == "CONDITION":
-        return common | {"is_empty"}
+        return common
     return common
+
+
+def _operators_in_check(check: dict[str, Any]) -> set[str]:
+    operators: set[str] = set()
+    if "operator" in check:
+        operators.add(str(check["operator"]))
+    for key in ("all", "any"):
+        for child in check.get(key, []) or []:
+            if isinstance(child, dict):
+                operators.update(_operators_in_check(child))
+    return operators
 
 
 def _unsupported_operator(required: set[str], allowed: set[str]) -> str | None:
@@ -136,6 +151,29 @@ def _simple_condition_parts(rule: CanonicalRule, variable: str) -> tuple[tuple[s
     return equality, target
 
 
+def _condition_checks(rule: CanonicalRule, variable: str) -> tuple[list[dict[str, Any]] | None, str | None]:
+    predicate = parse_expected_test(rule.raw_condition.get("test"))
+    if predicate and predicate.variable == variable:
+        checks: list[dict[str, Any]] = []
+        when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+        if when not in (None, ""):
+            guard_group = parse_when_guard_group(when)
+            if not guard_group:
+                return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
+            checks.extend(guard_group.checks)
+        checks.append(predicate.check)
+        return checks, None
+
+    condition_parts = _simple_condition_parts(rule, variable)
+    if not condition_parts:
+        return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
+    (condition_variable, condition_value), target = condition_parts
+    return [
+        {"name": condition_variable, "operator": "equal_to", "value": condition_value},
+        {"name": target, "operator": "is_empty"},
+    ], None
+
+
 def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[str, Any] | None, str | None]:
     rule_type = (rule.p21_rule_type or "").upper()
     checks: list[dict[str, Any]] = []
@@ -154,12 +192,10 @@ def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[
     elif rule_type == "FIND":
         checks.append({"name": variable, "operator": "not_exists"})
     elif rule_type == "CONDITION":
-        condition_parts = _simple_condition_parts(rule, variable)
-        if not condition_parts:
-            return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
-        (condition_variable, condition_value), target = condition_parts
-        checks.append({"name": condition_variable, "operator": "equal_to", "value": condition_value})
-        checks.append({"name": target, "operator": "is_empty"})
+        condition_checks, error = _condition_checks(rule, variable)
+        if error or condition_checks is None:
+            return None, error or "MISSING_SIMPLE_SAME_RECORD_CONDITION"
+        checks.extend(condition_checks)
     else:
         return None, "UNSUPPORTED_RULE_TYPE"
     checks.append({"name": "DOMAIN", "operator": "equal_to", "value": domain})
@@ -234,6 +270,17 @@ def _variable_type(variable: str) -> str:
 def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -> dict[str, str]:
     if (rule.p21_rule_type or "").upper() != "CONDITION":
         return {}
+    predicate = parse_expected_test(rule.raw_condition.get("test"))
+    if predicate and predicate.variable == variable:
+        values = {
+            variable: predicate.positive_value if case_type == "positive" else predicate.negative_value,
+        }
+        when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+        guard_group = parse_when_guard_group(when)
+        if guard_group:
+            values.update(guard_group.values)
+        return values
+
     condition_parts = _simple_condition_parts(rule, variable)
     if not condition_parts:
         return {}
@@ -356,9 +403,6 @@ def _generate_one(
     rule_type = (rule.p21_rule_type or "").upper()
     if rule_type not in GENERATABLE_TYPES:
         return _skip_row(rule, f"UNSUPPORTED_RULE_TYPE:{rule.p21_rule_type}")
-    missing_operator = _unsupported_operator(_required_operators(rule_type), allowed_operators)
-    if missing_operator:
-        return _skip_row(rule, f"OPERATOR_NOT_ALLOWED:{missing_operator}")
     domain = _domain(rule)
     if not domain:
         return _skip_row(rule, "NO_CONCRETE_DOMAIN")
@@ -368,6 +412,10 @@ def _generate_one(
     check, check_error = _build_check(rule, domain, variable)
     if check_error or check is None:
         return _skip_row(rule, check_error or "CHECK_NOT_GENERATABLE")
+    required_operators = _required_operators(rule_type) | _operators_in_check(check)
+    missing_operator = _unsupported_operator(required_operators, allowed_operators)
+    if missing_operator:
+        return _skip_row(rule, f"OPERATOR_NOT_ALLOWED:{missing_operator}")
 
     rule_id = generated_rule_id(rule)
     rule_dir = root / "generated_rules" / rule_id

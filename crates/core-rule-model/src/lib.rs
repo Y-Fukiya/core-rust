@@ -216,6 +216,7 @@ pub enum Operator {
     InconsistentEnumeratedColumns,
     IsNotUniqueSet,
     IsUniqueSet,
+    IsInconsistentAcrossDataset,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -267,6 +268,7 @@ impl Operator {
             "inconsistent_enumerated_columns" => Self::InconsistentEnumeratedColumns,
             "is_not_unique_set" => Self::IsNotUniqueSet,
             "is_unique_set" => Self::IsUniqueSet,
+            "is_inconsistent_across_dataset" => Self::IsInconsistentAcrossDataset,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -317,6 +319,7 @@ impl Operator {
             Self::InconsistentEnumeratedColumns => "inconsistent_enumerated_columns",
             Self::IsNotUniqueSet => "is_not_unique_set",
             Self::IsUniqueSet => "is_unique_set",
+            Self::IsInconsistentAcrossDataset => "is_inconsistent_across_dataset",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2374,6 +2377,10 @@ Outcome:
             Operator::IsNotUniqueSet
         );
         assert_eq!(Operator::from_name("is_unique_set"), Operator::IsUniqueSet);
+        assert_eq!(
+            Operator::from_name("is_inconsistent_across_dataset"),
+            Operator::IsInconsistentAcrossDataset
+        );
     }
 
     #[test]
