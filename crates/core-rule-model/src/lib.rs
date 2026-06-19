@@ -210,6 +210,7 @@ pub enum Operator {
     IsCompleteDate,
     IsIncompleteDate,
     TargetIsNotSortedBy,
+    EmptyWithinExceptLastRow,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -255,6 +256,7 @@ impl Operator {
             "is_complete_date" => Self::IsCompleteDate,
             "is_incomplete_date" => Self::IsIncompleteDate,
             "target_is_not_sorted_by" => Self::TargetIsNotSortedBy,
+            "empty_within_except_last_row" => Self::EmptyWithinExceptLastRow,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -299,6 +301,7 @@ impl Operator {
             Self::IsCompleteDate => "is_complete_date",
             Self::IsIncompleteDate => "is_incomplete_date",
             Self::TargetIsNotSortedBy => "target_is_not_sorted_by",
+            Self::EmptyWithinExceptLastRow => "empty_within_except_last_row",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2334,6 +2337,10 @@ Outcome:
         assert_eq!(
             Operator::from_name("target_is_not_sorted_by"),
             Operator::TargetIsNotSortedBy
+        );
+        assert_eq!(
+            Operator::from_name("empty_within_except_last_row"),
+            Operator::EmptyWithinExceptLastRow
         );
     }
 

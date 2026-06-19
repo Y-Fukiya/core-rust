@@ -466,6 +466,14 @@ fn evaluate_condition_with_options(
             &condition.comparator,
             &condition.options,
         ),
+        Operator::EmptyWithinExceptLastRow => evaluate_empty_within_except_last_row(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -654,6 +662,65 @@ fn evaluate_target_is_not_sorted_by(
     Ok(mask)
 }
 
+fn evaluate_empty_within_except_last_row(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let group_column = expand_domain_placeholder(dataset, &column_name_comparator(comparator)?);
+    let ordering_column_name = option_string(&options.extra, "ordering").ok_or_else(|| {
+        EngineError::MissingComparator {
+            operator: Operator::EmptyWithinExceptLastRow.as_name().to_owned(),
+        }
+    })?;
+    let ordering_column_name = expand_domain_placeholder(dataset, &ordering_column_name);
+    let ordering_column = frame
+        .column(&ordering_column_name)
+        .map_err(|_| EngineError::MissingColumn(ordering_column_name.clone()))?;
+    let sort_spec = SortSpec {
+        column: ordering_column_name,
+        descending: false,
+        nulls_first: false,
+    };
+
+    let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for row in 0..row_count {
+        groups
+            .entry(cell_string(frame, &group_column, row)?.unwrap_or_default())
+            .or_default()
+            .push(row);
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut sorted_rows = rows.clone();
+        sorted_rows.sort_by(|left, right| {
+            let left_value =
+                ScalarValue::from_any_value(ordering_column.get(*left).unwrap_or(AnyValue::Null));
+            let right_value =
+                ScalarValue::from_any_value(ordering_column.get(*right).unwrap_or(AnyValue::Null));
+            compare_optional_sort_value(Some(&left_value), Some(&right_value), &sort_spec)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.cmp(right))
+        });
+        let Some(last_row) = sorted_rows.last().copied() else {
+            continue;
+        };
+        for row in rows.iter().copied().filter(|row| *row != last_row) {
+            let value = ScalarValue::from_any_value(target_column.get(row)?);
+            if value.is_empty() {
+                mask[row] = true;
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
 #[derive(Debug)]
 struct SortSpec {
     column: String,
@@ -714,6 +781,17 @@ fn sort_specs(comparator: &ValueExpr) -> Result<Vec<SortSpec>> {
         });
     }
     Ok(specs)
+}
+
+fn column_name_comparator(comparator: &ValueExpr) -> Result<String> {
+    match comparator {
+        ValueExpr::ColumnRef(value) => Ok(value.clone()),
+        ValueExpr::Literal(Value::String(value)) => Ok(value.clone()),
+        _ => Err(EngineError::InvalidComparator {
+            operator: Operator::EmptyWithinExceptLastRow.as_name().to_owned(),
+            comparator: comparator.clone(),
+        }),
+    }
 }
 
 fn compare_sort_values(
@@ -1426,6 +1504,35 @@ mod tests {
             .expect("dataset")
     }
 
+    fn end_date_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "se.xpt",
+      "domain": "SE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
+        "SESEQ": [1, 2, 3, 1],
+        "SESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-02-01"],
+        "SEENDTC": ["2024-01-02", "", "", ""]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
     fn condition(target: &str, operator: Operator, comparator: ValueExpr) -> Condition {
         Condition {
             target: Some(target.to_owned()),
@@ -2062,6 +2169,25 @@ mod tests {
             )
             .expect("target is not sorted by"),
             vec![false, true, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_empty_within_except_last_row() {
+        let dataset = end_date_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "SEENDTC",
+                    Operator::EmptyWithinExceptLastRow,
+                    literal("USUBJID"),
+                    serde_json::Map::from_iter([("ordering".to_owned(), json!("SESTDTC"))])
+                ),
+                &dataset
+            )
+            .expect("empty within except last row"),
+            vec![false, true, false, false]
         );
     }
 
