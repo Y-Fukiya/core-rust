@@ -856,6 +856,12 @@ fn value_expr_from_condition_value(
         return ValueExpr::Literal(value);
     }
 
+    if let Value::String(column) = &value {
+        if column.trim_start().starts_with('$') {
+            return ValueExpr::ColumnRef(clean_jsonata_identifier(column));
+        }
+    }
+
     if is_column_ref_operator(operator) {
         if let Value::String(column) = &value {
             return ValueExpr::ColumnRef(column.clone());
@@ -2168,6 +2174,33 @@ Outcome:
         assert_eq!(
             condition.comparator,
             ValueExpr::ColumnRef("IEORRES".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalize_dollar_prefixed_value_as_column_ref_for_set_comparators() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "IDVAR",
+                "operator": "is_not_contained_by",
+                "value": "$rdomain_variables"
+            },
+            "Outcome": {
+                "Message": "IDVAR must exist in RDOMAIN"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("rdomain_variables".to_owned())
         );
     }
 

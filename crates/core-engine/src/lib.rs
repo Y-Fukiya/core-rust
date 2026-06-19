@@ -1439,10 +1439,10 @@ fn scalar_matches_comparator(
         ValueExpr::List(values) => Ok(values
             .iter()
             .map(json_value_to_scalar)
-            .any(|right| scalar_equal_with_mode(left, &right, case_insensitive))),
+            .any(|right| scalar_contained_by_value(left, &right, case_insensitive))),
         _ => {
             let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
-            Ok(scalar_equal_with_mode(left, &right, case_insensitive))
+            Ok(scalar_contained_by_value(left, &right, case_insensitive))
         }
     }
 }
@@ -1589,6 +1589,31 @@ fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensit
         (ScalarValue::Number(left), ScalarValue::Number(right)) => left == right,
         _ => false,
     }
+}
+
+fn scalar_contained_by_value(
+    left: &ScalarValue,
+    right: &ScalarValue,
+    case_insensitive: bool,
+) -> bool {
+    if scalar_equal_with_mode(left, right, case_insensitive) {
+        return true;
+    }
+
+    let ScalarValue::String(right) = right else {
+        return false;
+    };
+    if !right.contains('|') {
+        return false;
+    }
+
+    right.split('|').any(|part| {
+        scalar_equal_with_mode(
+            left,
+            &ScalarValue::String(part.trim().to_owned()),
+            case_insensitive,
+        )
+    })
 }
 
 fn is_case_insensitive_operator(operator: &Operator) -> bool {

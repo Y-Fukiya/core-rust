@@ -1584,11 +1584,6 @@ pub fn group_distinct_values_dataset(
     source_column: &str,
     column_name: &str,
 ) -> Result<LoadedDataset> {
-    if keys.is_empty() {
-        return Err(DataError::InvalidDatasetPackage(
-            "distinct values operation requires at least one key".to_owned(),
-        ));
-    }
     if source_column.trim().is_empty() {
         return Err(DataError::InvalidDatasetPackage(
             "distinct values operation requires a source column".to_owned(),
@@ -3144,6 +3139,46 @@ mod tests {
                 .get(0)
                 .expect("row number"),
             AnyValue::Int64(1)
+        );
+    }
+
+    #[test]
+    fn distinct_values_without_keys_uses_all_rows_as_one_group() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "STUDYID": ["TEST-2", "TEST-1", "TEST-2"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let with_distinct =
+            group_distinct_values_dataset(&datasets[0], &[], "STUDYID", "$dm_studyid")
+                .expect("global distinct values");
+        let distinct_values = with_distinct
+            .frame()
+            .column("$dm_studyid")
+            .expect("distinct column");
+
+        assert_eq!(
+            distinct_values.get(0).expect("row 1").extract_str(),
+            Some("TEST-1|TEST-2")
+        );
+        assert_eq!(
+            distinct_values.get(2).expect("row 3").extract_str(),
+            Some("TEST-1|TEST-2")
         );
     }
 
