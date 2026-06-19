@@ -215,6 +215,7 @@ mod tests {
                 candidate_report_csv: "report.csv".into(),
                 bucket,
                 reason: None,
+                skipped_reasons: Vec::new(),
                 official_issue_count: Some(1),
                 candidate_issue_count: Some(1),
                 missing: Vec::new(),

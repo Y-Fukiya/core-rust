@@ -57,6 +57,8 @@ pub struct ScoredCase {
     pub candidate_report_csv: PathBuf,
     pub bucket: ScoreBucket,
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_reasons: Vec<String>,
     pub official_issue_count: Option<usize>,
     pub candidate_issue_count: Option<usize>,
     pub missing: Vec<IssueKey>,
@@ -127,6 +129,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         candidate_report_csv: candidate_report_csv.clone(),
         bucket: ScoreBucket::HarnessError,
         reason: None,
+        skipped_reasons: Vec::new(),
         official_issue_count: None,
         candidate_issue_count: None,
         missing: Vec::new(),
@@ -175,9 +178,18 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     };
 
     if candidate.skipped_row_count > 0 {
+        let skipped_reasons = candidate
+            .skipped_reasons
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         return ScoredCase {
             bucket: ScoreBucket::SkippedUnsupported,
-            reason: Some("candidate output contains skipped rows".to_owned()),
+            reason: Some(format!(
+                "candidate skipped rows: {}",
+                skipped_reasons.join(", ")
+            )),
+            skipped_reasons,
             official_issue_count: Some(official.issue_count),
             candidate_issue_count: Some(candidate.issue_count),
             ..base
@@ -394,6 +406,18 @@ mod tests {
         assert_eq!(summary.supported_accuracy, Some(2.0 / 3.0));
         assert_eq!(summary.coverage, Some(3.0 / 6.0));
         assert!(summary.should_fail());
+        let skipped = scored
+            .iter()
+            .find(|case| case.bucket == ScoreBucket::SkippedUnsupported)
+            .expect("skipped case");
+        assert_eq!(
+            skipped.skipped_reasons,
+            vec!["unsupported_operator".to_owned()]
+        );
+        assert_eq!(
+            skipped.reason,
+            Some("candidate skipped rows: unsupported_operator".to_owned())
+        );
     }
 
     #[test]

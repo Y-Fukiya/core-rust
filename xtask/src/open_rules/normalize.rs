@@ -28,6 +28,7 @@ pub struct NormalizedCsv {
     pub path: PathBuf,
     pub row_count: usize,
     pub skipped_row_count: usize,
+    pub skipped_reasons: BTreeMap<String, usize>,
     pub issue_count: usize,
     pub issues: Vec<IssueKey>,
 }
@@ -44,6 +45,10 @@ pub fn normalize_csv(
             .iter()
             .filter(|row| row_is_core_rs_skipped(row))
             .count(),
+    };
+    let skipped_reasons = match source {
+        ReportSource::Official => BTreeMap::new(),
+        ReportSource::CoreRs => collect_core_rs_skipped_reasons(&rows),
     };
     let issue_rows = rows
         .iter()
@@ -63,6 +68,7 @@ pub fn normalize_csv(
         path: path.to_path_buf(),
         row_count: rows.len(),
         skipped_row_count,
+        skipped_reasons,
         issue_count: issues.len(),
         issues,
     })
@@ -250,6 +256,16 @@ fn row_is_core_rs_skipped(row: &BTreeMap<String, String>) -> bool {
     status.eq_ignore_ascii_case("skipped") || !skipped_reason.is_empty()
 }
 
+fn collect_core_rs_skipped_reasons(rows: &[BTreeMap<String, String>]) -> BTreeMap<String, usize> {
+    let mut reasons = BTreeMap::new();
+    for row in rows.iter().filter(|row| row_is_core_rs_skipped(row)) {
+        let reason = first(row, &["skipped_reason", "skip_reason"])
+            .unwrap_or_else(|| "unspecified".to_owned());
+        *reasons.entry(reason).or_default() += 1;
+    }
+    reasons
+}
+
 fn row_is_core_rs_non_issue(row: &BTreeMap<String, String>) -> bool {
     let status = first(row, &["execution_status", "status"]).unwrap_or_default();
     status.eq_ignore_ascii_case("passed") || status.eq_ignore_ascii_case("skipped")
@@ -322,8 +338,37 @@ mod tests {
 
         assert_eq!(normalized.row_count, 2);
         assert_eq!(normalized.skipped_row_count, 1);
+        assert_eq!(
+            normalized.skipped_reasons,
+            BTreeMap::from([("unsupported_operator".to_owned(), 1)])
+        );
         assert_eq!(normalized.issue_count, 0);
         assert!(normalized.issues.is_empty());
+    }
+
+    #[test]
+    fn core_rs_collects_distinct_skipped_reasons() {
+        let dir = tempdir().expect("tempdir");
+        let report = dir.path().join("report.csv");
+        fs::write(
+            &report,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000001,skipped,,,,,unsupported,0,unsupported_operator,,\n\
+             CORE-000001,skipped,,,,,unsupported,0,unsupported_operator,,\n\
+             CORE-000001,skipped,,,,,join,0,dataset_join_not_supported,,\n",
+        )
+        .expect("write report");
+
+        let normalized = normalize_csv(&report, ReportSource::CoreRs, None).expect("normalize");
+
+        assert_eq!(normalized.skipped_row_count, 3);
+        assert_eq!(
+            normalized.skipped_reasons,
+            BTreeMap::from([
+                ("dataset_join_not_supported".to_owned(), 1),
+                ("unsupported_operator".to_owned(), 2),
+            ])
+        );
     }
 
     #[test]

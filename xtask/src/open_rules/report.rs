@@ -1,5 +1,6 @@
 //! Scoreboard JSON and Markdown report writing.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
@@ -97,6 +98,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         ScoreBucket::NoOfficialOracle,
         10,
     );
+    push_skipped_reason_section(&mut lines, scoreboard);
     push_case_section(
         &mut lines,
         "Skipped Unsupported Sample",
@@ -106,6 +108,33 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
     );
 
     lines.join("\n") + "\n"
+}
+
+fn push_skipped_reason_section(lines: &mut Vec<String>, scoreboard: &Scoreboard) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for case in scoreboard
+        .cases
+        .iter()
+        .filter(|case| case.bucket == ScoreBucket::SkippedUnsupported)
+    {
+        for reason in &case.skipped_reasons {
+            *counts.entry(reason.clone()).or_default() += 1;
+        }
+    }
+
+    if counts.is_empty() {
+        return;
+    }
+
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
+    counts.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+    lines.push("## Skipped Unsupported Reasons".to_owned());
+    lines.push(String::new());
+    for (reason, count) in counts {
+        lines.push(format!("- `{reason}`: {count} case(s)"));
+    }
+    lines.push(String::new());
 }
 
 fn push_case_section(
@@ -180,21 +209,40 @@ mod tests {
                 lock_path: "tests/open_rules/upstream.lock".into(),
                 warnings: vec!["warning text".to_owned()],
             },
-            vec![ScoredCase {
-                scope: "Published".to_owned(),
-                rule_id: "CORE-000005".to_owned(),
-                case_kind: "negative".to_owned(),
-                case_id: "01".to_owned(),
-                case_dir: "case".into(),
-                official_results_csv: "official.csv".into(),
-                candidate_report_csv: "report.csv".into(),
-                bucket: ScoreBucket::SupportedMismatch,
-                reason: None,
-                official_issue_count: Some(1),
-                candidate_issue_count: Some(1),
-                missing: Vec::new(),
-                extra: Vec::new(),
-            }],
+            vec![
+                ScoredCase {
+                    scope: "Published".to_owned(),
+                    rule_id: "CORE-000005".to_owned(),
+                    case_kind: "negative".to_owned(),
+                    case_id: "01".to_owned(),
+                    case_dir: "case".into(),
+                    official_results_csv: "official.csv".into(),
+                    candidate_report_csv: "report.csv".into(),
+                    bucket: ScoreBucket::SupportedMismatch,
+                    reason: None,
+                    skipped_reasons: Vec::new(),
+                    official_issue_count: Some(1),
+                    candidate_issue_count: Some(1),
+                    missing: Vec::new(),
+                    extra: Vec::new(),
+                },
+                ScoredCase {
+                    scope: "Published".to_owned(),
+                    rule_id: "CORE-000006".to_owned(),
+                    case_kind: "positive".to_owned(),
+                    case_id: "01".to_owned(),
+                    case_dir: "case".into(),
+                    official_results_csv: "official.csv".into(),
+                    candidate_report_csv: "report.csv".into(),
+                    bucket: ScoreBucket::SkippedUnsupported,
+                    reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
+                    skipped_reasons: vec!["unsupported_operator".to_owned()],
+                    official_issue_count: Some(0),
+                    candidate_issue_count: Some(0),
+                    missing: Vec::new(),
+                    extra: Vec::new(),
+                },
+            ],
         );
 
         write_scoreboard(dir.path(), &scoreboard).expect("write scoreboard");
@@ -205,6 +253,8 @@ mod tests {
         assert!(json.contains("\"supported_mismatch\": 1"));
         assert!(markdown.contains("# CDISC Open Rules Oracle Compatibility"));
         assert!(markdown.contains("CORE-000005"));
+        assert!(markdown.contains("## Skipped Unsupported Reasons"));
+        assert!(markdown.contains("- `unsupported_operator`: 1 case(s)"));
         assert!(markdown.contains("warning text"));
         assert!(scoreboard.summary.should_fail());
         assert_eq!(
