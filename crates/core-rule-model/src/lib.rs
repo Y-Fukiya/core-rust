@@ -209,6 +209,7 @@ pub enum Operator {
     InvalidDuration,
     IsCompleteDate,
     IsIncompleteDate,
+    TargetIsNotSortedBy,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -253,6 +254,7 @@ impl Operator {
             "invalid_duration" => Self::InvalidDuration,
             "is_complete_date" => Self::IsCompleteDate,
             "is_incomplete_date" => Self::IsIncompleteDate,
+            "target_is_not_sorted_by" => Self::TargetIsNotSortedBy,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -296,6 +298,7 @@ impl Operator {
             Self::InvalidDuration => "invalid_duration",
             Self::IsCompleteDate => "is_complete_date",
             Self::IsIncompleteDate => "is_incomplete_date",
+            Self::TargetIsNotSortedBy => "target_is_not_sorted_by",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2323,6 +2326,14 @@ Outcome:
         assert_eq!(
             Operator::from_name("is_incomplete_date"),
             Operator::IsIncompleteDate
+        );
+    }
+
+    #[test]
+    fn open_rules_order_operator_name_normalizes() {
+        assert_eq!(
+            Operator::from_name("target_is_not_sorted_by"),
+            Operator::TargetIsNotSortedBy
         );
     }
 

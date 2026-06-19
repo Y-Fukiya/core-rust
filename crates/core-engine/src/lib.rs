@@ -458,6 +458,14 @@ fn evaluate_condition_with_options(
             let value = value.trim();
             Ok(!value.is_empty() && !is_valid_iso_duration(value))
         }),
+        Operator::TargetIsNotSortedBy => evaluate_target_is_not_sorted_by(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -564,6 +572,201 @@ fn evaluate_column(
     (0..row_count)
         .map(|row| predicate(column.get(row)?, row))
         .collect()
+}
+
+fn evaluate_target_is_not_sorted_by(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let sort_specs = sort_specs(comparator)?;
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let mut groups: std::collections::BTreeMap<String, Vec<SortRow>> =
+        std::collections::BTreeMap::new();
+
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        let sort_values = sort_specs
+            .iter()
+            .map(|spec| {
+                let column_name = expand_domain_placeholder(dataset, &spec.column);
+                let Some(column) = optional_column(frame, &column_name)? else {
+                    return Ok(None);
+                };
+                Ok(Some(ScalarValue::from_any_value(column.get(row)?)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        groups.entry(group_key).or_default().push(SortRow {
+            row,
+            target,
+            sort_values,
+        });
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut group_has_inversion = false;
+        let group_has_uncertain_sort = rows
+            .iter()
+            .any(|row| row.sort_values.iter().any(is_uncertain_sort_value));
+
+        for left_index in 0..rows.len() {
+            for right_index in (left_index + 1)..rows.len() {
+                let left = &rows[left_index];
+                let right = &rows[right_index];
+                let Some(sort_ordering) =
+                    compare_sort_values(&left.sort_values, &right.sort_values, &sort_specs)
+                else {
+                    continue;
+                };
+                let Some(target_ordering) = compare_scalars(&left.target, &right.target) else {
+                    continue;
+                };
+                if sort_ordering != Ordering::Equal
+                    && target_ordering != Ordering::Equal
+                    && sort_ordering != target_ordering
+                {
+                    mask[left.row] = true;
+                    mask[right.row] = true;
+                    group_has_inversion = true;
+                }
+            }
+        }
+
+        if group_has_inversion && group_has_uncertain_sort {
+            for row in rows {
+                if !matches!(row.target, ScalarValue::Null) {
+                    mask[row.row] = true;
+                }
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
+#[derive(Debug)]
+struct SortSpec {
+    column: String,
+    descending: bool,
+    nulls_first: bool,
+}
+
+#[derive(Debug)]
+struct SortRow {
+    row: usize,
+    target: ScalarValue,
+    sort_values: Vec<Option<ScalarValue>>,
+}
+
+fn sort_specs(comparator: &ValueExpr) -> Result<Vec<SortSpec>> {
+    let ValueExpr::List(values) = comparator else {
+        return Err(EngineError::InvalidComparator {
+            operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+            comparator: comparator.clone(),
+        });
+    };
+
+    let specs = values
+        .iter()
+        .map(|value| {
+            let Value::Object(object) = value else {
+                return Err(EngineError::InvalidComparator {
+                    operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                });
+            };
+            let Some(column) = object.get("name").and_then(Value::as_str) else {
+                return Err(EngineError::InvalidComparator {
+                    operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                });
+            };
+            let descending = object
+                .get("sort_order")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case("desc"));
+            let nulls_first = object
+                .get("null_position")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case("first"));
+            Ok(SortSpec {
+                column: column.to_owned(),
+                descending,
+                nulls_first,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if specs.is_empty() {
+        return Err(EngineError::InvalidComparator {
+            operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+            comparator: comparator.clone(),
+        });
+    }
+    Ok(specs)
+}
+
+fn compare_sort_values(
+    left: &[Option<ScalarValue>],
+    right: &[Option<ScalarValue>],
+    specs: &[SortSpec],
+) -> Option<Ordering> {
+    for ((left, right), spec) in left.iter().zip(right).zip(specs) {
+        let ordering = compare_optional_sort_value(left.as_ref(), right.as_ref(), spec)?;
+        if ordering != Ordering::Equal {
+            return Some(ordering);
+        }
+    }
+    Some(Ordering::Equal)
+}
+
+fn compare_optional_sort_value(
+    left: Option<&ScalarValue>,
+    right: Option<&ScalarValue>,
+    spec: &SortSpec,
+) -> Option<Ordering> {
+    let ordering = match (left, right) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => {
+            if spec.nulls_first {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }
+        (Some(_), None) => {
+            if spec.nulls_first {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        }
+        (Some(left), Some(right)) => compare_scalars(left, right)?,
+    };
+
+    Some(if spec.descending {
+        ordering.reverse()
+    } else {
+        ordering
+    })
+}
+
+fn is_uncertain_sort_value(value: &Option<ScalarValue>) -> bool {
+    let Some(ScalarValue::String(value)) = value else {
+        return false;
+    };
+    let value = value.trim();
+    !value.is_empty() && parse_complete_date(value).is_none() && is_incomplete_date(value)
 }
 
 fn record_level_issues(
@@ -755,6 +958,19 @@ fn option_usize(map: &std::collections::BTreeMap<String, Value>, key: &str) -> O
     match value {
         Value::Number(value) => value.as_u64().and_then(|value| usize::try_from(value).ok()),
         Value::String(value) => value.trim().parse::<usize>().ok(),
+        _ => None,
+    }
+}
+
+fn option_string(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<String> {
+    let value = map.get(key).or_else(|| {
+        map.iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    })?;
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
 }
@@ -1168,6 +1384,34 @@ mod tests {
         "STARTDTC": ["2024-01-02", "2024-01-03T12:30:00", "2024-01", "2024-13-01"],
         "DUR": ["P1D", "PT2H", "P1Y2M", "P-1D"],
         "FLAG": [true, false, null, true]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
+    fn sort_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2", "SUBJ2"],
+        "AESEQ": [1, 3, 2, 1, 2],
+        "AESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-01", "2024-01-02"]
       }
     }
   ]
@@ -1795,6 +2039,29 @@ mod tests {
             )
             .expect("invalid duration"),
             vec![false, false, false, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_target_is_not_sorted_by_within_groups() {
+        let dataset = sort_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "AESEQ",
+                    Operator::TargetIsNotSortedBy,
+                    ValueExpr::List(vec![json!({
+                        "name": "AESTDTC",
+                        "sort_order": "asc",
+                        "null_position": "last"
+                    })]),
+                    serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))])
+                ),
+                &dataset
+            )
+            .expect("target is not sorted by"),
+            vec![false, true, true, false, false]
         );
     }
 
