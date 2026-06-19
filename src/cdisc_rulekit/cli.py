@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from .classify import classify_rules
-from .compare_results import compare_generated_results, write_comparison_report
+from .compare_results import classification_counts, compare_generated_results, comparison_gate_ok, write_comparison_report
 from .core_runner import (
     DEFAULT_ENGINE_COMMAND,
     build_core_run_plan,
@@ -237,9 +237,16 @@ def cmd_run_core(args: argparse.Namespace) -> int:
 def cmd_compare_results(args: argparse.Namespace) -> int:
     result = compare_generated_results(args.generated_rules, args.actual_root)
     write_comparison_report(args.out, result)
-    status = "ok" if result.ok else "failed"
+    counts = classification_counts(result)
+    ok = comparison_gate_ok(result, allow_actual_skipped=args.allow_actual_skipped)
+    status = "ok" if ok else "failed"
     print(f"compare-results complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
-    return 0 if result.ok else 1
+    if args.allow_actual_skipped:
+        print(
+            "compare-results gate: "
+            f"{counts.get('ACTUAL_SKIPPED_BY_CORE', 0)} actual-skipped coverage gaps allowed"
+        )
+    return 0 if ok else 1
 
 
 def cmd_export_rules(args: argparse.Namespace) -> int:
@@ -248,6 +255,8 @@ def cmd_export_rules(args: argparse.Namespace) -> int:
         args.open_rules_repo,
         target_subdir=args.target_subdir,
         overwrite=args.overwrite,
+        comparison_summary=args.comparison_summary,
+        only_passed=args.only_passed,
     )
     print(f"export-rules complete: {summary.exported_count} exported, {summary.skipped_count} skipped")
     return 0
@@ -400,6 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--generated-rules", type=Path, required=True)
     compare.add_argument("--actual-root", type=Path, required=True)
     compare.add_argument("--out", type=Path, required=True)
+    compare.add_argument("--allow-actual-skipped", action="store_true")
     compare.set_defaults(func=cmd_compare_results)
 
     export = subcommands.add_parser("export-rules")
@@ -407,6 +417,8 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--open-rules-repo", type=Path, required=True)
     export.add_argument("--target-subdir", default="Unpublished/NEW-RULE")
     export.add_argument("--overwrite", action="store_true")
+    export.add_argument("--comparison-summary", type=Path, default=None)
+    export.add_argument("--only-passed", action="store_true")
     export.set_defaults(func=cmd_export_rules)
 
     preflight = subcommands.add_parser("pilot-preflight")

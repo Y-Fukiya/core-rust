@@ -272,11 +272,17 @@ Official Python CORE full run:
 - Structural comparison summary: 778 passed, 12 non-pass
 - Supported mismatch rows: 0
 - Skipped coverage-gap rows: 12
+- Supported-mismatch gate:
+  `compare-results --allow-actual-skipped` returns ok because the remaining
+  non-pass rows are official CORE skipped coverage gaps.
 - Non-pass classification:
   - `ACTUAL_SKIPPED_BY_CORE`: 12 rows / 6 rules
   - `PASS`: 778 rows / 389 rules
 - Classification artifacts:
   `reports/official_core_failure_classification.{csv,json,md}`
+- Accepted export target:
+  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-OFFICIAL-CORE-PASS`
+- Accepted export result: 389 exported, 6 skipped by comparison status
 
 Minimal generated outputs include:
 

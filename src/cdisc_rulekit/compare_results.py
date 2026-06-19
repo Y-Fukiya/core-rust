@@ -268,6 +268,19 @@ def _classification_summary(rows: list[dict[str, object]]) -> list[dict[str, obj
     return summary
 
 
+def classification_counts(result: ComparisonResult) -> dict[str, int]:
+    summary = _classification_summary(result.rows)
+    return {str(row["classification"]): int(row["row_count"]) for row in summary}
+
+
+def comparison_gate_ok(result: ComparisonResult, *, allow_actual_skipped: bool = False) -> bool:
+    if result.ok:
+        return True
+    if not allow_actual_skipped:
+        return False
+    return all(_failure_classification(row) in {"PASS", "ACTUAL_SKIPPED_BY_CORE"} for row in result.rows)
+
+
 def compare_generated_results(
     generated_rules_dir: str | Path,
     actual_root: str | Path,

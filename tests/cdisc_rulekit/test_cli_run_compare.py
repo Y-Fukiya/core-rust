@@ -106,6 +106,55 @@ def test_run_core_dry_run_and_compare_results_cli(tmp_path):
     assert (out_dir / "reports" / "comparison_summary.csv").exists()
 
 
+def test_compare_results_cli_can_allow_actual_skipped_as_coverage_gap(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
+    _generated_rule(generated_root, rule_id)
+    actual_root = tmp_path / "core_runs"
+    positive = actual_root / rule_id / "positive" / "01"
+    negative = actual_root / rule_id / "negative" / "01"
+    positive.mkdir(parents=True)
+    negative.mkdir(parents=True)
+    (positive / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (negative / "report.json").write_text(
+        json.dumps(
+            {
+                "Issue_Details": [],
+                "Rules_Report": [{"core_id": rule_id, "status": "SKIPPED"}],
+            },
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "reports"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    compare = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "compare-results",
+            "--generated-rules",
+            str(generated_root),
+            "--actual-root",
+            str(actual_root),
+            "--out",
+            str(out_dir),
+            "--allow-actual-skipped",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "compare-results complete: ok" in compare.stdout
+    classification = json.loads((out_dir / "official_core_failure_classification.json").read_text(encoding="utf-8"))
+    assert classification["supported_mismatch_rows"] == 0
+    assert classification["coverage_gap_rows"] == 1
+
+
 def test_run_core_executes_engine_command_and_writes_execution_summary(tmp_path):
     generated_root = tmp_path / "generated_rules"
     rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
