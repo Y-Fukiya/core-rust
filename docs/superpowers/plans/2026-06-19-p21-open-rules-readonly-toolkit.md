@@ -1,6 +1,6 @@
 # P21 Open Rules Read-Only Toolkit Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a read-only Python companion toolkit that ingests P21 rule extracts and local CDISC Open Rules files, then emits normalized catalogs, mappings, conversion status, and reports under `output/`.
 
@@ -44,7 +44,7 @@
 - Create: `tests/cdisc_rulekit/fixtures/open_rules/Unpublished/CORE-DRAFT-0001/rule.yml`
 - Create: `tests/cdisc_rulekit/test_models_io.py`
 
-- [ ] **Step 1: Write failing model and I/O tests**
+- [x] **Step 1: Write failing model and I/O tests**
 
 Create `tests/cdisc_rulekit/test_models_io.py` with tests that import `CanonicalRule`, `RuleMapping`, `OperatorInventoryItem`, `normalize_blank`, `split_semicolon_list`, `write_jsonl`, and `read_jsonl`.
 
@@ -54,7 +54,7 @@ Assertions:
 - `CanonicalRule(...).to_dict()` serializes list and dict fields.
 - JSONL round trip preserves two rows exactly.
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -64,7 +64,7 @@ python -m pytest tests/cdisc_rulekit/test_models_io.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'cdisc_rulekit'`.
 
-- [ ] **Step 3: Implement package skeleton and helpers**
+- [x] **Step 3: Implement package skeleton and helpers**
 
 Create `pyproject.toml` with a setuptools package using `src` layout, Python `>=3.11`, dependencies `PyYAML`, optional test dependency `pytest`, and pytest config `pythonpath = ["src"]`.
 
@@ -85,7 +85,7 @@ Implement `io_utils.py` helpers:
 - `write_jsonl(path: Path, rows: Iterable[dict[str, object]]) -> None`
 - `write_csv(path: Path, rows: Iterable[dict[str, object]], fieldnames: list[str]) -> None`
 
-- [ ] **Step 4: Add minimal fixtures**
+- [x] **Step 4: Add minimal fixtures**
 
 Create P21 fixture CSV with three rules:
 
@@ -99,7 +99,7 @@ Create Open Rules fixture `CORE-000001/rule.yml` referencing `CG0001`, domain AE
 
 Create `Unpublished/CORE-DRAFT-0001/rule.yml` referencing `CG9999` so default scanning can prove it is excluded.
 
-- [ ] **Step 5: Run GREEN test**
+- [x] **Step 5: Run GREEN test**
 
 Run:
 
@@ -115,7 +115,7 @@ Expected: PASS.
 - Create: `src/cdisc_rulekit/load_p21.py`
 - Create: `tests/cdisc_rulekit/test_load_p21.py`
 
-- [ ] **Step 1: Write failing P21 loader tests**
+- [x] **Step 1: Write failing P21 loader tests**
 
 Create tests for `load_p21_rules(rules_path, domain_map_path=None)`:
 
@@ -125,7 +125,7 @@ Create tests for `load_p21_rules(rules_path, domain_map_path=None)`:
 - Active domain map rows are joined, inactive rows are excluded.
 - `DEF001` keeps raw XML path and can later classify as manual.
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -135,7 +135,7 @@ python -m pytest tests/cdisc_rulekit/test_load_p21.py -q
 
 Expected: FAIL with `ImportError` for missing `load_p21`.
 
-- [ ] **Step 3: Implement P21 loader**
+- [x] **Step 3: Implement P21 loader**
 
 Implement:
 
@@ -147,7 +147,7 @@ Implement:
 
 Do not discard unknown columns; preserve every row in `raw_record`.
 
-- [ ] **Step 4: Run GREEN test**
+- [x] **Step 4: Run GREEN test**
 
 Run:
 
@@ -165,7 +165,7 @@ Expected: PASS.
 - Create: `tests/cdisc_rulekit/test_load_open_rules.py`
 - Create: `tests/cdisc_rulekit/test_operator_inventory.py`
 
-- [ ] **Step 1: Write failing Open Rules loader tests**
+- [x] **Step 1: Write failing Open Rules loader tests**
 
 Create tests for `load_open_rules(repo_path, include_unpublished=False)`:
 
@@ -174,7 +174,7 @@ Create tests for `load_open_rules(repo_path, include_unpublished=False)`:
 - `CORE-000001` has `core_rule_id == "CORE-000001"`, `cdisc_rule_ids == ["CG0001"]`, `domains == ["AE"]`, `variables` containing `AETERM`, and a message.
 - Test-data inventory includes `Published`, `CORE-000001`, `positive`, `01`, and `ae.csv`.
 
-- [ ] **Step 2: Write failing operator inventory tests**
+- [x] **Step 2: Write failing operator inventory tests**
 
 Create tests for `build_operator_inventory(core_rules)`:
 
@@ -182,7 +182,7 @@ Create tests for `build_operator_inventory(core_rules)`:
 - At least one item has `operator` equal to an observed `Check` key from the fixture.
 - `raw_keys` records sorted dictionary keys.
 
-- [ ] **Step 3: Run RED tests**
+- [x] **Step 3: Run RED tests**
 
 Run:
 
@@ -192,7 +192,7 @@ python -m pytest tests/cdisc_rulekit/test_load_open_rules.py tests/cdisc_rulekit
 
 Expected: FAIL with missing modules.
 
-- [ ] **Step 4: Implement Open Rules loader**
+- [x] **Step 4: Implement Open Rules loader**
 
 Implement safe YAML parsing with `yaml.safe_load`. If `PyYAML` import fails, raise a clear runtime error naming `PyYAML`.
 
@@ -205,13 +205,13 @@ Implement:
 
 Malformed YAML should append a warning and continue.
 
-- [ ] **Step 5: Implement operator inventory**
+- [x] **Step 5: Implement operator inventory**
 
 Implement `build_operator_inventory(core_rules: list[CanonicalRule]) -> list[OperatorInventoryItem]`.
 
 The function recursively walks `rule.raw_condition["Check"]`. For dictionary nodes, emit one item for each operator-like key. Exclude metadata-like keys: `name`, `value`, `values`, `variable`, `variables`, `dataset`, `domain`, `message`, `description`, `label`, `type`, `length`.
 
-- [ ] **Step 6: Run GREEN tests**
+- [x] **Step 6: Run GREEN tests**
 
 Run:
 
@@ -229,7 +229,7 @@ Expected: PASS.
 - Create: `tests/cdisc_rulekit/test_map_rules.py`
 - Create: `tests/cdisc_rulekit/test_classify.py`
 
-- [ ] **Step 1: Write failing mapping tests**
+- [x] **Step 1: Write failing mapping tests**
 
 Create tests for `map_p21_to_core(p21_rules, core_rules)`:
 
@@ -238,7 +238,7 @@ Create tests for `map_p21_to_core(p21_rules, core_rules)`:
 - An unrelated P21 rule emits `NONE` with confidence `0`.
 - The function returns exactly one mapping per P21 rule.
 
-- [ ] **Step 2: Write failing classification tests**
+- [x] **Step 2: Write failing classification tests**
 
 Create tests for `classify_rules(p21_rules, mappings)`:
 
@@ -248,7 +248,7 @@ Create tests for `classify_rules(p21_rules, mappings)`:
 - A malformed synthetic row with no rule id becomes `UNSUPPORTED`.
 - Fuzzy mapping never becomes `NATIVE_CORE`.
 
-- [ ] **Step 3: Run RED tests**
+- [x] **Step 3: Run RED tests**
 
 Run:
 
@@ -258,7 +258,7 @@ python -m pytest tests/cdisc_rulekit/test_map_rules.py tests/cdisc_rulekit/test_
 
 Expected: FAIL with missing modules.
 
-- [ ] **Step 4: Implement mapping**
+- [x] **Step 4: Implement mapping**
 
 Implement:
 
@@ -273,7 +273,7 @@ Mapping priority:
 2. Fuzzy: score standard, domain, variable, message, and description. Emit `FUZZY` only at `>= 0.60`.
 3. None: `NONE`, confidence `0`.
 
-- [ ] **Step 5: Implement classification**
+- [x] **Step 5: Implement classification**
 
 Implement:
 
@@ -282,7 +282,7 @@ Implement:
 
 Set `conversion_status`, `conversion_reasons`, `conversion_confidence`, and `core_rule_id` on returned copies. Never mutate caller-owned rules in place.
 
-- [ ] **Step 6: Run GREEN tests**
+- [x] **Step 6: Run GREEN tests**
 
 Run:
 
@@ -300,7 +300,7 @@ Expected: PASS.
 - Create: `src/cdisc_rulekit/cli.py`
 - Create: `tests/cdisc_rulekit/test_cli_readonly.py`
 
-- [ ] **Step 1: Write failing CLI test**
+- [x] **Step 1: Write failing CLI test**
 
 Create a test that runs:
 
@@ -332,7 +332,7 @@ Assert these files exist:
 
 Assert `generated_rules` does not exist.
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -342,7 +342,7 @@ python -m pytest tests/cdisc_rulekit/test_cli_readonly.py -q
 
 Expected: FAIL with missing CLI module or missing outputs.
 
-- [ ] **Step 3: Implement emitters and reports**
+- [x] **Step 3: Implement emitters and reports**
 
 Implement:
 
@@ -355,7 +355,7 @@ Implement:
 
 Use deterministic fieldname order. Lists and dictionaries in CSV cells are JSON strings.
 
-- [ ] **Step 4: Implement CLI**
+- [x] **Step 4: Implement CLI**
 
 Use `argparse` subcommands:
 
@@ -369,7 +369,7 @@ Use `argparse` subcommands:
 
 No `generate`, `validate-structure`, or export commands are exposed.
 
-- [ ] **Step 5: Run GREEN CLI test**
+- [x] **Step 5: Run GREEN CLI test**
 
 Run:
 
@@ -385,7 +385,7 @@ Expected: PASS.
 - Modify: `README.md` only if a short read-only toolkit section is needed.
 - Modify: `docs/superpowers/plans/2026-06-19-p21-open-rules-readonly-toolkit.md` to check completed boxes if executing manually.
 
-- [ ] **Step 1: Run all Python tests**
+- [x] **Step 1: Run all Python tests**
 
 Run:
 
@@ -395,11 +395,11 @@ python -m pytest tests/cdisc_rulekit -q
 
 Expected: PASS.
 
-- [ ] **Step 2: Run focused Rust tests only if touched**
+- [x] **Step 2: Run focused Rust tests only if touched**
 
 Because this plan should not modify Rust code, do not run full Rust verification for the Python toolkit unless Rust files were touched. If Rust files are touched accidentally, stop and inspect why.
 
-- [ ] **Step 3: Inspect git status**
+- [x] **Step 3: Inspect git status**
 
 Run:
 
@@ -409,7 +409,7 @@ git status --short
 
 Expected: only Python toolkit files, test fixtures, `pyproject.toml`, and this plan are staged or modified by this work. Pre-existing unrelated Rust and duplicate files may remain unstaged.
 
-- [ ] **Step 4: Commit only this toolkit work**
+- [x] **Step 4: Commit only this toolkit work**
 
 Run:
 

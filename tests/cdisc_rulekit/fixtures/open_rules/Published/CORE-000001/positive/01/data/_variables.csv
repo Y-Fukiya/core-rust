@@ -1,0 +1,3 @@
+dataset,variable,label,type,length
+AE,DOMAIN,Domain Abbreviation,Char,2
+AE,AETERM,Reported Term for the Adverse Event,Char,200

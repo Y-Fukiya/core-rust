@@ -1,0 +1,34 @@
+Core:
+  Id: CORE-000001
+  Status: Published
+  Version: "1"
+  Description: AETERM must be populated.
+Authorities:
+  - Organization: CDISC
+    Standards:
+      - Name: SDTMIG
+        Version: "3.4"
+        Substandard: SDTMIG
+        References:
+          - Origin: CDISC
+            Rule Identifier:
+              Id: CG0001
+              Version: "1"
+Check:
+  all:
+    - not_empty:
+        name: AETERM
+    - equal_to:
+        name: DOMAIN
+        value: AE
+Outcome:
+  Message: AETERM must be present.
+Rule Type: Record Data
+Scope:
+  Classes:
+    Include:
+      - EVENTS
+  Domains:
+    Include:
+      - AE
+Sensitivity: Record
