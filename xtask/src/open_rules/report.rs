@@ -37,6 +37,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         format!("| Supported match | {} |", summary.supported_match),
         format!("| Supported mismatch | {} |", summary.supported_mismatch),
         format!("| Skipped unsupported | {} |", summary.skipped_unsupported),
+        format!("| No official oracle | {} |", summary.no_official_oracle),
         format!("| Harness error | {} |", summary.harness_error),
         format!(
             "| Supported accuracy | {} |",
@@ -88,6 +89,13 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         scoreboard,
         ScoreBucket::HarnessError,
         50,
+    );
+    push_case_section(
+        &mut lines,
+        "No Official Oracle Sample",
+        scoreboard,
+        ScoreBucket::NoOfficialOracle,
+        10,
     );
     push_case_section(
         &mut lines,

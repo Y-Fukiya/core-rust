@@ -1,5 +1,7 @@
 //! Open Rules execution harness.
 
+use std::collections::BTreeMap;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -99,17 +101,28 @@ pub fn run_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Result
                 rule_id: case.rule_id.clone(),
                 case_kind: case.case_kind.as_str().to_owned(),
                 case_id: case.case_id.clone(),
-                message: source.to_string(),
+                message: format!("{source:#}"),
             }),
         }
     }
 
-    Ok(RunSummary {
+    let summary = RunSummary {
         total_cases: cases.len(),
         succeeded,
         failed: errors.len(),
         errors,
-    })
+    };
+    write_run_summary(core_rs_results_root, &summary)?;
+
+    Ok(summary)
+}
+
+fn write_run_summary(core_rs_results_root: &Path, summary: &RunSummary) -> Result<()> {
+    fs::create_dir_all(core_rs_results_root)
+        .with_context(|| format!("create {}", core_rs_results_root.display()))?;
+    let path = core_rs_results_root.join("run-summary.json");
+    let file = File::create(&path).with_context(|| format!("create {}", path.display()))?;
+    serde_json::to_writer_pretty(file, summary).with_context(|| format!("write {}", path.display()))
 }
 
 fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
@@ -117,12 +130,15 @@ fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
     let output_dir = report_path
         .parent()
         .context("candidate report path has no parent")?;
+    let (standard, standard_version) = standard_filter_from_env(&case.env);
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![case.rule_path.clone()],
         dataset_paths: vec![case.data_dir.clone()],
         dataset_loader: DatasetLoader::OpenRulesDataDir,
         include_rules: vec![case.rule_id.clone()],
         exclude_rules: Vec::new(),
+        standard: standard.clone(),
+        standard_version,
         output_format: ReportOutputFormat::Csv,
         output_dir: Some(output_dir.to_path_buf()),
         ..Default::default()
@@ -145,6 +161,20 @@ fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
     } else {
         Err(anyhow::anyhow!("candidate report.csv was not written"))
     }
+}
+
+fn standard_filter_from_env(env: &BTreeMap<String, String>) -> (Option<String>, Option<String>) {
+    let standard = env_value(env, "PRODUCT");
+    let version = env_value(env, "VERSION").map(|value| value.replace('-', "."));
+    (standard, version)
+}
+
+fn env_value(env: &BTreeMap<String, String>, key: &str) -> Option<String> {
+    env.iter()
+        .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+        .map(|(_key, value)| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -180,6 +210,57 @@ mod tests {
             .path()
             .join("Published/CORE-OPEN-0001/negative/01/report.csv")
             .is_file());
+        let run_summary = std::fs::read_to_string(candidate_root.path().join("run-summary.json"))
+            .expect("read run summary");
+        assert!(run_summary.contains("\"total_cases\": 2"));
+        assert!(run_summary.contains("\"failed\": 0"));
+    }
+
+    #[test]
+    fn run_cases_error_messages_include_source_chain() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("Published/CORE-MISSING/negative/01");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-MISSING".to_owned(),
+            rule_dir: dir.path().join("Published/CORE-MISSING"),
+            rule_path: dir.path().join("Published/CORE-MISSING/rule.yml"),
+            case_kind: crate::open_rules::discovery::CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: Default::default(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+        let candidate_root = tempdir().expect("candidate root");
+
+        let summary = run_cases(&[case], candidate_root.path()).expect("run cases");
+
+        assert_eq!(summary.failed, 1);
+        assert!(summary.errors[0]
+            .message
+            .contains("run CORE-MISSING negative/01"));
+        assert!(summary.errors[0].message.contains("failed to load rules"));
+    }
+
+    #[test]
+    fn standard_filter_from_env_uses_product_and_normalized_version() {
+        let env = BTreeMap::from([
+            ("PRODUCT".to_owned(), "SENDIG".to_owned()),
+            ("VERSION".to_owned(), "3-1".to_owned()),
+        ]);
+
+        let (standard, version) = standard_filter_from_env(&env);
+
+        assert_eq!(standard.as_deref(), Some("SENDIG"));
+        assert_eq!(version.as_deref(), Some("3.1"));
     }
 
     #[test]

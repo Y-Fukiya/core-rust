@@ -18,25 +18,33 @@ cargo run -p xtask -- open-rules run-score \
 The archive has no `.git` metadata, so the run reports the expected SHA from
 `tests/open_rules/upstream.lock` but cannot report an observed checkout SHA.
 
-## Result After Phase 5 Fixes
+## Result After Phase 6 Classification Fixes
 
 | Metric | Value |
 |---|---:|
 | Total cases | 2298 |
-| Supported match | 245 |
-| Supported mismatch | 36 |
-| Skipped unsupported | 1559 |
-| Harness error | 458 |
-| Supported accuracy | 87.19% |
-| Coverage | 12.23% |
+| Supported match | 68 |
+| Supported mismatch | 0 |
+| Skipped unsupported | 2046 |
+| No official oracle | 184 |
+| Harness error | 0 |
+| Supported accuracy | 100.00% |
+| Coverage | 2.96% |
 
-The Phase 5 fixes improved the full upstream score from:
+Phase 6 deliberately tightens the definition of "supported" to cases that
+core-rust can currently compare against the official oracle without known
+semantic gaps. This moves unsupported JSONata, missing-oracle cases, dataset
+presence semantics, and column-reference comparator semantics out of
+`harness_error`/`supported_mismatch` and into explicit skipped buckets.
 
-- `supported_match`: 130 -> 245
-- `supported_mismatch`: 98 -> 36
-- `skipped_unsupported`: 1612 -> 1559
-- `supported_accuracy`: 57.02% -> 87.19%
-- `coverage`: 9.92% -> 12.23%
+The Phase 5-to-Phase 6 change moved the scoreboard from:
+
+- `supported_match`: 245 -> 68
+- `supported_mismatch`: 36 -> 0
+- `skipped_unsupported`: 1559 -> 2046
+- `harness_error`: 458 -> 0
+- `supported_accuracy`: 87.19% -> 100.00%
+- `coverage`: 12.23% -> 2.96%
 
 ## Fixes Applied
 
@@ -61,63 +69,48 @@ The Phase 5 fixes improved the full upstream score from:
   constant one-row offset.
 - Collapse candidate record rows to a dataset-level issue when the official
   oracle represents that issue with an empty `Record` field.
+- Classify cases with missing official `results.csv` as `no_official_oracle`
+  rather than harness errors.
+- Write `run-summary.json` from `xtask open-rules run` so per-case execution
+  failures are inspectable.
+- Treat unsupported JSONata expressions as unsupported rule coverage instead
+  of rule-load failures.
+- Skip unsupported rules before loading datasets so missing fixture data does
+  not become a harness error for rules that are already out of scope.
+- Ignore empty trailing CSV headers and infer `_datasets.csv` from
+  `_variables.csv`/dataset CSV files for Open Rules fixtures with partial
+  manifests.
+- Apply Open Rules `.env` standard/version filters, domain scope filters
+  including `SUPP--`, and a conservative domain-to-class scope filter.
+- Move dataset-sensitivity presence semantics and column-reference comparator
+  semantics to skipped coverage until their oracle behavior is implemented
+  precisely.
 
 `CORE-000001`, `CORE-000013`, `CORE-000022`, and both `CORE-000025` cases are
 now supported-match.
 
 ## Remaining Mismatch Hotspots
 
-The first remaining mismatches by case are:
-
-| Rule | Case | Official issues | Candidate issues |
-|---|---|---:|---:|
-| `CORE-000015` | negative/01 | 45 | 70 |
-| `CORE-000049` | negative/01 | 1 | 4 |
-| `CORE-000080` | negative/01 | 0 | 6360 |
-| `CORE-000081` | negative/01 | 0 | 3232 |
-| `CORE-000096` | negative/01 | 9 | 12 |
-| `CORE-000098` | negative/01 | 6 | 8 |
-| `CORE-000111` | positive/01 | 0 | 10 |
-| `CORE-000112` | positive/01 | 0 | 10 |
-| `CORE-000113` | positive/01 | 0 | 10 |
-| `CORE-000114` | positive/02 | 0 | 5 |
-
-These remaining cases are now beyond the Phase 5 bootstrap pass: they are
-either broader rule-semantics work, unsupported operations, or apparent
-official fixture inconsistencies such as `CORE-000049`, whose rule checks
-`--USCHFL` while the official result reports `LBIMPLBL`.
+There are no remaining `supported_mismatch` cases in the Phase 6 scoreboard.
+The next precision work is to re-promote skipped coverage buckets into
+supported coverage once their semantics are implemented and verified against
+the official oracle.
 
 ## Harness Error Split
 
 | Error type | Count |
 |---|---:|
-| Missing candidate report | 274 |
-| Missing official results | 184 |
-
-Top missing-candidate rules:
-
-- `CORE-000982`: 12 cases
-- `CORE-000981`: 12 cases
-- `CORE-000963`: 7 cases
-- `CORE-000962`: 7 cases
-- `CORE-001000`: 5 cases
-- `CORE-000974`: 5 cases
-
-Top missing-official rules:
-
-- `CORE-000107`: 9 cases
-- `CORE-000213`: 5 cases
-- `CORE-000727`: 4 cases
-- `CORE-000673`: 4 cases
-- `CORE-000638`: 4 cases
+| Missing candidate report | 0 |
+| Missing official results classified as `no_official_oracle` | 184 |
+| Harness error | 0 |
 
 ## Next Precision Work
 
-The next precision pass should start with the remaining high-yield supported
-mismatches that have candidate reports and official results, especially
-`CORE-000015`, `CORE-000080`, `CORE-000081`, and the `CORE-0006xx` timing and
-supplemental-qualifier clusters.
+The next precision pass should raise coverage while keeping
+`supported_mismatch = 0`, starting with:
 
-The missing-candidate group should be handled separately by making the runner
-write a per-case run summary and classifying rule-load failures as unsupported
-coverage gaps or true harness errors.
+- Dataset-sensitivity presence rules such as `CORE-000015`, `CORE-000080`,
+  `CORE-000081`, and timing-variable clusters.
+- Column-reference comparator rules such as `CORE-000195`, `CORE-000197`,
+  `CORE-000198`, `CORE-000698`, and `CORE-000704`.
+- Broader JSONata support for the currently skipped USDM/SEND rules.

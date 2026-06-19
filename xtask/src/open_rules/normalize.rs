@@ -81,10 +81,12 @@ pub fn normalize_scalar(value: &str) -> String {
 }
 
 fn read_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
+    let source =
+        std::fs::read_to_string(path).with_context(|| format!("read CSV {}", path.display()))?;
+    let source = resolve_merge_conflicts(&source);
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
-        .from_path(path)
-        .with_context(|| format!("open CSV {}", path.display()))?;
+        .from_reader(source.as_bytes());
     let headers = reader
         .headers()
         .with_context(|| format!("read CSV headers {}", path.display()))?
@@ -102,6 +104,35 @@ fn read_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
         rows.push(row);
     }
     Ok(rows)
+}
+
+fn resolve_merge_conflicts(source: &str) -> String {
+    enum State {
+        Normal,
+        Head,
+        Incoming,
+    }
+
+    let mut state = State::Normal;
+    let mut lines = Vec::new();
+    for line in source.lines() {
+        if line.starts_with("<<<<<<<") {
+            state = State::Head;
+            continue;
+        }
+        if matches!(state, State::Head) && line.starts_with("=======") {
+            state = State::Incoming;
+            continue;
+        }
+        if matches!(state, State::Incoming) && line.starts_with(">>>>>>>") {
+            state = State::Normal;
+            continue;
+        }
+        if matches!(state, State::Normal | State::Incoming) {
+            lines.push(line);
+        }
+    }
+    lines.join("\n") + "\n"
 }
 
 fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) -> IssueKey {
@@ -293,6 +324,24 @@ mod tests {
         assert_eq!(normalized.skipped_row_count, 1);
         assert_eq!(normalized.issue_count, 0);
         assert!(normalized.issues.is_empty());
+    }
+
+    #[test]
+    fn official_merge_conflict_marker_rows_are_not_issue_keys() {
+        let dir = tempdir().expect("tempdir");
+        let report = dir.path().join("results.csv");
+        fs::write(
+            &report,
+            "Dataset,Record,Variable,Value\n<<<<<<< HEAD\nLB,0,LBTESTCD,OTHER\n=======\nLB.csv,1,LBTESTCD,OTHER\n>>>>>>> main\n",
+        )
+        .expect("write report");
+
+        let normalized =
+            normalize_csv(&report, ReportSource::Official, Some("CORE-000159")).expect("normalize");
+
+        assert_eq!(normalized.issue_count, 1);
+        assert_eq!(normalized.issues[0].dataset, "LB");
+        assert_eq!(normalized.issues[0].variables, vec!["LBTESTCD"]);
     }
 
     #[test]

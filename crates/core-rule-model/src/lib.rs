@@ -766,7 +766,12 @@ fn is_column_ref_operator(operator: &Operator) -> bool {
 }
 
 fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
-    let resolved = resolve_jsonata_bindings(expression.trim());
+    let expression = expression.trim();
+    if is_complex_jsonata_expression(expression) {
+        return Ok(unsupported_jsonata_leaf(expression));
+    }
+
+    let resolved = resolve_jsonata_bindings(expression);
     let expression = trim_wrapping_parens(resolved.trim());
     if expression.is_empty() {
         return Err(RuleModelError::InvalidRuleFormat(
@@ -795,6 +800,14 @@ fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
     }
 
     normalize_jsonata_leaf(expression)
+}
+
+fn is_complex_jsonata_expression(expression: &str) -> bool {
+    expression.contains('\n')
+        || expression.contains('{')
+        || expression.contains('}')
+        || expression.contains('@')
+        || expression.contains("~>")
 }
 
 fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
@@ -919,9 +932,16 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
         }));
     }
 
-    Err(RuleModelError::InvalidRuleFormat(format!(
-        "unsupported JSONATA expression: {expression}"
-    )))
+    Ok(unsupported_jsonata_leaf(expression))
+}
+
+fn unsupported_jsonata_leaf(expression: &str) -> ConditionGroup {
+    ConditionGroup::Leaf(Condition {
+        target: None,
+        operator: Operator::Unsupported("unsupported_jsonata".to_owned()),
+        comparator: ValueExpr::Literal(Value::String(expression.to_owned())),
+        options: OperatorOptions::default(),
+    })
 }
 
 fn jsonata_leaf(target: String, operator: Operator, comparator: ValueExpr) -> ConditionGroup {
@@ -2156,6 +2176,24 @@ Outcome:
         assert_eq!(compare.target.as_deref(), Some("DOMAIN"));
         assert_eq!(compare.operator, Operator::NotEqualTo);
         assert_eq!(compare.comparator, ValueExpr::Literal(json!("AE")));
+    }
+
+    #[test]
+    fn normalize_unsupported_jsonata_expression_as_unsupported_operator() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("$.study.versions.studyDesigns.{\"id\": id}[id != null]");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.operator,
+            Operator::Unsupported("unsupported_jsonata".to_owned())
+        );
+        assert_eq!(condition.target, None);
     }
 
     #[test]

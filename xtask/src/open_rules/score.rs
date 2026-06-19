@@ -30,6 +30,7 @@ pub enum ScoreBucket {
     SupportedMatch,
     SupportedMismatch,
     SkippedUnsupported,
+    NoOfficialOracle,
     HarnessError,
 }
 
@@ -39,6 +40,7 @@ impl ScoreBucket {
             Self::SupportedMatch => "supported_match",
             Self::SupportedMismatch => "supported_mismatch",
             Self::SkippedUnsupported => "skipped_unsupported",
+            Self::NoOfficialOracle => "no_official_oracle",
             Self::HarnessError => "harness_error",
         }
     }
@@ -67,6 +69,8 @@ pub struct ScoreSummary {
     pub supported_match: usize,
     pub supported_mismatch: usize,
     pub skipped_unsupported: usize,
+    #[serde(default)]
+    pub no_official_oracle: usize,
     pub harness_error: usize,
     pub supported_accuracy: Option<f64>,
     pub coverage: Option<f64>,
@@ -131,6 +135,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
 
     if !case.official_results_csv.is_file() {
         return ScoredCase {
+            bucket: ScoreBucket::NoOfficialOracle,
             reason: Some("missing official results.csv".to_owned()),
             ..base
         };
@@ -300,6 +305,7 @@ impl ScoreSummary {
         let supported_match = *counts.get("supported_match").unwrap_or(&0);
         let supported_mismatch = *counts.get("supported_mismatch").unwrap_or(&0);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
+        let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
         let harness_error = *counts.get("harness_error").unwrap_or(&0);
         let supported = supported_match + supported_mismatch;
         let total_cases = cases.len();
@@ -308,6 +314,7 @@ impl ScoreSummary {
             supported_match,
             supported_mismatch,
             skipped_unsupported,
+            no_official_oracle,
             harness_error,
             supported_accuracy: (supported > 0).then(|| supported_match as f64 / supported as f64),
             coverage: (total_cases > 0).then(|| supported as f64 / total_cases as f64),
@@ -382,10 +389,60 @@ mod tests {
         assert_eq!(summary.supported_match, 2);
         assert_eq!(summary.supported_mismatch, 1);
         assert_eq!(summary.skipped_unsupported, 1);
-        assert_eq!(summary.harness_error, 2);
+        assert_eq!(summary.no_official_oracle, 1);
+        assert_eq!(summary.harness_error, 1);
         assert_eq!(summary.supported_accuracy, Some(2.0 / 3.0));
         assert_eq!(summary.coverage, Some(3.0 / 6.0));
         assert!(summary.should_fail());
+    }
+
+    #[test]
+    fn missing_official_results_are_classified_as_no_official_oracle() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000016/negative/03");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000016/negative/03");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000016".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000016"),
+            rule_path: dir.path().join("open/Published/CORE-000016/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "03".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::NoOfficialOracle);
+        assert_eq!(
+            scored[0].reason,
+            Some("missing official results.csv".to_owned())
+        );
+        assert_eq!(summary.no_official_oracle, 1);
+        assert_eq!(summary.harness_error, 0);
+        assert!(!summary.should_fail());
     }
 
     #[test]

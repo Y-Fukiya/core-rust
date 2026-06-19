@@ -223,12 +223,16 @@ pub fn load_open_rules_data_dir_with_warnings(path: impl AsRef<Path>) -> Result<
 }
 
 fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
-    let dataset_rows = read_csv_dict_rows(&data_dir.join("_datasets.csv"))?;
     let variable_rows = read_csv_dict_rows(&data_dir.join("_variables.csv"))?;
-    let datasets = dataset_rows
-        .iter()
-        .map(open_rules_dataset_descriptor)
-        .collect::<Result<Vec<_>>>()?;
+    let datasets_path = data_dir.join("_datasets.csv");
+    let datasets = if datasets_path.is_file() {
+        read_csv_dict_rows(&datasets_path)?
+            .iter()
+            .map(open_rules_dataset_descriptor)
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        infer_open_rules_dataset_descriptors(data_dir, &variable_rows)?
+    };
     let variables = variable_rows
         .iter()
         .map(open_rules_variable_descriptor)
@@ -347,6 +351,88 @@ fn open_rules_dataset_descriptor(row: &BTreeMap<String, String>) -> Result<OpenR
     })
 }
 
+fn infer_open_rules_dataset_descriptors(
+    data_dir: &Path,
+    variable_rows: &[BTreeMap<String, String>],
+) -> Result<Vec<OpenRulesDataset>> {
+    let mut datasets = variable_rows
+        .iter()
+        .filter_map(|row| row_string(row, &["dataset", "Dataset", "domain", "Domain"]))
+        .map(|name| normalize_dataset_name(&name))
+        .collect::<BTreeSet<_>>();
+
+    if datasets.is_empty() {
+        let entries = fs::read_dir(data_dir)
+            .map_err(|source| DataError::Io {
+                path: data_dir.to_path_buf(),
+                source,
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|source| DataError::Io {
+                path: data_dir.to_path_buf(),
+                source,
+            })?;
+        for entry in entries {
+            let path = entry.path();
+            if !path.is_file() || extension(&path).as_deref() != Some("csv") {
+                continue;
+            }
+            let filename = file_name(&path)?;
+            if is_open_rules_auxiliary_csv(&filename) {
+                continue;
+            }
+            datasets.insert(file_stem_str(&filename).to_ascii_uppercase());
+        }
+    }
+
+    datasets
+        .into_iter()
+        .map(|name| {
+            let filename = find_open_rules_dataset_filename(data_dir, &name)?
+                .unwrap_or_else(|| ensure_csv_filename(&name.to_ascii_lowercase()));
+            Ok(OpenRulesDataset {
+                name,
+                filename,
+                label: None,
+            })
+        })
+        .collect()
+}
+
+fn find_open_rules_dataset_filename(data_dir: &Path, dataset: &str) -> Result<Option<String>> {
+    let entries = fs::read_dir(data_dir)
+        .map_err(|source| DataError::Io {
+            path: data_dir.to_path_buf(),
+            source,
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|source| DataError::Io {
+            path: data_dir.to_path_buf(),
+            source,
+        })?;
+    for entry in entries {
+        let path = entry.path();
+        if !path.is_file() || extension(&path).as_deref() != Some("csv") {
+            continue;
+        }
+        let filename = file_name(&path)?;
+        if is_open_rules_auxiliary_csv(&filename) {
+            continue;
+        }
+        if file_stem_str(&filename).eq_ignore_ascii_case(dataset) {
+            return Ok(Some(filename));
+        }
+    }
+    Ok(None)
+}
+
+fn is_open_rules_auxiliary_csv(filename: &str) -> bool {
+    matches!(
+        filename.to_ascii_lowercase().as_str(),
+        "_datasets.csv" | "_variables.csv" | "results.csv"
+    )
+}
+
 fn open_rules_variable_descriptor(row: &BTreeMap<String, String>) -> Result<OpenRulesVariable> {
     let dataset =
         row_string(row, &["dataset", "Dataset", "domain", "Domain"]).ok_or_else(|| {
@@ -402,14 +488,18 @@ fn load_open_rules_dataset(
     let csv_columns = rows
         .headers
         .iter()
-        .map(|name| name.to_ascii_uppercase())
+        .enumerate()
+        .filter_map(|(index, name)| {
+            let name = name.to_ascii_uppercase();
+            (!name.is_empty()).then_some((index, name))
+        })
         .collect::<Vec<_>>();
     let mut records = csv_columns
         .iter()
-        .map(|name| (name.clone(), Vec::with_capacity(rows.records.len())))
+        .map(|(_index, name)| (name.clone(), Vec::with_capacity(rows.records.len())))
         .collect::<IndexMap<_, _>>();
 
-    for column in &csv_columns {
+    for (_index, column) in &csv_columns {
         if !declared.contains_key(column) {
             warnings.push(LoadDataWarning {
                 path: path.clone(),
@@ -422,7 +512,10 @@ fn load_open_rules_dataset(
     }
 
     for variable in declared.keys() {
-        if !csv_columns.iter().any(|column| column == variable) {
+        if !csv_columns
+            .iter()
+            .any(|(_index, column)| column == variable)
+        {
             warnings.push(LoadDataWarning {
                 path: path.clone(),
                 kind: LoadDataWarningKind::DeclaredVariableMissing {
@@ -434,8 +527,8 @@ fn load_open_rules_dataset(
     }
 
     for (row_index, record) in rows.records.iter().enumerate() {
-        for (index, column) in csv_columns.iter().enumerate() {
-            let raw = record.get(index).map_or("", String::as_str);
+        for (index, column) in &csv_columns {
+            let raw = record.get(*index).map_or("", String::as_str);
             let value = open_rules_cell_value(
                 &path,
                 &dataset.name,
@@ -2157,6 +2250,61 @@ mod tests {
             warning.kind,
             LoadDataWarningKind::UndeclaredCsvColumn { .. }
         )));
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_ignores_empty_trailing_csv_columns() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("_datasets.csv"), "Filename,Label\nae,AE\n")
+            .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nAE,STUDYID,Study Identifier,Char,50\nAE,DOMAIN,Domain Abbreviation,Char,50\nAE,AESEQ,Sequence Number,Num,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("ae.csv"),
+            "STUDYID,DOMAIN,AESEQ,,\nS1,AE,1,,\nS2,AE,2\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert_eq!(result.datasets.len(), 1);
+        assert_eq!(
+            result.datasets[0].summary().columns,
+            vec!["STUDYID", "DOMAIN", "AESEQ"]
+        );
+        assert_eq!(result.datasets[0].summary().row_count, 2);
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_infers_dataset_manifest_when_missing() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nPD,PDSEQ,Sequence Number,Num,8\nPD,PDVALTRG,Target,Num,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(dir.path().join("pd.csv"), "PDSEQ,PDVALTRG\n1,10\n").expect("write dataset csv");
+        fs::write(
+            dir.path().join("results.csv"),
+            "Dataset,Record,Variable,Value\n",
+        )
+        .expect("write stray results csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert_eq!(result.datasets.len(), 1);
+        assert_eq!(result.datasets[0].metadata.name, "PD");
+        assert_eq!(result.datasets[0].metadata.filename, "pd.csv");
+        assert_eq!(
+            dataset_column_values(&result.datasets[0], "PDVALTRG").expect("PDVALTRG values"),
+            vec![serde_json::json!(10)]
+        );
     }
 
     #[test]

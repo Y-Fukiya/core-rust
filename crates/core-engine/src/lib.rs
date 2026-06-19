@@ -227,10 +227,7 @@ fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
     } else {
         for variable in &rule.output_variables {
-            push_unique(
-                &mut expanded,
-                &expand_domain_placeholder(dataset, variable),
-            );
+            push_unique(&mut expanded, &expand_domain_placeholder(dataset, variable));
         }
     }
     expanded
