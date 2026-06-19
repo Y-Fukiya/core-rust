@@ -19,6 +19,8 @@ COMPARISON_FIELDS = [
     "dataset",
     "row",
     "variables",
+    "usubjid",
+    "seq",
     "notes",
 ]
 
@@ -65,13 +67,19 @@ def _issue_from_error(error: dict[str, Any], fallback: dict[str, Any] | None = N
         "dataset": error.get("dataset") or error.get("domain") or fallback.get("dataset") or fallback.get("domain") or "",
         "row": str(error.get("row") or ""),
         "variables": _variables(error.get("variables") or fallback.get("variables")),
+        "usubjid": error.get("usubjid") or fallback.get("usubjid") or "",
+        "seq": str(error.get("seq") or fallback.get("seq") or ""),
     }
 
 
-def _actual_from_json(path: Path) -> list[dict[str, object]]:
+def _actual_from_json(path: Path) -> tuple[list[dict[str, object]], int]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     issues: list[dict[str, object]] = []
+    skipped_count = 0
     for result in payload.get("results") or []:
+        if str(result.get("execution_status") or "").lower() == "skipped":
+            skipped_count += 1
+            continue
         errors = result.get("errors") or []
         if errors:
             for error in errors:
@@ -81,12 +89,16 @@ def _actual_from_json(path: Path) -> list[dict[str, object]]:
         error_count = int(result.get("error_count") or 0)
         if error_count:
             issues.append(_issue_from_error(result))
-    return issues
+    return issues, skipped_count
 
 
-def _actual_from_csv(path: Path) -> list[dict[str, object]]:
+def _actual_from_csv(path: Path) -> tuple[list[dict[str, object]], int]:
     issues: list[dict[str, object]] = []
+    skipped_count = 0
     for row in _read_csv(path):
+        if str(row.get("execution_status") or "").lower() == "skipped":
+            skipped_count += 1
+            continue
         if int(row.get("error_count") or 0) <= 0:
             continue
         issues.append(
@@ -95,19 +107,23 @@ def _actual_from_csv(path: Path) -> list[dict[str, object]]:
                 "dataset": row.get("dataset") or row.get("domain") or "",
                 "row": row.get("row") or "",
                 "variables": _variables(row.get("variables")),
+                "usubjid": row.get("usubjid") or "",
+                "seq": row.get("seq") or "",
             },
         )
-    return issues
+    return issues, skipped_count
 
 
-def _actual_issues(actual_dir: Path) -> tuple[list[dict[str, object]] | None, str]:
+def _actual_issues(actual_dir: Path) -> tuple[list[dict[str, object]] | None, str, int]:
     report_json = actual_dir / "report.json"
     report_csv = actual_dir / "report.csv"
     if report_json.exists():
-        return _actual_from_json(report_json), ""
+        issues, skipped_count = _actual_from_json(report_json)
+        return issues, "", skipped_count
     if report_csv.exists():
-        return _actual_from_csv(report_csv), ""
-    return None, f"missing report.json/report.csv in {actual_dir}"
+        issues, skipped_count = _actual_from_csv(report_csv)
+        return issues, "", skipped_count
+    return None, f"missing report.json/report.csv in {actual_dir}", 0
 
 
 def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> bool:
@@ -120,6 +136,10 @@ def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> boo
     expected_variables = _variables(expected.get("variables"))
     if expected_variables and _variables(issue.get("variables")) != expected_variables:
         return False
+    if expected.get("usubjid") and issue.get("usubjid") != expected["usubjid"]:
+        return False
+    if expected.get("seq") and str(issue.get("seq") or "") != expected["seq"]:
+        return False
     return True
 
 
@@ -128,7 +148,7 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
     case_id = expected["case_id"]
     expected_count = int(expected.get("expected_issue_count") or 0)
     actual_dir = actual_root / rule_id / case_type / case_id
-    issues, missing_note = _actual_issues(actual_dir)
+    issues, missing_note, skipped_count = _actual_issues(actual_dir)
     base = {
         "generated_rule_id": rule_id,
         "case_type": case_type,
@@ -138,9 +158,18 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
         "dataset": expected.get("dataset") or "",
         "row": expected.get("row") or "",
         "variables": expected.get("variables") or "",
+        "usubjid": expected.get("usubjid") or "",
+        "seq": expected.get("seq") or "",
     }
     if issues is None:
         return {**base, "actual_issue_count": "", "status": "ACTUAL_MISSING", "notes": missing_note}
+    if skipped_count:
+        return {
+            **base,
+            "actual_issue_count": len(issues),
+            "status": "ACTUAL_SKIPPED",
+            "notes": "actual CORE output contains skipped result(s)",
+        }
     actual_count = len(issues)
     if expected_count != actual_count:
         return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "issue count mismatch"}
@@ -174,6 +203,8 @@ def compare_generated_results(
                     "dataset": "",
                     "row": "",
                     "variables": "",
+                    "usubjid": "",
+                    "seq": "",
                     "notes": f"missing {expected_path}",
                 },
             )

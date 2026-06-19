@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import json
 import shlex
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .io_utils import ensure_dir
+from .io_utils import ensure_dir, write_csv
 
 DEFAULT_ENGINE_COMMAND = "cargo run -p core-cli -- validate"
+EXECUTION_FIELDS = [
+    "generated_rule_id",
+    "case_type",
+    "case_id",
+    "returncode",
+    "status",
+    "stdout",
+    "stderr",
+    "output_dir",
+]
 
 
 @dataclass(frozen=True)
@@ -43,6 +54,23 @@ class CoreRunPlan:
         }
 
 
+@dataclass(frozen=True)
+class CoreRunExecutionResult:
+    rows: list[dict[str, object]]
+
+    @property
+    def pass_count(self) -> int:
+        return sum(1 for row in self.rows if row["status"] == "PASS")
+
+    @property
+    def fail_count(self) -> int:
+        return sum(1 for row in self.rows if row["status"] == "FAIL")
+
+    @property
+    def ok(self) -> bool:
+        return self.fail_count == 0
+
+
 def _case_data_dirs(rule_dir: Path) -> list[tuple[str, str, Path]]:
     cases: list[tuple[str, str, Path]] = []
     for case_type in ("positive", "negative"):
@@ -54,20 +82,35 @@ def _case_data_dirs(rule_dir: Path) -> list[tuple[str, str, Path]]:
     return cases
 
 
+def _dataset_csv_paths(data_dir: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in data_dir.glob("*.csv")
+        if path.is_file() and not path.name.startswith("_")
+    )
+
+
 def _command(
     engine_command: str,
     rule_dir: Path,
     data_dir: Path,
     output_dir: Path,
 ) -> list[str]:
-    return [
+    command = [
         *shlex.split(engine_command),
         "--local-rules",
         str(rule_dir),
-        "--dataset-path",
-        str(data_dir),
-        "--output",
-        str(output_dir),
+    ]
+    for dataset_path in _dataset_csv_paths(data_dir):
+        command.extend(["--dataset-path", str(dataset_path)])
+    command.extend(
+        [
+            "--output",
+            str(output_dir),
+        ],
+    )
+    return [
+        *command,
     ]
 
 
@@ -127,3 +170,69 @@ def write_core_run_plan(out_dir: str | Path, plan: CoreRunPlan) -> None:
         lines.append(f"  - `{command}`")
     lines.append("")
     (out / "core_run_plan.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def execute_core_run_plan(plan: CoreRunPlan) -> CoreRunExecutionResult:
+    rows: list[dict[str, object]] = []
+    for item in plan.items:
+        ensure_dir(Path(item.output_dir))
+        completed = subprocess.run(
+            item.command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        rows.append(
+            {
+                "generated_rule_id": item.generated_rule_id,
+                "case_type": item.case_type,
+                "case_id": item.case_id,
+                "returncode": completed.returncode,
+                "status": "PASS" if completed.returncode == 0 else "FAIL",
+                "stdout": completed.stdout.strip(),
+                "stderr": completed.stderr.strip(),
+                "output_dir": item.output_dir,
+            },
+        )
+    return CoreRunExecutionResult(rows)
+
+
+def write_core_run_execution_report(out_dir: str | Path, result: CoreRunExecutionResult) -> None:
+    out = Path(out_dir)
+    ensure_dir(out)
+    write_csv(out / "core_run_execution_summary.csv", result.rows, EXECUTION_FIELDS)
+    (out / "core_run_execution_summary.json").write_text(
+        json.dumps(
+            {
+                "ok": result.ok,
+                "pass_count": result.pass_count,
+                "fail_count": result.fail_count,
+                "rows": result.rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    lines = [
+        "# CORE Run Execution Summary",
+        "",
+        f"- ok: `{str(result.ok).lower()}`",
+        f"- passed rows: `{result.pass_count}`",
+        f"- failed rows: `{result.fail_count}`",
+        "",
+        "## Failures",
+        "",
+    ]
+    failures = [row for row in result.rows if row["status"] == "FAIL"]
+    if failures:
+        lines.extend(
+            f"- `{row['generated_rule_id']}` `{row['case_type']}/{row['case_id']}`: returncode {row['returncode']}"
+            for row in failures
+        )
+    else:
+        lines.append("- None")
+    lines.append("")
+    (out / "core_run_execution_summary.md").write_text("\n".join(lines), encoding="utf-8")

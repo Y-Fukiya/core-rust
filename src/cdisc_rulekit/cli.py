@@ -7,8 +7,15 @@ from pathlib import Path
 
 from .classify import classify_rules
 from .compare_results import compare_generated_results, write_comparison_report
-from .core_runner import DEFAULT_ENGINE_COMMAND, build_core_run_plan, write_core_run_plan
+from .core_runner import (
+    DEFAULT_ENGINE_COMMAND,
+    build_core_run_plan,
+    execute_core_run_plan,
+    write_core_run_execution_report,
+    write_core_run_plan,
+)
 from .emit import emit_conversion_status, emit_core_catalog, emit_mapping, emit_p21_catalog
+from .export_rules import export_generated_rules
 from .generate_rules import generate_rules, operator_set_from_inventory_rows
 from .inputs import resolve_open_rules_input
 from .io_utils import read_jsonl
@@ -200,19 +207,23 @@ def cmd_validate_structure(args: argparse.Namespace) -> int:
 
 
 def cmd_run_core(args: argparse.Namespace) -> int:
-    if not args.dry_run:
-        print("run-core execution is not implemented yet; use --dry-run")
-        return 2
     root = Path(args.out)
     plan = build_core_run_plan(
         args.generated_rules,
         run_root=root / "core_runs",
         engine_command=args.engine_command,
-        dry_run=True,
+        dry_run=args.dry_run,
     )
     write_core_run_plan(root / "reports", plan)
-    print(f"run-core dry-run complete: {plan.case_count} cases planned")
-    return 0
+    if args.dry_run:
+        print(f"run-core dry-run complete: {plan.case_count} cases planned")
+        return 0
+
+    result = execute_core_run_plan(plan)
+    write_core_run_execution_report(root / "reports", result)
+    status = "ok" if result.ok else "failed"
+    print(f"run-core execution complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
+    return 0 if result.ok else 1
 
 
 def cmd_compare_results(args: argparse.Namespace) -> int:
@@ -221,6 +232,17 @@ def cmd_compare_results(args: argparse.Namespace) -> int:
     status = "ok" if result.ok else "failed"
     print(f"compare-results complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
     return 0 if result.ok else 1
+
+
+def cmd_export_rules(args: argparse.Namespace) -> int:
+    summary = export_generated_rules(
+        args.generated_rules,
+        args.open_rules_repo,
+        target_subdir=args.target_subdir,
+        overwrite=args.overwrite,
+    )
+    print(f"export-rules complete: {summary.exported_count} exported, {summary.skipped_count} skipped")
+    return 0
 
 
 def _preflight_work_root(out: Path) -> Path:
@@ -366,6 +388,13 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--actual-root", type=Path, required=True)
     compare.add_argument("--out", type=Path, required=True)
     compare.set_defaults(func=cmd_compare_results)
+
+    export = subcommands.add_parser("export-rules")
+    export.add_argument("--generated-rules", type=Path, required=True)
+    export.add_argument("--open-rules-repo", type=Path, required=True)
+    export.add_argument("--target-subdir", default="Unpublished/NEW-RULE")
+    export.add_argument("--overwrite", action="store_true")
+    export.set_defaults(func=cmd_export_rules)
 
     preflight = subcommands.add_parser("pilot-preflight")
     preflight.add_argument("--p21-rules", type=Path, required=True)

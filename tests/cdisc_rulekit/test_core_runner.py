@@ -5,8 +5,16 @@ from cdisc_rulekit.core_runner import build_core_run_plan, write_core_run_plan
 
 def _generated_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
     rule_dir = root / rule_id
-    (rule_dir / "positive" / "01" / "data").mkdir(parents=True)
-    (rule_dir / "negative" / "01" / "data").mkdir(parents=True)
+    for case_type in ("positive", "negative"):
+        data_dir = rule_dir / case_type / "01" / "data"
+        data_dir.mkdir(parents=True)
+        (data_dir / ".env").write_text("PRODUCT=SDTMIG\nVERSION=3-3\n", encoding="utf-8")
+        (data_dir / "_datasets.csv").write_text("Filename,Label\ndm,Demographics\n", encoding="utf-8")
+        (data_dir / "_variables.csv").write_text(
+            "dataset,variable,label,type,length\ndm,DOMAIN,DOMAIN,Char,2\n",
+            encoding="utf-8",
+        )
+        (data_dir / "dm.csv").write_text("STUDYID,DOMAIN,USUBJID,RFICDTC\nS1,DM,01,2020-01-01\n", encoding="utf-8")
     (rule_dir / "rule.yml").write_text("Core:\n  Id: P21PORT-SDTMIG-SD1210-ABCDEF01\n", encoding="utf-8")
     (rule_dir / "manifest.json").write_text(json.dumps({"generated_rule_id": rule_id}), encoding="utf-8")
     return rule_dir
@@ -31,7 +39,9 @@ def test_build_core_run_plan_creates_positive_and_negative_dry_run_commands(tmp_
     assert "--local-rules" in first.command
     assert str(generated_root / first.generated_rule_id) in first.command
     assert "--dataset-path" in first.command
-    assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data") in first.command
+    assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data" / "dm.csv") in first.command
+    assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data" / "_datasets.csv") not in first.command
+    assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data" / "_variables.csv") not in first.command
 
 
 def test_write_core_run_plan_outputs_json_and_markdown(tmp_path):

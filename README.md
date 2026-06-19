@@ -178,11 +178,33 @@ python -m cdisc_rulekit.cli run-core \
   --out output \
   --dry-run
 
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules output/generated_rules \
+  --out output
+
 python -m cdisc_rulekit.cli compare-results \
   --generated-rules output/generated_rules \
   --actual-root output/core_runs \
   --out output/reports
+
+python -m cdisc_rulekit.cli export-rules \
+  --generated-rules output/generated_rules \
+  --open-rules-repo input/cdisc-open-rules
 ```
+
+`run-core --dry-run` writes the planned engine commands without executing them.
+Non-dry-run execution passes only dataset CSV files from each generated
+`positive/01/data` and `negative/01/data` directory to `core-cli`; Open Rules
+auxiliary files such as `.env`, `_datasets.csv`, and `_variables.csv` are not
+passed as datasets. `compare-results` compares structural fields such as rule
+id, dataset/domain, row, variables, USUBJID, and sequence values. Diagnostic
+message wording is not a primary comparison key. Actual skipped CORE cases are
+reported as `ACTUAL_SKIPPED`, separate from structural mismatches.
+
+`export-rules` copies generated draft rules into
+`Unpublished/NEW-RULE/<draft-rule-id>/` by default and writes
+`export_manifest.json` / `export_manifest.csv`. Existing target directories are
+not overwritten unless `--overwrite` is supplied.
 
 Minimal generated outputs include:
 
@@ -196,6 +218,9 @@ Minimal generated outputs include:
 - `reports/structure_validation.md`
 - `reports/core_run_plan.json`
 - `reports/core_run_plan.md`
+- `reports/core_run_execution_summary.csv`
+- `reports/core_run_execution_summary.json`
+- `reports/core_run_execution_summary.md`
 - `reports/comparison_summary.csv`
 - `reports/comparison_summary.json`
 - `reports/comparison_summary.md`

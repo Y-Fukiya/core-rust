@@ -14,7 +14,7 @@ from .io_utils import ensure_dir, split_semicolon_list, write_csv
 from .map_rules import standard_key
 from .models import CanonicalRule
 
-GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND"}
+GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND", "CONDITION"}
 BASE_COLUMNS = ["STUDYID", "DOMAIN", "USUBJID"]
 SUMMARY_FIELDS = [
     "source_rule_key",
@@ -86,6 +86,8 @@ def _required_operators(rule_type: str) -> set[str]:
         return common | {"is_contained_by"}
     if rule_type == "FIND":
         return common | {"exists"}
+    if rule_type == "CONDITION":
+        return common | {"non_empty"}
     return common
 
 
@@ -105,6 +107,35 @@ def _match_terms(rule: CanonicalRule) -> list[str]:
     return split_semicolon_list(rule.raw_condition.get("terms"))
 
 
+def _parse_literal_equality(expression: object) -> tuple[str, str] | None:
+    text = str(expression or "").strip()
+    match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]*)\s*(?:=|==)\s*['\"]?([^'\"]+)['\"]?", text)
+    if not match:
+        return None
+    return match.group(1).upper(), match.group(2)
+
+
+def _parse_non_empty_check(expression: object) -> str | None:
+    text = str(expression or "").strip()
+    patterns = [
+        r"([A-Za-z][A-Za-z0-9_]*)\s*(?:!=|<>)\s*['\"]{2}",
+        r"([A-Za-z][A-Za-z0-9_]*)\s+is\s+not\s+(?:null|empty)",
+    ]
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def _simple_condition_parts(rule: CanonicalRule, variable: str) -> tuple[tuple[str, str], str] | None:
+    equality = _parse_literal_equality(rule.raw_condition.get("when") or rule.raw_condition.get("if"))
+    target = _parse_non_empty_check(rule.raw_condition.get("test")) or variable
+    if not equality or target.upper() != variable:
+        return None
+    return equality, target
+
+
 def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[str, Any] | None, str | None]:
     rule_type = (rule.p21_rule_type or "").upper()
     checks: list[dict[str, Any]] = []
@@ -122,6 +153,13 @@ def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[
         checks.append({"name": variable, "operator": "is_contained_by", "values": terms})
     elif rule_type == "FIND":
         checks.append({"name": variable, "operator": "exists"})
+    elif rule_type == "CONDITION":
+        condition_parts = _simple_condition_parts(rule, variable)
+        if not condition_parts:
+            return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
+        (condition_variable, condition_value), target = condition_parts
+        checks.append({"name": condition_variable, "operator": "equal_to", "value": condition_value})
+        checks.append({"name": target, "operator": "non_empty"})
     else:
         return None, "UNSUPPORTED_RULE_TYPE"
     checks.append({"name": "DOMAIN", "operator": "equal_to", "value": domain})
@@ -177,7 +215,32 @@ def _positive_negative_values(rule: CanonicalRule, variable: str) -> tuple[str, 
         return "VALID", "invalid value"
     if rule_type == "FIND":
         return "Y", ""
+    if _is_numeric_variable(variable):
+        return "1", ""
     return "Y", ""
+
+
+def _is_numeric_variable(variable: str) -> bool:
+    upper = variable.upper()
+    return upper.endswith("NUM") or upper.endswith("SEQ")
+
+
+def _variable_type(variable: str) -> str:
+    return "Num" if _is_numeric_variable(variable) else "Char"
+
+
+def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -> dict[str, str]:
+    if (rule.p21_rule_type or "").upper() != "CONDITION":
+        return {}
+    condition_parts = _simple_condition_parts(rule, variable)
+    if not condition_parts:
+        return {}
+    (condition_variable, condition_value), _target = condition_parts
+    positive_value, negative_value = _positive_negative_values(rule, variable)
+    return {
+        condition_variable: condition_value,
+        variable: positive_value if case_type == "positive" else negative_value,
+    }
 
 
 def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain: str, variable: str) -> None:
@@ -186,9 +249,11 @@ def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain
     dataset = _dataset_name(domain)
     positive_value, negative_value = _positive_negative_values(rule, variable)
     value = positive_value if case_type == "positive" else negative_value
-    columns = list(dict.fromkeys([*BASE_COLUMNS, variable]))
+    condition_values = _condition_case_values(rule, variable, case_type)
+    columns = list(dict.fromkeys([*BASE_COLUMNS, *condition_values.keys(), variable]))
     row = {column: "" for column in columns}
     row.update({"STUDYID": "CDISC-P21PORT", "DOMAIN": domain, "USUBJID": "P21PORT-001", variable: value})
+    row.update(condition_values)
 
     (data_dir / ".env").write_text(
         f"PRODUCT={_product_name(rule)}\nVERSION={_version_value(rule)}\n",
@@ -196,7 +261,13 @@ def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain
     )
     write_csv(data_dir / "_datasets.csv", [{"Filename": dataset, "Label": f"{domain} generated test data"}], ["Filename", "Label"])
     variable_rows = [
-        {"dataset": dataset, "variable": column, "label": column, "type": "Char", "length": max(1, len(str(row[column])) or 1)}
+        {
+            "dataset": dataset,
+            "variable": column,
+            "label": column,
+            "type": _variable_type(column),
+            "length": max(1, len(str(row[column])) or 1),
+        }
         for column in columns
     ]
     write_csv(data_dir / "_variables.csv", variable_rows, ["dataset", "variable", "label", "type", "length"])

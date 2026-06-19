@@ -6,8 +6,17 @@ import sys
 
 def _generated_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
     rule_dir = root / rule_id
-    (rule_dir / "positive" / "01" / "data").mkdir(parents=True)
-    (rule_dir / "negative" / "01" / "data").mkdir(parents=True)
+    for case_type in ("positive", "negative"):
+        data_dir = rule_dir / case_type / "01" / "data"
+        data_dir.mkdir(parents=True)
+        (data_dir / ".env").write_text("PRODUCT=SDTMIG\nVERSION=3-3\n", encoding="utf-8")
+        (data_dir / "_datasets.csv").write_text("Filename,Label\ndm,Demographics\n", encoding="utf-8")
+        (data_dir / "_variables.csv").write_text(
+            "dataset,variable,label,type,length\ndm,DOMAIN,DOMAIN,Char,2\n",
+            encoding="utf-8",
+        )
+        value = "2020-01-01" if case_type == "positive" else ""
+        (data_dir / "dm.csv").write_text(f"STUDYID,DOMAIN,USUBJID,RFICDTC\nS1,DM,01,{value}\n", encoding="utf-8")
     (rule_dir / "rule.yml").write_text("Core:\n  Id: P21PORT-SDTMIG-SD1210-ABCDEF01\n", encoding="utf-8")
     (rule_dir / "manifest.json").write_text(json.dumps({"generated_rule_id": rule_id}), encoding="utf-8")
     (rule_dir / "expected_results.csv").write_text(
@@ -95,3 +104,56 @@ def test_run_core_dry_run_and_compare_results_cli(tmp_path):
 
     assert "compare-results complete: ok" in compare.stdout
     assert (out_dir / "reports" / "comparison_summary.csv").exists()
+
+
+def test_run_core_executes_engine_command_and_writes_execution_summary(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
+    _generated_rule(generated_root, rule_id)
+    fake_engine = tmp_path / "fake_engine.py"
+    fake_engine.write_text(
+        "\n".join(
+            [
+                "import json",
+                "import pathlib",
+                "import sys",
+                "args = sys.argv[1:]",
+                "output = pathlib.Path(args[args.index('--output') + 1])",
+                "output.mkdir(parents=True, exist_ok=True)",
+                "dataset_paths = [args[index + 1] for index, arg in enumerate(args) if arg == '--dataset-path']",
+                "assert all(path.endswith('.csv') for path in dataset_paths)",
+                "assert not any(pathlib.Path(path).name.startswith('_') for path in dataset_paths)",
+                "payload = {'summary': {'error_count': 0}, 'results': []}",
+                "(output / 'report.json').write_text(json.dumps(payload), encoding='utf-8')",
+                "(output / 'report.csv').write_text('rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\\n', encoding='utf-8')",
+                "print('fake engine ok')",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "output"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    run = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "run-core",
+            "--generated-rules",
+            str(generated_root),
+            "--out",
+            str(out_dir),
+            "--engine-command",
+            f"{sys.executable} {fake_engine}",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "run-core execution complete: ok, 2 passed, 0 failed" in run.stdout
+    assert (out_dir / "reports" / "core_run_execution_summary.csv").exists()
+    assert (out_dir / "core_runs" / rule_id / "positive" / "01" / "report.json").exists()

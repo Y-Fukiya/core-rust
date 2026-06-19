@@ -106,3 +106,69 @@ def test_generate_rules_skips_fuzzy_candidates_and_unknown_operators(tmp_path):
     reasons = {row["skip_reason"] for row in summary.rows}
     assert "FUZZY_CANDIDATE_REQUIRES_REVIEW" in reasons
     assert "OPERATOR_NOT_ALLOWED:matches_regex" in reasons
+
+
+def test_generate_rules_marks_numeric_variables_in_variables_csv(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDNUM1",
+        source_rule_key="numeric-key",
+        p21_rule_id="SDNUM1",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Required",
+        domains=["SV"],
+        variables=["VISITNUM"],
+        target="VISITNUM",
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "non_empty"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    with (generated_dir / "positive" / "01" / "data" / "_variables.csv").open(newline="", encoding="utf-8") as handle:
+        variables = list(csv.DictReader(handle))
+    visitnum = next(row for row in variables if row["variable"] == "VISITNUM")
+    assert visitnum["type"] == "Num"
+
+
+def test_generate_rules_supports_simple_same_record_condition(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDCOND1",
+        source_rule_key="condition-key",
+        p21_rule_id="SDCOND1",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["DS"],
+        variables=["DSSTDTC", "DSDECOD"],
+        target="DSSTDTC",
+        raw_condition={"when": "DSDECOD = 'INFORMED CONSENT OBTAINED'", "test": "DSSTDTC != ''"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_SAME_RECORD_CONDITION"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "non_empty"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    assert {"name": "DSDECOD", "operator": "equal_to", "value": "INFORMED CONSENT OBTAINED"} in checks
+    assert {"name": "DSSTDTC", "operator": "non_empty"} in checks
+
+    with (generated_dir / "negative" / "01" / "data" / "ds.csv").open(newline="", encoding="utf-8") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["DSDECOD"] == "INFORMED CONSENT OBTAINED"
+    assert row["DSSTDTC"] == ""
