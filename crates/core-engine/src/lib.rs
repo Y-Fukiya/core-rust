@@ -231,7 +231,10 @@ fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String
     let mut expanded = Vec::new();
     if contains_empty_within_except_last_row_operator(&rule.conditions) {
         for variable in extract_target_variables(&rule.conditions) {
-            push_unique(&mut expanded, &expand_domain_placeholder(dataset, &variable));
+            push_unique(
+                &mut expanded,
+                &expand_domain_placeholder(dataset, &variable),
+            );
         }
     } else if rule.output_variables.is_empty() {
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
@@ -266,9 +269,9 @@ fn collect_issue_variables(
 
 fn contains_empty_within_except_last_row_operator(group: &ConditionGroup) -> bool {
     match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_empty_within_except_last_row_operator)
-        }
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(contains_empty_within_except_last_row_operator),
         ConditionGroup::Not(group) => contains_empty_within_except_last_row_operator(group),
         ConditionGroup::Leaf(condition) => {
             matches!(condition.operator, Operator::EmptyWithinExceptLastRow)
@@ -490,6 +493,16 @@ fn evaluate_condition_with_options(
             &condition.comparator,
             &condition.options,
         ),
+        Operator::DoesNotHaveNextCorrespondingRecord => {
+            evaluate_does_not_have_next_corresponding_record(
+                dataset,
+                frame,
+                row_count,
+                column,
+                &condition.comparator,
+                &condition.options,
+            )
+        }
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -686,7 +699,10 @@ fn evaluate_empty_within_except_last_row(
     comparator: &ValueExpr,
     options: &core_rule_model::OperatorOptions,
 ) -> Result<BooleanMask> {
-    let group_column = expand_domain_placeholder(dataset, &column_name_comparator(comparator)?);
+    let group_column = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::EmptyWithinExceptLastRow, comparator)?,
+    );
     let ordering_column_name = option_string(&options.extra, "ordering").ok_or_else(|| {
         EngineError::MissingComparator {
             operator: Operator::EmptyWithinExceptLastRow.as_name().to_owned(),
@@ -730,6 +746,84 @@ fn evaluate_empty_within_except_last_row(
             let value = ScalarValue::from_any_value(target_column.get(row)?);
             if value.is_empty() {
                 mask[row] = true;
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
+fn evaluate_does_not_have_next_corresponding_record(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let comparator_column_name = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::DoesNotHaveNextCorrespondingRecord, comparator)?,
+    );
+    let comparator_column = frame
+        .column(&comparator_column_name)
+        .map_err(|_| EngineError::MissingColumn(comparator_column_name.clone()))?;
+    let ordering_column_name = option_string(&options.extra, "ordering").ok_or_else(|| {
+        EngineError::MissingComparator {
+            operator: Operator::DoesNotHaveNextCorrespondingRecord
+                .as_name()
+                .to_owned(),
+        }
+    })?;
+    let ordering_column_name = expand_domain_placeholder(dataset, &ordering_column_name);
+    let ordering_column = frame
+        .column(&ordering_column_name)
+        .map_err(|_| EngineError::MissingColumn(ordering_column_name.clone()))?;
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let sort_spec = SortSpec {
+        column: ordering_column_name,
+        descending: false,
+        nulls_first: false,
+    };
+
+    let ordering_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(ordering_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+    let comparator_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(comparator_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+    let target_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(target_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        groups.entry(group_key).or_default().push(row);
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut sorted_rows = rows.clone();
+        sorted_rows.sort_by(|left, right| {
+            compare_optional_sort_value(
+                Some(&ordering_values[*left]),
+                Some(&ordering_values[*right]),
+                &sort_spec,
+            )
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.cmp(right))
+        });
+        for pair in sorted_rows.windows(2) {
+            let current = pair[0];
+            let next = pair[1];
+            if !scalar_equal_with_mode(&target_values[current], &comparator_values[next], false) {
+                mask[current] = true;
             }
         }
     }
@@ -799,12 +893,12 @@ fn sort_specs(comparator: &ValueExpr) -> Result<Vec<SortSpec>> {
     Ok(specs)
 }
 
-fn column_name_comparator(comparator: &ValueExpr) -> Result<String> {
+fn column_name_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<String> {
     match comparator {
         ValueExpr::ColumnRef(value) => Ok(value.clone()),
         ValueExpr::Literal(Value::String(value)) => Ok(value.clone()),
         _ => Err(EngineError::InvalidComparator {
-            operator: Operator::EmptyWithinExceptLastRow.as_name().to_owned(),
+            operator: operator.as_name().to_owned(),
             comparator: comparator.clone(),
         }),
     }
@@ -2203,6 +2297,28 @@ mod tests {
                 &dataset
             )
             .expect("empty within except last row"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_does_not_have_next_corresponding_record() {
+        let dataset = end_date_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "SEENDTC",
+                    Operator::DoesNotHaveNextCorrespondingRecord,
+                    literal("SESTDTC"),
+                    serde_json::Map::from_iter([
+                        ("ordering".to_owned(), json!("SESEQ")),
+                        ("within".to_owned(), json!("USUBJID"))
+                    ])
+                ),
+                &dataset
+            )
+            .expect("does not have next corresponding record"),
             vec![false, true, false, false]
         );
     }
