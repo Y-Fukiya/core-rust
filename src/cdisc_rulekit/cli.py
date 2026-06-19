@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 from .classify import classify_rules
+from .compare_results import compare_generated_results, write_comparison_report
+from .core_runner import DEFAULT_ENGINE_COMMAND, build_core_run_plan, write_core_run_plan
 from .emit import emit_conversion_status, emit_core_catalog, emit_mapping, emit_p21_catalog
 from .generate_rules import generate_rules, operator_set_from_inventory_rows
 from .inputs import resolve_open_rules_input
@@ -197,6 +199,30 @@ def cmd_validate_structure(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def cmd_run_core(args: argparse.Namespace) -> int:
+    if not args.dry_run:
+        print("run-core execution is not implemented yet; use --dry-run")
+        return 2
+    root = Path(args.out)
+    plan = build_core_run_plan(
+        args.generated_rules,
+        run_root=root / "core_runs",
+        engine_command=args.engine_command,
+        dry_run=True,
+    )
+    write_core_run_plan(root / "reports", plan)
+    print(f"run-core dry-run complete: {plan.case_count} cases planned")
+    return 0
+
+
+def cmd_compare_results(args: argparse.Namespace) -> int:
+    result = compare_generated_results(args.generated_rules, args.actual_root)
+    write_comparison_report(args.out, result)
+    status = "ok" if result.ok else "failed"
+    print(f"compare-results complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
+    return 0 if result.ok else 1
+
+
 def _preflight_work_root(out: Path) -> Path:
     return out.parent / "_work" if out.name == "reports" else out / "_work"
 
@@ -327,6 +353,19 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--generated-rules", type=Path, required=True)
     validate.add_argument("--out", type=Path, required=True)
     validate.set_defaults(func=cmd_validate_structure)
+
+    run_core = subcommands.add_parser("run-core")
+    run_core.add_argument("--generated-rules", type=Path, required=True)
+    run_core.add_argument("--out", type=Path, required=True)
+    run_core.add_argument("--engine-command", default=DEFAULT_ENGINE_COMMAND)
+    run_core.add_argument("--dry-run", action="store_true")
+    run_core.set_defaults(func=cmd_run_core)
+
+    compare = subcommands.add_parser("compare-results")
+    compare.add_argument("--generated-rules", type=Path, required=True)
+    compare.add_argument("--actual-root", type=Path, required=True)
+    compare.add_argument("--out", type=Path, required=True)
+    compare.set_defaults(func=cmd_compare_results)
 
     preflight = subcommands.add_parser("pilot-preflight")
     preflight.add_argument("--p21-rules", type=Path, required=True)

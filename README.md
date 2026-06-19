@@ -172,6 +172,16 @@ python -m cdisc_rulekit.cli generate \
 python -m cdisc_rulekit.cli validate-structure \
   --generated-rules output/generated_rules \
   --out output/reports
+
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules output/generated_rules \
+  --out output \
+  --dry-run
+
+python -m cdisc_rulekit.cli compare-results \
+  --generated-rules output/generated_rules \
+  --actual-root output/core_runs \
+  --out output/reports
 ```
 
 Minimal generated outputs include:
@@ -184,6 +194,11 @@ Minimal generated outputs include:
 - `reports/generation_summary.csv`
 - `reports/generation_summary.json`
 - `reports/structure_validation.md`
+- `reports/core_run_plan.json`
+- `reports/core_run_plan.md`
+- `reports/comparison_summary.csv`
+- `reports/comparison_summary.json`
+- `reports/comparison_summary.md`
 
 ## Workspace Layout
 
