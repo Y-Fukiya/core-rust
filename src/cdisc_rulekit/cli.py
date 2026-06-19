@@ -227,7 +227,7 @@ def cmd_run_core(args: argparse.Namespace) -> int:
         print(f"run-core dry-run complete: {plan.case_count} cases planned")
         return 0
 
-    result = execute_core_run_plan(plan, engine_cwd=args.engine_cwd)
+    result = execute_core_run_plan(plan, engine_cwd=args.engine_cwd, workers=args.workers)
     write_core_run_execution_report(root / "reports", result)
     status = "ok" if result.ok else "failed"
     print(f"run-core execution complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
@@ -392,6 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_core.add_argument("--output-mode", choices=["directory", "file-base"], default="directory")
     run_core.add_argument("--data-mode", choices=["dataset-paths", "data-dir"], default="dataset-paths")
     run_core.add_argument("--engine-cwd", type=Path, default=None)
+    run_core.add_argument("--workers", type=int, default=1)
     run_core.add_argument("--dry-run", action="store_true")
     run_core.set_defaults(func=cmd_run_core)
 

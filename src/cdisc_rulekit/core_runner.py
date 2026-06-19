@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -184,30 +185,39 @@ def write_core_run_plan(out_dir: str | Path, plan: CoreRunPlan) -> None:
     (out / "core_run_plan.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def execute_core_run_plan(plan: CoreRunPlan, engine_cwd: str | Path | None = None) -> CoreRunExecutionResult:
-    rows: list[dict[str, object]] = []
+def _execute_core_run_item(item: CoreRunPlanItem, cwd: str | None) -> dict[str, object]:
+    ensure_dir(Path(item.output_dir))
+    completed = subprocess.run(
+        item.command,
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    return {
+        "generated_rule_id": item.generated_rule_id,
+        "case_type": item.case_type,
+        "case_id": item.case_id,
+        "returncode": completed.returncode,
+        "status": "PASS" if completed.returncode == 0 else "FAIL",
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
+        "output_dir": item.output_dir,
+    }
+
+
+def execute_core_run_plan(
+    plan: CoreRunPlan,
+    engine_cwd: str | Path | None = None,
+    workers: int = 1,
+) -> CoreRunExecutionResult:
     cwd = str(engine_cwd) if engine_cwd else None
-    for item in plan.items:
-        ensure_dir(Path(item.output_dir))
-        completed = subprocess.run(
-            item.command,
-            check=False,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-        )
-        rows.append(
-            {
-                "generated_rule_id": item.generated_rule_id,
-                "case_type": item.case_type,
-                "case_id": item.case_id,
-                "returncode": completed.returncode,
-                "status": "PASS" if completed.returncode == 0 else "FAIL",
-                "stdout": completed.stdout.strip(),
-                "stderr": completed.stderr.strip(),
-                "output_dir": item.output_dir,
-            },
-        )
+    if workers <= 1:
+        rows = [_execute_core_run_item(item, cwd) for item in plan.items]
+        return CoreRunExecutionResult(rows)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        rows = list(executor.map(lambda item: _execute_core_run_item(item, cwd), plan.items))
     return CoreRunExecutionResult(rows)
 
 

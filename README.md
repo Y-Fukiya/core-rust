@@ -199,7 +199,8 @@ python -m cdisc_rulekit.cli run-core \
   --engine-command "/Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/.venv/bin/python /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
   --output-mode file-base \
   --data-mode data-dir \
-  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine
+  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine \
+  --workers 6
 
 python -m cdisc_rulekit.cli compare-results \
   --generated-rules output/generated_rules \
@@ -218,7 +219,9 @@ Open Rules auxiliary files such as `.env`, `_datasets.csv`, and
 `_variables.csv` are not passed as datasets. For the official Python CORE CLI,
 use `--data-mode data-dir` so the full Open Rules test data directory is passed
 with `_datasets.csv` / `_variables.csv`, and `--output-mode file-base` so
-`report.json` / `report.csv` lands under the case output directory.
+`report.json` / `report.csv` lands under the case output directory. `--workers`
+runs case-level CORE invocations in parallel; keep this moderate because the
+official CORE CLI also initializes its own validation machinery per process.
 `compare-results` compares structural fields such as rule id, dataset/domain,
 row, variables, USUBJID, and sequence values. It supports both the Rust harness
 `results/errors` JSON shape and official Python CORE `Issue_Details` JSON
@@ -258,6 +261,21 @@ Official Python CORE smoke:
 - `run-core` against one generated rule with official CORE options: 2 passed,
   0 failed
 - `compare-results` against that official CORE output: 2 passed, 0 failed
+
+Official Python CORE full run:
+
+- Run directory: `output/sdtmig_official_core_full`
+- Generated rules executed: 395
+- Case executions: 790
+- CORE CLI execution summary: 790 passed, 0 failed
+- Structural comparison summary: 460 passed, 330 non-pass
+- Non-pass classification:
+  - `NEGATIVE_DID_NOT_TRIGGER`: 218
+  - `EXPECTED_VARIABLES_TOO_NARROW`: 94
+  - `ACTUAL_SKIPPED_BY_CORE`: 12
+  - `POSITIVE_TRIGGERED_UNEXPECTEDLY`: 6
+- Classification artifacts:
+  `reports/official_core_failure_classification.{csv,json,md}`
 
 Minimal generated outputs include:
 

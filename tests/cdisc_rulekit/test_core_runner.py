@@ -109,3 +109,32 @@ def test_execute_core_run_plan_can_run_from_engine_cwd(tmp_path):
     result = execute_core_run_plan(plan, engine_cwd=engine_dir)
 
     assert result.ok
+
+
+def test_execute_core_run_plan_supports_workers(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    fake_engine = tmp_path / "fake_engine.py"
+    fake_engine.write_text(
+        "\n".join(
+            [
+                "import pathlib",
+                "import sys",
+                "output = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])",
+                "output.mkdir(parents=True, exist_ok=True)",
+                "(output / 'report.json').write_text('{}', encoding='utf-8')",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command=f"python {fake_engine}",
+        dry_run=False,
+    )
+
+    result = execute_core_run_plan(plan, workers=2)
+
+    assert result.ok
+    assert result.pass_count == 2
