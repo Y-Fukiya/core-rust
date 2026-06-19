@@ -63,12 +63,20 @@ def _variables(value: object) -> list[str]:
 def _issue_from_error(error: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, object]:
     fallback = fallback or {}
     return {
-        "rule_id": error.get("rule_id") or fallback.get("rule_id") or "",
+        "rule_id": error.get("rule_id")
+        or error.get("core_id")
+        or fallback.get("rule_id")
+        or fallback.get("core_id")
+        or "",
         "dataset": error.get("dataset") or error.get("domain") or fallback.get("dataset") or fallback.get("domain") or "",
         "row": str(error.get("row") or ""),
         "variables": _variables(error.get("variables") or fallback.get("variables")),
-        "usubjid": error.get("usubjid") or fallback.get("usubjid") or "",
-        "seq": str(error.get("seq") or fallback.get("seq") or ""),
+        "usubjid": error.get("usubjid")
+        or error.get("USUBJID")
+        or fallback.get("usubjid")
+        or fallback.get("USUBJID")
+        or "",
+        "seq": str(error.get("seq") or error.get("SEQ") or fallback.get("seq") or fallback.get("SEQ") or ""),
     }
 
 
@@ -76,6 +84,14 @@ def _actual_from_json(path: Path) -> tuple[list[dict[str, object]], int]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     issues: list[dict[str, object]] = []
     skipped_count = 0
+    if "Issue_Details" in payload or "Rules_Report" in payload:
+        for result in payload.get("Rules_Report") or []:
+            if str(result.get("status") or "").lower() == "skipped":
+                skipped_count += 1
+        for error in payload.get("Issue_Details") or []:
+            if isinstance(error, dict):
+                issues.append(_issue_from_error(error))
+        return issues, skipped_count
     for result in payload.get("results") or []:
         if str(result.get("execution_status") or "").lower() == "skipped":
             skipped_count += 1

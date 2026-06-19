@@ -95,18 +95,28 @@ def _command(
     rule_dir: Path,
     data_dir: Path,
     output_dir: Path,
+    output_mode: str = "directory",
+    data_mode: str = "dataset-paths",
 ) -> list[str]:
+    if output_mode not in {"directory", "file-base"}:
+        raise ValueError(f"Unsupported output mode: {output_mode}")
+    if data_mode not in {"dataset-paths", "data-dir"}:
+        raise ValueError(f"Unsupported data mode: {data_mode}")
+    output_argument = output_dir / "report" if output_mode == "file-base" else output_dir
     command = [
         *shlex.split(engine_command),
         "--local-rules",
         str(rule_dir / "rule.yml"),
     ]
-    for dataset_path in _dataset_csv_paths(data_dir):
-        command.extend(["--dataset-path", str(dataset_path)])
+    if data_mode == "data-dir":
+        command.extend(["--data", str(data_dir)])
+    else:
+        for dataset_path in _dataset_csv_paths(data_dir):
+            command.extend(["--dataset-path", str(dataset_path)])
     command.extend(
         [
             "--output",
-            str(output_dir),
+            str(output_argument),
         ],
     )
     return [
@@ -119,6 +129,8 @@ def build_core_run_plan(
     run_root: str | Path,
     engine_command: str = DEFAULT_ENGINE_COMMAND,
     dry_run: bool = True,
+    output_mode: str = "directory",
+    data_mode: str = "dataset-paths",
 ) -> CoreRunPlan:
     generated_root = Path(generated_rules_dir)
     run_root_path = Path(run_root)
@@ -139,7 +151,7 @@ def build_core_run_plan(
                     rule_yml=str(rule_yml),
                     data_dir=str(data_dir),
                     output_dir=str(output_dir),
-                    command=_command(engine_command, rule_dir, data_dir, output_dir),
+                    command=_command(engine_command, rule_dir, data_dir, output_dir, output_mode, data_mode),
                     dry_run=dry_run,
                 ),
             )
@@ -172,8 +184,9 @@ def write_core_run_plan(out_dir: str | Path, plan: CoreRunPlan) -> None:
     (out / "core_run_plan.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def execute_core_run_plan(plan: CoreRunPlan) -> CoreRunExecutionResult:
+def execute_core_run_plan(plan: CoreRunPlan, engine_cwd: str | Path | None = None) -> CoreRunExecutionResult:
     rows: list[dict[str, object]] = []
+    cwd = str(engine_cwd) if engine_cwd else None
     for item in plan.items:
         ensure_dir(Path(item.output_dir))
         completed = subprocess.run(
@@ -181,6 +194,7 @@ def execute_core_run_plan(plan: CoreRunPlan) -> CoreRunExecutionResult:
             check=False,
             capture_output=True,
             text=True,
+            cwd=cwd,
         )
         rows.append(
             {

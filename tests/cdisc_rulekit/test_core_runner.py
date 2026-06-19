@@ -1,6 +1,6 @@
 import json
 
-from cdisc_rulekit.core_runner import build_core_run_plan, write_core_run_plan
+from cdisc_rulekit.core_runner import build_core_run_plan, execute_core_run_plan, write_core_run_plan
 
 
 def _generated_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
@@ -56,3 +56,56 @@ def test_write_core_run_plan_outputs_json_and_markdown(tmp_path):
     assert payload["dry_run"] is True
     assert payload["case_count"] == 2
     assert (tmp_path / "reports" / "core_run_plan.md").exists()
+
+
+def test_build_core_run_plan_can_write_file_base_output_for_python_core(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="python core.py validate -s SDTMIG -v 3.4 --output-format json",
+        output_mode="file-base",
+        data_mode="data-dir",
+    )
+
+    first = plan.items[0]
+    assert first.command[first.command.index("--output") + 1] == str(
+        tmp_path / "core_runs" / first.generated_rule_id / first.case_type / "01" / "report"
+    )
+    assert first.command[first.command.index("--data") + 1] == str(
+        generated_root / first.generated_rule_id / first.case_type / "01" / "data"
+    )
+    assert "--dataset-path" not in first.command
+
+
+def test_execute_core_run_plan_can_run_from_engine_cwd(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    engine_dir = tmp_path / "engine"
+    engine_dir.mkdir()
+    fake_engine = engine_dir / "fake_engine.py"
+    fake_engine.write_text(
+        "\n".join(
+            [
+                "import pathlib",
+                "import sys",
+                "assert pathlib.Path.cwd().name == 'engine'",
+                "output = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])",
+                "output.mkdir(parents=True, exist_ok=True)",
+                "(output / 'report.json').write_text('{}', encoding='utf-8')",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command=f"python {fake_engine}",
+        dry_run=False,
+    )
+
+    result = execute_core_run_plan(plan, engine_cwd=engine_dir)
+
+    assert result.ok

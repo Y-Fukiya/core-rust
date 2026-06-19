@@ -17,6 +17,11 @@ from .p21_condition import infer_condition_target, parse_expected_test, parse_wh
 
 GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND", "CONDITION"}
 BASE_COLUMNS = ["STUDYID", "DOMAIN", "USUBJID"]
+CORE_OPERATOR_ALIASES = {
+    "does_not_match_regex": "not_matches_regex",
+    "is_empty": "empty",
+    "is_not_empty": "non_empty",
+}
 SUMMARY_FIELDS = [
     "source_rule_key",
     "p21_rule_id",
@@ -111,6 +116,21 @@ def _unsupported_operator(required: set[str], allowed: set[str]) -> str | None:
         if operator not in allowed:
             return operator
     return None
+
+
+def _render_core_check(check: dict[str, Any]) -> dict[str, Any]:
+    operator = check.get("operator")
+    if operator:
+        rendered = dict(check)
+        rendered["operator"] = CORE_OPERATOR_ALIASES.get(str(operator), str(operator))
+        return rendered
+
+    rendered: dict[str, Any] = {}
+    for key in ("all", "any"):
+        children = check.get(key)
+        if children is not None:
+            rendered[key] = [_render_core_check(child) for child in children]
+    return rendered
 
 
 def _regex_pattern(rule: CanonicalRule) -> str | None:
@@ -224,7 +244,7 @@ def _rule_yml(rule: CanonicalRule, rule_id: str, domain: str, check: dict[str, A
             "Description": rule.description or rule.message or f"Draft port of {rule.p21_rule_id}",
         },
         "Authorities": [{"Organization": "CDISC", "Standards": [standard_entry]}],
-        "Check": check,
+        "Check": _render_core_check(check),
         "Outcome": {"Message": rule.message or f"{rule.p21_rule_id} violation"},
         "Rule Type": "Record Data",
         "Scope": {"Domains": {"Include": [domain]}},

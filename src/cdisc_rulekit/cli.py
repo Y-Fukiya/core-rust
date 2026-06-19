@@ -219,13 +219,15 @@ def cmd_run_core(args: argparse.Namespace) -> int:
         run_root=root / "core_runs",
         engine_command=args.engine_command,
         dry_run=args.dry_run,
+        output_mode=args.output_mode,
+        data_mode=args.data_mode,
     )
     write_core_run_plan(root / "reports", plan)
     if args.dry_run:
         print(f"run-core dry-run complete: {plan.case_count} cases planned")
         return 0
 
-    result = execute_core_run_plan(plan)
+    result = execute_core_run_plan(plan, engine_cwd=args.engine_cwd)
     write_core_run_execution_report(root / "reports", result)
     status = "ok" if result.ok else "failed"
     print(f"run-core execution complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
@@ -387,6 +389,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_core.add_argument("--generated-rules", type=Path, required=True)
     run_core.add_argument("--out", type=Path, required=True)
     run_core.add_argument("--engine-command", default=DEFAULT_ENGINE_COMMAND)
+    run_core.add_argument("--output-mode", choices=["directory", "file-base"], default="directory")
+    run_core.add_argument("--data-mode", choices=["dataset-paths", "data-dir"], default="dataset-paths")
+    run_core.add_argument("--engine-cwd", type=Path, default=None)
     run_core.add_argument("--dry-run", action="store_true")
     run_core.set_defaults(func=cmd_run_core)
 

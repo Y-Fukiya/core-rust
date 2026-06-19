@@ -191,6 +191,16 @@ python -m cdisc_rulekit.cli run-core \
   --generated-rules output/generated_rules \
   --out output
 
+# Official Python CORE source checkout. Use absolute paths when --engine-cwd is
+# set because CORE reads resources relative to its repository root.
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules /Users/yfukiya/Documents/core-rust/output/generated_rules \
+  --out /Users/yfukiya/Documents/core-rust/output/core_cli_run \
+  --engine-command "/Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/.venv/bin/python /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
+  --output-mode file-base \
+  --data-mode data-dir \
+  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine
+
 python -m cdisc_rulekit.cli compare-results \
   --generated-rules output/generated_rules \
   --actual-root output/core_runs \
@@ -202,13 +212,19 @@ python -m cdisc_rulekit.cli export-rules \
 ```
 
 `run-core --dry-run` writes the planned engine commands without executing them.
-Non-dry-run execution passes only dataset CSV files from each generated
-`positive/01/data` and `negative/01/data` directory to `core-cli`; Open Rules
-auxiliary files such as `.env`, `_datasets.csv`, and `_variables.csv` are not
-passed as datasets. `compare-results` compares structural fields such as rule
-id, dataset/domain, row, variables, USUBJID, and sequence values. Diagnostic
-message wording is not a primary comparison key. Actual skipped CORE cases are
-reported as `ACTUAL_SKIPPED`, separate from structural mismatches.
+By default, non-dry-run execution passes only dataset CSV files from each
+generated `positive/01/data` and `negative/01/data` directory to `core-cli`;
+Open Rules auxiliary files such as `.env`, `_datasets.csv`, and
+`_variables.csv` are not passed as datasets. For the official Python CORE CLI,
+use `--data-mode data-dir` so the full Open Rules test data directory is passed
+with `_datasets.csv` / `_variables.csv`, and `--output-mode file-base` so
+`report.json` / `report.csv` lands under the case output directory.
+`compare-results` compares structural fields such as rule id, dataset/domain,
+row, variables, USUBJID, and sequence values. It supports both the Rust harness
+`results/errors` JSON shape and official Python CORE `Issue_Details` JSON
+shape. Diagnostic message wording is not a primary comparison key. Actual
+skipped CORE cases are reported as `ACTUAL_SKIPPED`, separate from structural
+mismatches.
 
 `export-rules` copies generated draft rules into
 `Unpublished/NEW-RULE/<draft-rule-id>/` by default and writes
@@ -233,6 +249,15 @@ Latest expanded SDTM-IG draft export:
 - Export result: 395 exported, 0 skipped
 - `Published/` was not modified. Fuzzy-derived rules remain draft/review items
   through the `FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW` manifest warning.
+
+Official Python CORE smoke:
+
+- CORE source checkout: `input/cdisc-rules-engine` at commit `b8202fe`
+- Installed into `input/cdisc-rules-engine/.venv` with Python 3.12
+- `core.py test-validate json`: passed when run from the CORE repository root
+- `run-core` against one generated rule with official CORE options: 2 passed,
+  0 failed
+- `compare-results` against that official CORE output: 2 passed, 0 failed
 
 Minimal generated outputs include:
 

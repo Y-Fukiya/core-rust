@@ -7,6 +7,25 @@ from cdisc_rulekit.generate_rules import generate_rules, operator_set_from_inven
 from cdisc_rulekit.models import CanonicalRule
 from cdisc_rulekit.validate_generated import validate_generated_rules
 
+_OPERATOR_ALIASES = {
+    "does_not_match_regex": "not_matches_regex",
+    "is_empty": "empty",
+    "is_not_empty": "non_empty",
+}
+
+
+def _check(operator, **payload):
+    return {**payload, "operator": _OPERATOR_ALIASES.get(operator, operator)}
+
+
+def _payloads(checks, operator):
+    core_operator = _OPERATOR_ALIASES.get(operator, operator)
+    return [
+        {key: value for key, value in check.items() if key != "operator"}
+        for check in checks
+        if isinstance(check, dict) and check.get("operator") == core_operator
+    ]
+
 
 def test_generate_rules_writes_minimal_required_rule_and_test_data(tmp_path):
     rule = CanonicalRule(
@@ -41,8 +60,7 @@ def test_generate_rules_writes_minimal_required_rule_and_test_data(tmp_path):
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     assert rule_yml["Core"]["Id"] == generated_dir.name
     assert rule_yml["Core"]["Status"] == "Draft"
-    assert rule_yml["Check"]["all"][0]["operator"] == "is_empty"
-    assert rule_yml["Check"]["all"][0]["name"] == "RFICDTC"
+    assert rule_yml["Check"]["all"][0] == _check("is_empty", name="RFICDTC")
     assert rule_yml["Scope"]["Domains"]["Include"] == ["DM"]
 
     manifest = json.loads((generated_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -167,8 +185,11 @@ def test_generate_rules_writes_match_as_negative_membership_check(tmp_path):
     generated_dir = next((tmp_path / "generated_rules").iterdir())
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     checks = rule_yml["Check"]["all"]
-    match_check = next(check for check in checks if check["name"] == "TDSTOFF")
-    assert match_check["operator"] == "is_not_contained_by"
+    match_check = next(
+        payload
+        for payload in _payloads(checks, "is_not_contained_by")
+        if payload["name"] == "TDSTOFF"
+    )
     assert set(match_check["value"]) == {"Y", "N"}
 
     with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
@@ -243,8 +264,8 @@ def test_generate_rules_supports_simple_same_record_condition(tmp_path):
     generated_dir = next((tmp_path / "generated_rules").iterdir())
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     checks = rule_yml["Check"]["all"]
-    assert {"name": "DSDECOD", "operator": "equal_to", "value": "INFORMED CONSENT OBTAINED"} in checks
-    assert {"name": "DSSTDTC", "operator": "is_empty"} in checks
+    assert _check("equal_to", name="DSDECOD", value="INFORMED CONSENT OBTAINED") in checks
+    assert _check("is_empty", name="DSSTDTC") in checks
 
     with (generated_dir / "negative" / "01" / "data" / "ds.csv").open(newline="", encoding="utf-8") as handle:
         row = next(csv.DictReader(handle))
@@ -277,8 +298,8 @@ def test_generate_rules_infers_condition_target_and_inverts_empty_check(tmp_path
     generated_dir = next((tmp_path / "generated_rules").iterdir())
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     checks = rule_yml["Check"]["all"]
-    assert {"name": "DSCAT", "operator": "equal_to", "value": "PROTOCOL MILESTONE"} in checks
-    assert {"name": "EPOCH", "operator": "is_not_empty"} in checks
+    assert _check("equal_to", name="DSCAT", value="PROTOCOL MILESTONE") in checks
+    assert _check("is_not_empty", name="EPOCH") in checks
 
     with (generated_dir / "positive" / "01" / "data" / "ds.csv").open(newline="", encoding="utf-8") as handle:
         positive = next(csv.DictReader(handle))
@@ -316,8 +337,8 @@ def test_generate_rules_supports_or_condition_guard(tmp_path):
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     checks = rule_yml["Check"]["all"]
     assert {"any": [
-        {"name": "AEOUT", "operator": "equal_to", "value": "NOT RECOVERED/NOT RESOLVED"},
-        {"name": "AEOUT", "operator": "equal_to", "value": "UNKNOWN"},
+        _check("equal_to", name="AEOUT", value="NOT RECOVERED/NOT RESOLVED"),
+        _check("equal_to", name="AEOUT", value="UNKNOWN"),
     ]} in checks
 
     with (generated_dir / "negative" / "01" / "data" / "ae.csv").open(newline="", encoding="utf-8") as handle:
@@ -351,9 +372,9 @@ def test_generate_rules_supports_and_condition_guard(tmp_path):
     generated_dir = next((tmp_path / "generated_rules").iterdir())
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
     checks = rule_yml["Check"]["all"]
-    assert {"name": "TSPARMCD", "operator": "equal_to", "value": "INDIC"} in checks
-    assert {"name": "TSVALNF", "operator": "is_empty"} in checks
-    assert {"name": "TSVCDREF", "operator": "not_equal_to", "value": "SNOMED"} in checks
+    assert _check("equal_to", name="TSPARMCD", value="INDIC") in checks
+    assert _check("is_empty", name="TSVALNF") in checks
+    assert _check("not_equal_to", name="TSVCDREF", value="SNOMED") in checks
 
     with (generated_dir / "negative" / "01" / "data" / "ts.csv").open(newline="", encoding="utf-8") as handle:
         negative = next(csv.DictReader(handle))
@@ -387,7 +408,7 @@ def test_generate_rules_writes_find_as_missing_presence_check(tmp_path):
     assert summary.generated_count == 1
     generated_dir = next((tmp_path / "generated_rules").iterdir())
     rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
-    assert {"name": "DIPARMCD", "operator": "not_exists"} in rule_yml["Check"]["all"]
+    assert _check("not_exists", name="DIPARMCD") in rule_yml["Check"]["all"]
 
 
 def test_generate_rules_uses_valid_duration_for_iso_duration_regex(tmp_path):

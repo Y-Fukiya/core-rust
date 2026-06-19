@@ -123,6 +123,49 @@ def test_compare_generated_results_matches_optional_usubjid_and_seq_when_expecte
     assert result.rows[0]["notes"] == "structural issue fields did not match"
 
 
+def test_compare_generated_results_reads_official_core_json_report(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD0087-04B4C7DE"
+    rule_dir = generated_root / rule_id
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "expected_results.csv").write_text(
+        "\n".join(
+            [
+                "case_type,case_id,expected_issue_count,rule_id,dataset,row,variables,usubjid,seq",
+                f"negative,01,1,{rule_id},DM,1,RFSTDTC|DOMAIN,P21PORT-001,",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    actual_dir = tmp_path / "core_runs" / rule_id / "negative" / "01"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "Issue_Details": [
+                    {
+                        "core_id": rule_id,
+                        "message": "Official CORE wording is not a comparison key",
+                        "dataset": "DM",
+                        "USUBJID": "P21PORT-001",
+                        "row": 1,
+                        "SEQ": "",
+                        "variables": ["RFSTDTC", "DOMAIN"],
+                    },
+                ],
+                "Rules_Report": [{"core_id": rule_id, "status": "ISSUE REPORTED"}],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    result = compare_generated_results(generated_root, tmp_path / "core_runs")
+
+    assert result.ok
+    assert result.rows[0]["status"] == "PASS"
+
+
 def test_compare_generated_results_reports_actual_skipped_separately_from_failure(tmp_path):
     generated_root = tmp_path / "generated_rules"
     rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
