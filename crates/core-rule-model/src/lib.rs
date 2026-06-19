@@ -496,6 +496,7 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
             })?
         }
         Some("yaml" | "yml") => {
+            let source = quote_yaml_value_literals(&source);
             serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
                 path: path.to_path_buf(),
                 message: source.to_string(),
@@ -506,6 +507,30 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
     };
 
     normalize_rule(value)
+}
+
+fn quote_yaml_value_literals(source: &str) -> String {
+    source
+        .lines()
+        .map(quote_yaml_value_literal_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn quote_yaml_value_literal_line(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("value:") else {
+        return line.to_owned();
+    };
+    let scalar = rest.trim();
+    if !matches!(
+        scalar,
+        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
+    ) {
+        return line.to_owned();
+    }
+    let indent_len = line.len() - trimmed.len();
+    format!("{}value: \"{}\"", &line[..indent_len], scalar)
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -606,14 +631,16 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
             .get("Check")
             .ok_or(RuleModelError::MissingField("Check"))?,
     )?;
+    let outcome = object
+        .get("Outcome")
+        .and_then(Value::as_object)
+        .ok_or(RuleModelError::MissingField("Outcome"))?;
+    let outcome_message =
+        string_field(outcome, "Message").ok_or(RuleModelError::MissingField("Outcome.Message"))?;
     let actions = vec![ActionSpec {
         name: "generate_dataset_error_objects".to_owned(),
         params: serde_json::json!({
-            "message": object
-                .get("Outcome")
-                .and_then(Value::as_object)
-                .and_then(|outcome| string_field(outcome, "Message"))
-                .ok_or(RuleModelError::MissingField("Outcome.Message"))?
+            "message": outcome_message
         }),
     }];
 
@@ -642,8 +669,8 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
             .map(operation_specs_from_value)
             .transpose()?
             .unwrap_or_default(),
-        output_variables: string_vec_field(object, "Output Variables"),
-        grouping_variables: string_vec_field(object, "Grouping Variables"),
+        output_variables: string_vec_field(outcome, "Output Variables"),
+        grouping_variables: string_vec_field(outcome, "Grouping Variables"),
         use_case: scope.and_then(|scope| string_field(scope, "Use Case")),
         status,
         raw: Some(value),
@@ -681,25 +708,70 @@ fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
         string_field(object, "operator").ok_or(RuleModelError::MissingField("Check.operator"))?;
     let mut extra = BTreeMap::new();
     for (key, value) in object {
-        if !matches!(key.as_str(), "name" | "target" | "operator" | "value") {
+        if !matches!(
+            key.as_str(),
+            "name" | "target" | "operator" | "value" | "value_is_literal"
+        ) {
             extra.insert(key.clone(), value.clone());
         }
     }
+    let operator = Operator::from_name(operator_name);
 
     Ok(ConditionGroup::Leaf(Condition {
         target: string_field(object, "name").or_else(|| string_field(object, "target")),
-        operator: Operator::from_name(operator_name),
+        operator: operator.clone(),
         comparator: object
             .get("value")
             .cloned()
-            .map(value_expr_from_value)
+            .map(|value| value_expr_from_condition_value(value, object, &operator))
             .unwrap_or(ValueExpr::Null),
         options: OperatorOptions { extra },
     }))
 }
 
+fn value_expr_from_condition_value(
+    value: Value,
+    object: &Map<String, Value>,
+    operator: &Operator,
+) -> ValueExpr {
+    if object
+        .get("value_is_literal")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return ValueExpr::Literal(value);
+    }
+
+    if is_column_ref_operator(operator) {
+        if let Value::String(column) = &value {
+            return ValueExpr::ColumnRef(column.clone());
+        }
+    }
+
+    value_expr_from_value(value)
+}
+
+fn is_column_ref_operator(operator: &Operator) -> bool {
+    matches!(
+        operator,
+        Operator::EqualTo
+            | Operator::NotEqualTo
+            | Operator::EqualToCaseInsensitive
+            | Operator::NotEqualToCaseInsensitive
+            | Operator::LessThan
+            | Operator::LessThanOrEqualTo
+            | Operator::GreaterThan
+            | Operator::GreaterThanOrEqualTo
+    )
+}
+
 fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
-    let resolved = resolve_jsonata_bindings(expression.trim());
+    let expression = expression.trim();
+    if is_complex_jsonata_expression(expression) {
+        return Ok(unsupported_jsonata_leaf(expression));
+    }
+
+    let resolved = resolve_jsonata_bindings(expression);
     let expression = trim_wrapping_parens(resolved.trim());
     if expression.is_empty() {
         return Err(RuleModelError::InvalidRuleFormat(
@@ -728,6 +800,14 @@ fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
     }
 
     normalize_jsonata_leaf(expression)
+}
+
+fn is_complex_jsonata_expression(expression: &str) -> bool {
+    expression.contains('\n')
+        || expression.contains('{')
+        || expression.contains('}')
+        || expression.contains('@')
+        || expression.contains("~>")
 }
 
 fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
@@ -852,9 +932,16 @@ fn normalize_jsonata_leaf(expression: &str) -> Result<ConditionGroup> {
         }));
     }
 
-    Err(RuleModelError::InvalidRuleFormat(format!(
-        "unsupported JSONATA expression: {expression}"
-    )))
+    Ok(unsupported_jsonata_leaf(expression))
+}
+
+fn unsupported_jsonata_leaf(expression: &str) -> ConditionGroup {
+    ConditionGroup::Leaf(Condition {
+        target: None,
+        operator: Operator::Unsupported("unsupported_jsonata".to_owned()),
+        comparator: ValueExpr::Literal(Value::String(expression.to_owned())),
+        options: OperatorOptions::default(),
+    })
 }
 
 fn jsonata_leaf(target: String, operator: Operator, comparator: ValueExpr) -> ConditionGroup {
@@ -1859,6 +1946,18 @@ Outcome:
     }
 
     #[test]
+    fn normalize_outcome_variables() {
+        let mut value = sample_metadata_rule();
+        value["Outcome"]["Output Variables"] = json!(["AETERM", "AESTDTC", "AESER"]);
+        value["Outcome"]["Grouping Variables"] = json!(["USUBJID"]);
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.output_variables, vec!["AETERM", "AESTDTC", "AESER"]);
+        assert_eq!(rule.grouping_variables, vec!["USUBJID"]);
+    }
+
+    #[test]
     fn normalize_check_all_to_condition_group_all() {
         let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
 
@@ -1909,6 +2008,7 @@ Outcome:
                 "name": "DOMAIN",
                 "operator": "equal_to",
                 "value": "AE",
+                "value_is_literal": true,
                 "case_sensitive": false
             },
             "Outcome": {
@@ -1928,6 +2028,89 @@ Outcome:
             condition.options.extra.get("case_sensitive"),
             Some(&json!(false))
         );
+    }
+
+    #[test]
+    fn normalize_string_value_without_literal_flag_as_column_ref() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "IESTRESC",
+                "operator": "not_equal_to",
+                "value": "IEORRES"
+            },
+            "Outcome": {
+                "Message": "IESTRESC must equal IEORRES"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("IEORRES".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalize_regex_string_value_as_literal_pattern() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DOMAIN",
+                "operator": "matches_regex",
+                "value": "^(.){21,}$"
+            },
+            "Outcome": {
+                "Message": "DOMAIN is too long"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::Literal(json!("^(.){21,}$"))
+        );
+    }
+
+    #[test]
+    fn yaml_value_is_literal_preserves_bare_n_as_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: IEORRES
+  operator: not_equal_to
+  value: N
+  value_is_literal: true
+Outcome:
+  Message: IEORRES must be N
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("N")));
     }
 
     #[test]
@@ -1993,6 +2176,24 @@ Outcome:
         assert_eq!(compare.target.as_deref(), Some("DOMAIN"));
         assert_eq!(compare.operator, Operator::NotEqualTo);
         assert_eq!(compare.comparator, ValueExpr::Literal(json!("AE")));
+    }
+
+    #[test]
+    fn normalize_unsupported_jsonata_expression_as_unsupported_operator() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("JSONATA");
+        value["Check"] = json!("$.study.versions.studyDesigns.{\"id\": id}[id != null]");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.operator,
+            Operator::Unsupported("unsupported_jsonata".to_owned())
+        );
+        assert_eq!(condition.target, None);
     }
 
     #[test]

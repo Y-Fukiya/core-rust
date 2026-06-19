@@ -1,0 +1,2 @@
+rule_id,dataset,domain,row,variables,usubjid,seq,message
+CORE-000005,CM,CM,2,CMTRT,STUDY01-002,2,Official mismatch fixture issue

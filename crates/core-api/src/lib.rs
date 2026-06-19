@@ -12,9 +12,9 @@ use core_data::{
     anti_join_dataset_on, dataset_column_values, deduplicate_dataset_by_columns,
     derive_column_from_column, derive_column_from_values, derive_literal_column,
     drop_dataset_columns, filter_dataset_by_mask, group_count_dataset, group_stat_dataset,
-    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths, rename_dataset_columns,
-    row_number_dataset, select_dataset_columns, semi_join_dataset_on, sort_dataset_by_columns,
-    DataError, LoadedDataset,
+    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths,
+    load_open_rules_data_dir, rename_dataset_columns, row_number_dataset, select_dataset_columns,
+    semi_join_dataset_on, sort_dataset_by_columns, DataError, LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -53,9 +53,17 @@ pub enum ApiError {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum DatasetLoader {
+    #[default]
+    Generic,
+    OpenRulesDataDir,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValidateRequest {
     pub rule_paths: Vec<PathBuf>,
     pub dataset_paths: Vec<PathBuf>,
+    pub dataset_loader: DatasetLoader,
     pub define_xml_paths: Vec<PathBuf>,
     pub ct_paths: Vec<PathBuf>,
     pub external_dictionary_paths: Vec<PathBuf>,
@@ -92,12 +100,6 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
-    let datasets = load_datasets_from_paths(&request.dataset_paths)?;
-    let cdisc_context = CdiscContext::load(
-        &request.define_xml_paths,
-        &request.ct_paths,
-        &request.external_dictionary_paths,
-    )?;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
     apply_standard_filter(
         &mut selection,
@@ -109,13 +111,35 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     let skipped_selection_count = selection.skipped.len();
 
     let mut results = selection.skipped;
-    for rule in &selection.selected {
-        if let Some(skipped) = skipped_unsupported_rule(rule) {
+    let mut executable_rules = Vec::new();
+    for rule in selection.selected {
+        if let Some(skipped) = skipped_unsupported_rule(&rule) {
             results.push(skipped);
-            continue;
+        } else {
+            executable_rules.push(rule);
         }
+    }
 
-        let rule = prepare_rule_with_cdisc_context(rule, &cdisc_context);
+    let datasets = if executable_rules.is_empty() {
+        Vec::new()
+    } else {
+        load_request_datasets(&request)?
+    };
+    let cdisc_context = if executable_rules.is_empty() {
+        None
+    } else {
+        Some(CdiscContext::load(
+            &request.define_xml_paths,
+            &request.ct_paths,
+            &request.external_dictionary_paths,
+        )?)
+    };
+
+    for rule in &executable_rules {
+        let cdisc_context = cdisc_context
+            .as_ref()
+            .expect("CDISC context is loaded when executable rules exist");
+        let rule = prepare_rule_with_cdisc_context(rule, cdisc_context);
         let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
             Err(skipped) => {
@@ -158,6 +182,19 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         .transpose()?;
 
     Ok(ValidateOutcome { results, reports })
+}
+
+fn load_request_datasets(request: &ValidateRequest) -> Result<Vec<LoadedDataset>> {
+    match request.dataset_loader {
+        DatasetLoader::Generic => Ok(load_datasets_from_paths(&request.dataset_paths)?),
+        DatasetLoader::OpenRulesDataDir => {
+            let mut datasets = Vec::new();
+            for path in &request.dataset_paths {
+                datasets.extend(load_open_rules_data_dir(path)?);
+            }
+            Ok(datasets)
+        }
+    }
 }
 
 pub fn select_rules(
@@ -237,6 +274,31 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if matches!(rule.sensitivity, Some(Sensitivity::Dataset))
+        && rule.rule_type == RuleType::RecordData
+        && contains_presence_operator(&rule.conditions)
+    {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedRuleType,
+            format!(
+                "Rule {} uses dataset sensitivity presence semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if contains_column_ref_comparator(&rule.conditions) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses column-ref comparator semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     unsupported_operator(&rule.conditions).map(|operator| {
         RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -248,6 +310,30 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             ),
         )
     })
+}
+
+fn contains_presence_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_presence_operator)
+        }
+        ConditionGroup::Not(group) => contains_presence_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::Exists | Operator::NotExists)
+        }
+    }
+}
+
+fn contains_column_ref_comparator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_column_ref_comparator)
+        }
+        ConditionGroup::Not(group) => contains_column_ref_comparator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column.contains("--"))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -530,18 +616,19 @@ fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let scoped_datasets = filter_datasets_by_domain_scope(rule, datasets);
     if rule.operations.is_empty() {
         if rule
             .datasets
             .as_ref()
             .is_some_and(|match_datasets| !match_datasets.is_empty())
         {
-            return execute_match_datasets(rule, datasets);
+            return execute_match_datasets(rule, &scoped_datasets);
         }
-        return Ok(datasets.to_vec());
+        return Ok(scoped_datasets);
     }
 
-    let mut execution_datasets = initial_operation_datasets(rule, datasets)?;
+    let mut execution_datasets = initial_operation_datasets(rule, &scoped_datasets)?;
     for operation in &rule.operations {
         if is_join_operation(operation) {
             execution_datasets =
@@ -552,6 +639,131 @@ fn execution_datasets_for_rule(
     }
 
     Ok(execution_datasets)
+}
+
+fn filter_datasets_by_domain_scope(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Vec<LoadedDataset> {
+    datasets
+        .iter()
+        .filter(|dataset| {
+            domain_scope_allows(rule.domains.as_ref(), dataset)
+                && class_scope_allows(rule.classes.as_ref(), dataset)
+        })
+        .cloned()
+        .collect()
+}
+
+fn domain_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
+    let domain = dataset
+        .metadata
+        .domain
+        .as_deref()
+        .unwrap_or(&dataset.metadata.name);
+    let includes = scope_values(scope, "Include");
+    let excludes = scope_values(scope, "Exclude");
+
+    if scope_matches(&excludes, domain) {
+        return false;
+    }
+    includes.is_empty() || scope_contains_all(&includes) || scope_matches(&includes, domain)
+}
+
+fn scope_values(scope: Option<&Value>, key: &str) -> Vec<String> {
+    let Some(object) = scope.and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let Some(value) = object.get(key).or_else(|| {
+        object
+            .iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    }) else {
+        return Vec::new();
+    };
+
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        Value::String(value) => vec![value.clone()],
+        _ => Vec::new(),
+    }
+}
+
+fn scope_contains_all(values: &[String]) -> bool {
+    values.iter().any(|value| value.eq_ignore_ascii_case("ALL"))
+}
+
+fn scope_matches(values: &[String], domain: &str) -> bool {
+    values
+        .iter()
+        .any(|value| domain_scope_matches(value, domain))
+}
+
+fn domain_scope_matches(pattern: &str, domain: &str) -> bool {
+    if pattern.eq_ignore_ascii_case(domain) {
+        return true;
+    }
+    if let Some((prefix, suffix)) = pattern.split_once("--") {
+        return domain
+            .to_ascii_uppercase()
+            .starts_with(&prefix.to_ascii_uppercase())
+            && domain
+                .to_ascii_uppercase()
+                .ends_with(&suffix.to_ascii_uppercase());
+    }
+    false
+}
+
+fn class_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
+    let includes = scope_values(scope, "Include");
+    let excludes = scope_values(scope, "Exclude");
+    let Some(class) = dataset_domain_class(dataset) else {
+        return true;
+    };
+
+    if class_scope_matches(&excludes, class) {
+        return false;
+    }
+    includes.is_empty() || scope_contains_all(&includes) || class_scope_matches(&includes, class)
+}
+
+fn dataset_domain_class(dataset: &LoadedDataset) -> Option<&'static str> {
+    let domain = dataset
+        .metadata
+        .domain
+        .as_deref()
+        .unwrap_or(&dataset.metadata.name)
+        .to_ascii_uppercase();
+    match domain.as_str() {
+        "CM" | "EC" | "EX" | "ML" | "PR" | "SU" => Some("INTERVENTIONS"),
+        "AE" | "CE" | "DS" | "DV" | "MH" => Some("EVENTS"),
+        "CV" | "DD" | "EG" | "FT" | "IE" | "IS" | "LB" | "MB" | "MI" | "MS" | "PC" | "PP"
+        | "QS" | "RE" | "RP" | "SC" | "SS" | "TR" | "TU" | "UR" | "VS" => Some("FINDINGS"),
+        "FA" | "SR" => Some("FINDINGS ABOUT"),
+        "CO" | "DM" | "SE" | "SV" => Some("SPECIAL PURPOSE"),
+        "TA" | "TD" | "TE" | "TI" | "TM" | "TS" | "TV" => Some("TRIAL DESIGN"),
+        "RELREC" | "SUPP" | "SUPPQUAL" => Some("RELATIONSHIP"),
+        _ => None,
+    }
+}
+
+fn class_scope_matches(values: &[String], class: &str) -> bool {
+    values
+        .iter()
+        .any(|value| normalize_scope_class(value) == normalize_scope_class(class))
+}
+
+fn normalize_scope_class(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !matches!(ch, ' ' | '_' | '-'))
+        .collect::<String>()
+        .to_ascii_uppercase()
 }
 
 fn execute_match_datasets(
@@ -1561,6 +1773,60 @@ mod tests {
     }
 
     #[test]
+    fn run_validation_uses_open_rules_data_loader_when_requested() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("create rules dir");
+        fs::create_dir_all(&data_dir).expect("create data dir");
+        fs::write(
+            rules_dir.join("CORE-OPEN-0001.yml"),
+            r#"Core:
+  Id: CORE-OPEN-0001
+  Status: Published
+Scope:
+  Domains: {}
+  Classes: {}
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  name: CMSEQ
+  operator: less_than_or_equal_to
+  value: 0
+Outcome:
+  Message: CMSEQ must be greater than zero
+"#,
+        )
+        .expect("write rule");
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Label\ncm,Concomitant Medications\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nCM,CMSEQ,Sequence Number,Num,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(data_dir.join("cm.csv"), "CMSEQ\n001\n").expect("write dataset csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            include_rules: Vec::new(),
+            exclude_rules: Vec::new(),
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+        assert_eq!(outcome.results[0].error_count, 0);
+    }
+
+    #[test]
     fn select_rules_includes_only_requested_ids_and_skips_missing_ids() {
         let dir = tempdir().expect("tempdir");
         write_rule(dir.path(), "CORE-TEST-0001", "AE");
@@ -1654,6 +1920,173 @@ mod tests {
             .expect("json report")
             .exists());
         assert!(output_dir.join("report.csv").exists());
+    }
+
+    #[test]
+    fn run_validation_filters_execution_datasets_by_domain_scope() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-DOMAIN-SCOPE.json"),
+            r#"{
+  "Core": { "Id": "CORE-DOMAIN-SCOPE", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["MS"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "equal_to",
+    "value": "MS",
+    "value_is_literal": true
+  },
+  "Outcome": { "Message": "DOMAIN must not be MS" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": { "USUBJID": ["S1"], "AESEQ": [1], "DOMAIN": ["AE"] }
+    },
+    {
+      "filename": "ms.xpt",
+      "domain": "MS",
+      "records": { "USUBJID": ["S1"], "MSSEQ": [1], "DOMAIN": ["MS"] }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].dataset, "AE");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    }
+
+    #[test]
+    fn run_validation_domain_scope_matches_supp_placeholder_domains() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-SUPP-SCOPE.json"),
+            r#"{
+  "Core": { "Id": "CORE-SUPP-SCOPE", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SUPP--"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "QNAM",
+    "operator": "matches_regex",
+    "value": "^[0-9]"
+  },
+  "Outcome": { "Message": "QNAM starts with a number" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "supplb.xpt",
+      "domain": "SUPPLB",
+      "records": {
+        "USUBJID": ["S1"],
+        "IDVAR": ["LBSEQ"],
+        "IDVARVAL": ["1"],
+        "QNAM": ["5BIOSIG"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].dataset, "SUPPLB");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn run_validation_filters_execution_datasets_by_class_scope() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-CLASS-SCOPE.json"),
+            r#"{
+  "Core": { "Id": "CORE-CLASS-SCOPE", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "equal_to",
+    "value": "LB",
+    "value_is_literal": true
+  },
+  "Outcome": { "Message": "DOMAIN must be LB" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": { "USUBJID": ["S1"], "AESEQ": [1], "DOMAIN": ["AE"] }
+    },
+    {
+      "filename": "lb.xpt",
+      "domain": "LB",
+      "records": { "USUBJID": ["S1"], "LBSEQ": [1], "DOMAIN": ["LB"] }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].dataset, "LB");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     }
 
     #[test]
@@ -1823,6 +2256,96 @@ mod tests {
                 "unsupported_operator".to_owned(),
             ])
         );
+        assert!(outcome
+            .results
+            .iter()
+            .all(|result| result.execution_status == ExecutionStatus::Skipped));
+    }
+
+    #[test]
+    fn run_validation_skips_unsupported_rules_before_loading_datasets() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let output_dir = dir.path().join("out");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::write(
+            rules_dir.join("CORE-JSONATA-UNSUPPORTED.json"),
+            r#"{
+  "Core": { "Id": "CORE-JSONATA-UNSUPPORTED", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "JSONATA",
+  "Check": "$.study.versions.studyDesigns.{\"id\": id}[id != null]",
+  "Outcome": { "Message": "Unsupported JSONata" }
+}"#,
+        )
+        .expect("write rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dir.path().join("missing-data")],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            output_dir: Some(output_dir.clone()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+        let report_csv = fs::read_to_string(output_dir.join("report.csv")).expect("read csv");
+        assert!(report_csv.contains("CORE-JSONATA-UNSUPPORTED"));
+        assert!(report_csv.contains("unsupported_operator"));
+    }
+
+    #[test]
+    fn run_validation_skips_oracle_incompatible_presence_and_column_ref_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-DATASET-PRESENCE.json"),
+            r#"{
+  "Core": { "Id": "CORE-DATASET-PRESENCE", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": { "name": "DOMAIN", "operator": "exists" },
+  "Outcome": { "Message": "presence semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write presence rule");
+        fs::write(
+            rules_dir.join("CORE-COLUMN-REF.json"),
+            r#"{
+  "Core": { "Id": "CORE-COLUMN-REF", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": { "name": "DOMAIN", "operator": "equal_to", "value": "--REF" },
+  "Outcome": { "Message": "column-ref comparisons are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write column-ref rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
         assert!(outcome
             .results
             .iter()

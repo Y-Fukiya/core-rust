@@ -1,0 +1,2 @@
+rule_id,dataset,domain,row,variables,message,error_count,usubjid,seq
+CORE-OPEN-0001,CM,CM,1,CMSEQ,CMSEQ must be greater than zero,1,SUBJ002,0

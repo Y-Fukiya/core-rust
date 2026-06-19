@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+csv.workspace = true
 indexmap.workspace = true
 polars.workspace = true
 serde.workspace = true

@@ -11,5 +11,6 @@ Check:
     - name: DOMAIN
       operator: equal_to
       value: AE
+      value_is_literal: true
 Outcome:
   Message: DOMAIN must be AE

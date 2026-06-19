@@ -7,6 +7,7 @@ members = [
     "crates/core-engine",
     "crates/core-report",
     "crates/core-rule-model",
+    "xtask",
 ]
 resolver = "2"
 

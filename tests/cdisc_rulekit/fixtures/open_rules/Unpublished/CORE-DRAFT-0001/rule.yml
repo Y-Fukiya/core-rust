@@ -1,0 +1,24 @@
+Core:
+  Id: CORE-DRAFT-0001
+  Status: Draft
+  Version: "0.1"
+  Description: Draft unpublished rule.
+Authorities:
+  - Organization: CDISC
+    Standards:
+      - Name: SDTMIG
+        Version: "3.4"
+        References:
+          - Rule Identifier:
+              Id: CG9999
+Check:
+  exists:
+    name: DRAFTVAR
+Outcome:
+  Message: Draft variable must exist.
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - AE
+Sensitivity: Record

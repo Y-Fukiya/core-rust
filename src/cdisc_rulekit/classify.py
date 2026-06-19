@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from .map_rules import standard_key
+from .models import CanonicalRule, RuleMapping
+
+AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND"}
+SUPPORTED_STANDARDS = {"SDTMIG", "ADAMIG", "SENDIG"}
+
+
+def _text_contains(rule: CanonicalRule, *needles: str) -> bool:
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            rule.standard_name,
+            rule.p21_rule_type,
+            rule.category,
+            rule.message,
+            rule.description,
+            rule.source_path,
+            " ".join(rule.domains),
+            " ".join(rule.variables),
+            str(rule.raw_condition),
+        )
+    ).upper()
+    return any(needle.upper() in haystack for needle in needles)
+
+
+def _raw_has_value(rule: CanonicalRule, *fields: str) -> bool:
+    return any(rule.raw_condition.get(field) not in (None, "") for field in fields)
+
+
+def _has_unresolved_macro(rule: CanonicalRule) -> bool:
+    values = [str(value) for value in rule.raw_condition.values() if value not in (None, "")]
+    values.extend(rule.variables)
+    pattern = re.compile(r"(\{[^}]*[A-Z_][^}]*\}|\$[A-Z0-9_]+|--)")
+    return any(pattern.search(value.upper()) for value in values)
+
+
+def _has_concrete_domain(rule: CanonicalRule) -> bool:
+    return any(domain and domain.upper() != "GLOBAL" for domain in rule.domains)
+
+
+def _has_target_variable(rule: CanonicalRule) -> bool:
+    return bool(rule.target or rule.variables)
+
+
+def _simple_reason(rule_type: str) -> str:
+    if rule_type == "MATCH":
+        return "SIMPLE_MATCH_TERMS"
+    if rule_type == "REGEX":
+        return "SIMPLE_REGEX"
+    if rule_type == "CONDITION":
+        return "SIMPLE_SAME_RECORD_CONDITION"
+    if rule_type == "FIND":
+        return "DATASET_PRESENCE_CHECK"
+    return "NO_CORE_MAPPING"
+
+
+def _mapping_by_rule_id(mappings: list[RuleMapping]) -> dict[str, RuleMapping]:
+    return {mapping.p21_rule_id: mapping for mapping in mappings}
+
+
+def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule:
+    reasons: list[str] = []
+    confidence = 0.0
+    core_rule_id = mapping.core_rule_id if mapping else rule.core_rule_id
+
+    if not rule.p21_rule_id and not rule.source_rule_id:
+        return rule.with_updates(
+            conversion_status="UNSUPPORTED",
+            conversion_reasons=["MALFORMED_INPUT"],
+            conversion_confidence=0.0,
+        )
+
+    if mapping and mapping.match_type == "CG_ID" and mapping.confidence >= 0.90 and mapping.core_rule_id:
+        return rule.with_updates(
+            core_rule_id=mapping.core_rule_id,
+            conversion_status="NATIVE_CORE",
+            conversion_reasons=["HAS_NATIVE_CORE_MAPPING"],
+            conversion_confidence=mapping.confidence,
+        )
+
+    if mapping and mapping.match_type == "FUZZY":
+        reasons.append("FUZZY_CORE_CANDIDATE")
+        confidence = mapping.confidence
+    else:
+        reasons.append("NO_CORE_MAPPING")
+
+    if _text_contains(rule, "DEFINE.XML"):
+        reasons.append("DEFINE_XML_RULE")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    if _text_contains(rule, "SCHEMATRON"):
+        reasons.append("SCHEMATRON_RULE")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    if _text_contains(rule, "METADATA", "VARORDER", "VARLENGTH"):
+        reasons.append("METADATA_RULE")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    if _text_contains(rule, "RELREC", "SUPP"):
+        reasons.append("CROSS_DATASET_DEPENDENCY")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    if _raw_has_value(rule, "search", "from"):
+        reasons.append("EXTERNAL_LOOKUP_DEPENDENCY")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    if _has_unresolved_macro(rule):
+        reasons.append("UNRESOLVED_VARIABLE_MACRO")
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="MANUAL_REQUIRED",
+            conversion_reasons=reasons,
+            conversion_confidence=confidence,
+        )
+
+    rule_type = (rule.p21_rule_type or "").upper()
+    standard = standard_key(rule.standard_name)
+    if rule_type in AUTO_RULE_TYPES and standard in SUPPORTED_STANDARDS:
+        if not _has_concrete_domain(rule):
+            reasons.append("NO_CONCRETE_DOMAIN")
+            return rule.with_updates(
+                core_rule_id=core_rule_id,
+                conversion_status="SKELETON_ONLY",
+                conversion_reasons=reasons,
+                conversion_confidence=confidence,
+            )
+        if not _has_target_variable(rule):
+            reasons.append("NO_TARGET_VARIABLE")
+            return rule.with_updates(
+                core_rule_id=core_rule_id,
+                conversion_status="SKELETON_ONLY",
+                conversion_reasons=reasons,
+                conversion_confidence=confidence,
+            )
+        reasons.append(_simple_reason(rule_type))
+        return rule.with_updates(
+            core_rule_id=core_rule_id,
+            conversion_status="AUTO_CONVERTIBLE",
+            conversion_reasons=reasons,
+            conversion_confidence=max(confidence, 0.70),
+        )
+
+    reasons.append("UNSUPPORTED_RULE_TYPE")
+    return rule.with_updates(
+        core_rule_id=core_rule_id,
+        conversion_status="MANUAL_REQUIRED",
+        conversion_reasons=reasons,
+        conversion_confidence=confidence,
+    )
+
+
+def classify_rules(
+    p21_rules: list[CanonicalRule],
+    mappings: list[RuleMapping],
+) -> list[CanonicalRule]:
+    mapping_by_id = _mapping_by_rule_id(mappings)
+    classified: list[CanonicalRule] = []
+    for rule in p21_rules:
+        rule_id = rule.p21_rule_id or rule.source_rule_id
+        classified.append(_classify(rule, mapping_by_id.get(rule_id)))
+    return classified
