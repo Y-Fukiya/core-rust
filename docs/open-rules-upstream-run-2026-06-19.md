@@ -104,13 +104,31 @@ the official oracle.
 | Missing official results classified as `no_official_oracle` | 184 |
 | Harness error | 0 |
 
+## Skipped Unsupported Split
+
+These are case counts after excluding `no_official_oracle` cases.
+
+| Skipped reason | Cases |
+|---|---:|
+| `unsupported_operator` | 1295 |
+| `operations_not_supported` | 348 |
+| `unsupported_rule_type` | 296 |
+| `evaluation_error` | 47 |
+| `standard_mismatch` | 44 |
+| `dataset_join_not_supported` | 16 |
+
 ## Next Precision Work
 
 The next precision pass should raise coverage while keeping
 `supported_mismatch = 0`, starting with:
 
-- Dataset-sensitivity presence rules such as `CORE-000015`, `CORE-000080`,
-  `CORE-000081`, and timing-variable clusters.
-- Column-reference comparator rules such as `CORE-000195`, `CORE-000197`,
-  `CORE-000198`, `CORE-000698`, and `CORE-000704`.
-- Broader JSONata support for the currently skipped USDM/SEND rules.
+- `dataset_join_not_supported` first because it is the smallest bucket at 16
+  cases and can be isolated behind join-specific fixtures.
+- `standard_mismatch` next, after deciding whether Open Rules `.env`
+  product/version metadata or rule metadata should be the source of truth for
+  those 44 cases.
+- `evaluation_error` after adding regression fixtures for the representative
+  evaluation failure classes.
+- `unsupported_rule_type`, `operations_not_supported`, and
+  `unsupported_operator` last, because those buckets contain broad rule-model
+  and JSONata semantics rather than one small harness gap.

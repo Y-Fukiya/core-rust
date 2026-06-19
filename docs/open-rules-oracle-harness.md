@@ -71,10 +71,15 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 | `supported_match` | Candidate ran and normalized issue keys match the official oracle. | zero |
 | `supported_mismatch` | Candidate ran but normalized issue keys differ. | non-zero |
 | `skipped_unsupported` | Candidate output contains skipped rows. | zero |
+| `no_official_oracle` | The case has no official `results.csv`, so there is no oracle to score against. | zero |
 | `harness_error` | Official or candidate report is missing, malformed, or cannot be scored. | non-zero |
 
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
 mismatches are correctness problems.
+
+`summary.md` also includes a `Skipped Unsupported Reasons` section when skipped
+cases have `skipped_reason` values. Use that section as the first coverage
+triage list before promoting more cases into supported coverage.
 
 ## Metrics
 
@@ -131,6 +136,12 @@ Improvements to `supported_match` are allowed and printed as improvements.
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
 are not blocked by network access or upstream drift.
+
+The full upstream oracle run is fixed as a separate GitHub Actions workflow,
+`Open Rules Upstream`. It can be started manually with `workflow_dispatch` and
+also runs weekly. That workflow checks out the pinned SHA from
+`tests/open_rules/upstream.lock`, runs `xtask open-rules run-score` with
+`--strict-lock`, and uploads the upstream scoreboard artifacts.
 
 ## Full Upstream Workflow
 
