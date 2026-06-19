@@ -184,6 +184,9 @@ fn evaluate_condition_group_with_options(
                         dataset_presence_exists,
                     )?,
                 );
+                if mask.iter().all(|value| !*value) {
+                    break;
+                }
             }
             Ok(mask)
         }
@@ -198,6 +201,9 @@ fn evaluate_condition_group_with_options(
                         dataset_presence_exists,
                     )?,
                 );
+                if mask.iter().all(|value| *value) {
+                    break;
+                }
             }
             Ok(mask)
         }
@@ -1377,6 +1383,30 @@ mod tests {
         assert_eq!(
             evaluate_condition_group(&group, &dataset).expect("any group"),
             vec![false, true, true, false]
+        );
+    }
+
+    #[test]
+    fn condition_groups_short_circuit_complete_boolean_masks() {
+        let dataset = test_dataset();
+        let group = ConditionGroup::Any(vec![
+            ConditionGroup::Leaf(condition("MISSING", Operator::NotExists, ValueExpr::Null)),
+            ConditionGroup::Leaf(condition("MISSING", Operator::NotEqualTo, literal("Y"))),
+        ]);
+
+        assert_eq!(
+            evaluate_condition_group(&group, &dataset).expect("any short-circuit"),
+            vec![true, true, true, true]
+        );
+
+        let group = ConditionGroup::All(vec![
+            ConditionGroup::Leaf(condition("DOMAIN", Operator::EqualTo, literal("ZZ"))),
+            ConditionGroup::Leaf(condition("MISSING", Operator::NotEqualTo, literal("Y"))),
+        ]);
+
+        assert_eq!(
+            evaluate_condition_group(&group, &dataset).expect("all short-circuit"),
+            vec![false, false, false, false]
         );
     }
 

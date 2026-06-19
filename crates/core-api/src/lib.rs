@@ -263,6 +263,17 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if rule.entities.is_some() {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedRuleType,
+            format!(
+                "Rule {} uses entity scope semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     if let Some(operation) = unsupported_operation(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -623,7 +634,7 @@ fn execution_datasets_for_rule(
             .as_ref()
             .is_some_and(|match_datasets| !match_datasets.is_empty())
         {
-            return execute_match_datasets(rule, &scoped_datasets);
+            return execute_match_datasets(rule, &scoped_datasets, datasets);
         }
         return Ok(scoped_datasets);
     }
@@ -768,7 +779,8 @@ fn normalize_scope_class(value: &str) -> String {
 
 fn execute_match_datasets(
     rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
+    scoped_datasets: &[LoadedDataset],
+    all_datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     let match_datasets = rule.datasets.as_deref().unwrap_or_default();
     let mut names = match_datasets
@@ -782,17 +794,17 @@ fn execute_match_datasets(
         ));
     }
     if names.len() == 1 {
-        let Some(dataset) = find_dataset(datasets, &names[0]) else {
-            return Err(join_skipped_result(
-                rule,
-                format!("dataset {} was not loaded", names[0]),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
+        return execute_single_match_dataset(
+            rule,
+            &match_datasets[0],
+            &names[0],
+            scoped_datasets,
+            all_datasets,
+        );
     }
 
     let left_name = names.remove(0);
-    let Some(mut joined) = find_dataset(datasets, &left_name).cloned() else {
+    let Some(mut joined) = find_dataset(all_datasets, &left_name).cloned() else {
         return Err(join_skipped_result(
             rule,
             format!("left dataset {left_name} was not loaded"),
@@ -800,7 +812,7 @@ fn execute_match_datasets(
     };
 
     for (index, right_name) in names.iter().enumerate() {
-        let Some(right) = find_dataset(datasets, right_name) else {
+        let Some(right) = find_dataset(all_datasets, right_name) else {
             return Err(join_skipped_result(
                 rule,
                 format!("right dataset {right_name} was not loaded"),
@@ -826,6 +838,81 @@ fn execute_match_datasets(
     }
 
     Ok(vec![joined])
+}
+
+fn execute_single_match_dataset(
+    rule: &ExecutableRule,
+    match_dataset: &MatchDataset,
+    match_name: &str,
+    scoped_datasets: &[LoadedDataset],
+    all_datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let scoped_bases = scoped_datasets
+        .iter()
+        .filter(|dataset| !dataset_matches_name(dataset, match_name))
+        .collect::<Vec<_>>();
+    if scoped_bases.is_empty() {
+        let Some(dataset) = find_dataset(scoped_datasets, match_name) else {
+            return Err(join_skipped_result(
+                rule,
+                format!("dataset {match_name} was not loaded"),
+            ));
+        };
+        return Ok(vec![dataset.clone()]);
+    }
+
+    let Some(lookup_dataset) = find_dataset(all_datasets, match_name) else {
+        return Err(join_skipped_result(
+            rule,
+            format!("dataset {match_name} was not loaded"),
+        ));
+    };
+    let Some(keys) = match_dataset_keys(match_dataset) else {
+        return Err(join_skipped_result(
+            rule,
+            format!("match dataset {match_name} is missing keys"),
+        ));
+    };
+    if !dataset_keys_are_unique(lookup_dataset, &keys)
+        .map_err(|source| join_skipped_result(rule, source.to_string()))?
+    {
+        return Err(join_skipped_result(
+            rule,
+            format!("match dataset {match_name} has duplicate keys"),
+        ));
+    }
+    if scoped_bases.len() != 1 {
+        return Err(join_skipped_result(
+            rule,
+            format!("match dataset {match_name} has multiple scoped base datasets"),
+        ));
+    }
+
+    let prefix = match_dataset_string_field(match_dataset, &["prefix"]).unwrap_or_default();
+    left_join_dataset_on(scoped_bases[0], lookup_dataset, &keys, &keys, &prefix)
+        .map(|dataset| vec![dataset])
+        .map_err(|source| join_skipped_result(rule, source.to_string()))
+}
+
+fn dataset_keys_are_unique(
+    dataset: &LoadedDataset,
+    keys: &[String],
+) -> std::result::Result<bool, DataError> {
+    let key_columns = keys
+        .iter()
+        .map(|key| dataset_column_values(dataset, key))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut seen = BTreeSet::new();
+    for row in 0..dataset.summary().row_count {
+        let key = key_columns
+            .iter()
+            .map(|values| values[row].to_string())
+            .collect::<Vec<_>>();
+        if !seen.insert(key) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn match_dataset_name(dataset: &MatchDataset) -> Option<String> {
@@ -1656,15 +1743,19 @@ fn normalize_operation_key(value: &str) -> String {
 }
 
 fn find_dataset<'a>(datasets: &'a [LoadedDataset], name: &str) -> Option<&'a LoadedDataset> {
-    datasets.iter().find(|dataset| {
-        dataset.metadata.name.eq_ignore_ascii_case(name)
-            || dataset
-                .metadata
-                .domain
-                .as_deref()
-                .is_some_and(|domain| domain.eq_ignore_ascii_case(name))
-            || dataset.metadata.filename.eq_ignore_ascii_case(name)
-    })
+    datasets
+        .iter()
+        .find(|dataset| dataset_matches_name(dataset, name))
+}
+
+fn dataset_matches_name(dataset: &LoadedDataset, name: &str) -> bool {
+    dataset.metadata.name.eq_ignore_ascii_case(name)
+        || dataset
+            .metadata
+            .domain
+            .as_deref()
+            .is_some_and(|domain| domain.eq_ignore_ascii_case(name))
+        || dataset.metadata.filename.eq_ignore_ascii_case(name)
 }
 
 fn unsupported_operator(group: &ConditionGroup) -> Option<&Operator> {
@@ -2353,6 +2444,51 @@ Outcome:
     }
 
     #[test]
+    fn run_validation_skips_entity_scope_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-ENTITY-SCOPE.json"),
+            r#"{
+  "Core": { "Id": "CORE-ENTITY-SCOPE", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "equal_to",
+    "value": "AE",
+    "value_is_literal": true
+  },
+  "Outcome": { "Message": "Entity scoped rules are not SDTM domain scoped" }
+}"#,
+        )
+        .expect("write entity scope rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedRuleType)
+        );
+    }
+
+    #[test]
     fn run_validation_executes_jsonata_rules_when_conditions_are_normalized() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -2689,6 +2825,148 @@ Outcome:
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_joins_single_match_dataset_to_scoped_dataset() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-SINGLE-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-SINGLE-MATCH-DATASET", "Status": "Published" },
+  "Scope": {
+    "Domains": { "Include": ["AE"] },
+    "Classes": { "Include": ["EVENTS"] }
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SUPPAE", "Keys": ["USUBJID"] }
+  ],
+  "Check": {
+    "name": "QNAM",
+    "operator": "equal_to",
+    "value": "AESOSP"
+  },
+  "Outcome": { "Message": "AESOSP supplemental qualifier must be reviewed" }
+}"#,
+        )
+        .expect("write match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "USUBJID": ["S2"],
+        "QNAM": ["AESOSP"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_skips_single_match_dataset_with_duplicate_lookup_keys() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-DUPLICATE-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-DUPLICATE-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "LOOKUP", "Keys": ["USUBJID"] }
+  ],
+  "Check": {
+    "name": "FLAG",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": { "Message": "Lookup flag must not be Y" }
+}"#,
+        )
+        .expect("write duplicate match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1"],
+        "DOMAIN": ["AE"],
+        "AESEQ": [1]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "FLAG": ["Y", "N"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write duplicate match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(outcome.results[0].error_count, 0);
     }
 
     #[test]
