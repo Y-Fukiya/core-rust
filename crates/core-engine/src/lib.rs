@@ -236,6 +236,8 @@ fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String
                 &expand_domain_placeholder(dataset, &variable),
             );
         }
+    } else if contains_not_present_on_multiple_rows_within_operator(&rule.conditions) {
+        collect_not_present_on_multiple_rows_variables(&rule.conditions, dataset, &mut expanded);
     } else if rule.output_variables.is_empty() {
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
     } else {
@@ -275,6 +277,45 @@ fn contains_empty_within_except_last_row_operator(group: &ConditionGroup) -> boo
         ConditionGroup::Not(group) => contains_empty_within_except_last_row_operator(group),
         ConditionGroup::Leaf(condition) => {
             matches!(condition.operator, Operator::EmptyWithinExceptLastRow)
+        }
+    }
+}
+
+fn contains_not_present_on_multiple_rows_within_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(contains_not_present_on_multiple_rows_within_operator),
+        ConditionGroup::Not(group) => contains_not_present_on_multiple_rows_within_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::NotPresentOnMultipleRowsWithin)
+        }
+    }
+}
+
+fn collect_not_present_on_multiple_rows_variables(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    variables: &mut Vec<String>,
+) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                collect_not_present_on_multiple_rows_variables(group, dataset, variables);
+            }
+        }
+        ConditionGroup::Not(group) => {
+            collect_not_present_on_multiple_rows_variables(group, dataset, variables)
+        }
+        ConditionGroup::Leaf(condition) => {
+            if matches!(condition.operator, Operator::NotPresentOnMultipleRowsWithin) {
+                if let Some(within) = option_string(&condition.options.extra, "within") {
+                    push_unique(variables, &expand_domain_placeholder(dataset, &within));
+                }
+                if let Some(target) = &condition.target {
+                    push_unique(variables, &expand_domain_placeholder(dataset, target));
+                }
+            }
         }
     }
 }
@@ -503,6 +544,13 @@ fn evaluate_condition_with_options(
                 &condition.options,
             )
         }
+        Operator::NotPresentOnMultipleRowsWithin => evaluate_not_present_on_multiple_rows_within(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.options,
+        ),
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -829,6 +877,39 @@ fn evaluate_does_not_have_next_corresponding_record(
     }
 
     Ok(mask)
+}
+
+fn evaluate_not_present_on_multiple_rows_within(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let mut counts = std::collections::BTreeMap::<(String, String), usize>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+        let key = (group_key, target.to_string());
+        *counts.entry(key.clone()).or_default() += 1;
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() == 1))
+        .collect())
 }
 
 #[derive(Debug)]
@@ -1643,6 +1724,33 @@ mod tests {
             .expect("dataset")
     }
 
+    fn relationship_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
+        "RELID": ["R1", "R1", "R2", "R3"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
     fn condition(target: &str, operator: Operator, comparator: ValueExpr) -> Condition {
         Condition {
             target: Some(target.to_owned()),
@@ -2324,6 +2432,25 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_not_present_on_multiple_rows_within() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "RELID",
+                    Operator::NotPresentOnMultipleRowsWithin,
+                    ValueExpr::Null,
+                    serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))])
+                ),
+                &dataset
+            )
+            .expect("not present on multiple rows within"),
+            vec![false, false, true, true]
+        );
+    }
+
+    #[test]
     fn null_values_are_detected_by_not_equal_and_ignored_by_ordering() {
         let dataset = test_dataset();
 
@@ -2646,6 +2773,27 @@ mod tests {
 
         assert_eq!(result.execution_status, ExecutionStatus::Failed);
         assert_eq!(result.errors[0].variables, vec!["SEENDTC"]);
+    }
+
+    #[test]
+    fn not_present_on_multiple_rows_reports_within_and_target_variables() {
+        let dataset = relationship_dataset();
+        let mut rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition_with_options(
+                "RELID",
+                Operator::NotPresentOnMultipleRowsWithin,
+                ValueExpr::Null,
+                serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))]),
+            )),
+            "RELID must appear on multiple rows",
+        );
+        rule.output_variables = vec!["RELID".to_owned()];
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["USUBJID", "RELID"]);
     }
 
     #[test]

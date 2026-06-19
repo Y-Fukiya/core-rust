@@ -212,6 +212,7 @@ pub enum Operator {
     TargetIsNotSortedBy,
     EmptyWithinExceptLastRow,
     DoesNotHaveNextCorrespondingRecord,
+    NotPresentOnMultipleRowsWithin,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -259,6 +260,7 @@ impl Operator {
             "target_is_not_sorted_by" => Self::TargetIsNotSortedBy,
             "empty_within_except_last_row" => Self::EmptyWithinExceptLastRow,
             "does_not_have_next_corresponding_record" => Self::DoesNotHaveNextCorrespondingRecord,
+            "not_present_on_multiple_rows_within" => Self::NotPresentOnMultipleRowsWithin,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -305,6 +307,7 @@ impl Operator {
             Self::TargetIsNotSortedBy => "target_is_not_sorted_by",
             Self::EmptyWithinExceptLastRow => "empty_within_except_last_row",
             Self::DoesNotHaveNextCorrespondingRecord => "does_not_have_next_corresponding_record",
+            Self::NotPresentOnMultipleRowsWithin => "not_present_on_multiple_rows_within",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2348,6 +2351,10 @@ Outcome:
         assert_eq!(
             Operator::from_name("does_not_have_next_corresponding_record"),
             Operator::DoesNotHaveNextCorrespondingRecord
+        );
+        assert_eq!(
+            Operator::from_name("not_present_on_multiple_rows_within"),
+            Operator::NotPresentOnMultipleRowsWithin
         );
     }
 
