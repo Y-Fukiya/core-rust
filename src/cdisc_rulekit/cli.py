@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .classify import classify_rules
 from .emit import emit_conversion_status, emit_core_catalog, emit_mapping, emit_p21_catalog
+from .generate_testdata import generate_rule_folder
 from .io_utils import read_jsonl
 from .load_open_rules import load_open_rules
 from .load_p21 import load_p21_rules
@@ -12,6 +13,7 @@ from .map_rules import map_p21_to_core
 from .models import CanonicalRule, RuleMapping
 from .operator_inventory import build_operator_inventory
 from .reports import write_conversion_summary, write_readiness_summary
+from .validate_outputs import validate_generated_rules, write_structure_validation
 
 
 def _canonical_rules_from_jsonl(path: Path) -> list[CanonicalRule]:
@@ -87,6 +89,27 @@ def cmd_build_readonly(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_generate(args: argparse.Namespace) -> int:
+    rules = _canonical_rules_from_jsonl(args.conversion_status)
+    selected = [rule for rule in rules if rule.conversion_status == args.status]
+    if args.standard:
+        from .map_rules import standard_key
+
+        selected = [rule for rule in selected if standard_key(rule.standard_name) == standard_key(args.standard)]
+    if args.limit is not None:
+        selected = selected[: args.limit]
+    manifests = [generate_rule_folder(rule, args.out) for rule in selected]
+    print(f"generate complete: {len(manifests)} generated rules")
+    return 0
+
+
+def cmd_validate_structure(args: argparse.Namespace) -> int:
+    report = validate_generated_rules(args.generated)
+    write_structure_validation(report, args.out)
+    print(f"validate-structure complete: {report['summary']['failed']} failed of {report['summary']['total']}")
+    return 1 if report["summary"]["failed"] else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cdisc-rulekit")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -125,6 +148,19 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--limit", type=int, default=None)
     build.add_argument("--include-unpublished", action="store_true")
     build.set_defaults(func=cmd_build_readonly)
+
+    generate = subcommands.add_parser("generate")
+    generate.add_argument("--conversion-status", type=Path, required=True)
+    generate.add_argument("--out", type=Path, required=True)
+    generate.add_argument("--status", default="AUTO_CONVERTIBLE")
+    generate.add_argument("--standard", default=None)
+    generate.add_argument("--limit", type=int, default=None)
+    generate.set_defaults(func=cmd_generate)
+
+    validate = subcommands.add_parser("validate-structure")
+    validate.add_argument("--generated", type=Path, required=True)
+    validate.add_argument("--out", type=Path, required=True)
+    validate.set_defaults(func=cmd_validate_structure)
 
     return parser
 

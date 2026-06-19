@@ -103,3 +103,19 @@ class OperatorInventoryItem:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class GeneratedRuleManifest:
+    generated_rule_id: str
+    source_rule_id: str
+    source: str
+    conversion_status: str
+    output_dir: str
+    generated_files: list[str] = field(default_factory=list)
+    expected_positive_issues: int = 0
+    expected_negative_issues: int = 0
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

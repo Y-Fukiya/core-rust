@@ -116,3 +116,4 @@ def emit_conversion_status(out_dir: str | Path, rules: list[CanonicalRule]) -> N
     out = Path(out_dir)
     rows = [rule.to_dict() for rule in rules]
     write_csv(out / "conversion_status.csv", rows, CONVERSION_STATUS_FIELDS)
+    write_jsonl(out / "conversion_status.jsonl", rows)
