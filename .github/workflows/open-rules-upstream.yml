@@ -1,0 +1,44 @@
+name: Open Rules Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 0"
+
+jobs:
+  upstream:
+    name: Full Upstream Oracle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout core-rust
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.93.1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Checkout pinned cdisc-open-rules
+        run: |
+          upstream_repo="$(sed -n 's/^repo=//p' tests/open_rules/upstream.lock)"
+          upstream_sha="$(sed -n 's/^sha=//p' tests/open_rules/upstream.lock)"
+          git clone "$upstream_repo" ../cdisc-open-rules
+          git -C ../cdisc-open-rules checkout "$upstream_sha"
+
+      - name: Run full upstream oracle
+        run: |
+          cargo run -p xtask -- open-rules run-score \
+            --open-rules-root ../cdisc-open-rules \
+            --core-rs-results-root target/open-rules-core-rs-upstream \
+            --out target/open-rules-scoreboard-upstream \
+            --strict-lock
+
+      - name: Upload upstream scoreboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-rules-upstream-scoreboard
+          path: |
+            target/open-rules-scoreboard-upstream
+            target/open-rules-core-rs-upstream/run-summary.json
