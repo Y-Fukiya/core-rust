@@ -48,6 +48,20 @@ def _walk(
         for key, value in node.items():
             key_text = str(key)
             child_path = f"{path}.{key_text}" if path else key_text
+            if key_text == "operator":
+                operator = normalize_blank(value)
+                if operator:
+                    items.append(
+                        OperatorInventoryItem(
+                            core_rule_id=rule.core_rule_id or rule.source_rule_id,
+                            source_path=rule.source_path or "",
+                            operator=operator,
+                            path=child_path,
+                            node_kind="operator_value",
+                            name_values=[],
+                            raw_keys=keys,
+                        )
+                    )
             if key_text.lower() not in METADATA_KEYS:
                 items.append(
                     OperatorInventoryItem(

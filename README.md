@@ -157,6 +157,34 @@ Phase 1 reports include:
 - `raw_rule_id_summary.csv`
 - `source_rule_tracking.csv`
 
+Phase 2 minimal generation uses the read-only outputs and conservatively creates
+Draft rules only for `AUTO_CONVERTIBLE` rows that are not fuzzy CORE candidates.
+Generated rules are written under `generated_rules/`; existing Open Rules
+`Published/` content is not modified.
+
+```sh
+python -m cdisc_rulekit.cli generate \
+  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
+  --conversion-status output/catalog/conversion_status.csv \
+  --operator-inventory output/catalog/core_operator_inventory.csv \
+  --out output
+
+python -m cdisc_rulekit.cli validate-structure \
+  --generated-rules output/generated_rules \
+  --out output/reports
+```
+
+Minimal generated outputs include:
+
+- `generated_rules/<draft-rule-id>/rule.yml`
+- `generated_rules/<draft-rule-id>/manifest.json`
+- `generated_rules/<draft-rule-id>/expected_results.csv`
+- `generated_rules/<draft-rule-id>/positive/01/data/*`
+- `generated_rules/<draft-rule-id>/negative/01/data/*`
+- `reports/generation_summary.csv`
+- `reports/generation_summary.json`
+- `reports/structure_validation.md`
+
 ## Workspace Layout
 
 - `apps/cli`: command-line interface.

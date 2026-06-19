@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
 from .classify import classify_rules
 from .emit import emit_conversion_status, emit_core_catalog, emit_mapping, emit_p21_catalog
+from .generate_rules import generate_rules, operator_set_from_inventory_rows
 from .inputs import resolve_open_rules_input
 from .io_utils import read_jsonl
 from .load_open_rules import load_open_rules
@@ -14,6 +16,7 @@ from .map_rules import map_p21_to_core, standard_key
 from .models import CanonicalRule, RuleMapping
 from .operator_inventory import build_operator_inventory
 from .reports import write_conversion_summary, write_phase1_quality_reports, write_readiness_summary
+from .validate_generated import validate_generated_rules, write_structure_validation_report
 
 
 def _filter_by_standard(rules: list[CanonicalRule], standard: str | None) -> list[CanonicalRule]:
@@ -55,6 +58,48 @@ def _canonical_rules_from_jsonl(path: Path) -> list[CanonicalRule]:
 
 def _mappings_from_jsonl(path: Path) -> list[RuleMapping]:
     return [RuleMapping.from_dict(row) for row in read_jsonl(path)]
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, object]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows: list[dict[str, object]] = []
+        for row in csv.DictReader(handle):
+            parsed: dict[str, object] = {}
+            for key, value in row.items():
+                if value is None:
+                    parsed[key] = value
+                    continue
+                text = value.strip()
+                if text.startswith("[") or text.startswith("{"):
+                    try:
+                        parsed[key] = json.loads(text)
+                        continue
+                    except json.JSONDecodeError:
+                        pass
+                parsed[key] = value
+            rows.append(parsed)
+    return rows
+
+
+def _rules_with_conversion_status(p21_catalog: Path, conversion_status: Path) -> list[CanonicalRule]:
+    rules = _canonical_rules_from_jsonl(p21_catalog)
+    status_by_key = {str(row.get("source_rule_key") or ""): row for row in _read_csv_rows(conversion_status)}
+    updated: list[CanonicalRule] = []
+    for rule in rules:
+        status = status_by_key.get(rule.source_rule_key or "")
+        if not status:
+            updated.append(rule)
+            continue
+        confidence = status.get("conversion_confidence")
+        updated.append(
+            rule.with_updates(
+                core_rule_id=status.get("core_rule_id") or None,
+                conversion_status=status.get("conversion_status") or None,
+                conversion_confidence=float(confidence) if confidence not in (None, "") else None,
+                conversion_reasons=status.get("conversion_reasons") if isinstance(status.get("conversion_reasons"), list) else [],
+            )
+        )
+    return updated
 
 
 def cmd_ingest_p21(args: argparse.Namespace) -> int:
@@ -133,6 +178,23 @@ def cmd_build_readonly(args: argparse.Namespace) -> int:
 
     print(f"build-readonly complete: {len(classified)} P21 rules, {len(core_rules)} CORE rules")
     return 0
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    rules = _rules_with_conversion_status(args.p21_catalog, args.conversion_status)
+    operator_rows = _read_csv_rows(args.operator_inventory)
+    allowed_operators = operator_set_from_inventory_rows(operator_rows)
+    summary = generate_rules(rules, args.out, allowed_operators, limit=args.limit)
+    print(f"generate complete: {summary.generated_count} generated, {summary.skipped_count} skipped")
+    return 0
+
+
+def cmd_validate_structure(args: argparse.Namespace) -> int:
+    result = validate_generated_rules(args.generated_rules)
+    write_structure_validation_report(args.out, result)
+    status = "ok" if result.ok else "failed"
+    print(f"validate-structure complete: {status}, {result.checked_rule_count} rules checked")
+    return 0 if result.ok else 1
 
 
 def _preflight_work_root(out: Path) -> Path:
@@ -252,6 +314,19 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--limit", type=int, default=None)
     build.add_argument("--include-unpublished", action="store_true")
     build.set_defaults(func=cmd_build_readonly)
+
+    generate = subcommands.add_parser("generate")
+    generate.add_argument("--p21-catalog", type=Path, required=True)
+    generate.add_argument("--conversion-status", type=Path, required=True)
+    generate.add_argument("--operator-inventory", type=Path, required=True)
+    generate.add_argument("--out", type=Path, required=True)
+    generate.add_argument("--limit", type=int, default=None)
+    generate.set_defaults(func=cmd_generate)
+
+    validate = subcommands.add_parser("validate-structure")
+    validate.add_argument("--generated-rules", type=Path, required=True)
+    validate.add_argument("--out", type=Path, required=True)
+    validate.set_defaults(func=cmd_validate_structure)
 
     preflight = subcommands.add_parser("pilot-preflight")
     preflight.add_argument("--p21-rules", type=Path, required=True)
