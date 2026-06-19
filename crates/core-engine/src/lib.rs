@@ -551,6 +551,14 @@ fn evaluate_condition_with_options(
             column,
             &condition.options,
         ),
+        Operator::IsNotUniqueSet | Operator::IsUniqueSet => evaluate_unique_set(
+            operator,
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+        ),
         Operator::InconsistentEnumeratedColumns => {
             evaluate_inconsistent_enumerated_columns(frame, row_count, &target)
         }
@@ -915,6 +923,53 @@ fn evaluate_not_present_on_multiple_rows_within(
         .collect())
 }
 
+fn evaluate_unique_set(
+    operator: &Operator,
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+) -> Result<BooleanMask> {
+    let group_columns = column_name_comparators(operator, comparator)?
+        .into_iter()
+        .map(|column| expand_domain_placeholder(dataset, &column))
+        .collect::<Vec<_>>();
+    for column in &group_columns {
+        if optional_column(frame, column)?.is_none() {
+            return Err(EngineError::MissingColumn(column.clone()));
+        }
+    }
+
+    let mut counts = std::collections::BTreeMap::<Vec<String>, usize>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+
+        let mut key = Vec::with_capacity(group_columns.len() + 1);
+        for column in &group_columns {
+            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        }
+        key.push(target.to_string());
+        *counts.entry(key.clone()).or_default() += 1;
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| {
+            let duplicate =
+                key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() > 1);
+            matches!(operator, Operator::IsNotUniqueSet) == duplicate
+        })
+        .collect())
+}
+
 fn evaluate_inconsistent_enumerated_columns(
     frame: &DataFrame,
     row_count: usize,
@@ -1258,6 +1313,32 @@ fn length_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<usiz
         operator: operator.as_name().to_owned(),
         comparator: comparator.clone(),
     })
+}
+
+fn column_name_comparators(operator: &Operator, comparator: &ValueExpr) -> Result<Vec<String>> {
+    match comparator {
+        ValueExpr::Literal(Value::String(value)) => Ok(vec![value.clone()]),
+        ValueExpr::ColumnRef(value) => Ok(vec![value.clone()]),
+        ValueExpr::List(values) => {
+            let columns = values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            if columns.len() == values.len() && !columns.is_empty() {
+                Ok(columns)
+            } else {
+                Err(EngineError::InvalidComparator {
+                    operator: operator.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                })
+            }
+        }
+        _ => Err(EngineError::InvalidComparator {
+            operator: operator.as_name().to_owned(),
+            comparator: comparator.clone(),
+        }),
+    }
 }
 
 fn option_usize(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<usize> {
@@ -2517,6 +2598,36 @@ mod tests {
                 &dataset
             )
             .expect("not present on multiple rows within"),
+            vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_set_within_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is unique set"),
             vec![false, false, true, true]
         );
     }

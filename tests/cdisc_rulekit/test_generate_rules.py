@@ -111,6 +111,35 @@ def test_generate_rules_skips_fuzzy_candidates_and_unknown_operators(tmp_path):
     assert "OPERATOR_NOT_ALLOWED:does_not_match_regex" in reasons
 
 
+def test_generate_rules_can_include_fuzzy_candidates_with_manifest_warning(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0087",
+        source_rule_key="fuzzy-key",
+        p21_rule_id="SD0087",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Required",
+        domains=["DM"],
+        variables=["RFSTDTC"],
+        target="RFSTDTC",
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["FUZZY_CORE_CANDIDATE", "NO_CORE_MAPPING"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_empty"},
+        include_fuzzy_candidates=True,
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    manifest = json.loads((generated_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["warnings"] == ["FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW"]
+
+
 def test_generate_rules_writes_match_as_negative_membership_check(tmp_path):
     rule = CanonicalRule(
         source="P21",

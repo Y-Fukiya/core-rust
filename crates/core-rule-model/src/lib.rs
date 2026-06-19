@@ -214,6 +214,8 @@ pub enum Operator {
     DoesNotHaveNextCorrespondingRecord,
     NotPresentOnMultipleRowsWithin,
     InconsistentEnumeratedColumns,
+    IsNotUniqueSet,
+    IsUniqueSet,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -263,6 +265,8 @@ impl Operator {
             "does_not_have_next_corresponding_record" => Self::DoesNotHaveNextCorrespondingRecord,
             "not_present_on_multiple_rows_within" => Self::NotPresentOnMultipleRowsWithin,
             "inconsistent_enumerated_columns" => Self::InconsistentEnumeratedColumns,
+            "is_not_unique_set" => Self::IsNotUniqueSet,
+            "is_unique_set" => Self::IsUniqueSet,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -311,6 +315,8 @@ impl Operator {
             Self::DoesNotHaveNextCorrespondingRecord => "does_not_have_next_corresponding_record",
             Self::NotPresentOnMultipleRowsWithin => "not_present_on_multiple_rows_within",
             Self::InconsistentEnumeratedColumns => "inconsistent_enumerated_columns",
+            Self::IsNotUniqueSet => "is_not_unique_set",
+            Self::IsUniqueSet => "is_unique_set",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2363,6 +2369,11 @@ Outcome:
             Operator::from_name("inconsistent_enumerated_columns"),
             Operator::InconsistentEnumeratedColumns
         );
+        assert_eq!(
+            Operator::from_name("is_not_unique_set"),
+            Operator::IsNotUniqueSet
+        );
+        assert_eq!(Operator::from_name("is_unique_set"), Operator::IsUniqueSet);
     }
 
     #[test]

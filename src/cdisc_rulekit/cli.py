@@ -193,7 +193,13 @@ def cmd_generate(args: argparse.Namespace) -> int:
     rules = _rules_with_conversion_status(args.p21_catalog, args.conversion_status)
     operator_rows = _read_csv_rows(args.operator_inventory)
     allowed_operators = operator_set_from_inventory_rows(operator_rows)
-    summary = generate_rules(rules, args.out, allowed_operators, limit=args.limit)
+    summary = generate_rules(
+        rules,
+        args.out,
+        allowed_operators,
+        limit=args.limit,
+        include_fuzzy_candidates=args.include_fuzzy_candidates,
+    )
     print(f"generate complete: {summary.generated_count} generated, {summary.skipped_count} skipped")
     return 0
 
@@ -369,6 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--operator-inventory", type=Path, required=True)
     generate.add_argument("--out", type=Path, required=True)
     generate.add_argument("--limit", type=int, default=None)
+    generate.add_argument("--include-fuzzy-candidates", action="store_true")
     generate.set_defaults(func=cmd_generate)
 
     validate = subcommands.add_parser("validate-structure")

@@ -169,6 +169,15 @@ python -m cdisc_rulekit.cli generate \
   --operator-inventory output/catalog/core_operator_inventory.csv \
   --out output
 
+# Expanded draft generation. This keeps fuzzy CORE candidates as draft P21PORT
+# rules and records FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW in manifest.json.
+python -m cdisc_rulekit.cli generate \
+  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
+  --conversion-status output/catalog/conversion_status.csv \
+  --operator-inventory output/catalog/core_operator_inventory.csv \
+  --out output-expanded \
+  --include-fuzzy-candidates
+
 python -m cdisc_rulekit.cli validate-structure \
   --generated-rules output/generated_rules \
   --out output/reports
@@ -213,6 +222,17 @@ Latest SDTM-IG pilot result:
 - CORE execution comparison: 34 passed, 0 failed
 - Remaining skipped rows are generation-scope coverage gaps, not supported CORE
   mismatches. Keep them separate from wrong results when expanding generation.
+
+Latest expanded SDTM-IG draft export:
+
+- Expanded run directory: `output/sdtmig_phase2_expanded`
+- Generated draft rules: 278
+- Structure validation: 278 rules checked, ok
+- Export target:
+  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-EXPANDED`
+- Export result: 278 exported, 0 skipped
+- `Published/` was not modified. Fuzzy-derived rules remain draft/review items
+  through the `FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW` manifest warning.
 
 Minimal generated outputs include:
 

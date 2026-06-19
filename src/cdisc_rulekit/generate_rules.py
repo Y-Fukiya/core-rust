@@ -339,11 +339,20 @@ def _skip_row(rule: CanonicalRule, reason: str) -> dict[str, object]:
     }
 
 
-def _generate_one(rule: CanonicalRule, root: Path, allowed_operators: set[str]) -> dict[str, object]:
+def _generate_one(
+    rule: CanonicalRule,
+    root: Path,
+    allowed_operators: set[str],
+    *,
+    include_fuzzy_candidates: bool = False,
+) -> dict[str, object]:
     if rule.conversion_status != "AUTO_CONVERTIBLE":
         return _skip_row(rule, f"STATUS_NOT_GENERATABLE:{rule.conversion_status}")
-    if "FUZZY_CORE_CANDIDATE" in rule.conversion_reasons:
+    warnings = []
+    if "FUZZY_CORE_CANDIDATE" in rule.conversion_reasons and not include_fuzzy_candidates:
         return _skip_row(rule, "FUZZY_CANDIDATE_REQUIRES_REVIEW")
+    if "FUZZY_CORE_CANDIDATE" in rule.conversion_reasons:
+        warnings.append("FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW")
     rule_type = (rule.p21_rule_type or "").upper()
     if rule_type not in GENERATABLE_TYPES:
         return _skip_row(rule, f"UNSUPPORTED_RULE_TYPE:{rule.p21_rule_type}")
@@ -365,7 +374,7 @@ def _generate_one(rule: CanonicalRule, root: Path, allowed_operators: set[str]) 
     ensure_dir(rule_dir)
     rule_payload = _rule_yml(rule, rule_id, domain, check)
     (rule_dir / "rule.yml").write_text(yaml.safe_dump(rule_payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    _write_manifest(rule_dir, rule, rule_id, [])
+    _write_manifest(rule_dir, rule, rule_id, warnings)
     _write_expected_results(rule_dir, rule_id, domain, variable)
     _write_data_case(rule_dir, "positive", rule, domain, variable)
     _write_data_case(rule_dir, "negative", rule, domain, variable)
@@ -386,11 +395,20 @@ def generate_rules(
     out_dir: str | Path,
     allowed_operators: set[str],
     limit: int | None = None,
+    include_fuzzy_candidates: bool = False,
 ) -> GenerationSummary:
     selected = rules[:limit] if limit is not None else rules
     root = Path(out_dir)
     ensure_dir(root / "reports")
-    rows = [_generate_one(rule, root, allowed_operators) for rule in selected]
+    rows = [
+        _generate_one(
+            rule,
+            root,
+            allowed_operators,
+            include_fuzzy_candidates=include_fuzzy_candidates,
+        )
+        for rule in selected
+    ]
     write_csv(root / "reports" / "generation_summary.csv", rows, SUMMARY_FIELDS)
     (root / "reports" / "generation_summary.json").write_text(
         json.dumps(
