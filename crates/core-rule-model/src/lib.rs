@@ -496,6 +496,7 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
             })?
         }
         Some("yaml" | "yml") => {
+            let source = quote_yaml_value_literals(&source);
             serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
                 path: path.to_path_buf(),
                 message: source.to_string(),
@@ -506,6 +507,30 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
     };
 
     normalize_rule(value)
+}
+
+fn quote_yaml_value_literals(source: &str) -> String {
+    source
+        .lines()
+        .map(quote_yaml_value_literal_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn quote_yaml_value_literal_line(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("value:") else {
+        return line.to_owned();
+    };
+    let scalar = rest.trim();
+    if !matches!(
+        scalar,
+        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
+    ) {
+        return line.to_owned();
+    }
+    let indent_len = line.len() - trimmed.len();
+    format!("{}value: \"{}\"", &line[..indent_len], scalar)
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -1928,6 +1953,35 @@ Outcome:
             condition.options.extra.get("case_sensitive"),
             Some(&json!(false))
         );
+    }
+
+    #[test]
+    fn yaml_value_is_literal_preserves_bare_n_as_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: IEORRES
+  operator: not_equal_to
+  value: N
+  value_is_literal: true
+Outcome:
+  Message: IEORRES must be N
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("N")));
     }
 
     #[test]

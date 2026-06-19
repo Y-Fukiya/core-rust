@@ -179,8 +179,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         };
     }
 
+    let candidate_issues = align_candidate_identity_to_official(&official.issues, candidate.issues);
     let official_set = official.issues.into_iter().collect::<BTreeSet<_>>();
-    let candidate_set = candidate.issues.into_iter().collect::<BTreeSet<_>>();
+    let candidate_set = candidate_issues.into_iter().collect::<BTreeSet<_>>();
     let missing = official_set
         .difference(&candidate_set)
         .cloned()
@@ -203,6 +204,27 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         extra,
         ..base
     }
+}
+
+fn align_candidate_identity_to_official(
+    official: &[IssueKey],
+    candidate: Vec<IssueKey>,
+) -> Vec<IssueKey> {
+    let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
+    let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
+
+    candidate
+        .into_iter()
+        .map(|mut issue| {
+            if !compare_usubjid {
+                issue.usubjid.clear();
+            }
+            if !compare_seq {
+                issue.seq.clear();
+            }
+            issue
+        })
+        .collect()
 }
 
 impl ScoreSummary {
@@ -267,9 +289,13 @@ fn grouped_summary(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
     use std::path::Path;
 
+    use crate::open_rules::discovery::{CaseKind, OpenRulesCase};
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
 
     use crate::open_rules::discovery::discover_cases;
 
@@ -315,5 +341,55 @@ mod tests {
                 .join("01")
                 .join("report.csv")
         );
+    }
+
+    #[test]
+    fn scores_match_when_official_lacks_subject_and_sequence_columns() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000001/negative/01");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000001/negative/01");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nIE,1,IECAT,INCLUSION\nIE,1,IEORRES,Y\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000001,failed,IE,IE,1,IECAT|IEORRES,text,1,,SUBJ001,1\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000001".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000001"),
+            rule_path: dir.path().join("open/Published/CORE-000001/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
     }
 }

@@ -54,7 +54,7 @@ pub fn normalize_csv(
         .collect::<Vec<_>>();
     let issues = issue_rows
         .into_iter()
-        .map(|row| normalize_row(row, default_rule_id))
+        .flat_map(|row| expand_issue_key(normalize_row(row, default_rule_id)))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -166,6 +166,20 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
     }
 }
 
+fn expand_issue_key(key: IssueKey) -> Vec<IssueKey> {
+    if key.variables.len() <= 1 {
+        return vec![key];
+    }
+
+    key.variables
+        .iter()
+        .map(|variable| IssueKey {
+            variables: vec![variable.clone()],
+            ..key.clone()
+        })
+        .collect()
+}
+
 fn first(row: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| {
         row.iter()
@@ -242,7 +256,25 @@ mod tests {
 
         assert_eq!(official.issues, candidate.issues);
         assert_eq!(official.issues[0].dataset, "CM");
-        assert_eq!(official.issues[0].variables, vec!["CMSEQ", "CMTRT"]);
+        assert_eq!(official.issues[0].variables, vec!["CMSEQ"]);
+        assert_eq!(official.issues[1].variables, vec!["CMTRT"]);
+    }
+
+    #[test]
+    fn expands_multi_variable_rows_to_variable_level_issue_keys() {
+        let dir = tempdir().expect("tempdir");
+        let report = dir.path().join("report.csv");
+        fs::write(
+            &report,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000001,failed,IE,IE,1,IECAT|IEORRES,text,2,,,\n",
+        )
+        .expect("write report");
+
+        let normalized = normalize_csv(&report, ReportSource::CoreRs, None).expect("normalize");
+
+        assert_eq!(normalized.issue_count, 2);
+        assert_eq!(normalized.issues[0].variables, vec!["IECAT"]);
+        assert_eq!(normalized.issues[1].variables, vec!["IEORRES"]);
     }
 
     #[test]
