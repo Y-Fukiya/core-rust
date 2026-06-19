@@ -13,7 +13,7 @@
           "rule_id": "CORE-TEST-0004",
           "dataset": "AE",
           "domain": "AE",
-          "row": null,
+          "row": 3,
           "variables": [
             "AESEQ"
           ],

@@ -631,14 +631,16 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
             .get("Check")
             .ok_or(RuleModelError::MissingField("Check"))?,
     )?;
+    let outcome = object
+        .get("Outcome")
+        .and_then(Value::as_object)
+        .ok_or(RuleModelError::MissingField("Outcome"))?;
+    let outcome_message =
+        string_field(outcome, "Message").ok_or(RuleModelError::MissingField("Outcome.Message"))?;
     let actions = vec![ActionSpec {
         name: "generate_dataset_error_objects".to_owned(),
         params: serde_json::json!({
-            "message": object
-                .get("Outcome")
-                .and_then(Value::as_object)
-                .and_then(|outcome| string_field(outcome, "Message"))
-                .ok_or(RuleModelError::MissingField("Outcome.Message"))?
+            "message": outcome_message
         }),
     }];
 
@@ -667,8 +669,8 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
             .map(operation_specs_from_value)
             .transpose()?
             .unwrap_or_default(),
-        output_variables: string_vec_field(object, "Output Variables"),
-        grouping_variables: string_vec_field(object, "Grouping Variables"),
+        output_variables: string_vec_field(outcome, "Output Variables"),
+        grouping_variables: string_vec_field(outcome, "Grouping Variables"),
         use_case: scope.and_then(|scope| string_field(scope, "Use Case")),
         status,
         raw: Some(value),
@@ -706,21 +708,61 @@ fn normalize_condition(value: &Value) -> Result<ConditionGroup> {
         string_field(object, "operator").ok_or(RuleModelError::MissingField("Check.operator"))?;
     let mut extra = BTreeMap::new();
     for (key, value) in object {
-        if !matches!(key.as_str(), "name" | "target" | "operator" | "value") {
+        if !matches!(
+            key.as_str(),
+            "name" | "target" | "operator" | "value" | "value_is_literal"
+        ) {
             extra.insert(key.clone(), value.clone());
         }
     }
+    let operator = Operator::from_name(operator_name);
 
     Ok(ConditionGroup::Leaf(Condition {
         target: string_field(object, "name").or_else(|| string_field(object, "target")),
-        operator: Operator::from_name(operator_name),
+        operator: operator.clone(),
         comparator: object
             .get("value")
             .cloned()
-            .map(value_expr_from_value)
+            .map(|value| value_expr_from_condition_value(value, object, &operator))
             .unwrap_or(ValueExpr::Null),
         options: OperatorOptions { extra },
     }))
+}
+
+fn value_expr_from_condition_value(
+    value: Value,
+    object: &Map<String, Value>,
+    operator: &Operator,
+) -> ValueExpr {
+    if object
+        .get("value_is_literal")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return ValueExpr::Literal(value);
+    }
+
+    if is_column_ref_operator(operator) {
+        if let Value::String(column) = &value {
+            return ValueExpr::ColumnRef(column.clone());
+        }
+    }
+
+    value_expr_from_value(value)
+}
+
+fn is_column_ref_operator(operator: &Operator) -> bool {
+    matches!(
+        operator,
+        Operator::EqualTo
+            | Operator::NotEqualTo
+            | Operator::EqualToCaseInsensitive
+            | Operator::NotEqualToCaseInsensitive
+            | Operator::LessThan
+            | Operator::LessThanOrEqualTo
+            | Operator::GreaterThan
+            | Operator::GreaterThanOrEqualTo
+    )
 }
 
 fn normalize_jsonata_expression(expression: &str) -> Result<ConditionGroup> {
@@ -1884,6 +1926,18 @@ Outcome:
     }
 
     #[test]
+    fn normalize_outcome_variables() {
+        let mut value = sample_metadata_rule();
+        value["Outcome"]["Output Variables"] = json!(["AETERM", "AESTDTC", "AESER"]);
+        value["Outcome"]["Grouping Variables"] = json!(["USUBJID"]);
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.output_variables, vec!["AETERM", "AESTDTC", "AESER"]);
+        assert_eq!(rule.grouping_variables, vec!["USUBJID"]);
+    }
+
+    #[test]
     fn normalize_check_all_to_condition_group_all() {
         let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
 
@@ -1934,6 +1988,7 @@ Outcome:
                 "name": "DOMAIN",
                 "operator": "equal_to",
                 "value": "AE",
+                "value_is_literal": true,
                 "case_sensitive": false
             },
             "Outcome": {
@@ -1952,6 +2007,60 @@ Outcome:
         assert_eq!(
             condition.options.extra.get("case_sensitive"),
             Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn normalize_string_value_without_literal_flag_as_column_ref() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "IESTRESC",
+                "operator": "not_equal_to",
+                "value": "IEORRES"
+            },
+            "Outcome": {
+                "Message": "IESTRESC must equal IEORRES"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("IEORRES".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalize_regex_string_value_as_literal_pattern() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DOMAIN",
+                "operator": "matches_regex",
+                "value": "^(.){21,}$"
+            },
+            "Outcome": {
+                "Message": "DOMAIN is too long"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::Literal(json!("^(.){21,}$"))
         );
     }
 

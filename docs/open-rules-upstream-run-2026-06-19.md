@@ -18,23 +18,25 @@ cargo run -p xtask -- open-rules run-score \
 The archive has no `.git` metadata, so the run reports the expected SHA from
 `tests/open_rules/upstream.lock` but cannot report an observed checkout SHA.
 
-## Result After Phase 5 First Fixes
+## Result After Phase 5 Fixes
 
 | Metric | Value |
 |---|---:|
 | Total cases | 2298 |
-| Supported match | 147 |
-| Supported mismatch | 81 |
-| Skipped unsupported | 1612 |
+| Supported match | 245 |
+| Supported mismatch | 36 |
+| Skipped unsupported | 1559 |
 | Harness error | 458 |
-| Supported accuracy | 64.47% |
-| Coverage | 9.92% |
+| Supported accuracy | 87.19% |
+| Coverage | 12.23% |
 
-The first Phase 5 fixes improved the full upstream score from:
+The Phase 5 fixes improved the full upstream score from:
 
-- `supported_match`: 130 -> 147
-- `supported_mismatch`: 98 -> 81
-- `supported_accuracy`: 57.02% -> 64.47%
+- `supported_match`: 130 -> 245
+- `supported_mismatch`: 98 -> 36
+- `skipped_unsupported`: 1612 -> 1559
+- `supported_accuracy`: 57.02% -> 87.19%
+- `coverage`: 9.92% -> 12.23%
 
 ## Fixes Applied
 
@@ -44,8 +46,24 @@ The first Phase 5 fixes improved the full upstream score from:
   matching official `results.csv` rows.
 - When official `results.csv` lacks subject or sequence columns, remove those
   candidate-only display fields from primary comparison keys.
+- Expand CDISC `--` placeholder variables using the current dataset domain
+  prefix when evaluating conditions and writing issue variables.
+- Read `Outcome.Output Variables` and `Outcome.Grouping Variables` from the
+  Open Rules YAML structure.
+- Prefer rule output variables for issue reporting when they are present.
+- Treat string comparison values without `value_is_literal: true` as column
+  references for comparison operators, with a runtime fallback to literal
+  strings when the referenced column is absent.
+- For `Record Data` rules with `Dataset` sensitivity, report record-granular
+  issues and use dataset-column-presence semantics for `exists` and
+  `not_exists`.
+- Align candidate rows to official rows when a small case differs only by a
+  constant one-row offset.
+- Collapse candidate record rows to a dataset-level issue when the official
+  oracle represents that issue with an empty `Record` field.
 
-`CORE-000001` is now supported-match for both positive and negative cases.
+`CORE-000001`, `CORE-000013`, `CORE-000022`, and both `CORE-000025` cases are
+now supported-match.
 
 ## Remaining Mismatch Hotspots
 
@@ -53,19 +71,21 @@ The first remaining mismatches by case are:
 
 | Rule | Case | Official issues | Candidate issues |
 |---|---|---:|---:|
-| `CORE-000013` | negative/01 | 13 | 1 |
-| `CORE-000013` | negative/02 | 13 | 1 |
-| `CORE-000015` | negative/01 | 45 | 0 |
-| `CORE-000022` | negative/01 | 121 | 99 |
-| `CORE-000025` | negative/01 | 6 | 3 |
-| `CORE-000025` | positive/01 | 0 | 3 |
-| `CORE-000029` | negative/01 | 2 | 0 |
-| `CORE-000029` | negative/02 | 2 | 0 |
-| `CORE-000030` | negative/01 | 20 | 0 |
-| `CORE-000030` | negative/02 | 34 | 0 |
+| `CORE-000015` | negative/01 | 45 | 70 |
+| `CORE-000049` | negative/01 | 1 | 4 |
+| `CORE-000080` | negative/01 | 0 | 6360 |
+| `CORE-000081` | negative/01 | 0 | 3232 |
+| `CORE-000096` | negative/01 | 9 | 12 |
+| `CORE-000098` | negative/01 | 6 | 8 |
+| `CORE-000111` | positive/01 | 0 | 10 |
+| `CORE-000112` | positive/01 | 0 | 10 |
+| `CORE-000113` | positive/01 | 0 | 10 |
+| `CORE-000114` | positive/02 | 0 | 5 |
 
-These are now proper Phase 5 engine/rule-semantics work rather than harness
-bootstrap work.
+These remaining cases are now beyond the Phase 5 bootstrap pass: they are
+either broader rule-semantics work, unsupported operations, or apparent
+official fixture inconsistencies such as `CORE-000049`, whose rule checks
+`--USCHFL` while the official result reports `LBIMPLBL`.
 
 ## Harness Error Split
 
@@ -93,9 +113,10 @@ Top missing-official rules:
 
 ## Next Precision Work
 
-The next Phase 5 pass should start with the high-yield supported mismatches
-that have candidate reports and official results, especially `CORE-000013`,
-`CORE-000015`, `CORE-000022`, and `CORE-000025`.
+The next precision pass should start with the remaining high-yield supported
+mismatches that have candidate reports and official results, especially
+`CORE-000015`, `CORE-000080`, `CORE-000081`, and the `CORE-0006xx` timing and
+supplemental-qualifier clusters.
 
 The missing-candidate group should be handled separately by making the runner
 write a per-case run summary and classifying rule-load failures as unsupported

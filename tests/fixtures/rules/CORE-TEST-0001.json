@@ -24,7 +24,8 @@
       {
         "name": "DOMAIN",
         "operator": "equal_to",
-        "value": "AE"
+        "value": "AE",
+        "value_is_literal": true
       }
     ]
   },

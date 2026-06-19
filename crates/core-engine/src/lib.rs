@@ -2,7 +2,8 @@
 
 use core_data::LoadedDataset;
 use core_rule_model::{
-    ActionSpec, Condition, ConditionGroup, ExecutableRule, Operator, Sensitivity, ValueExpr,
+    ActionSpec, Condition, ConditionGroup, ExecutableRule, Operator, RuleType, Sensitivity,
+    ValueExpr,
 };
 use polars::prelude::*;
 use regex::Regex;
@@ -108,10 +109,13 @@ pub fn validate_rule(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Result<RuleValidationResult> {
-    let mask = evaluate_rule_conditions(rule, dataset)?;
+    let dataset_presence_exists = matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
+        && rule.rule_type == RuleType::RecordData;
+    let mask =
+        evaluate_condition_group_with_options(&rule.conditions, dataset, dataset_presence_exists)?;
     let message =
         outcome_message(&rule.actions).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
-    let variables = extract_target_variables(&rule.conditions);
+    let variables = issue_variables(rule, dataset);
 
     let errors = match rule
         .sensitivity
@@ -119,6 +123,9 @@ pub fn validate_rule(
         .ok_or(EngineError::MissingSensitivity)?
     {
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
+        Sensitivity::Dataset if rule.rule_type == RuleType::RecordData => {
+            record_level_issues(rule, dataset, &mask, &variables, &message)?
+        }
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),
         sensitivity => {
             return Err(EngineError::UnsupportedSensitivity(
@@ -155,28 +162,56 @@ pub fn evaluate_condition_group(
     group: &ConditionGroup,
     dataset: &LoadedDataset,
 ) -> Result<BooleanMask> {
+    evaluate_condition_group_with_options(group, dataset, false)
+}
+
+fn evaluate_condition_group_with_options(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    dataset_presence_exists: bool,
+) -> Result<BooleanMask> {
     let row_count = dataset.frame().height();
 
     match group {
         ConditionGroup::All(groups) => {
             let mut mask = vec![true; row_count];
             for group in groups {
-                and_assign(&mut mask, &evaluate_condition_group(group, dataset)?);
+                and_assign(
+                    &mut mask,
+                    &evaluate_condition_group_with_options(
+                        group,
+                        dataset,
+                        dataset_presence_exists,
+                    )?,
+                );
             }
             Ok(mask)
         }
         ConditionGroup::Any(groups) => {
             let mut mask = vec![false; row_count];
             for group in groups {
-                or_assign(&mut mask, &evaluate_condition_group(group, dataset)?);
+                or_assign(
+                    &mut mask,
+                    &evaluate_condition_group_with_options(
+                        group,
+                        dataset,
+                        dataset_presence_exists,
+                    )?,
+                );
             }
             Ok(mask)
         }
-        ConditionGroup::Not(group) => Ok(evaluate_condition_group(group, dataset)?
-            .into_iter()
-            .map(|value| !value)
-            .collect()),
-        ConditionGroup::Leaf(condition) => evaluate_condition(condition, dataset),
+        ConditionGroup::Not(group) => {
+            Ok(
+                evaluate_condition_group_with_options(group, dataset, dataset_presence_exists)?
+                    .into_iter()
+                    .map(|value| !value)
+                    .collect(),
+            )
+        }
+        ConditionGroup::Leaf(condition) => {
+            evaluate_condition_with_options(condition, dataset, dataset_presence_exists)
+        }
     }
 }
 
@@ -186,7 +221,64 @@ pub fn extract_target_variables(group: &ConditionGroup) -> Vec<String> {
     variables
 }
 
+fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String> {
+    let mut expanded = Vec::new();
+    if rule.output_variables.is_empty() {
+        collect_issue_variables(&rule.conditions, dataset, &mut expanded);
+    } else {
+        for variable in &rule.output_variables {
+            push_unique(
+                &mut expanded,
+                &expand_domain_placeholder(dataset, variable),
+            );
+        }
+    }
+    expanded
+}
+
+fn collect_issue_variables(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    variables: &mut Vec<String>,
+) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                collect_issue_variables(group, dataset, variables);
+            }
+        }
+        ConditionGroup::Not(group) => collect_issue_variables(group, dataset, variables),
+        ConditionGroup::Leaf(condition) => {
+            if let Some(target) = &condition.target {
+                push_unique(variables, &expand_domain_placeholder(dataset, target));
+            }
+            collect_comparator_issue_variables(&condition.comparator, dataset, variables);
+        }
+    }
+}
+
+fn collect_comparator_issue_variables(
+    value: &ValueExpr,
+    dataset: &LoadedDataset,
+    variables: &mut Vec<String>,
+) {
+    if let ValueExpr::ColumnRef(column) = value {
+        let column = expand_domain_placeholder(dataset, column);
+        if dataset.frame().column(&column).is_ok() {
+            push_unique(variables, &column);
+        }
+    }
+}
+
 pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Result<BooleanMask> {
+    evaluate_condition_with_options(condition, dataset, false)
+}
+
+fn evaluate_condition_with_options(
+    condition: &Condition,
+    dataset: &LoadedDataset,
+    dataset_presence_exists: bool,
+) -> Result<BooleanMask> {
     let frame = dataset.frame();
     let row_count = frame.height();
     let operator = &condition.operator;
@@ -194,26 +286,33 @@ pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Res
         .target
         .as_deref()
         .ok_or(EngineError::MissingTarget)?;
+    let target = expand_domain_placeholder(dataset, target);
 
     match operator {
         Operator::Exists => {
-            let Some(column) = optional_column(frame, target)? else {
+            let Some(column) = optional_column(frame, &target)? else {
                 return Ok(vec![false; row_count]);
             };
+            if dataset_presence_exists {
+                return Ok(vec![true; row_count]);
+            }
             return evaluate_column(column, row_count, |value, _row| Ok(!value.is_null()));
         }
         Operator::NotExists => {
-            let Some(column) = optional_column(frame, target)? else {
+            let Some(column) = optional_column(frame, &target)? else {
                 return Ok(vec![true; row_count]);
             };
+            if dataset_presence_exists {
+                return Ok(vec![false; row_count]);
+            }
             return evaluate_column(column, row_count, |value, _row| Ok(value.is_null()));
         }
         _ => {}
     }
 
     let column = frame
-        .column(target)
-        .map_err(|_| EngineError::MissingColumn(target.to_owned()))?;
+        .column(&target)
+        .map_err(|_| EngineError::MissingColumn(target.clone()))?;
 
     match operator {
         Operator::EqualTo
@@ -226,6 +325,7 @@ pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Res
                 let equal = scalar_matches_comparator(
                     &left,
                     comparator,
+                    dataset,
                     frame,
                     row,
                     is_case_insensitive_operator(operator),
@@ -273,6 +373,7 @@ pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Res
                 let contained = scalar_matches_comparator(
                     &left,
                     comparator,
+                    dataset,
                     frame,
                     row,
                     is_case_insensitive_operator(operator),
@@ -290,7 +391,7 @@ pub fn evaluate_condition(condition: &Condition, dataset: &LoadedDataset) -> Res
             let comparator = required_comparator(operator, &condition.comparator)?;
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
-                let right = resolve_scalar_comparator(comparator, frame, row)?;
+                let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
                 Ok(compare_scalars(&left, &right)
                     .map(|ordering| match operator {
                         Operator::LessThan => ordering == Ordering::Less,
@@ -501,6 +602,7 @@ fn string_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<Stri
 fn scalar_matches_comparator(
     left: &ScalarValue,
     comparator: &ValueExpr,
+    dataset: &LoadedDataset,
     frame: &DataFrame,
     row: usize,
     case_insensitive: bool,
@@ -511,7 +613,7 @@ fn scalar_matches_comparator(
             .map(json_value_to_scalar)
             .any(|right| scalar_equal_with_mode(left, &right, case_insensitive))),
         _ => {
-            let right = resolve_scalar_comparator(comparator, frame, row)?;
+            let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
             Ok(scalar_equal_with_mode(left, &right, case_insensitive))
         }
     }
@@ -519,6 +621,7 @@ fn scalar_matches_comparator(
 
 fn resolve_scalar_comparator(
     comparator: &ValueExpr,
+    dataset: &LoadedDataset,
     frame: &DataFrame,
     row: usize,
 ) -> Result<ScalarValue> {
@@ -526,9 +629,10 @@ fn resolve_scalar_comparator(
         ValueExpr::Literal(value) => Ok(json_value_to_scalar(value)),
         ValueExpr::Null => Ok(ScalarValue::Null),
         ValueExpr::ColumnRef(column_name) => {
-            let column = frame
-                .column(column_name)
-                .map_err(|_| EngineError::MissingColumn(column_name.clone()))?;
+            let column_name = expand_domain_placeholder(dataset, column_name);
+            let Some(column) = optional_column(frame, &column_name)? else {
+                return Ok(ScalarValue::String(column_name));
+            };
             Ok(ScalarValue::from_any_value(column.get(row)?))
         }
         ValueExpr::List(_) => Err(EngineError::InvalidComparator {
@@ -536,6 +640,28 @@ fn resolve_scalar_comparator(
             comparator: comparator.clone(),
         }),
     }
+}
+
+fn expand_domain_placeholder(dataset: &LoadedDataset, name: &str) -> String {
+    let Some(suffix) = name.strip_prefix("--") else {
+        return name.to_owned();
+    };
+    let Some(prefix) = domain_prefix(dataset) else {
+        return name.to_owned();
+    };
+    format!("{}{}", prefix, suffix.to_ascii_uppercase())
+}
+
+fn domain_prefix(dataset: &LoadedDataset) -> Option<String> {
+    dataset
+        .metadata()
+        .domain
+        .as_deref()
+        .filter(|domain| !domain.trim().is_empty())
+        .or_else(|| {
+            (!dataset.metadata().name.trim().is_empty()).then_some(dataset.metadata().name.as_str())
+        })
+        .map(|domain| domain.trim().to_ascii_uppercase())
 }
 
 fn json_value_to_scalar(value: &Value) -> ScalarValue {
@@ -797,6 +923,36 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_domain_prefixed_placeholder_columns() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("--SEQ", Operator::GreaterThan, literal(2)),
+                &dataset
+            )
+            .expect("domain placeholder"),
+            vec![false, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("--SEQ_COPY", Operator::Exists, ValueExpr::Null),
+                &dataset
+            )
+            .expect("domain placeholder exists"),
+            vec![true, true, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("--MISSING", Operator::NotExists, ValueExpr::Null),
+                &dataset
+            )
+            .expect("domain placeholder missing"),
+            vec![true, true, true, true]
+        );
+    }
+
+    #[test]
     fn evaluates_equal_and_not_equal() {
         let dataset = test_dataset();
 
@@ -828,6 +984,43 @@ mod tests {
             .expect("column ref equal"),
             vec![true, false, true, true]
         );
+    }
+
+    #[test]
+    fn missing_column_ref_comparator_falls_back_to_literal_string() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "DOMAIN",
+                    Operator::EqualTo,
+                    ValueExpr::ColumnRef("AE".to_owned())
+                ),
+                &dataset
+            )
+            .expect("missing column ref fallback"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn validation_issues_ignore_missing_column_ref_literal_fallback_variables() {
+        let dataset = test_dataset();
+        let rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition(
+                "DOMAIN",
+                Operator::NotEqualTo,
+                ValueExpr::ColumnRef("AE".to_owned()),
+            )),
+            "DOMAIN must be AE",
+        );
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["DOMAIN"]);
     }
 
     #[test]
@@ -1288,11 +1481,12 @@ mod tests {
     #[test]
     fn validate_rule_generates_dataset_level_issue() {
         let dataset = test_dataset();
-        let rule = rule(
+        let mut rule = rule(
             Some(Sensitivity::Dataset),
             ConditionGroup::Leaf(condition("AESEQ", Operator::GreaterThan, literal(2))),
             "Dataset has AESEQ greater than 2",
         );
+        rule.rule_type = RuleType::DatasetMetadata;
 
         let result = validate_rule(&rule, &dataset).expect("validate rule");
 
@@ -1302,6 +1496,83 @@ mod tests {
         assert_eq!(result.errors[0].variables, vec!["AESEQ"]);
         assert_eq!(result.errors[0].usubjid, None);
         assert_eq!(result.errors[0].seq, None);
+    }
+
+    #[test]
+    fn record_data_with_dataset_sensitivity_reports_matching_records() {
+        let dataset = test_dataset();
+        let rule = rule(
+            Some(Sensitivity::Dataset),
+            ConditionGroup::Leaf(condition("DOMAIN", Operator::Exists, ValueExpr::Null)),
+            "DOMAIN variable is present",
+        );
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 4);
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .map(|issue| issue.row)
+                .collect::<Vec<_>>(),
+            vec![Some(1), Some(2), Some(3), Some(4)]
+        );
+        assert_eq!(result.errors[0].variables, vec!["DOMAIN"]);
+        assert_eq!(result.errors[0].usubjid.as_deref(), Some("SUBJ1"));
+        assert_eq!(result.errors[0].seq.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn record_data_with_dataset_sensitivity_treats_exists_as_column_presence() {
+        let dataset = test_dataset();
+        let rule = rule(
+            Some(Sensitivity::Dataset),
+            ConditionGroup::Leaf(condition("TERM", Operator::Exists, ValueExpr::Null)),
+            "TERM variable is present",
+        );
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 4);
+        assert_eq!(result.errors[3].row, Some(4));
+    }
+
+    #[test]
+    fn validation_issues_expand_domain_prefixed_placeholder_variables() {
+        let dataset = test_dataset();
+        let rule = rule(
+            Some(Sensitivity::Dataset),
+            ConditionGroup::All(vec![
+                ConditionGroup::Leaf(condition("--MISSING", Operator::NotExists, ValueExpr::Null)),
+                ConditionGroup::Leaf(condition("--SEQ", Operator::Exists, ValueExpr::Null)),
+            ]),
+            "prefixed variable issue",
+        );
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 4);
+        assert_eq!(result.errors[0].variables, vec!["AEMISSING", "AESEQ"]);
+    }
+
+    #[test]
+    fn validation_issues_prefer_rule_output_variables() {
+        let dataset = test_dataset();
+        let mut rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition("DOMAIN", Operator::NotEqualTo, literal("AE"))),
+            "DOMAIN must be AE",
+        );
+        rule.output_variables = vec!["TERM".to_owned(), "--SEQ".to_owned(), "DOMAIN".to_owned()];
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["TERM", "AESEQ", "DOMAIN"]);
     }
 
     #[test]

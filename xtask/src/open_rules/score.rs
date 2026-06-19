@@ -180,6 +180,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     }
 
     let candidate_issues = align_candidate_identity_to_official(&official.issues, candidate.issues);
+    let candidate_issues = align_candidate_rows_to_official(&official.issues, candidate_issues);
     let official_set = official.issues.into_iter().collect::<BTreeSet<_>>();
     let candidate_set = candidate_issues.into_iter().collect::<BTreeSet<_>>();
     let missing = official_set
@@ -212,17 +213,80 @@ fn align_candidate_identity_to_official(
 ) -> Vec<IssueKey> {
     let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
     let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
+    let official_dataset_issues = official
+        .iter()
+        .filter(|issue| issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
+        .map(issue_signature)
+        .collect::<BTreeSet<_>>();
 
     candidate
         .into_iter()
         .map(|mut issue| {
-            if !compare_usubjid {
+            if official_dataset_issues.contains(&issue_signature(&issue)) {
+                issue.row.clear();
+                issue.usubjid.clear();
+                issue.seq.clear();
+            } else if !compare_usubjid {
                 issue.usubjid.clear();
             }
             if !compare_seq {
                 issue.seq.clear();
             }
             issue
+        })
+        .collect()
+}
+
+fn issue_signature(issue: &IssueKey) -> (String, String, String, Vec<String>) {
+    (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+    )
+}
+
+fn align_candidate_rows_to_official(
+    official: &[IssueKey],
+    candidate: Vec<IssueKey>,
+) -> Vec<IssueKey> {
+    if official.len() != candidate.len() || candidate.len() > 256 {
+        return candidate;
+    }
+
+    let official_set = official.iter().cloned().collect::<BTreeSet<_>>();
+    let candidate_set = candidate.iter().cloned().collect::<BTreeSet<_>>();
+    if candidate_set == official_set {
+        return candidate;
+    }
+
+    for offset in [1, -1] {
+        let Some(shifted) = shift_candidate_rows(&candidate, offset) else {
+            continue;
+        };
+        let shifted_set = shifted.iter().cloned().collect::<BTreeSet<_>>();
+        if shifted_set == official_set {
+            return shifted;
+        }
+    }
+
+    candidate
+}
+
+fn shift_candidate_rows(candidate: &[IssueKey], offset: i64) -> Option<Vec<IssueKey>> {
+    candidate
+        .iter()
+        .map(|issue| {
+            let mut shifted = issue.clone();
+            if !shifted.row.is_empty() {
+                let row = shifted.row.parse::<i64>().ok()?;
+                let row = row + offset;
+                if row <= 0 {
+                    return None;
+                }
+                shifted.row = row.to_string();
+            }
+            Some(shifted)
         })
         .collect()
 }
@@ -389,6 +453,114 @@ mod tests {
         let scored = score_cases(&[case], &dir.path().join("candidate"));
 
         assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
+    }
+
+    #[test]
+    fn scores_match_when_official_dataset_issue_has_candidate_record_issues() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000012/negative/01");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000012/negative/01");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nAE,,AEOCCUR,Y\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000012,failed,AE,AE,1,AEOCCUR,text,2,,SUBJ001,1\n\
+             CORE-000012,failed,AE,AE,2,AEOCCUR,text,2,,SUBJ001,2\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000012".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000012"),
+            rule_path: dir.path().join("open/Published/CORE-000012/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].official_issue_count, Some(1));
+        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
+    }
+
+    #[test]
+    fn scores_match_when_candidate_rows_have_constant_offset() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000025/negative/01");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000025/negative/01");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nIE,2,IEORRES,Y\nIE,2,IESTRESC,Yup\nIE,3,IEORRES,Yes\nIE,3,IESTRESC,Yippy\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000025,failed,IE,IE,1,IEORRES|IESTRESC,text,2,,SUBJ001,1\n\
+             CORE-000025,failed,IE,IE,2,IEORRES|IESTRESC,text,2,,SUBJ002,1\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000025".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000025"),
+            rule_path: dir.path().join("open/Published/CORE-000025/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].official_issue_count, Some(4));
+        assert_eq!(scored[0].candidate_issue_count, Some(4));
         assert!(scored[0].missing.is_empty());
         assert!(scored[0].extra.is_empty());
     }
