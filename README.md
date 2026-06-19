@@ -117,6 +117,46 @@ Show CLI help:
 cargo run -p core-cli -- validate --help
 ```
 
+## CDISC Rulekit Pilot
+
+The Python `cdisc_rulekit` package provides a Phase 1 read-only pipeline for
+normalizing P21 rule exports and CDISC Open Rules into catalogs, candidate
+mappings, conversion classifications, and reports. It does not generate or copy
+rules in this phase.
+
+The Open Rules input may be either an extracted repository directory or a zip
+archive such as `cdisc-open-rules-main.zip`. Zip archives are extracted under
+`output/_work/` during read-only commands.
+
+```sh
+python -m cdisc_rulekit.cli pilot-preflight \
+  --p21-rules input/p21/cdisc_rule_definitions_latest_2204.csv \
+  --p21-domain-map input/p21/cdisc_rule_domain_map.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output/reports \
+  --standard SDTM-IG \
+  --limit 20
+
+python -m cdisc_rulekit.cli build-readonly \
+  --p21-rules input/p21/cdisc_rule_definitions_latest_2204.csv \
+  --p21-domain-map input/p21/cdisc_rule_domain_map.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output \
+  --standard SDTM-IG \
+  --limit 20
+```
+
+Phase 1 reports include:
+
+- `classification_quality.md`
+- `macro_inventory.csv`
+- `macro_inventory_summary.md`
+- `fuzzy_mapping_review.csv`
+- `reason_examples.csv`
+- `version_agency_summary.csv`
+- `raw_rule_id_summary.csv`
+- `source_rule_tracking.csv`
+
 ## Workspace Layout
 
 - `apps/cli`: command-line interface.

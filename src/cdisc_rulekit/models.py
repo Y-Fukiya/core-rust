@@ -22,6 +22,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 class CanonicalRule:
     source: str
     source_rule_id: str
+    source_rule_key: str | None = None
     p21_rule_id: str | None = None
     core_rule_id: str | None = None
     cdisc_rule_ids: list[str] = field(default_factory=list)
@@ -71,6 +72,7 @@ class RuleMapping:
     core_rule_id: str | None
     match_type: str
     confidence: float
+    p21_rule_key: str | None = None
     cdisc_rule_id_overlap: list[str] = field(default_factory=list)
     standard_match: bool = False
     domain_overlap: list[str] = field(default_factory=list)

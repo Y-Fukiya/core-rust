@@ -53,7 +53,7 @@ def extract_cg_ids(*values: object) -> list[str]:
 def _normalized_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8", newline="") as handle:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader, start=2):
             if None in row:
@@ -64,6 +64,10 @@ def _normalized_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
 
 def _domain_key(row: dict[str, Any]) -> tuple[str | None, ...]:
     return tuple(row.get(key) for key in DOMAIN_JOIN_KEYS)
+
+
+def _source_rule_key(row: dict[str, Any]) -> str:
+    return "|".join(str(row.get(key) or "") for key in DOMAIN_JOIN_KEYS)
 
 
 def _active(value: object) -> bool:
@@ -135,6 +139,7 @@ def _canonical_rule(row: dict[str, Any], joined: dict[str, set[str]] | None) -> 
     return CanonicalRule(
         source="P21",
         source_rule_id=source_rule_id,
+        source_rule_key=_source_rule_key(row),
         p21_rule_id=rule_id,
         cdisc_rule_ids=extract_cg_ids(*_values_for_cg_extraction(row)),
         standard_name=row.get("standard_name"),
