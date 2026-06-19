@@ -79,15 +79,15 @@ def _variable(rule: CanonicalRule) -> str | None:
 def _required_operators(rule_type: str) -> set[str]:
     common = {"all", "equal_to"}
     if rule_type == "REQUIRED":
-        return common | {"non_empty"}
+        return common | {"is_empty"}
     if rule_type == "REGEX":
-        return common | {"matches_regex"}
+        return common | {"does_not_match_regex"}
     if rule_type == "MATCH":
-        return common | {"is_contained_by"}
+        return common | {"is_not_contained_by"}
     if rule_type == "FIND":
-        return common | {"exists"}
+        return common | {"not_exists"}
     if rule_type == "CONDITION":
-        return common | {"non_empty"}
+        return common | {"is_empty"}
     return common
 
 
@@ -140,26 +140,26 @@ def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[
     rule_type = (rule.p21_rule_type or "").upper()
     checks: list[dict[str, Any]] = []
     if rule_type == "REQUIRED":
-        checks.append({"name": variable, "operator": "non_empty"})
+        checks.append({"name": variable, "operator": "is_empty"})
     elif rule_type == "REGEX":
         pattern = _regex_pattern(rule)
         if not pattern:
             return None, "MISSING_REGEX_PATTERN"
-        checks.append({"name": variable, "operator": "matches_regex", "value": pattern})
+        checks.append({"name": variable, "operator": "does_not_match_regex", "value": pattern})
     elif rule_type == "MATCH":
         terms = _match_terms(rule)
         if not terms:
             return None, "MISSING_MATCH_TERMS"
-        checks.append({"name": variable, "operator": "is_contained_by", "values": terms})
+        checks.append({"name": variable, "operator": "is_not_contained_by", "value": terms})
     elif rule_type == "FIND":
-        checks.append({"name": variable, "operator": "exists"})
+        checks.append({"name": variable, "operator": "not_exists"})
     elif rule_type == "CONDITION":
         condition_parts = _simple_condition_parts(rule, variable)
         if not condition_parts:
             return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
         (condition_variable, condition_value), target = condition_parts
         checks.append({"name": condition_variable, "operator": "equal_to", "value": condition_value})
-        checks.append({"name": target, "operator": "non_empty"})
+        checks.append({"name": target, "operator": "is_empty"})
     else:
         return None, "UNSUPPORTED_RULE_TYPE"
     checks.append({"name": "DOMAIN", "operator": "equal_to", "value": domain})
@@ -210,6 +210,8 @@ def _positive_negative_values(rule: CanonicalRule, variable: str) -> tuple[str, 
         return (terms[0] if terms else "Y"), "__INVALID__"
     if rule_type == "REGEX":
         pattern = _regex_pattern(rule) or ""
+        if "P(?:" in pattern or "P(?=" in pattern or "P\\d" in pattern or "P[0-9]" in pattern:
+            return "P1D", "ABC"
         if r"\d" in pattern or "[0-9]" in pattern:
             return "1", "ABC"
         return "VALID", "invalid value"
@@ -292,7 +294,7 @@ def _write_expected_results(rule_dir: Path, rule_id: str, domain: str, variable:
             "rule_id": rule_id,
             "dataset": domain,
             "row": 1,
-            "variables": variable,
+            "variables": f"{variable}|DOMAIN",
         },
     ]
     write_csv(
@@ -412,7 +414,14 @@ def operator_set_from_inventory_rows(rows: list[dict[str, object]]) -> set[str]:
     for row in rows:
         operator = row.get("operator")
         if operator:
-            operators.add(str(operator))
+            operator_name = str(operator)
+            operators.add(operator_name)
+            if operator_name == "non_empty":
+                operators.add("is_not_empty")
+            if operator_name == "empty":
+                operators.add("is_empty")
+            if operator_name == "not_matches_regex":
+                operators.add("does_not_match_regex")
         raw_keys = row.get("raw_keys")
         if isinstance(raw_keys, list):
             operators.update(str(item) for item in raw_keys)

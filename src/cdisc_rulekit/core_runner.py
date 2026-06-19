@@ -99,7 +99,7 @@ def _command(
     command = [
         *shlex.split(engine_command),
         "--local-rules",
-        str(rule_dir),
+        str(rule_dir / "rule.yml"),
     ]
     for dataset_path in _dataset_csv_paths(data_dir):
         command.extend(["--dataset-path", str(dataset_path)])

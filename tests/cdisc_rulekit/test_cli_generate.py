@@ -58,6 +58,7 @@ def test_generate_and_validate_structure_cli(tmp_path):
         writer.writerow({"operator": "all", "raw_keys": "[]"})
         writer.writerow({"operator": "operator", "raw_keys": json.dumps(["name", "operator", "value"])})
         writer.writerow({"operator": "equal_to", "raw_keys": "[]"})
+        writer.writerow({"operator": "empty", "raw_keys": "[]"})
         writer.writerow({"operator": "non_empty", "raw_keys": "[]"})
 
     env = os.environ.copy()

@@ -37,7 +37,8 @@ def test_build_core_run_plan_creates_positive_and_negative_dry_run_commands(tmp_
     assert first.dry_run is True
     assert first.command[:5] == ["cargo", "run", "-p", "core-cli", "--"]
     assert "--local-rules" in first.command
-    assert str(generated_root / first.generated_rule_id) in first.command
+    assert str(generated_root / first.generated_rule_id / "rule.yml") in first.command
+    assert str(generated_root / first.generated_rule_id / "manifest.json") not in first.command
     assert "--dataset-path" in first.command
     assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data" / "dm.csv") in first.command
     assert str(generated_root / first.generated_rule_id / first.case_type / "01" / "data" / "_datasets.csv") not in first.command
