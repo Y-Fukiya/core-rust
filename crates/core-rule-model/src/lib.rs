@@ -213,6 +213,7 @@ pub enum Operator {
     EmptyWithinExceptLastRow,
     DoesNotHaveNextCorrespondingRecord,
     NotPresentOnMultipleRowsWithin,
+    InconsistentEnumeratedColumns,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -261,6 +262,7 @@ impl Operator {
             "empty_within_except_last_row" => Self::EmptyWithinExceptLastRow,
             "does_not_have_next_corresponding_record" => Self::DoesNotHaveNextCorrespondingRecord,
             "not_present_on_multiple_rows_within" => Self::NotPresentOnMultipleRowsWithin,
+            "inconsistent_enumerated_columns" => Self::InconsistentEnumeratedColumns,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -308,6 +310,7 @@ impl Operator {
             Self::EmptyWithinExceptLastRow => "empty_within_except_last_row",
             Self::DoesNotHaveNextCorrespondingRecord => "does_not_have_next_corresponding_record",
             Self::NotPresentOnMultipleRowsWithin => "not_present_on_multiple_rows_within",
+            Self::InconsistentEnumeratedColumns => "inconsistent_enumerated_columns",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -2355,6 +2358,10 @@ Outcome:
         assert_eq!(
             Operator::from_name("not_present_on_multiple_rows_within"),
             Operator::NotPresentOnMultipleRowsWithin
+        );
+        assert_eq!(
+            Operator::from_name("inconsistent_enumerated_columns"),
+            Operator::InconsistentEnumeratedColumns
         );
     }
 

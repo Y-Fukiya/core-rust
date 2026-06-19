@@ -551,6 +551,9 @@ fn evaluate_condition_with_options(
             column,
             &condition.options,
         ),
+        Operator::InconsistentEnumeratedColumns => {
+            evaluate_inconsistent_enumerated_columns(frame, row_count, &target)
+        }
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -910,6 +913,45 @@ fn evaluate_not_present_on_multiple_rows_within(
         .into_iter()
         .map(|key| key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() == 1))
         .collect())
+}
+
+fn evaluate_inconsistent_enumerated_columns(
+    frame: &DataFrame,
+    row_count: usize,
+    target: &str,
+) -> Result<BooleanMask> {
+    let columns = enumerated_columns(frame, target)?;
+    (0..row_count)
+        .map(|row| {
+            let mut saw_empty = false;
+            for column in &columns {
+                let value = ScalarValue::from_any_value(column.get(row)?);
+                if value.is_empty() {
+                    saw_empty = true;
+                } else if saw_empty {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .collect()
+}
+
+fn enumerated_columns<'a>(frame: &'a DataFrame, target: &str) -> Result<Vec<&'a Column>> {
+    let mut columns = Vec::new();
+    columns.push(
+        frame
+            .column(target)
+            .map_err(|_| EngineError::MissingColumn(target.to_owned()))?,
+    );
+    for index in 1.. {
+        let name = format!("{target}{index}");
+        let Some(column) = optional_column(frame, &name)? else {
+            break;
+        };
+        columns.push(column);
+    }
+    Ok(columns)
 }
 
 #[derive(Debug)]
@@ -1751,6 +1793,35 @@ mod tests {
             .expect("dataset")
     }
 
+    fn enumerated_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "co.xpt",
+      "domain": "CO",
+      "records": {
+        "COSEQ": [1, 2, 3],
+        "COVAL": ["primary", "", "primary"],
+        "COVAL1": ["", "", "secondary"],
+        "COVAL2": ["", "later", ""]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
     fn condition(target: &str, operator: Operator, comparator: ValueExpr) -> Condition {
         Condition {
             target: Some(target.to_owned()),
@@ -2447,6 +2518,24 @@ mod tests {
             )
             .expect("not present on multiple rows within"),
             vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_inconsistent_enumerated_columns() {
+        let dataset = enumerated_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "COVAL",
+                    Operator::InconsistentEnumeratedColumns,
+                    ValueExpr::Null
+                ),
+                &dataset
+            )
+            .expect("inconsistent enumerated columns"),
+            vec![false, true, false]
         );
     }
 

@@ -2121,6 +2121,7 @@ fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::EmptyWithinExceptLastRow
             | Operator::DoesNotHaveNextCorrespondingRecord
             | Operator::NotPresentOnMultipleRowsWithin
+            | Operator::InconsistentEnumeratedColumns
             | Operator::IsEmpty
             | Operator::IsNotEmpty
     )
@@ -2946,10 +2947,7 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Failed
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].skipped_reason, None);
         assert_eq!(outcome.results[0].error_count, 1);
     }
