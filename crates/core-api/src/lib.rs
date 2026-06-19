@@ -153,10 +153,10 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             match validate_rule(&rule, dataset) {
                 Ok(result) => results.push(result),
                 Err(source) => {
-                    if should_ignore_evaluation_error(&source, execution_datasets.len()) {
+                    if should_ignore_evaluation_error(&rule, &source, execution_datasets.len()) {
                         continue;
                     }
-                    results.push(evaluation_skipped_result(&rule, dataset, source));
+                    results.push(skipped_result_for_evaluation_error(&rule, dataset, source));
                 }
             }
         }
@@ -415,17 +415,6 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             SkippedReason::UnsupportedOperator,
             format!(
                 "Rule {} uses inconsistent across dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_missing_column_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::UnsupportedOperator,
-            format!(
-                "Rule {} uses missing-column oracle semantics that are not supported",
                 rule.core_id
             ),
         ));
@@ -1903,8 +1892,45 @@ fn evaluation_skipped_result(
     }
 }
 
-fn should_ignore_evaluation_error(source: &EngineError, execution_dataset_count: usize) -> bool {
-    execution_dataset_count > 1 && matches!(source, EngineError::MissingColumn(_))
+fn missing_column_skipped_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> RuleValidationResult {
+    RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Skipped,
+        skipped_reason: Some(SkippedReason::UnsupportedOperator),
+        dataset: dataset.metadata().name.clone(),
+        domain: dataset.metadata().domain.clone(),
+        message: format!(
+            "Rule {} uses missing-column oracle semantics that are not supported for dataset {}",
+            rule.core_id,
+            dataset.metadata().name
+        ),
+        error_count: 0,
+        errors: Vec::new(),
+    }
+}
+
+fn skipped_result_for_evaluation_error(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    source: EngineError,
+) -> RuleValidationResult {
+    if matches!(source, EngineError::MissingColumn(_)) && is_missing_column_oracle_gap_rule(rule) {
+        return missing_column_skipped_result(rule, dataset);
+    }
+    evaluation_skipped_result(rule, dataset, source)
+}
+
+fn should_ignore_evaluation_error(
+    rule: &ExecutableRule,
+    source: &EngineError,
+    execution_dataset_count: usize,
+) -> bool {
+    execution_dataset_count > 1
+        && matches!(source, EngineError::MissingColumn(_))
+        && !is_missing_column_oracle_gap_rule(rule)
 }
 
 fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
@@ -2809,7 +2835,7 @@ Outcome:
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
   "Check": {
-    "name": "USUBJID",
+    "name": "POOLID",
     "operator": "not_equal_to",
     "value": ""
   },
@@ -4527,7 +4553,7 @@ Outcome:
         })
         .expect("run validation");
 
-        assert_eq!(outcome.results.len(), 2);
+        assert_eq!(outcome.results.len(), 1);
         assert!(outcome
             .results
             .iter()
