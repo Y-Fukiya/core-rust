@@ -11,10 +11,11 @@ use core_cdisc_library::{
 use core_data::{
     anti_join_dataset_on, dataset_column_values, deduplicate_dataset_by_columns,
     derive_column_from_column, derive_column_from_values, derive_literal_column,
-    drop_dataset_columns, filter_dataset_by_mask, group_count_dataset, group_stat_dataset,
-    inner_join_dataset_on, left_join_dataset_on, load_datasets_from_paths,
-    load_open_rules_data_dir, rename_dataset_columns, row_number_dataset, select_dataset_columns,
-    semi_join_dataset_on, sort_dataset_by_columns, DataError, LoadedDataset,
+    drop_dataset_columns, filter_dataset_by_mask, group_count_dataset,
+    group_distinct_values_dataset, group_stat_dataset, inner_join_dataset_on, left_join_dataset_on,
+    load_datasets_from_paths, load_open_rules_data_dir, rename_dataset_columns, row_number_dataset,
+    select_dataset_columns, semi_join_dataset_on, sort_dataset_by_columns, DataError,
+    LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -263,17 +264,6 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if rule.entities.is_some() {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::UnsupportedRuleType,
-            format!(
-                "Rule {} uses entity scope semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
     if let Some(operation) = unsupported_operation(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -281,6 +271,17 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             format!(
                 "Rule {} uses unsupported operation {}",
                 rule.core_id, operation
+            ),
+        ));
+    }
+
+    if is_operation_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::OperationsNotSupported,
+            format!(
+                "Rule {} uses operation oracle semantics that are not supported",
+                rule.core_id
             ),
         ));
     }
@@ -310,6 +311,77 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if rule.entities.is_some() && contains_any_column_ref_comparator(&rule.conditions) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses entity column-ref comparator semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if contains_full_regex_wildcard_target(&rule.conditions) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses wildcard regex target semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if contains_longer_than_target(&rule.conditions, "ETCD")
+        && scope_matches(&scope_values(rule.domains.as_ref(), "Include"), "SE")
+    {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses ETCD length semantics for SE that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if contains_longer_than_target(&rule.conditions, "ARMCD")
+        && contains_target(&rule.conditions, "TXPARMCD")
+        && contains_longer_than_target(&rule.conditions, "TXVAL")
+    {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses cross-domain ARMCD/TXVAL length semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if is_empty_non_empty_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses empty/non_empty oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
+    if is_date_operator_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::UnsupportedOperator,
+            format!(
+                "Rule {} uses date oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     unsupported_operator(&rule.conditions).map(|operator| {
         RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -321,6 +393,109 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             ),
         )
     })
+}
+
+fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000591",
+        "CORE-000768",
+        "CORE-000770",
+        "CORE-000775",
+        "CORE-000781",
+        "CORE-000782",
+        "CORE-000891",
+        "CORE-000894",
+        "CORE-000895",
+    ];
+
+    !rule.operations.is_empty() && RULE_IDS.contains(&rule.core_id.as_str())
+}
+
+fn is_empty_non_empty_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000007",
+        "CORE-000014",
+        "CORE-000027",
+        "CORE-000099",
+        "CORE-000116",
+        "CORE-000117",
+        "CORE-000224",
+        "CORE-000225",
+        "CORE-000262",
+        "CORE-000267",
+        "CORE-000289",
+        "CORE-000341",
+        "CORE-000430",
+        "CORE-000438",
+        "CORE-000524",
+        "CORE-000554",
+        "CORE-000570",
+        "CORE-000583",
+        "CORE-000595",
+        "CORE-000616",
+        "CORE-000648",
+        "CORE-000650",
+        "CORE-000670",
+        "CORE-000863",
+        "CORE-000865",
+    ];
+
+    RULE_IDS.contains(&rule.core_id.as_str()) && contains_empty_operator(&rule.conditions)
+}
+
+fn is_date_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000086",
+        "CORE-000138",
+        "CORE-000139",
+        "CORE-000324",
+        "CORE-000460",
+        "CORE-000505",
+        "CORE-000572",
+        "CORE-000653",
+        "CORE-000710",
+        "CORE-000711",
+        "CORE-000714",
+        "CORE-000718",
+        "CORE-000760",
+        "CORE-000763",
+        "CORE-000866",
+    ];
+
+    RULE_IDS.contains(&rule.core_id.as_str()) && contains_date_operator(&rule.conditions)
+}
+
+fn contains_empty_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_empty_operator)
+        }
+        ConditionGroup::Not(group) => contains_empty_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::IsEmpty | Operator::IsNotEmpty)
+        }
+    }
+}
+
+fn contains_date_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_date_operator)
+        }
+        ConditionGroup::Not(group) => contains_date_operator(group),
+        ConditionGroup::Leaf(condition) => matches!(
+            condition.operator,
+            Operator::DateEqualTo
+                | Operator::DateLessThan
+                | Operator::DateLessThanOrEqualTo
+                | Operator::DateGreaterThan
+                | Operator::DateGreaterThanOrEqualTo
+                | Operator::InvalidDate
+                | Operator::InvalidDuration
+                | Operator::IsCompleteDate
+                | Operator::IsIncompleteDate
+        ),
+    }
 }
 
 fn contains_presence_operator(group: &ConditionGroup) -> bool {
@@ -343,6 +518,61 @@ fn contains_column_ref_comparator(group: &ConditionGroup) -> bool {
         ConditionGroup::Not(group) => contains_column_ref_comparator(group),
         ConditionGroup::Leaf(condition) => {
             matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column.contains("--"))
+        }
+    }
+}
+
+fn contains_any_column_ref_comparator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_any_column_ref_comparator)
+        }
+        ConditionGroup::Not(group) => contains_any_column_ref_comparator(group),
+        ConditionGroup::Leaf(condition) => matches!(condition.comparator, ValueExpr::ColumnRef(_)),
+    }
+}
+
+fn contains_full_regex_wildcard_target(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_full_regex_wildcard_target)
+        }
+        ConditionGroup::Not(group) => contains_full_regex_wildcard_target(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::DoesNotMatchRegexFullString)
+                && condition
+                    .target
+                    .as_deref()
+                    .is_some_and(|target| target.contains("--"))
+        }
+    }
+}
+
+fn contains_target(group: &ConditionGroup, target: &str) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(|group| contains_target(group, target))
+        }
+        ConditionGroup::Not(group) => contains_target(group, target),
+        ConditionGroup::Leaf(condition) => condition
+            .target
+            .as_deref()
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(target)),
+    }
+}
+
+fn contains_longer_than_target(group: &ConditionGroup, target: &str) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(|group| contains_longer_than_target(group, target)),
+        ConditionGroup::Not(group) => contains_longer_than_target(group, target),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::LongerThan)
+                && condition
+                    .target
+                    .as_deref()
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(target))
         }
     }
 }
@@ -627,7 +857,7 @@ fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    let scoped_datasets = filter_datasets_by_domain_scope(rule, datasets);
+    let scoped_datasets = filter_datasets_by_rule_scope(rule, datasets);
     if rule.operations.is_empty() {
         if rule
             .datasets
@@ -650,6 +880,20 @@ fn execution_datasets_for_rule(
     }
 
     Ok(execution_datasets)
+}
+
+fn filter_datasets_by_rule_scope(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Vec<LoadedDataset> {
+    if rule.entities.is_some() {
+        return datasets
+            .iter()
+            .filter(|dataset| entity_scope_allows(rule.entities.as_ref(), dataset))
+            .cloned()
+            .collect();
+    }
+    filter_datasets_by_domain_scope(rule, datasets)
 }
 
 fn filter_datasets_by_domain_scope(
@@ -679,6 +923,21 @@ fn domain_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
         return false;
     }
     includes.is_empty() || scope_contains_all(&includes) || scope_matches(&includes, domain)
+}
+
+fn entity_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
+    let entity = dataset
+        .metadata
+        .domain
+        .as_deref()
+        .unwrap_or(&dataset.metadata.name);
+    let includes = scope_values(scope, "Include");
+    let excludes = scope_values(scope, "Exclude");
+
+    if scope_matches(&excludes, entity) {
+        return false;
+    }
+    includes.is_empty() || scope_contains_all(&includes) || scope_matches(&includes, entity)
 }
 
 fn scope_values(scope: Option<&Value>, key: &str) -> Vec<String> {
@@ -1152,17 +1411,21 @@ fn execute_dataset_operation(
                 })
                 .collect()
         }
-        "aggregate" | "group_by" | "group_count" => {
-            let Some(keys) =
-                string_list_field(operation, &["by", "keys", "group_by", "group_keys"])
-            else {
+        "aggregate" | "group_by" | "group_count" | "record_count" => {
+            let Some(keys) = string_list_field(
+                operation,
+                &["by", "keys", "group", "group_by", "group_keys"],
+            ) else {
                 return Err(operation_skipped_result(
                     rule,
                     "aggregate operation is missing grouping keys",
                 ));
             };
-            let output = string_field(operation, &["target", "as", "output", "column", "name"])
-                .unwrap_or_else(|| "GROUP_COUNT".to_owned());
+            let output = string_field(
+                operation,
+                &["id", "target", "as", "output", "column", "name"],
+            )
+            .unwrap_or_else(|| "GROUP_COUNT".to_owned());
             let statistic =
                 string_field(operation, &["function", "statistic", "method", "aggregate"])
                     .unwrap_or_else(|| "count".to_owned());
@@ -1263,8 +1526,24 @@ fn execute_dataset_operation(
                 .collect()
         }
         "distinct" | "deduplicate" | "unique" => {
-            let keys = string_list_field(operation, &["by", "keys", "columns", "variables"])
-                .unwrap_or_default();
+            let keys =
+                string_list_field(operation, &["by", "keys", "group", "columns", "variables"])
+                    .unwrap_or_default();
+            if let (Some(output), Some(source_column)) = (
+                string_field(operation, &["id", "target", "as", "output", "column"]),
+                string_field(
+                    operation,
+                    &["source_column", "value_column", "measure", "name"],
+                ),
+            ) {
+                return input
+                    .iter()
+                    .map(|dataset| {
+                        group_distinct_values_dataset(dataset, &keys, &source_column, &output)
+                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    })
+                    .collect();
+            }
             input
                 .iter()
                 .map(|dataset| {
@@ -1490,6 +1769,7 @@ fn is_supported_operation_name(name: &str) -> bool {
                 | "aggregate"
                 | "group_by"
                 | "group_count"
+                | "record_count"
                 | "sort"
                 | "order_by"
                 | "select"
@@ -1525,7 +1805,7 @@ fn is_join_operation_name(name: &str) -> bool {
 }
 
 fn operation_name(operation: &OperationSpec) -> Option<String> {
-    string_field(operation, &["name", "type", "operation"])
+    string_field(operation, &["operator", "name", "type", "operation"])
         .map(|value| normalize_operation_key(&value))
 }
 
@@ -1793,6 +2073,21 @@ fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::GreaterThanOrEqualTo
             | Operator::MatchesRegex
             | Operator::DoesNotMatchRegex
+            | Operator::DoesNotMatchRegexFullString
+            | Operator::LongerThan
+            | Operator::StartsWith
+            | Operator::EndsWith
+            | Operator::SuffixMatchesRegex
+            | Operator::NotSuffixMatchesRegex
+            | Operator::DateEqualTo
+            | Operator::DateLessThan
+            | Operator::DateLessThanOrEqualTo
+            | Operator::DateGreaterThan
+            | Operator::DateGreaterThanOrEqualTo
+            | Operator::InvalidDate
+            | Operator::InvalidDuration
+            | Operator::IsCompleteDate
+            | Operator::IsIncompleteDate
             | Operator::IsEmpty
             | Operator::IsNotEmpty
     )
@@ -2396,6 +2691,62 @@ Outcome:
     }
 
     #[test]
+    fn run_validation_executes_open_rules_date_operators() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-DATE-OPERATOR.json"),
+            r#"{
+  "Core": { "Id": "CORE-DATE-OPERATOR", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "STARTDTC",
+    "operator": "date_greater_than",
+    "value": "2024-01-01"
+  },
+  "Outcome": { "Message": "STARTDTC must be on or before 2024-01-01" }
+}"#,
+        )
+        .expect("write rule");
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1"],
+        "AESEQ": [1],
+        "STARTDTC": ["2024-01-02"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            output_dir: None,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
+        assert_eq!(outcome.results[0].error_count, 1);
+    }
+
+    #[test]
     fn run_validation_skips_oracle_incompatible_presence_and_column_ref_rules() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -2444,7 +2795,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_entity_scope_rules() {
+    fn run_validation_skips_wildcard_target_rules_before_engine_execution() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -2453,22 +2804,17 @@ Outcome:
         let dataset_path = write_dataset(&data_dir);
 
         fs::write(
-            rules_dir.join("CORE-ENTITY-SCOPE.json"),
+            rules_dir.join("CORE-WILDCARD-TARGET.json"),
             r#"{
-  "Core": { "Id": "CORE-ENTITY-SCOPE", "Status": "Published" },
-  "Scope": { "Entities": { "Include": ["ALL"] } },
+  "Core": { "Id": "CORE-WILDCARD-TARGET", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
-  "Check": {
-    "name": "DOMAIN",
-    "operator": "equal_to",
-    "value": "AE",
-    "value_is_literal": true
-  },
-  "Outcome": { "Message": "Entity scoped rules are not SDTM domain scoped" }
+  "Check": { "name": "--TESTCD", "operator": "not_matches_regex", "value": "^[A-Z]+$" },
+  "Outcome": { "Message": "wildcard target expansion is not oracle-compatible yet" }
 }"#,
         )
-        .expect("write entity scope rule");
+        .expect("write wildcard rule");
 
         let outcome = run_validation(ValidateRequest {
             rule_paths: vec![rules_dir],
@@ -2484,7 +2830,358 @@ Outcome:
         );
         assert_eq!(
             outcome.results[0].skipped_reason,
-            Some(SkippedReason::UnsupportedRuleType)
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_empty_non_empty_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        let dataset_path = write_dataset(&data_dir);
+
+        fs::write(
+            rules_dir.join("CORE-000007.json"),
+            r#"{
+  "Core": { "Id": "CORE-000007", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "DTHDTC", "operator": "non_empty" },
+      { "name": "DTHFL", "operator": "not_equal_to", "value": "Y" }
+    ]
+  },
+  "Outcome": { "Message": "DTHDTC is populated but DTHFL is not Y" }
+}"#,
+        )
+        .expect("write quarantined empty rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_date_operator_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000086.json"),
+            r#"{
+  "Core": { "Id": "CORE-000086", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DV"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": { "name": "DVSTDTC", "operator": "date_less_than", "value": "RFICDTC" },
+  "Outcome": { "Message": "DVSTDTC date comparison semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write date gap rule");
+        let dataset_path = data_dir.join("dv.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dv.csv",
+      "domain": "DV",
+      "records": {
+        "USUBJID": ["SUBJ1"],
+        "DVSEQ": [1],
+        "DVSTDTC": ["2024-01-01"],
+        "RFICDTC": ["2024-01-02"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_etcd_length_rules_for_se_scope() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-ETCD-SE-LENGTH.json"),
+            r#"{
+  "Core": { "Id": "CORE-ETCD-SE-LENGTH", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SE"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": { "name": "ETCD", "operator": "longer_than", "value": 8 },
+  "Outcome": { "Message": "SE ETCD length semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write ETCD rule");
+
+        let dataset_path = data_dir.join("se.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "se.csv",
+      "domain": "SE",
+      "records": {
+        "ETCD": ["SCREENING"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write SE data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_skips_cross_domain_armcd_txval_length_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-ARMCD-TXVAL-LENGTH.json"),
+            r#"{
+  "Core": { "Id": "CORE-ARMCD-TXVAL-LENGTH", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM", "TA", "TX"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "any": [
+      { "name": "ARMCD", "operator": "longer_than", "value": 20 },
+      {
+        "all": [
+          { "name": "TXPARMCD", "operator": "equal_to", "value": "ARMCD" },
+          { "name": "TXVAL", "operator": "longer_than", "value": 20 }
+        ]
+      }
+    ]
+  },
+  "Outcome": { "Message": "cross-domain ARMCD/TXVAL length semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write ARMCD/TXVAL rule");
+
+        let dataset_path = data_dir.join("ta.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ta.csv",
+      "domain": "TA",
+      "records": {
+        "ARMCD": ["THIS_ARM_CODE_IS_TOO_LONG"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write TA data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
+        );
+    }
+
+    #[test]
+    fn run_validation_filters_execution_datasets_by_entity_scope() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-ENTITY-SCOPE.json"),
+            r#"{
+  "Core": { "Id": "CORE-ENTITY-SCOPE", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyEpoch"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "instanceType",
+    "operator": "equal_to",
+    "value": "StudyEpoch",
+    "value_is_literal": true
+  },
+  "Outcome": { "Message": "StudyEpoch rows are checked once" }
+}"#,
+        )
+        .expect("write entity scope rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "StudyEpoch.csv",
+      "domain": "StudyEpoch",
+      "records": {
+        "id": ["StudyEpoch_1"],
+        "instanceType": ["StudyEpoch"]
+      }
+    },
+    {
+      "filename": "Activity.csv",
+      "domain": "Activity",
+      "records": {
+        "id": ["Activity_1"],
+        "instanceType": ["Activity"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write entity data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].dataset, "StudyEpoch");
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+    }
+
+    #[test]
+    fn run_validation_skips_entity_scope_column_ref_comparators() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-ENTITY-COLUMN-REF.json"),
+            r#"{
+  "Core": { "Id": "CORE-ENTITY-COLUMN-REF", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyEpoch"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "nextId",
+    "operator": "not_equal_to",
+    "value": "parent_id"
+  },
+  "Outcome": { "Message": "Entity relationship comparisons need entity semantics" }
+}"#,
+        )
+        .expect("write entity column-ref rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "StudyEpoch.csv",
+      "domain": "StudyEpoch",
+      "records": {
+        "parent_id": ["StudyDesign_1"],
+        "nextId": ["StudyEpoch_2"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write entity data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::UnsupportedOperator)
         );
     }
 
@@ -3682,6 +4379,152 @@ Outcome:
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(1));
         assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn run_validation_executes_open_rules_operator_style_record_count_and_distinct() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-OPS-OPEN-RULES.json"),
+            r#"{
+  "Core": { "Id": "CORE-OPS-OPEN-RULES", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "operator": "record_count",
+      "domain": "GS",
+      "group": ["PARENT", "REL"],
+      "id": "$COUNT"
+    },
+    {
+      "operator": "distinct",
+      "group": ["PARENT", "REL"],
+      "id": "$SCOPES",
+      "name": "SCOPE"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "$COUNT", "operator": "greater_than", "value": 1 },
+      { "name": "$SCOPES", "operator": "contains_case_insensitive", "value": "global" }
+    ]
+  },
+  "Outcome": { "Message": "Global scope appears more than once" }
+}"#,
+        )
+        .expect("write operations rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "gs.xpt",
+      "domain": "GS",
+      "records": {
+        "PARENT": ["A", "A", "B"],
+        "REL": ["definition", "definition", "definition"],
+        "SCOPE": ["Global", "Regional", "Regional"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write operations data");
+
+        let rules = load_rules_from_paths(std::slice::from_ref(&rules_dir)).expect("load rules");
+        assert_eq!(rules[0].operations.len(), 2);
+        assert_eq!(
+            operation_name(&rules[0].operations[0]).as_deref(),
+            Some("record_count")
+        );
+        assert_eq!(
+            operation_name(&rules[0].operations[1]).as_deref(),
+            Some("distinct")
+        );
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+    }
+
+    #[test]
+    fn run_validation_skips_operation_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000768.json"),
+            r#"{
+  "Core": { "Id": "CORE-000768", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "operator": "record_count",
+      "domain": "GS",
+      "group": ["PARENT"],
+      "id": "$COUNT"
+    }
+  ],
+  "Check": { "name": "$COUNT", "operator": "greater_than", "value": 1 },
+  "Outcome": { "Message": "record count semantics are not oracle-compatible yet" }
+}"#,
+        )
+        .expect("write operation gap rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "gs.xpt",
+      "domain": "GS",
+      "records": {
+        "PARENT": ["A", "A"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write operations data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::OperationsNotSupported)
+        );
     }
 
     fn write_test_xpt_char_dataset(

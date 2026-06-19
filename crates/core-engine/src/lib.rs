@@ -410,6 +410,54 @@ fn evaluate_condition_with_options(
                     .unwrap_or(false))
             })
         }
+        Operator::DateEqualTo
+        | Operator::DateLessThan
+        | Operator::DateLessThanOrEqualTo
+        | Operator::DateGreaterThan
+        | Operator::DateGreaterThanOrEqualTo => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
+                Ok(compare_complete_dates(&left, &right)
+                    .map(|ordering| match operator {
+                        Operator::DateEqualTo => ordering == Ordering::Equal,
+                        Operator::DateLessThan => ordering == Ordering::Less,
+                        Operator::DateLessThanOrEqualTo => {
+                            matches!(ordering, Ordering::Less | Ordering::Equal)
+                        }
+                        Operator::DateGreaterThan => ordering == Ordering::Greater,
+                        Operator::DateGreaterThanOrEqualTo => {
+                            matches!(ordering, Ordering::Greater | Ordering::Equal)
+                        }
+                        _ => false,
+                    })
+                    .unwrap_or(false))
+            })
+        }
+        Operator::IsCompleteDate | Operator::IsIncompleteDate | Operator::InvalidDate => {
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let Some(state) = classify_date_value(&value) else {
+                    return Ok(false);
+                };
+                Ok(match operator {
+                    Operator::IsCompleteDate => matches!(state, DateValueState::Complete),
+                    Operator::IsIncompleteDate => matches!(state, DateValueState::Incomplete),
+                    Operator::InvalidDate => matches!(state, DateValueState::Invalid),
+                    _ => false,
+                })
+            })
+        }
+        Operator::InvalidDuration => evaluate_column(column, row_count, |value, _row| {
+            let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                return Ok(false);
+            };
+            let value = value.trim();
+            Ok(!value.is_empty() && !is_valid_iso_duration(value))
+        }),
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -419,6 +467,82 @@ fn evaluate_condition_with_options(
                     .map(|haystack| regex.is_match(&haystack))
                     .unwrap_or(false);
                 Ok(matches!(operator, Operator::MatchesRegex) == matches)
+            })
+        }
+        Operator::DoesNotMatchRegexFullString => {
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&format!("^(?:{pattern})$"))?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(haystack) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if haystack.is_empty() {
+                    return Ok(false);
+                }
+                Ok(!regex.is_match(&haystack))
+            })
+        }
+        Operator::LongerThan => {
+            let max_len = length_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(value.chars().count() > max_len)
+            })
+        }
+        Operator::StartsWith => {
+            let prefix = string_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(value.starts_with(&prefix))
+            })
+        }
+        Operator::EndsWith => {
+            let suffix = string_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(value.ends_with(&suffix))
+            })
+        }
+        Operator::SuffixMatchesRegex | Operator::NotSuffixMatchesRegex => {
+            let suffix_len = option_usize(&condition.options.extra, "suffix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let suffix = value
+                    .chars()
+                    .rev()
+                    .take(suffix_len)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<String>();
+                let matches = regex.is_match(&suffix);
+                Ok(matches!(operator, Operator::SuffixMatchesRegex) == matches)
             })
         }
         Operator::IsEmpty | Operator::IsNotEmpty => {
@@ -599,6 +723,39 @@ fn string_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<Stri
             operator: operator.as_name().to_owned(),
             comparator: comparator.clone(),
         }),
+    }
+}
+
+fn length_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<usize> {
+    let value = match comparator {
+        ValueExpr::Literal(Value::Number(value)) => value
+            .as_u64()
+            .or_else(|| {
+                value.as_f64().and_then(|value| {
+                    (value.is_finite() && value >= 0.0 && value.fract() == 0.0)
+                        .then_some(value as u64)
+                })
+            })
+            .and_then(|value| usize::try_from(value).ok()),
+        ValueExpr::Literal(Value::String(value)) => value.trim().parse::<usize>().ok(),
+        _ => None,
+    };
+    value.ok_or_else(|| EngineError::InvalidComparator {
+        operator: operator.as_name().to_owned(),
+        comparator: comparator.clone(),
+    })
+}
+
+fn option_usize(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<usize> {
+    let value = map.get(key).or_else(|| {
+        map.iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    })?;
+    match value {
+        Value::Number(value) => value.as_u64().and_then(|value| usize::try_from(value).ok()),
+        Value::String(value) => value.trim().parse::<usize>().ok(),
+        _ => None,
     }
 }
 
@@ -792,6 +949,179 @@ fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> 
     }
 }
 
+fn compare_complete_dates(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> {
+    Some(parse_complete_date(left.as_string()?)?.cmp(&parse_complete_date(right.as_string()?)?))
+}
+
+fn parse_complete_date(value: &str) -> Option<(u16, u8, u8)> {
+    let date = value.get(..10)?;
+    let remainder = value.get(10..).unwrap_or_default();
+    if !remainder.is_empty() && !remainder.starts_with('T') {
+        return None;
+    }
+
+    let bytes = date.as_bytes();
+    if bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
+        return None;
+    }
+
+    let year = parse_fixed_digits(date.get(0..4)?)?;
+    let month = parse_fixed_digits(date.get(5..7)?)? as u8;
+    let day = parse_fixed_digits(date.get(8..10)?)? as u8;
+    if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
+        return None;
+    }
+
+    Some((year, month, day))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DateValueState {
+    Complete,
+    Incomplete,
+    Invalid,
+}
+
+fn classify_date_value(value: &str) -> Option<DateValueState> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if parse_complete_date(value).is_some() {
+        return Some(DateValueState::Complete);
+    }
+    if is_incomplete_date(value) {
+        return Some(DateValueState::Incomplete);
+    }
+    Some(DateValueState::Invalid)
+}
+
+fn is_incomplete_date(value: &str) -> bool {
+    if value.len() == 4 {
+        return value.chars().all(|character| character.is_ascii_digit());
+    }
+
+    if value.len() == 7 {
+        let Some(year) = value.get(0..4) else {
+            return false;
+        };
+        let Some(separator) = value.get(4..5) else {
+            return false;
+        };
+        let Some(month) = value.get(5..7) else {
+            return false;
+        };
+        return separator == "-"
+            && year.chars().all(|character| character.is_ascii_digit())
+            && parse_fixed_digits(month).is_some_and(|month| (1..=12).contains(&month));
+    }
+
+    false
+}
+
+fn parse_fixed_digits(value: &str) -> Option<u16> {
+    value
+        .chars()
+        .all(|character| character.is_ascii_digit())
+        .then(|| value.parse::<u16>().ok())
+        .flatten()
+}
+
+fn days_in_month(year: u16, month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: u16) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn is_valid_iso_duration(value: &str) -> bool {
+    let Some(mut rest) = value.strip_prefix('P') else {
+        return false;
+    };
+    if rest.is_empty() || rest.contains('-') {
+        return false;
+    }
+
+    if let Some(week) = rest.strip_suffix('W') {
+        return !week.is_empty() && week.chars().all(|character| character.is_ascii_digit());
+    }
+
+    let mut in_time = false;
+    let mut number = String::new();
+    let mut saw_component = false;
+    let mut last_date_order = 0;
+    let mut last_time_order = 0;
+    while let Some(character) = rest.chars().next() {
+        rest = &rest[character.len_utf8()..];
+        if character == 'T' {
+            if in_time || !number.is_empty() {
+                return false;
+            }
+            in_time = true;
+            continue;
+        }
+        if character.is_ascii_digit() || character == '.' || character == ',' {
+            number.push(character);
+            continue;
+        }
+        if !is_valid_duration_number(&number) {
+            return false;
+        }
+
+        if in_time {
+            let order = match character {
+                'H' => 1,
+                'M' => 2,
+                'S' => 3,
+                _ => return false,
+            };
+            if order <= last_time_order {
+                return false;
+            }
+            last_time_order = order;
+        } else {
+            let order = match character {
+                'Y' => 1,
+                'M' => 2,
+                'D' => 4,
+                _ => return false,
+            };
+            if order <= last_date_order {
+                return false;
+            }
+            last_date_order = order;
+        }
+
+        number.clear();
+        saw_component = true;
+    }
+
+    saw_component && number.is_empty()
+}
+
+fn is_valid_duration_number(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let separator_count = value
+        .chars()
+        .filter(|character| *character == '.' || *character == ',')
+        .count();
+    separator_count <= 1
+        && !value.starts_with(['.', ','])
+        && !value.ends_with(['.', ','])
+        && value
+            .chars()
+            .all(|character| character.is_ascii_digit() || character == '.' || character == ',')
+}
+
 fn and_assign(mask: &mut [bool], other: &[bool]) {
     for (left, right) in mask.iter_mut().zip(other) {
         *left = *left && *right;
@@ -835,6 +1165,8 @@ mod tests {
         "AESEQ_COPY": [1, 20, 3, null],
         "DOMAIN": ["AE", "CM", "", null],
         "TERM": ["Headache", "nausea", "", null],
+        "STARTDTC": ["2024-01-02", "2024-01-03T12:30:00", "2024-01", "2024-13-01"],
+        "DUR": ["P1D", "PT2H", "P1Y2M", "P-1D"],
         "FLAG": [true, false, null, true]
       }
     }
@@ -856,6 +1188,22 @@ mod tests {
             operator,
             comparator,
             options: OperatorOptions::default(),
+        }
+    }
+
+    fn condition_with_options(
+        target: &str,
+        operator: Operator,
+        comparator: ValueExpr,
+        options: serde_json::Map<String, Value>,
+    ) -> Condition {
+        Condition {
+            target: Some(target.to_owned()),
+            operator,
+            comparator,
+            options: OperatorOptions {
+                extra: options.into_iter().collect(),
+            },
         }
     }
 
@@ -1207,6 +1555,86 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_open_rules_not_matches_regex_as_full_non_empty_string() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::DoesNotMatchRegexFullString,
+                    literal("[a-z]+$")
+                ),
+                &dataset
+            )
+            .expect("open rules not_matches_regex"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_longer_than_against_character_count() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::LongerThan, literal(6)),
+                &dataset
+            )
+            .expect("longer than"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_prefix_and_suffix_regex_operators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::StartsWith, literal("Head")),
+                &dataset
+            )
+            .expect("starts with"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::EndsWith, literal("ache")),
+                &dataset
+            )
+            .expect("ends with"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "TERM",
+                    Operator::SuffixMatchesRegex,
+                    literal("ache"),
+                    serde_json::Map::from_iter([("suffix".to_owned(), json!(4))])
+                ),
+                &dataset
+            )
+            .expect("suffix matches regex"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "TERM",
+                    Operator::NotSuffixMatchesRegex,
+                    literal("ache"),
+                    serde_json::Map::from_iter([("suffix".to_owned(), json!(4))])
+                ),
+                &dataset
+            )
+            .expect("not suffix matches regex"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
     fn evaluates_contained_by_operators() {
         let dataset = test_dataset();
 
@@ -1295,6 +1723,78 @@ mod tests {
             )
             .expect("greater than or equal"),
             vec![false, true, true, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_open_rules_date_comparisons_against_complete_dates() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateEqualTo, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date equal"),
+            vec![false, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateLessThan, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date less than"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "STARTDTC",
+                    Operator::DateGreaterThanOrEqualTo,
+                    literal("2024-01-03")
+                ),
+                &dataset
+            )
+            .expect("date greater than or equal"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_open_rules_date_and_duration_validity_operators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::IsCompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("complete date"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::IsIncompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("incomplete date"),
+            vec![false, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![false, false, false, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("DUR", Operator::InvalidDuration, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid duration"),
+            vec![false, false, false, true]
         );
     }
 

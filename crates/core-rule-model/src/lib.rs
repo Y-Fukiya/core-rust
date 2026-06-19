@@ -194,6 +194,21 @@ pub enum Operator {
     GreaterThanOrEqualTo,
     MatchesRegex,
     DoesNotMatchRegex,
+    DoesNotMatchRegexFullString,
+    LongerThan,
+    StartsWith,
+    EndsWith,
+    SuffixMatchesRegex,
+    NotSuffixMatchesRegex,
+    DateEqualTo,
+    DateLessThan,
+    DateLessThanOrEqualTo,
+    DateGreaterThan,
+    DateGreaterThanOrEqualTo,
+    InvalidDate,
+    InvalidDuration,
+    IsCompleteDate,
+    IsIncompleteDate,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -223,8 +238,23 @@ impl Operator {
             "greater_than_or_equal_to" => Self::GreaterThanOrEqualTo,
             "matches_regex" => Self::MatchesRegex,
             "does_not_match_regex" => Self::DoesNotMatchRegex,
-            "is_empty" => Self::IsEmpty,
-            "is_not_empty" => Self::IsNotEmpty,
+            "not_matches_regex" => Self::DoesNotMatchRegexFullString,
+            "longer_than" => Self::LongerThan,
+            "starts_with" => Self::StartsWith,
+            "ends_with" => Self::EndsWith,
+            "suffix_matches_regex" => Self::SuffixMatchesRegex,
+            "not_suffix_matches_regex" => Self::NotSuffixMatchesRegex,
+            "date_equal_to" => Self::DateEqualTo,
+            "date_less_than" => Self::DateLessThan,
+            "date_less_than_or_equal_to" => Self::DateLessThanOrEqualTo,
+            "date_greater_than" => Self::DateGreaterThan,
+            "date_greater_than_or_equal_to" => Self::DateGreaterThanOrEqualTo,
+            "invalid_date" => Self::InvalidDate,
+            "invalid_duration" => Self::InvalidDuration,
+            "is_complete_date" => Self::IsCompleteDate,
+            "is_incomplete_date" => Self::IsIncompleteDate,
+            "is_empty" | "empty" => Self::IsEmpty,
+            "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
         }
     }
@@ -251,6 +281,21 @@ impl Operator {
             Self::GreaterThanOrEqualTo => "greater_than_or_equal_to",
             Self::MatchesRegex => "matches_regex",
             Self::DoesNotMatchRegex => "does_not_match_regex",
+            Self::DoesNotMatchRegexFullString => "not_matches_regex",
+            Self::LongerThan => "longer_than",
+            Self::StartsWith => "starts_with",
+            Self::EndsWith => "ends_with",
+            Self::SuffixMatchesRegex => "suffix_matches_regex",
+            Self::NotSuffixMatchesRegex => "not_suffix_matches_regex",
+            Self::DateEqualTo => "date_equal_to",
+            Self::DateLessThan => "date_less_than",
+            Self::DateLessThanOrEqualTo => "date_less_than_or_equal_to",
+            Self::DateGreaterThan => "date_greater_than",
+            Self::DateGreaterThanOrEqualTo => "date_greater_than_or_equal_to",
+            Self::InvalidDate => "invalid_date",
+            Self::InvalidDuration => "invalid_duration",
+            Self::IsCompleteDate => "is_complete_date",
+            Self::IsIncompleteDate => "is_incomplete_date",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -510,9 +555,31 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
 }
 
 fn quote_yaml_value_literals(source: &str) -> String {
+    let mut in_value_list_indent = None;
     source
         .lines()
-        .map(quote_yaml_value_literal_line)
+        .map(|line| {
+            let trimmed = line.trim_start();
+            let indent_len = line.len() - trimmed.len();
+
+            if let Some(value_indent) = in_value_list_indent {
+                if trimmed.is_empty() {
+                    return line.to_owned();
+                }
+                if indent_len <= value_indent {
+                    in_value_list_indent = None;
+                } else if trimmed.starts_with("- ") {
+                    return quote_yaml_value_list_item(line);
+                }
+            }
+
+            if is_empty_yaml_value_line(line) {
+                in_value_list_indent = Some(indent_len);
+                line.to_owned()
+            } else {
+                quote_yaml_value_literal_line(line)
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -523,14 +590,37 @@ fn quote_yaml_value_literal_line(line: &str) -> String {
         return line.to_owned();
     };
     let scalar = rest.trim();
-    if !matches!(
-        scalar,
-        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
-    ) {
+    if !is_yaml_boolish_string(scalar) {
         return line.to_owned();
     }
     let indent_len = line.len() - trimmed.len();
     format!("{}value: \"{}\"", &line[..indent_len], scalar)
+}
+
+fn is_empty_yaml_value_line(line: &str) -> bool {
+    line.trim_start()
+        .strip_prefix("value:")
+        .is_some_and(|rest| rest.trim().is_empty())
+}
+
+fn quote_yaml_value_list_item(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("- ") else {
+        return line.to_owned();
+    };
+    let scalar = rest.trim();
+    if !is_yaml_boolish_string(scalar) {
+        return line.to_owned();
+    }
+    let indent_len = line.len() - trimmed.len();
+    format!("{}- \"{}\"", &line[..indent_len], scalar)
+}
+
+fn is_yaml_boolish_string(value: &str) -> bool {
+    matches!(
+        value,
+        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
+    )
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -2114,6 +2204,39 @@ Outcome:
     }
 
     #[test]
+    fn yaml_value_list_preserves_bare_y_n_as_strings() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: is_not_contained_by
+  value:
+    - Y
+    - N
+Outcome:
+  Message: AESER must be Y or N
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::List(vec![json!("Y"), json!("N")])
+        );
+    }
+
+    #[test]
     fn normalize_outcome_message_to_generate_dataset_error_objects_action() {
         let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
 
@@ -2140,6 +2263,73 @@ Outcome:
             condition.operator,
             Operator::Unsupported("mystery_operator".to_owned())
         );
+    }
+
+    #[test]
+    fn open_rules_regex_operator_aliases_normalize_to_regex_operators() {
+        assert_eq!(
+            Operator::from_name("not_matches_regex"),
+            Operator::DoesNotMatchRegexFullString
+        );
+    }
+
+    #[test]
+    fn open_rules_length_operator_normalizes_to_length_operator() {
+        assert_eq!(Operator::from_name("longer_than"), Operator::LongerThan);
+    }
+
+    #[test]
+    fn open_rules_prefix_suffix_operators_normalize_to_string_operators() {
+        assert_eq!(Operator::from_name("starts_with"), Operator::StartsWith);
+        assert_eq!(
+            Operator::from_name("suffix_matches_regex"),
+            Operator::SuffixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("not_suffix_matches_regex"),
+            Operator::NotSuffixMatchesRegex
+        );
+    }
+
+    #[test]
+    fn open_rules_date_and_suffix_operator_names_normalize() {
+        assert_eq!(Operator::from_name("ends_with"), Operator::EndsWith);
+        assert_eq!(Operator::from_name("date_equal_to"), Operator::DateEqualTo);
+        assert_eq!(
+            Operator::from_name("date_less_than"),
+            Operator::DateLessThan
+        );
+        assert_eq!(
+            Operator::from_name("date_less_than_or_equal_to"),
+            Operator::DateLessThanOrEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("date_greater_than"),
+            Operator::DateGreaterThan
+        );
+        assert_eq!(
+            Operator::from_name("date_greater_than_or_equal_to"),
+            Operator::DateGreaterThanOrEqualTo
+        );
+        assert_eq!(Operator::from_name("invalid_date"), Operator::InvalidDate);
+        assert_eq!(
+            Operator::from_name("invalid_duration"),
+            Operator::InvalidDuration
+        );
+        assert_eq!(
+            Operator::from_name("is_complete_date"),
+            Operator::IsCompleteDate
+        );
+        assert_eq!(
+            Operator::from_name("is_incomplete_date"),
+            Operator::IsIncompleteDate
+        );
+    }
+
+    #[test]
+    fn open_rules_empty_operators_normalize_to_empty_operators() {
+        assert_eq!(Operator::from_name("empty"), Operator::IsEmpty);
+        assert_eq!(Operator::from_name("non_empty"), Operator::IsNotEmpty);
     }
 
     #[test]

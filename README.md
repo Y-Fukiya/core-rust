@@ -206,6 +206,14 @@ reported as `ACTUAL_SKIPPED`, separate from structural mismatches.
 `export_manifest.json` / `export_manifest.csv`. Existing target directories are
 not overwritten unless `--overwrite` is supplied.
 
+Latest SDTM-IG pilot result:
+
+- Successful run directory: `output/sdtmig_phase2_rerun5`
+- Generated high-confidence draft rules: 17
+- CORE execution comparison: 34 passed, 0 failed
+- Remaining skipped rows are generation-scope coverage gaps, not supported CORE
+  mismatches. Keep them separate from wrong results when expanding generation.
+
 Minimal generated outputs include:
 
 - `generated_rules/<draft-rule-id>/rule.yml`

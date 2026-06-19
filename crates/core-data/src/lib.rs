@@ -223,7 +223,15 @@ pub fn load_open_rules_data_dir_with_warnings(path: impl AsRef<Path>) -> Result<
 }
 
 fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
-    let variable_rows = read_csv_dict_rows(&data_dir.join("_variables.csv"))?;
+    let variables_path = data_dir.join("_variables.csv");
+    if !variables_path.is_file() && !has_open_rules_dataset_csv(data_dir)? {
+        return Ok(LoadDataResult {
+            datasets: Vec::new(),
+            warnings: Vec::new(),
+        });
+    }
+
+    let variable_rows = read_csv_dict_rows(&variables_path)?;
     let datasets_path = data_dir.join("_datasets.csv");
     let datasets = if datasets_path.is_file() {
         read_csv_dict_rows(&datasets_path)?
@@ -426,6 +434,30 @@ fn find_open_rules_dataset_filename(data_dir: &Path, dataset: &str) -> Result<Op
     Ok(None)
 }
 
+fn has_open_rules_dataset_csv(data_dir: &Path) -> Result<bool> {
+    let entries = fs::read_dir(data_dir)
+        .map_err(|source| DataError::Io {
+            path: data_dir.to_path_buf(),
+            source,
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|source| DataError::Io {
+            path: data_dir.to_path_buf(),
+            source,
+        })?;
+    for entry in entries {
+        let path = entry.path();
+        if !path.is_file() || extension(&path).as_deref() != Some("csv") {
+            continue;
+        }
+        let filename = file_name(&path)?;
+        if !is_open_rules_auxiliary_csv(&filename) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn is_open_rules_auxiliary_csv(filename: &str) -> bool {
     matches!(
         filename.to_ascii_lowercase().as_str(),
@@ -485,13 +517,14 @@ fn load_open_rules_dataset(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let mut seen_columns = BTreeSet::new();
     let csv_columns = rows
         .headers
         .iter()
         .enumerate()
         .filter_map(|(index, name)| {
             let name = name.to_ascii_uppercase();
-            (!name.is_empty()).then_some((index, name))
+            (!name.is_empty() && seen_columns.insert(name.clone())).then_some((index, name))
         })
         .collect::<Vec<_>>();
     let mut records = csv_columns
@@ -1545,6 +1578,63 @@ pub fn group_stat_dataset(
     derive_column_from_values(dataset, column_name, &values)
 }
 
+pub fn group_distinct_values_dataset(
+    dataset: &LoadedDataset,
+    keys: &[String],
+    source_column: &str,
+    column_name: &str,
+) -> Result<LoadedDataset> {
+    if keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires at least one key".to_owned(),
+        ));
+    }
+    if source_column.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires a source column".to_owned(),
+        ));
+    }
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires an output column".to_owned(),
+        ));
+    }
+    for key in keys {
+        if dataset.frame.column(key).is_err() {
+            return Err(DataError::InvalidDatasetPackage(format!(
+                "distinct values key not found: {key}"
+            )));
+        }
+    }
+    if dataset.frame.column(source_column).is_err() {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "distinct values source column not found: {source_column}"
+        )));
+    }
+
+    let mut groups: HashMap<Vec<RowKeyValue>, BTreeSet<String>> = HashMap::new();
+    for row in 0..dataset.frame.height() {
+        if let Some(value) = cell_to_string(&dataset.frame, source_column, row)? {
+            groups
+                .entry(row_key(&dataset.frame, keys, row)?)
+                .or_default()
+                .insert(value);
+        }
+    }
+
+    let values = (0..dataset.frame.height())
+        .map(|row| {
+            let key = row_key(&dataset.frame, keys, row)?;
+            let joined = groups
+                .get(&key)
+                .map(|values| values.iter().cloned().collect::<Vec<_>>().join("|"))
+                .unwrap_or_default();
+            Ok(Value::String(joined))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    derive_column_from_values(dataset, column_name, &values)
+}
+
 pub fn sort_dataset_by_columns(
     dataset: &LoadedDataset,
     keys: &[String],
@@ -2281,6 +2371,33 @@ mod tests {
     }
 
     #[test]
+    fn load_open_rules_data_dir_ignores_duplicate_csv_columns() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("_datasets.csv"), "Filename,Label\ndm,DM\n")
+            .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nDM,ACTARMCD,Actual Arm Code,Char,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("dm.csv"),
+            "ACTARMCD,ACTARMCD\nARM-A,duplicate\nARM-B,duplicate\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert_eq!(result.datasets.len(), 1);
+        assert_eq!(result.datasets[0].summary().columns, vec!["ACTARMCD"]);
+        assert_eq!(
+            dataset_column_values(&result.datasets[0], "ACTARMCD").expect("ACTARMCD values"),
+            vec![serde_json::json!("ARM-A"), serde_json::json!("ARM-B")]
+        );
+    }
+
+    #[test]
     fn load_open_rules_data_dir_infers_dataset_manifest_when_missing() {
         let dir = tempdir().expect("tempdir");
         fs::write(
@@ -2305,6 +2422,18 @@ mod tests {
             dataset_column_values(&result.datasets[0], "PDVALTRG").expect("PDVALTRG values"),
             vec![serde_json::json!(10)]
         );
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_allows_no_datasets_without_variables_schema() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join(".env"), "PRODUCT=SDTMIG\n").expect("write env");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert!(result.datasets.is_empty());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
