@@ -229,7 +229,11 @@ pub fn extract_target_variables(group: &ConditionGroup) -> Vec<String> {
 
 fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String> {
     let mut expanded = Vec::new();
-    if rule.output_variables.is_empty() {
+    if contains_empty_within_except_last_row_operator(&rule.conditions) {
+        for variable in extract_target_variables(&rule.conditions) {
+            push_unique(&mut expanded, &expand_domain_placeholder(dataset, &variable));
+        }
+    } else if rule.output_variables.is_empty() {
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
     } else {
         for variable in &rule.output_variables {
@@ -256,6 +260,18 @@ fn collect_issue_variables(
                 push_unique(variables, &expand_domain_placeholder(dataset, target));
             }
             collect_comparator_issue_variables(&condition.comparator, dataset, variables);
+        }
+    }
+}
+
+fn contains_empty_within_except_last_row_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_empty_within_except_last_row_operator)
+        }
+        ConditionGroup::Not(group) => contains_empty_within_except_last_row_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::EmptyWithinExceptLastRow)
         }
     }
 }
@@ -2493,6 +2509,27 @@ mod tests {
 
         assert_eq!(result.execution_status, ExecutionStatus::Failed);
         assert_eq!(result.errors[0].variables, vec!["TERM", "AESEQ", "DOMAIN"]);
+    }
+
+    #[test]
+    fn empty_within_except_last_row_reports_only_target_variable() {
+        let dataset = end_date_dataset();
+        let mut rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition_with_options(
+                "SEENDTC",
+                Operator::EmptyWithinExceptLastRow,
+                literal("USUBJID"),
+                serde_json::Map::from_iter([("ordering".to_owned(), json!("SESTDTC"))]),
+            )),
+            "SEENDTC is empty before the last row",
+        );
+        rule.output_variables = vec!["SESTDTC".to_owned(), "SEENDTC".to_owned()];
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["SEENDTC"]);
     }
 
     #[test]
