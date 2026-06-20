@@ -151,6 +151,122 @@ SOURCE_TRACKING_FIELDS = [
     "mapping_confidence",
 ]
 
+BOUNDARY_REVIEW_FIELDS = [
+    "boundary_bucket",
+    "conversion_status",
+    "primary_reason",
+    "source_row_count",
+    "raw_rule_id_count",
+    "example_rule_ids",
+    "recommended_action",
+]
+
+
+MAPPING_MARKER_REASONS = {"NO_CORE_MAPPING", "FUZZY_CORE_CANDIDATE", "HAS_NATIVE_CORE_MAPPING"}
+
+
+def _primary_actionable_reason(rule: CanonicalRule) -> str:
+    for reason in rule.conversion_reasons:
+        if reason not in MAPPING_MARKER_REASONS:
+            return reason
+    return rule.conversion_reasons[0] if rule.conversion_reasons else "UNCLASSIFIED"
+
+
+def _boundary_bucket(rule: CanonicalRule) -> str:
+    status = rule.conversion_status or "UNCLASSIFIED"
+    reasons = set(rule.conversion_reasons)
+    if status == "NATIVE_CORE":
+        return "NATIVE_CORE_MAPPING"
+    if status == "AUTO_CONVERTIBLE":
+        if "FUZZY_CORE_CANDIDATE" in reasons:
+            return "AUTO_CONVERTIBLE_REVIEW_FUZZY_CORE_CANDIDATE"
+        return "AUTO_CONVERTIBLE_READY"
+    if status == "SKELETON_ONLY":
+        if "NO_TARGET_VARIABLE" in reasons:
+            return "SKELETON_MISSING_TARGET_VARIABLE"
+        if "NO_CONCRETE_DOMAIN" in reasons:
+            return "SKELETON_MISSING_CONCRETE_DOMAIN"
+        return "SKELETON_METADATA_ONLY"
+    if status == "MANUAL_REQUIRED":
+        reason = _primary_actionable_reason(rule)
+        if reason.startswith("P21_MACRO_") or reason == "UNRESOLVED_VARIABLE_MACRO":
+            return "MANUAL_P21_MACRO_DEPENDENCY"
+        if reason in {"DEFINE_XML_RULE", "SCHEMATRON_RULE"}:
+            return "MANUAL_DEFINE_OR_SCHEMATRON"
+        if reason == "METADATA_RULE":
+            return "MANUAL_METADATA_DEPENDENCY"
+        if reason == "EXTERNAL_LOOKUP_DEPENDENCY":
+            return "MANUAL_EXTERNAL_LOOKUP_DEPENDENCY"
+        if reason == "CROSS_DATASET_DEPENDENCY":
+            return "MANUAL_CROSS_DATASET_DEPENDENCY"
+        if reason == "UNSUPPORTED_RULE_TYPE":
+            return "MANUAL_UNSUPPORTED_RULE_TYPE"
+        return "MANUAL_REVIEW_REQUIRED"
+    if status == "UNSUPPORTED":
+        return "UNSUPPORTED_INPUT"
+    return "UNCLASSIFIED"
+
+
+def _recommended_action(boundary_bucket: str) -> str:
+    if boundary_bucket == "NATIVE_CORE_MAPPING":
+        return "Track as existing CORE coverage; no generated draft rule."
+    if boundary_bucket == "AUTO_CONVERTIBLE_READY":
+        return "Generate draft rule and deterministic positive/negative data."
+    if boundary_bucket == "AUTO_CONVERTIBLE_REVIEW_FUZZY_CORE_CANDIDATE":
+        return "Generate only as draft P21PORT rule; review fuzzy CORE candidate before export."
+    if boundary_bucket == "SKELETON_MISSING_TARGET_VARIABLE":
+        return "Keep skeleton until target variable or parser support is confirmed."
+    if boundary_bucket == "SKELETON_MISSING_CONCRETE_DOMAIN":
+        return "Keep skeleton until dataset/domain scope can be derived safely."
+    if boundary_bucket.startswith("MANUAL_"):
+        return "Do not auto-generate; requires human rule design or engine capability work."
+    if boundary_bucket == "UNSUPPORTED_INPUT":
+        return "Repair or exclude malformed source input."
+    return "Review classification."
+
+
+def _write_boundary_review(out: Path, classified_rules: list[CanonicalRule]) -> None:
+    grouped: dict[tuple[str, str, str], list[CanonicalRule]] = {}
+    for rule in classified_rules:
+        bucket = _boundary_bucket(rule)
+        key = (bucket, rule.conversion_status or "UNCLASSIFIED", _primary_actionable_reason(rule))
+        grouped.setdefault(key, []).append(rule)
+
+    rows: list[dict[str, object]] = []
+    for (bucket, status, reason), rules in sorted(grouped.items()):
+        example_ids = sorted({rule.p21_rule_id or rule.source_rule_id for rule in rules if rule.p21_rule_id or rule.source_rule_id})
+        rows.append(
+            {
+                "boundary_bucket": bucket,
+                "conversion_status": status,
+                "primary_reason": reason,
+                "source_row_count": len(rules),
+                "raw_rule_id_count": len({rule.p21_rule_id or rule.source_rule_id for rule in rules}),
+                "example_rule_ids": example_ids[:10],
+                "recommended_action": _recommended_action(bucket),
+            },
+        )
+    write_csv(out / "classification_boundary_review.csv", rows, BOUNDARY_REVIEW_FIELDS)
+
+    lines = [
+        "# Classification Boundary Review",
+        "",
+        "This report fixes the Phase 1 boundary between automatic generation, skeleton output, and manual work.",
+        "Counts are source rows; `raw_rule_id_count` shows the distinct P21 rule IDs represented by those rows.",
+        "",
+        "## Boundary Buckets",
+        "",
+    ]
+    for row in rows:
+        lines.append(
+            "- "
+            f"`{row['boundary_bucket']}` / `{row['primary_reason']}`: "
+            f"{row['source_row_count']} rows, {row['raw_rule_id_count']} raw rule IDs. "
+            f"{row['recommended_action']}"
+        )
+    lines.append("")
+    (out / "classification_boundary_review.md").write_text("\n".join(lines), encoding="utf-8")
+
 
 def _write_classification_quality(
     out: Path,
@@ -349,3 +465,4 @@ def write_phase1_quality_reports(
     _write_reason_examples(out, classified_rules)
     _write_version_agency_summary(out, classified_rules)
     _write_rule_tracking(out, classified_rules, mappings)
+    _write_boundary_review(out, classified_rules)

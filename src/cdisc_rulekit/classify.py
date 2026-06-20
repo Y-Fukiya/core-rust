@@ -78,6 +78,8 @@ def _simple_reason(rule_type: str) -> str:
         return "SIMPLE_REGEX"
     if rule_type == "CONDITION":
         return "SIMPLE_SAME_RECORD_CONDITION"
+    if rule_type == "REQUIRED":
+        return "SIMPLE_REQUIRED_CHECK"
     if rule_type == "FIND":
         return "DATASET_PRESENCE_CHECK"
     return "NO_CORE_MAPPING"

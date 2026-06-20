@@ -39,6 +39,33 @@ def test_phase1_quality_reports_write_macro_fuzzy_reason_and_tracking_files(tmp_
         ],
         core_rule_id="CORE-000002",
     )
+    skeleton = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0011",
+        source_rule_key="2204.0|FDA|SDTM-IG|SDTM-IG|3.3|SD0011|sdtmig.xml",
+        p21_rule_id="SD0011",
+        agency="FDA",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["DM"],
+        conversion_status="SKELETON_ONLY",
+        conversion_reasons=["NO_CORE_MAPPING", "NO_TARGET_VARIABLE"],
+    )
+    auto = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1019",
+        source_rule_key="2204.0|FDA|SDTM-IG|SDTM-IG|3.3|SD1019|sdtmig.xml",
+        p21_rule_id="SD1019",
+        agency="FDA",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["SV"],
+        variables=["VISITDY"],
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_SAME_RECORD_CONDITION"],
+    )
     mappings = [
         RuleMapping(
             p21_rule_id="SD0001",
@@ -61,7 +88,13 @@ def test_phase1_quality_reports_write_macro_fuzzy_reason_and_tracking_files(tmp_
         ),
     ]
 
-    write_phase1_quality_reports(tmp_path, [native, manual], mappings, core_rule_count=3, testdata_file_count=4)
+    write_phase1_quality_reports(
+        tmp_path,
+        [native, manual, skeleton, auto],
+        mappings,
+        core_rule_count=3,
+        testdata_file_count=4,
+    )
 
     expected = [
         "classification_quality.md",
@@ -72,12 +105,14 @@ def test_phase1_quality_reports_write_macro_fuzzy_reason_and_tracking_files(tmp_
         "version_agency_summary.csv",
         "raw_rule_id_summary.csv",
         "source_rule_tracking.csv",
+        "classification_boundary_review.csv",
+        "classification_boundary_review.md",
     ]
     for name in expected:
         assert (tmp_path / name).exists(), name
 
     quality = (tmp_path / "classification_quality.md").read_text(encoding="utf-8")
-    assert "Unique P21 raw rule IDs: `2`" in quality
+    assert "Unique P21 raw rule IDs: `4`" in quality
     assert "CORE Published rules after standard filter: `3`" in quality
 
     with (tmp_path / "macro_inventory.csv").open(newline="", encoding="utf-8") as handle:
@@ -91,4 +126,16 @@ def test_phase1_quality_reports_write_macro_fuzzy_reason_and_tracking_files(tmp_
 
     with (tmp_path / "source_rule_tracking.csv").open(newline="", encoding="utf-8") as handle:
         tracking_rows = list(csv.DictReader(handle))
-    assert {row["source_rule_key"] for row in tracking_rows} == {native.source_rule_key, manual.source_rule_key}
+    assert {row["source_rule_key"] for row in tracking_rows} == {
+        native.source_rule_key,
+        manual.source_rule_key,
+        skeleton.source_rule_key,
+        auto.source_rule_key,
+    }
+
+    with (tmp_path / "classification_boundary_review.csv").open(newline="", encoding="utf-8") as handle:
+        boundary_rows = list(csv.DictReader(handle))
+    boundary_buckets = {row["boundary_bucket"] for row in boundary_rows}
+    assert "AUTO_CONVERTIBLE_READY" in boundary_buckets
+    assert "SKELETON_MISSING_TARGET_VARIABLE" in boundary_buckets
+    assert "MANUAL_P21_MACRO_DEPENDENCY" in boundary_buckets

@@ -32,6 +32,24 @@ def test_simple_regex_classifies_as_auto_convertible(p21_rules_path, p21_domain_
     assert "SIMPLE_REGEX" in regex_rule.conversion_reasons
 
 
+def test_simple_required_classifies_with_required_reason():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDREQ1",
+        p21_rule_id="SDREQ1",
+        standard_name="SDTM-IG",
+        p21_rule_type="Required",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "SIMPLE_REQUIRED_CHECK" in classified[0].conversion_reasons
+
+
 def test_define_xml_and_schematron_classify_as_manual(p21_rules_path, p21_domain_map_path):
     p21_rules, _warnings = load_p21_rules(p21_rules_path, p21_domain_map_path)
 
