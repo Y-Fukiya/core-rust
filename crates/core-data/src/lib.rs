@@ -236,6 +236,7 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
     let datasets = if datasets_path.is_file() {
         read_csv_dict_rows(&datasets_path)?
             .iter()
+            .filter(|row| !is_blank_csv_dict_row(row))
             .map(open_rules_dataset_descriptor)
             .collect::<Result<Vec<_>>>()?
     } else {
@@ -357,6 +358,10 @@ fn open_rules_dataset_descriptor(row: &BTreeMap<String, String>) -> Result<OpenR
         filename,
         label: row_string(row, &["Label", "label", "Description", "description"]),
     })
+}
+
+fn is_blank_csv_dict_row(row: &BTreeMap<String, String>) -> bool {
+    row.values().all(|value| value.trim().is_empty())
 }
 
 fn infer_open_rules_dataset_descriptors(
@@ -2363,6 +2368,28 @@ mod tests {
         );
         assert_eq!(result.datasets[0].summary().row_count, 2);
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_ignores_blank_dataset_manifest_rows() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\n,\nae,Adverse Events\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nAE,STUDYID,Study Identifier,Char,50\nAE,AESEQ,Sequence Number,Num,8\n",
+        )
+        .expect("write variables csv");
+        fs::write(dir.path().join("ae.csv"), "STUDYID,AESEQ\nS1,1\n").expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert_eq!(result.datasets.len(), 1);
+        assert_eq!(result.datasets[0].metadata().name, "AE");
     }
 
     #[test]

@@ -109,8 +109,9 @@ pub fn validate_rule(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Result<RuleValidationResult> {
-    let dataset_presence_exists = matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
-        && rule.rule_type == RuleType::RecordData;
+    let dataset_presence_exists = (matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
+        && rule.rule_type == RuleType::RecordData)
+        || contains_relationship_operator(&rule.conditions);
     let mask =
         evaluate_condition_group_with_options(&rule.conditions, dataset, dataset_presence_exists)?;
     let message =
@@ -373,9 +374,7 @@ fn evaluate_condition_with_options(
         _ => {}
     }
 
-    let column = frame
-        .column(&target)
-        .map_err(|_| EngineError::MissingColumn(target.clone()))?;
+    let column = required_column(frame, &target)?;
 
     match operator {
         Operator::EqualTo
@@ -559,6 +558,13 @@ fn evaluate_condition_with_options(
             column,
             &condition.comparator,
         ),
+        Operator::IsNotUniqueRelationship => evaluate_not_unique_relationship(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+        ),
         Operator::IsInconsistentAcrossDataset => evaluate_inconsistent_across_dataset(
             dataset,
             frame,
@@ -591,6 +597,31 @@ fn evaluate_condition_with_options(
                     return Ok(false);
                 }
                 Ok(!regex.is_match(&haystack))
+            })
+        }
+        Operator::DoesNotEqualStringPart => {
+            let pattern = option_string(&condition.options.extra, "regex").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(left) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let right = resolve_scalar_comparator(&condition.comparator, dataset, frame, row)?
+                    .into_string();
+                let Some(right) = right else {
+                    return Ok(false);
+                };
+                let Some(captures) = regex.captures(&right) else {
+                    return Ok(false);
+                };
+                let Some(part) = captures.get(1).map(|part| part.as_str()) else {
+                    return Ok(false);
+                };
+                Ok(left != part)
             })
         }
         Operator::LongerThan => {
@@ -977,6 +1008,68 @@ fn evaluate_unique_set(
         .collect())
 }
 
+fn evaluate_not_unique_relationship(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+) -> Result<BooleanMask> {
+    let related_column_name = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::IsNotUniqueRelationship, comparator)?,
+    );
+    let related_column = frame
+        .column(&related_column_name)
+        .map_err(|_| EngineError::MissingColumn(related_column_name.clone()))?;
+
+    let mut related_by_target =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    let mut target_by_related =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    let mut row_values = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        let related = ScalarValue::from_any_value(related_column.get(row)?);
+
+        let target = relationship_key(&target);
+        let related = relationship_key(&related);
+        related_by_target
+            .entry(target.clone())
+            .or_default()
+            .insert(related.clone());
+        target_by_related
+            .entry(related.clone())
+            .or_default()
+            .insert(target.clone());
+        row_values.push(Some((target, related)));
+    }
+
+    Ok(row_values
+        .into_iter()
+        .map(|values| {
+            let Some((target, related)) = values else {
+                return false;
+            };
+            related_by_target
+                .get(&target)
+                .is_some_and(|values| values.len() > 1)
+                || target_by_related
+                    .get(&related)
+                    .is_some_and(|values| values.len() > 1)
+        })
+        .collect())
+}
+
+fn relationship_key(value: &ScalarValue) -> String {
+    match value {
+        ScalarValue::Null => String::new(),
+        ScalarValue::String(value) if value.is_empty() => String::new(),
+        value => value.to_string(),
+    }
+}
+
 fn evaluate_inconsistent_across_dataset(
     dataset: &LoadedDataset,
     frame: &DataFrame,
@@ -1253,6 +1346,18 @@ fn outcome_message(actions: &[ActionSpec]) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn contains_relationship_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_relationship_operator)
+        }
+        ConditionGroup::Not(group) => contains_relationship_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::IsNotUniqueRelationship)
+        }
+    }
+}
+
 fn collect_target_variables(group: &ConditionGroup, variables: &mut Vec<String>) {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
@@ -1318,9 +1423,25 @@ fn cell_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Optio
 fn optional_column<'a>(frame: &'a DataFrame, name: &str) -> Result<Option<&'a Column>> {
     match frame.column(name) {
         Ok(column) => Ok(Some(column)),
-        Err(PolarsError::ColumnNotFound(_)) => Ok(None),
+        Err(PolarsError::ColumnNotFound(_)) => {
+            let Some(actual_name) = frame
+                .get_column_names()
+                .into_iter()
+                .find(|column| column.as_str().eq_ignore_ascii_case(name))
+            else {
+                return Ok(None);
+            };
+            frame
+                .column(actual_name.as_str())
+                .map(Some)
+                .map_err(Into::into)
+        }
         Err(source) => Err(source.into()),
     }
+}
+
+fn required_column<'a>(frame: &'a DataFrame, name: &str) -> Result<&'a Column> {
+    optional_column(frame, name)?.ok_or_else(|| EngineError::MissingColumn(name.to_owned()))
 }
 
 fn required_comparator<'a>(
@@ -1944,7 +2065,12 @@ mod tests {
       "domain": "RELREC",
       "records": {
         "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
-        "RELID": ["R1", "R1", "R2", "R3"]
+        "VISITNUM": [1, 2, null, null],
+        "RELID": ["R1", "R1", "R2", "R3"],
+        "LEFT": ["A", "A", "C", "D"],
+        "RIGHT": ["1", "2", "3", "3"],
+        "LEFT_EMPTY": ["A", "A", "", "C"],
+        "RIGHT_EMPTY": ["1", "", "1", "2"]
       }
     }
   ]
@@ -2157,6 +2283,20 @@ mod tests {
                 &dataset
             )
             .expect("missing column ref fallback"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn condition_targets_match_columns_case_insensitively() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("domain", Operator::EqualTo, ValueExpr::ColumnRef("AE".to_owned())),
+                &dataset
+            )
+            .expect("case-insensitive target"),
             vec![true, false, false, false]
         );
     }
@@ -2715,6 +2855,64 @@ mod tests {
             .expect("is unique set"),
             vec![false, false, true, true]
         );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_between_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_with_empty_values() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "LEFT_EMPTY",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT_EMPTY".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, true, false]
+        );
+    }
+
+    #[test]
+    fn relationship_rule_uses_dataset_presence_preconditions() {
+        let dataset = relationship_dataset();
+        let rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::All(vec![
+                ConditionGroup::Leaf(condition("VISITNUM", Operator::NotExists, ValueExpr::Null)),
+                ConditionGroup::Leaf(condition(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned()),
+                )),
+            ]),
+            "relationship failure",
+        );
+
+        assert!(validate_rule(&rule, &dataset)
+            .expect("validate rule")
+            .errors
+            .is_empty());
     }
 
     #[test]

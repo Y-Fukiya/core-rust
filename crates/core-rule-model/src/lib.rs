@@ -216,7 +216,9 @@ pub enum Operator {
     InconsistentEnumeratedColumns,
     IsNotUniqueSet,
     IsUniqueSet,
+    IsNotUniqueRelationship,
     IsInconsistentAcrossDataset,
+    DoesNotEqualStringPart,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -268,7 +270,9 @@ impl Operator {
             "inconsistent_enumerated_columns" => Self::InconsistentEnumeratedColumns,
             "is_not_unique_set" => Self::IsNotUniqueSet,
             "is_unique_set" => Self::IsUniqueSet,
+            "is_not_unique_relationship" => Self::IsNotUniqueRelationship,
             "is_inconsistent_across_dataset" => Self::IsInconsistentAcrossDataset,
+            "does_not_equal_string_part" => Self::DoesNotEqualStringPart,
             "is_empty" | "empty" => Self::IsEmpty,
             "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
@@ -319,7 +323,9 @@ impl Operator {
             Self::InconsistentEnumeratedColumns => "inconsistent_enumerated_columns",
             Self::IsNotUniqueSet => "is_not_unique_set",
             Self::IsUniqueSet => "is_unique_set",
+            Self::IsNotUniqueRelationship => "is_not_unique_relationship",
             Self::IsInconsistentAcrossDataset => "is_inconsistent_across_dataset",
+            Self::DoesNotEqualStringPart => "does_not_equal_string_part",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -882,6 +888,7 @@ fn is_column_ref_operator(operator: &Operator) -> bool {
             | Operator::LessThanOrEqualTo
             | Operator::GreaterThan
             | Operator::GreaterThanOrEqualTo
+            | Operator::IsNotUniqueRelationship
     )
 }
 
@@ -2323,6 +2330,27 @@ Outcome:
     }
 
     #[test]
+    fn normalize_is_not_unique_relationship_value_as_column_ref() {
+        let mut value = sample_metadata_rule();
+        value["Check"] = json!({
+            "name": "--TPT",
+            "operator": "is_not_unique_relationship",
+            "value": "--TPTNUM"
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.operator, Operator::IsNotUniqueRelationship);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("--TPTNUM".to_owned())
+        );
+    }
+
+    #[test]
     fn open_rules_regex_operator_aliases_normalize_to_regex_operators() {
         assert_eq!(
             Operator::from_name("not_matches_regex"),
@@ -2411,8 +2439,16 @@ Outcome:
         );
         assert_eq!(Operator::from_name("is_unique_set"), Operator::IsUniqueSet);
         assert_eq!(
+            Operator::from_name("is_not_unique_relationship"),
+            Operator::IsNotUniqueRelationship
+        );
+        assert_eq!(
             Operator::from_name("is_inconsistent_across_dataset"),
             Operator::IsInconsistentAcrossDataset
+        );
+        assert_eq!(
+            Operator::from_name("does_not_equal_string_part"),
+            Operator::DoesNotEqualStringPart
         );
     }
 
