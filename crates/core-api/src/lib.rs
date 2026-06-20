@@ -1688,6 +1688,15 @@ fn execute_match_datasets(
             all_datasets,
         );
     }
+    if rule.entities.is_some() && !scoped_datasets.is_empty() {
+        return execute_scoped_match_dataset_sequence(
+            rule,
+            match_datasets,
+            &names,
+            scoped_datasets,
+            all_datasets,
+        );
+    }
 
     let left_name = names.remove(0);
     let Some(mut joined) = find_dataset(all_datasets, &left_name).cloned() else {
@@ -1726,6 +1735,79 @@ fn execute_match_datasets(
     Ok(vec![joined])
 }
 
+fn execute_scoped_match_dataset_sequence(
+    rule: &ExecutableRule,
+    match_datasets: &[MatchDataset],
+    names: &[String],
+    scoped_datasets: &[LoadedDataset],
+    all_datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let mut joined_datasets = Vec::with_capacity(scoped_datasets.len());
+    for scoped_base in scoped_datasets {
+        let mut joined = scoped_base.clone();
+        for (match_dataset, match_name) in match_datasets.iter().zip(names) {
+            let Some(lookup_dataset) = find_dataset(all_datasets, match_name) else {
+                return Err(join_skipped_result(
+                    rule,
+                    format!("dataset {match_name} was not loaded"),
+                ));
+            };
+            let keys = match_dataset_join_keys(match_dataset)
+                .or_else(|| common_join_keys(&joined, lookup_dataset).map(JoinKeys::same));
+            let Some(keys) = keys else {
+                return Err(join_skipped_result(
+                    rule,
+                    format!("match dataset {match_name} is missing keys"),
+                ));
+            };
+
+            if let Some(prefix) = match_dataset_string_field(match_dataset, &["prefix"]) {
+                joined =
+                    left_join_dataset_on(&joined, lookup_dataset, &keys.left, &keys.right, &prefix)
+                        .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+            } else {
+                let lookup_dataset = suffix_conflicting_match_columns(
+                    &joined,
+                    lookup_dataset,
+                    &keys.right,
+                    match_name,
+                )
+                .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+                joined =
+                    left_join_dataset_on(&joined, &lookup_dataset, &keys.left, &keys.right, "")
+                        .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+            }
+        }
+        joined_datasets.push(joined);
+    }
+    Ok(joined_datasets)
+}
+
+fn suffix_conflicting_match_columns(
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    right_keys: &[String],
+    suffix: &str,
+) -> core_data::Result<LoadedDataset> {
+    let mut renames = BTreeMap::new();
+    for column in right.frame().get_column_names() {
+        let column = column.as_str();
+        if right_keys
+            .iter()
+            .any(|key| key.eq_ignore_ascii_case(column))
+        {
+            continue;
+        }
+        if dataset_has_column(left, column) {
+            renames.insert(column.to_owned(), format!("{column}.{suffix}"));
+        }
+    }
+    if renames.is_empty() {
+        return Ok(right.clone());
+    }
+    rename_dataset_columns(right, &renames)
+}
+
 fn execute_single_match_dataset(
     rule: &ExecutableRule,
     match_dataset: &MatchDataset,
@@ -1748,6 +1830,9 @@ fn execute_single_match_dataset(
     }
 
     let Some(lookup_dataset) = find_dataset(all_datasets, match_name) else {
+        if is_left_match_dataset(match_dataset) {
+            return Ok(scoped_bases.into_iter().cloned().collect());
+        }
         return Err(join_skipped_result(
             rule,
             format!("dataset {match_name} was not loaded"),
@@ -1783,6 +1868,11 @@ fn match_dataset_name(dataset: &MatchDataset) -> Option<String> {
             "dataset", "domain", "name", "id", "Dataset", "Domain", "Name",
         ],
     )
+}
+
+fn is_left_match_dataset(dataset: &MatchDataset) -> bool {
+    match_dataset_string_field(dataset, &["join_type", "join type", "Join Type"])
+        .is_some_and(|join_type| join_type.eq_ignore_ascii_case("left"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6006,6 +6096,180 @@ Outcome:
 }"#,
         )
         .expect("write USDM match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+    }
+
+    #[test]
+    fn run_validation_joins_scoped_entity_through_multiple_match_datasets() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-MULTI-USDM-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-MULTI-USDM-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyVersion"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "GovernanceDate",
+      "Keys": [
+        { "Left": "id", "Right": "parent_id" },
+        "rel_type"
+      ]
+    },
+    {
+      "Name": "GeographicScope",
+      "Keys": [
+        { "Left": "id.GovernanceDate", "Right": "parent_id" },
+        "rel_type"
+      ]
+    }
+  ],
+  "Check": {
+    "name": "id",
+    "operator": "is_not_unique_set",
+    "value": ["type.code", "type.code.GeographicScope"]
+  },
+  "Outcome": { "Message": "Governance dates must be unique by type and geographic scope" }
+}"#,
+        )
+        .expect("write multi-match rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "StudyVersion.csv",
+      "domain": "StudyVersion",
+      "records": {
+        "id": ["StudyVersion_1"],
+        "rel_type": ["definition"],
+        "instanceType": ["StudyVersion"]
+      }
+    },
+    {
+      "filename": "GovernanceDate.csv",
+      "domain": "GovernanceDate",
+      "records": {
+        "parent_id": ["StudyVersion_1", "StudyVersion_1"],
+        "rel_type": ["definition", "definition"],
+        "id": ["GovernanceDate_1", "GovernanceDate_2"],
+        "type.code": ["effective", "effective"],
+        "instanceType": ["GovernanceDate", "GovernanceDate"]
+      }
+    },
+    {
+      "filename": "GeographicScope.csv",
+      "domain": "GeographicScope",
+      "records": {
+        "parent_id": ["GovernanceDate_1", "GovernanceDate_2"],
+        "rel_type": ["definition", "definition"],
+        "id": ["GeographicScope_1", "GeographicScope_2"],
+        "type.code": ["global", "global"],
+        "instanceType": ["GeographicScope", "GeographicScope"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write multi-match data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+    }
+
+    #[test]
+    fn run_validation_treats_missing_left_match_dataset_as_no_reference_rows() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-MISSING-LEFT-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-MISSING-LEFT-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyEpoch"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "ScheduledActivityInstance",
+      "Join Type": "left",
+      "Keys": [
+        { "Left": "id", "Right": "epochId" },
+        "rel_type"
+      ]
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "StudyEpoch" },
+      { "name": "rel_type", "operator": "equal_to", "value": "definition" },
+      {
+        "any": [
+          { "name": "epochId", "operator": "not_exists" },
+          { "name": "epochId", "operator": "empty" }
+        ]
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "The epoch is not referenced by any scheduled activity instances.",
+    "Output Variables": ["parent_entity", "parent_id", "parent_rel", "id", "name"]
+  }
+}"#,
+        )
+        .expect("write missing match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "StudyEpoch.csv",
+      "domain": "StudyEpoch",
+      "records": {
+        "parent_entity": ["StudyDesign", "StudyDesign"],
+        "parent_id": ["StudyDesign_1", "StudyDesign_1"],
+        "parent_rel": ["epochs", "epochs"],
+        "rel_type": ["definition", "definition"],
+        "id": ["StudyEpoch_1", "StudyEpoch_2"],
+        "name": ["Screening", "Treatment"],
+        "instanceType": ["StudyEpoch", "StudyEpoch"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write missing match dataset data");
 
         let outcome = run_validation(ValidateRequest {
             rule_paths: vec![rules_dir],

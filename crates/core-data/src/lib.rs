@@ -258,8 +258,10 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
     let mut loaded = Vec::new();
     let mut warnings = Vec::new();
     for dataset in datasets {
+        let filename_dataset = normalize_dataset_name(file_stem_str(&dataset.filename));
         let variables = variables_by_dataset
             .get(&dataset.name)
+            .or_else(|| variables_by_dataset.get(&filename_dataset))
             .cloned()
             .unwrap_or_default();
         loaded.push(load_open_rules_dataset(
@@ -349,7 +351,16 @@ fn open_rules_dataset_descriptor(row: &BTreeMap<String, String>) -> Result<OpenR
     let filename = ensure_csv_filename(&filename);
     let name = row_string(
         row,
-        &["Dataset", "dataset", "Domain", "domain", "Name", "name"],
+        &[
+            "Dataset Name",
+            "dataset name",
+            "Dataset",
+            "dataset",
+            "Domain",
+            "domain",
+            "Name",
+            "name",
+        ],
     )
     .unwrap_or_else(|| file_stem_str(&filename).to_owned());
 
@@ -1990,7 +2001,7 @@ fn join_dataset_on(
     let mut joined_columns = Vec::new();
     for right_column in right.frame.get_column_names() {
         let right_column = right_column.as_str();
-        if right_keys.iter().any(|key| key == right_column) {
+        if !right_prefix.is_empty() && right_keys.iter().any(|key| key == right_column) {
             continue;
         }
 
@@ -2318,6 +2329,37 @@ mod tests {
             dataset_column_values(dataset, "CMTRT").expect("CMTRT values"),
             vec![serde_json::json!("ASPIRIN"), serde_json::json!("PLACEBO")]
         );
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_uses_dataset_name_manifest_column() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Dataset Name,Label\nStudyProtocolDocumentVersio,StudyProtocolDocumentVersion,Study Protocol Version\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nStudyProtocolDocumentVersio,id,Identifier,String,[1]\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("StudyProtocolDocumentVersio.csv"),
+            "id\nStudyProtocolDocumentVersion_1\n",
+        )
+        .expect("write dataset csv");
+
+        let datasets = load_open_rules_data_dir(dir.path()).expect("load open rules data");
+
+        assert_eq!(datasets.len(), 1);
+        let dataset = &datasets[0];
+        assert_eq!(dataset.metadata.name, "STUDYPROTOCOLDOCUMENTVERSION");
+        assert_eq!(
+            dataset.metadata.domain.as_deref(),
+            Some("STUDYPROTOCOLDOCUMENTVERSION")
+        );
+        assert_eq!(dataset.metadata.variables[0].name, "ID");
     }
 
     #[test]
@@ -2837,6 +2879,63 @@ mod tests {
                 .extract_str(),
             Some("Y")
         );
+    }
+
+    #[test]
+    fn left_join_dataset_on_keeps_unprefixed_different_right_key_name() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "epoch.json",
+      "domain": "StudyEpoch",
+      "records": {
+        "id": ["StudyEpoch_1", "StudyEpoch_2"]
+      }
+    },
+    {
+      "filename": "activity.json",
+      "domain": "ScheduledActivityInstance",
+      "records": {
+        "epochId": ["StudyEpoch_1"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write package");
+
+        let datasets = load_dataset_package_json(&path).expect("load package");
+        let joined = left_join_dataset_on(
+            &datasets[0],
+            &datasets[1],
+            &["id".to_owned()],
+            &["epochId".to_owned()],
+            "",
+        )
+        .expect("join datasets");
+
+        assert_eq!(joined.summary().columns, vec!["id", "epochId"]);
+        assert_eq!(
+            joined
+                .frame()
+                .column("epochId")
+                .expect("joined right key")
+                .get(0)
+                .expect("row 1")
+                .extract_str(),
+            Some("StudyEpoch_1")
+        );
+        assert!(joined
+            .frame()
+            .column("epochId")
+            .expect("joined right key")
+            .get(1)
+            .expect("row 2")
+            .is_null());
     }
 
     #[test]
