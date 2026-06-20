@@ -335,6 +335,7 @@ struct OpenRulesVariable {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OpenRulesVariableKind {
+    Boolean,
     Character,
     Numeric,
     Unknown,
@@ -627,6 +628,15 @@ fn open_rules_cell_value(
         .map(|variable| open_rules_variable_kind(&variable.variable))
         .unwrap_or(OpenRulesVariableKind::Character)
     {
+        OpenRulesVariableKind::Boolean => {
+            let value = raw.trim();
+            if value.is_empty() || value == "." {
+                return Value::Null;
+            }
+            parse_csv_bool(value)
+                .map(Value::Bool)
+                .unwrap_or_else(|| Value::String(raw.to_owned()))
+        }
         OpenRulesVariableKind::Numeric => {
             let value = raw.trim();
             if value.is_empty() || value == "." {
@@ -661,6 +671,7 @@ fn open_rules_variable_kind(variable: &DatasetVariable) -> OpenRulesVariableKind
         return OpenRulesVariableKind::Unknown;
     };
     match normalize_metadata_name(variable_type).as_str() {
+        "bool" | "boolean" | "logical" => OpenRulesVariableKind::Boolean,
         "char" | "character" | "text" | "string" => OpenRulesVariableKind::Character,
         "num" | "numeric" | "integer" | "float" | "double" => OpenRulesVariableKind::Numeric,
         _ => OpenRulesVariableKind::Unknown,
