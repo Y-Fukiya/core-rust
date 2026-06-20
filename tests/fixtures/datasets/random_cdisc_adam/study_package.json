@@ -1,0 +1,284 @@
+{
+  "source": {
+    "name": "random.cdisc.data",
+    "repository": "https://github.com/insightsengineering/random.cdisc.data/",
+    "cran": "https://CRAN.R-project.org/package=random.cdisc.data",
+    "version": "0.3.16",
+    "license": "Apache-2.0",
+    "note": "Small deterministic ADaM subset generated from cached random.cdisc.data datasets."
+  },
+  "datasets": [
+    {
+      "filename": "adsl.xpt",
+      "label": "random.cdisc.data ADSL subset",
+      "domain": "ADSL",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 7
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 21
+        },
+        {
+          "name": "SUBJID",
+          "label": "SUBJID",
+          "type": "Char",
+          "length": 6
+        },
+        {
+          "name": "SAFFL",
+          "label": "SAFFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "ITTFL",
+          "label": "ITTFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "SEX",
+          "label": "SEX",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "AGE",
+          "label": "AGE",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "RACE",
+          "label": "RACE",
+          "type": "Char",
+          "length": 25
+        },
+        {
+          "name": "ARM",
+          "label": "ARM",
+          "type": "Char",
+          "length": 14
+        },
+        {
+          "name": "ACTARM",
+          "label": "ACTARM",
+          "type": "Char",
+          "length": 14
+        },
+        {
+          "name": "TRT01P",
+          "label": "TRT01P",
+          "type": "Char",
+          "length": 14
+        },
+        {
+          "name": "TRT01A",
+          "label": "TRT01A",
+          "type": "Char",
+          "length": 14
+        }
+      ],
+      "records": {
+        "STUDYID": ["AB12345", "AB12345", "AB12345", "AB12345", "AB12345"],
+        "USUBJID": ["AB12345-CHN-3-id-128", "AB12345-CHN-15-id-262", "AB12345-RUS-3-id-378", "AB12345-CHN-11-id-220", "AB12345-CHN-7-id-267"],
+        "SUBJID": ["id-128", "id-262", "id-378", "id-220", "id-267"],
+        "SAFFL": ["Y", "Y", "Y", "Y", "Y"],
+        "ITTFL": ["Y", "Y", "Y", "Y", "Y"],
+        "SEX": ["M", "M", "F", "F", "M"],
+        "AGE": [32, 35, 30, 26, 40],
+        "RACE": ["ASIAN", "BLACK OR AFRICAN AMERICAN", "ASIAN", "ASIAN", "ASIAN"],
+        "ARM": ["A: Drug X", "C: Combination", "C: Combination", "B: Placebo", "B: Placebo"],
+        "ACTARM": ["A: Drug X", "C: Combination", "C: Combination", "B: Placebo", "B: Placebo"],
+        "TRT01P": ["A: Drug X", "C: Combination", "C: Combination", "B: Placebo", "B: Placebo"],
+        "TRT01A": ["A: Drug X", "C: Combination", "C: Combination", "B: Placebo", "B: Placebo"]
+      }
+    },
+    {
+      "filename": "adae.xpt",
+      "label": "random.cdisc.data ADAE subset",
+      "domain": "ADAE",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 7
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 21
+        },
+        {
+          "name": "SUBJID",
+          "label": "SUBJID",
+          "type": "Char",
+          "length": 6
+        },
+        {
+          "name": "SAFFL",
+          "label": "SAFFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "AESEQ",
+          "label": "AESEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "AETERM",
+          "label": "AETERM",
+          "type": "Char",
+          "length": 13
+        },
+        {
+          "name": "AEDECOD",
+          "label": "AEDECOD",
+          "type": "Char",
+          "length": 13
+        },
+        {
+          "name": "AESEV",
+          "label": "AESEV",
+          "type": "Char",
+          "length": 8
+        },
+        {
+          "name": "AESER",
+          "label": "AESER",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "TRTEMFL",
+          "label": "TRTEMFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "ANL01FL",
+          "label": "ANL01FL",
+          "type": "Char",
+          "length": 1
+        }
+      ],
+      "records": {
+        "STUDYID": ["AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345"],
+        "USUBJID": ["AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-15-id-262", "AB12345-CHN-3-id-128", "AB12345-CHN-3-id-128"],
+        "SUBJID": ["id-220", "id-220", "id-220", "id-220", "id-262", "id-262", "id-262", "id-262", "id-262", "id-262", "id-262", "id-262", "id-262", "id-128", "id-128"],
+        "SAFFL": ["Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y"],
+        "AESEQ": [1, 2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2],
+        "AETERM": ["trm C.2.1.2.1", "trm D.1.1.1.1", "trm B.1.1.1.1", "trm D.2.1.5.3", "trm B.1.1.1.1", "trm B.1.1.1.1", "trm D.2.1.5.3", "trm D.1.1.4.2", "trm C.2.1.2.1", "trm A.1.1.1.1", "trm C.2.1.2.1", "trm C.2.1.2.1", "trm A.1.1.1.2", "trm B.2.1.2.1", "trm C.1.1.1.3"],
+        "AEDECOD": ["dcd C.2.1.2.1", "dcd D.1.1.1.1", "dcd B.1.1.1.1", "dcd D.2.1.5.3", "dcd B.1.1.1.1", "dcd B.1.1.1.1", "dcd D.2.1.5.3", "dcd D.1.1.4.2", "dcd C.2.1.2.1", "dcd A.1.1.1.1", "dcd C.2.1.2.1", "dcd C.2.1.2.1", "dcd A.1.1.1.2", "dcd B.2.1.2.1", "dcd C.1.1.1.3"],
+        "AESEV": ["MODERATE", "SEVERE", "SEVERE", "MILD", "SEVERE", "SEVERE", "MILD", "MODERATE", "MODERATE", "MILD", "MODERATE", "MODERATE", "MODERATE", "MODERATE", "SEVERE"],
+        "AESER": ["N", "Y", "Y", "N", "Y", "Y", "N", "N", "N", "N", "N", "N", "Y", "N", "N"],
+        "TRTEMFL": ["Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y"],
+        "ANL01FL": ["Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y"]
+      }
+    },
+    {
+      "filename": "adlb.xpt",
+      "label": "random.cdisc.data ADLB subset",
+      "domain": "ADLB",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 7
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 21
+        },
+        {
+          "name": "SUBJID",
+          "label": "SUBJID",
+          "type": "Char",
+          "length": 6
+        },
+        {
+          "name": "SAFFL",
+          "label": "SAFFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "LBSEQ",
+          "label": "LBSEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "PARAMCD",
+          "label": "PARAMCD",
+          "type": "Char",
+          "length": 3
+        },
+        {
+          "name": "PARAM",
+          "label": "PARAM",
+          "type": "Char",
+          "length": 36
+        },
+        {
+          "name": "AVAL",
+          "label": "AVAL",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "AVALU",
+          "label": "AVALU",
+          "type": "Char",
+          "length": 4
+        },
+        {
+          "name": "ANRIND",
+          "label": "ANRIND",
+          "type": "Char",
+          "length": 6
+        },
+        {
+          "name": "ABLFL",
+          "label": "ABLFL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "ANL01FL",
+          "label": "ANL01FL",
+          "type": "Char",
+          "length": 1
+        }
+      ],
+      "records": {
+        "STUDYID": ["AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345", "AB12345"],
+        "USUBJID": ["AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220", "AB12345-CHN-11-id-220"],
+        "SUBJID": ["id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220", "id-220"],
+        "SAFFL": ["Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y"],
+        "LBSEQ": [1, 4, 7, 10, 13, 16, 19, 2, 5, 8, 11, 14, 17, 20, 3, 6, 9, 12, 15, 18],
+        "PARAMCD": ["ALT", "ALT", "ALT", "ALT", "ALT", "ALT", "ALT", "CRP", "CRP", "CRP", "CRP", "CRP", "CRP", "CRP", "IGA", "IGA", "IGA", "IGA", "IGA", "IGA"],
+        "PARAM": ["Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "Alanine Aminotransferase Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "C-Reactive Protein Measurement", "Immunoglobulin A Measurement", "Immunoglobulin A Measurement", "Immunoglobulin A Measurement", "Immunoglobulin A Measurement", "Immunoglobulin A Measurement", "Immunoglobulin A Measurement"],
+        "AVAL": [33.9528, 3.0612, 32.8294, 32.9094, 34.4431, 17.687, 26.4669, 8.6803, 7.8144, 8.4747, 8.7615, 7.8243, 9.0504, 7.9673, 2.9213, 2.9812, 2.7065, 2.9363, 2.9686, 2.9366],
+        "AVALU": ["U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "mg/L", "mg/L", "mg/L", "mg/L", "mg/L", "mg/L", "mg/L", "g/L", "g/L", "g/L", "g/L", "g/L", "g/L"],
+        "ANRIND": ["NORMAL", "LOW", "NORMAL", "NORMAL", "NORMAL", "NORMAL", "NORMAL", "NORMAL", "LOW", "NORMAL", "NORMAL", "LOW", "NORMAL", "LOW", "NORMAL", "NORMAL", "NORMAL", "NORMAL", "NORMAL", "NORMAL"],
+        "ABLFL": ["", "Y", "", "", "", "", "", "", "Y", "", "", "", "", "", "", "Y", "", "", "", ""],
+        "ANL01FL": ["", "Y", "Y", "Y", "Y", "Y", "Y", "", "Y", "Y", "Y", "Y", "Y", "Y", "", "Y", "Y", "Y", "Y", "Y"]
+      }
+    }
+  ]
+}

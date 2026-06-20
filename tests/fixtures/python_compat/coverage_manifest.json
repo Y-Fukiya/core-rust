@@ -119,6 +119,13 @@
       ]
     },
     {
+      "name": "random_cdisc_adam_fixture",
+      "evidence": [
+        "datasets/random_cdisc_adam/study_package.json",
+        "rules/random_cdisc_adam"
+      ]
+    },
+    {
       "name": "define_xml",
       "evidence": [
         "cdisc/sdtm_adam_define.xml",
