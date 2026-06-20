@@ -597,7 +597,10 @@ fn evaluate_condition_with_options(
         }
         Operator::DoesNotMatchRegexFullString => {
             let pattern = string_comparator(operator, &condition.comparator)?;
-            let regex = Regex::new(&format!("^(?:{pattern})$"))?;
+            let regex = Regex::new(&format!("^(?:{pattern})$")).ok();
+            if regex.is_none() && !is_usdm_ref_lookahead_pattern(&pattern) {
+                Regex::new(&format!("^(?:{pattern})$"))?;
+            }
             evaluate_column(column, row_count, |value, _row| {
                 let Some(haystack) = ScalarValue::from_any_value(value).into_string() else {
                     return Ok(false);
@@ -605,7 +608,12 @@ fn evaluate_condition_with_options(
                 if haystack.is_empty() {
                     return Ok(false);
                 }
-                Ok(!regex.is_match(&haystack))
+                let matches = if let Some(regex) = &regex {
+                    regex.is_match(&haystack)
+                } else {
+                    usdm_ref_pattern_matches(&haystack)
+                };
+                Ok(!matches)
             })
         }
         Operator::DoesNotEqualStringPart => {
@@ -1389,6 +1397,54 @@ fn push_unique(values: &mut Vec<String>, value: &str) {
     if !values.iter().any(|existing| existing == value) {
         values.push(value.to_owned());
     }
+}
+
+fn is_usdm_ref_lookahead_pattern(pattern: &str) -> bool {
+    pattern.contains("<usdm:ref")
+        && pattern.contains("(?=")
+        && pattern.contains("klass=")
+        && pattern.contains("id=")
+        && pattern.contains("attribute=")
+        && (pattern.contains("</usdm:ref>") || pattern.contains("<\\/usdm:ref>"))
+}
+
+fn usdm_ref_pattern_matches(value: &str) -> bool {
+    let value = value.trim();
+    let Some(remainder) = value.strip_prefix("<usdm:ref") else {
+        return false;
+    };
+    let Some(attributes) = remainder
+        .strip_suffix("/>")
+        .or_else(|| remainder.strip_suffix("></usdm:ref>"))
+    else {
+        return false;
+    };
+
+    let Some(klass) = quoted_attribute(attributes, "klass") else {
+        return false;
+    };
+    let Some(id) = quoted_attribute(attributes, "id") else {
+        return false;
+    };
+    let Some(attribute) = quoted_attribute(attributes, "attribute") else {
+        return false;
+    };
+
+    !id.is_empty()
+        && !klass.is_empty()
+        && klass.chars().all(|value| value.is_ascii_alphabetic())
+        && !attribute.is_empty()
+        && attribute.chars().all(|value| value.is_ascii_alphabetic())
+}
+
+fn quoted_attribute<'a>(attributes: &'a str, name: &str) -> Option<&'a str> {
+    attributes.split_whitespace().find_map(|attribute| {
+        let (key, value) = attribute.split_once('=')?;
+        if key != name {
+            return None;
+        }
+        value.strip_prefix('"')?.strip_suffix('"')
+    })
 }
 
 fn sequence_value(dataset: &LoadedDataset, row: usize) -> Result<Option<String>> {
@@ -2523,6 +2579,52 @@ mod tests {
             )
             .expect("open rules not_matches_regex"),
             vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_usdm_ref_lookahead_regex_fallback() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ParameterMap.csv",
+      "domain": "ParameterMap",
+      "records": {
+        "reference": [
+          "<usdm:ref klass=\"Activity\" id=\"Activity_1\" attribute=\"label\"></usdm:ref>",
+          "<usdm:ref attribute=\"label\" id=\"Activity_1\" klass=\"Activity\"/>",
+          "<usdm:ref klass=\"Range1\" id=\"Range_3\" attribute=\"maxValue\"></usdm:ref>",
+          "<usdm:ref id=\"Activity_6\" attribute=\"label\" class=\"Activity\"></usdm:ref>",
+          "a piece of text that includes usdm:ref"
+        ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+        let pattern = r#"^<usdm:ref((?=[^>]* klass=\"[a-zA-Z]+\")(?=[^>]* id=\"([^\"]+)\")(?=[^>]* attribute=\"[a-zA-Z]+\")[^>]*)(\/>|><\/usdm:ref>)$"#;
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "reference",
+                    Operator::DoesNotMatchRegexFullString,
+                    literal(pattern)
+                ),
+                &dataset
+            )
+            .expect("USDM ref lookahead fallback"),
+            vec![false, false, true, true, true]
         );
     }
 
