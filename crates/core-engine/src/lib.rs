@@ -371,6 +371,15 @@ fn evaluate_condition_with_options(
             }
             return evaluate_column(column, row_count, |value, _row| Ok(value.is_null()));
         }
+        Operator::IsEmpty | Operator::IsNotEmpty => {
+            let Some(column) = optional_column(frame, &target)? else {
+                return Ok(vec![false; row_count]);
+            };
+            return evaluate_column(column, row_count, |value, _row| {
+                let empty = ScalarValue::from_any_value(value).is_empty();
+                Ok(matches!(operator, Operator::IsEmpty) == empty)
+            });
+        }
         _ => {}
     }
 
@@ -687,12 +696,7 @@ fn evaluate_condition_with_options(
                 Ok(matches!(operator, Operator::SuffixMatchesRegex) == matches)
             })
         }
-        Operator::IsEmpty | Operator::IsNotEmpty => {
-            evaluate_column(column, row_count, |value, _row| {
-                let empty = ScalarValue::from_any_value(value).is_empty();
-                Ok(matches!(operator, Operator::IsEmpty) == empty)
-            })
-        }
+        Operator::IsEmpty | Operator::IsNotEmpty => unreachable!("handled before target lookup"),
         Operator::Unsupported(name) => Err(EngineError::UnsupportedOperator(name.clone())),
         other => Err(EngineError::UnsupportedOperator(other.as_name().to_owned())),
     }
@@ -3012,6 +3016,22 @@ mod tests {
             )
             .expect("is not empty"),
             vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("MISSING", Operator::IsEmpty, ValueExpr::Null),
+                &dataset
+            )
+            .expect("missing column is not empty"),
+            vec![false, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("MISSING", Operator::IsNotEmpty, ValueExpr::Null),
+                &dataset
+            )
+            .expect("missing column is not not-empty"),
+            vec![false, false, false, false]
         );
     }
 

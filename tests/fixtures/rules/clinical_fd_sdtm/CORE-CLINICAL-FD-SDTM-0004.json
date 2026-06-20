@@ -1,0 +1,40 @@
+{
+  "Core": {
+    "Id": "CORE-CLINICAL-FD-SDTM-0004",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {},
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "name": "inner_join",
+      "left": "AE",
+      "right": "SUPPAE",
+      "by": ["USUBJID"],
+      "prefix": "SUPP."
+    }
+  ],
+  "Check": {
+    "name": "SUPP.QVAL",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": {
+    "Message": "Joined SUPPAE qualifier values must not be the synthetic failing value"
+  }
+}

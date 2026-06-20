@@ -1,0 +1,33 @@
+{
+  "Core": {
+    "Id": "CORE-CLINICAL-FD-SDTM-0003",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {
+      "Include": ["CM"]
+    },
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "CMDECOD",
+    "operator": "equal_to",
+    "value": "UNCODED"
+  },
+  "Outcome": {
+    "Message": "CMDECOD must not remain UNCODED"
+  }
+}

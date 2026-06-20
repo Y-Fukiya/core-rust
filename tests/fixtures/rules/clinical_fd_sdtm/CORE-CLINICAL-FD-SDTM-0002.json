@@ -1,0 +1,33 @@
+{
+  "Core": {
+    "Id": "CORE-CLINICAL-FD-SDTM-0002",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {
+      "Include": ["AE"]
+    },
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AESEV",
+    "operator": "is_not_contained_by",
+    "value": ["MILD", "MODERATE", "SEVERE"]
+  },
+  "Outcome": {
+    "Message": "AESEV must use the expected clinical_fd severity values"
+  }
+}
