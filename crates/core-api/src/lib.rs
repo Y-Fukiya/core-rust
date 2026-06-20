@@ -150,6 +150,13 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         };
 
         for dataset in &execution_datasets {
+            if is_missing_column_oracle_gap_rule(&rule)
+                && contains_missing_target_column(&rule.conditions, dataset)
+            {
+                results.push(missing_column_skipped_result(&rule, dataset));
+                continue;
+            }
+
             if rule.entities.is_some()
                 && contains_existing_column_ref_comparator(&rule.conditions, dataset)
             {
@@ -504,6 +511,17 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
+    if is_usdm_match_dataset_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::DatasetJoinNotSupported,
+            format!(
+                "Rule {} uses USDM match dataset oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+
     if is_multi_base_match_dataset_oracle_gap_rule(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -728,6 +746,30 @@ fn is_inconsistent_across_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool
         && contains_inconsistent_across_dataset_operator(&rule.conditions)
 }
 
+fn is_usdm_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
+    const RULE_IDS: &[&str] = &[
+        "CORE-000797",
+        "CORE-000803",
+        "CORE-000811",
+        "CORE-000815",
+        "CORE-000816",
+        "CORE-000819",
+        "CORE-000828",
+        "CORE-000830",
+        "CORE-000835",
+        "CORE-000836",
+        "CORE-000870",
+        "CORE-000874",
+        "CORE-000875",
+    ];
+
+    RULE_IDS.contains(&rule.core_id.as_str())
+        && rule
+            .datasets
+            .as_ref()
+            .is_some_and(|datasets| !datasets.is_empty())
+}
+
 fn is_missing_column_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     const RULE_IDS: &[&str] = &[
         "CORE-000016",
@@ -921,6 +963,27 @@ fn contains_existing_column_ref_comparator(
             dataset.frame().column(&column).is_ok()
         }
     }
+}
+
+fn contains_missing_target_column(group: &ConditionGroup, dataset: &LoadedDataset) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(|group| contains_missing_target_column(group, dataset)),
+        ConditionGroup::Not(group) => contains_missing_target_column(group, dataset),
+        ConditionGroup::Leaf(condition) => condition.target.as_deref().is_some_and(|target| {
+            let target = expand_domain_placeholder_for_dataset(dataset, target);
+            !dataset_has_column(dataset, &target)
+        }),
+    }
+}
+
+fn dataset_has_column(dataset: &LoadedDataset, name: &str) -> bool {
+    dataset
+        .frame()
+        .get_column_names()
+        .iter()
+        .any(|column| column.as_str().eq_ignore_ascii_case(name))
 }
 
 fn expand_domain_placeholder_for_dataset(dataset: &LoadedDataset, name: &str) -> String {
@@ -1117,6 +1180,7 @@ fn standard_mismatch_result(
 
 fn prepare_rule_for_execution(rule: &ExecutableRule, context: &CdiscContext) -> ExecutableRule {
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
+    apply_entity_instance_type_literals(&mut rule);
     apply_operation_report_variables(&mut rule);
     rule
 }
@@ -1139,6 +1203,41 @@ fn apply_operation_report_variables(rule: &mut ExecutableRule) {
     collect_condition_target_variables(&rule.conditions, &mut variables);
     if !variables.is_empty() {
         rule.output_variables = variables;
+    }
+}
+
+fn apply_entity_instance_type_literals(rule: &mut ExecutableRule) {
+    if rule.entities.is_none() {
+        return;
+    }
+    apply_entity_instance_type_literals_to_group(&mut rule.conditions);
+}
+
+fn apply_entity_instance_type_literals_to_group(group: &mut ConditionGroup) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                apply_entity_instance_type_literals_to_group(group);
+            }
+        }
+        ConditionGroup::Not(group) => apply_entity_instance_type_literals_to_group(group),
+        ConditionGroup::Leaf(condition) => {
+            if matches!(
+                condition.operator,
+                Operator::EqualTo
+                    | Operator::NotEqualTo
+                    | Operator::EqualToCaseInsensitive
+                    | Operator::NotEqualToCaseInsensitive
+            ) && condition
+                .target
+                .as_deref()
+                .is_some_and(|target| target.eq_ignore_ascii_case("instanceType"))
+            {
+                if let ValueExpr::ColumnRef(value) = &condition.comparator {
+                    condition.comparator = ValueExpr::Literal(Value::String(value.clone()));
+                }
+            }
+        }
     }
 }
 
@@ -1607,9 +1706,9 @@ fn execute_match_datasets(
         };
         let keys = match_datasets
             .get(index + 1)
-            .and_then(match_dataset_keys)
-            .or_else(|| match_datasets.first().and_then(match_dataset_keys))
-            .or_else(|| common_join_keys(&joined, right));
+            .and_then(match_dataset_join_keys)
+            .or_else(|| match_datasets.first().and_then(match_dataset_join_keys))
+            .or_else(|| common_join_keys(&joined, right).map(JoinKeys::same));
         let Some(keys) = keys else {
             return Err(join_skipped_result(
                 rule,
@@ -1620,7 +1719,7 @@ fn execute_match_datasets(
             .get(index + 1)
             .and_then(|dataset| match_dataset_string_field(dataset, &["prefix"]))
             .unwrap_or_else(|| format!("{right_name}."));
-        joined = left_join_dataset_on(&joined, right, &keys, &keys, &prefix)
+        joined = left_join_dataset_on(&joined, right, &keys.left, &keys.right, &prefix)
             .map_err(|source| join_skipped_result(rule, source.to_string()))?;
     }
 
@@ -1654,7 +1753,7 @@ fn execute_single_match_dataset(
             format!("dataset {match_name} was not loaded"),
         ));
     };
-    let Some(keys) = match_dataset_keys(match_dataset) else {
+    let Some(keys) = match_dataset_join_keys(match_dataset) else {
         return Err(join_skipped_result(
             rule,
             format!("match dataset {match_name} is missing keys"),
@@ -1664,8 +1763,14 @@ fn execute_single_match_dataset(
     let mut joined_datasets = Vec::with_capacity(scoped_bases.len());
     for scoped_base in scoped_bases {
         joined_datasets.push(
-            left_join_dataset_on(scoped_base, lookup_dataset, &keys, &keys, &prefix)
-                .map_err(|source| join_skipped_result(rule, source.to_string()))?,
+            left_join_dataset_on(
+                scoped_base,
+                lookup_dataset,
+                &keys.left,
+                &keys.right,
+                &prefix,
+            )
+            .map_err(|source| join_skipped_result(rule, source.to_string()))?,
         );
     }
     Ok(joined_datasets)
@@ -1680,10 +1785,78 @@ fn match_dataset_name(dataset: &MatchDataset) -> Option<String> {
     )
 }
 
-fn match_dataset_keys(dataset: &MatchDataset) -> Option<Vec<String>> {
-    match_dataset_value(dataset, &["by", "keys", "on", "join_keys", "match_keys"])
-        .and_then(strings_from_value)
-        .filter(|values| !values.is_empty())
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JoinKeys {
+    left: Vec<String>,
+    right: Vec<String>,
+}
+
+impl JoinKeys {
+    fn same(keys: Vec<String>) -> Self {
+        Self {
+            left: keys.clone(),
+            right: keys,
+        }
+    }
+}
+
+fn match_dataset_join_keys(dataset: &MatchDataset) -> Option<JoinKeys> {
+    let value = match_dataset_value(dataset, &["by", "keys", "on", "join_keys", "match_keys"])?;
+    join_keys_from_value(value)
+}
+
+fn join_keys_from_value(value: &Value) -> Option<JoinKeys> {
+    match value {
+        Value::String(value) if !value.is_empty() => Some(JoinKeys::same(vec![value.clone()])),
+        Value::Array(values) => {
+            let mut left = Vec::new();
+            let mut right = Vec::new();
+            for value in values {
+                match value {
+                    Value::String(value) if !value.is_empty() => {
+                        left.push(value.clone());
+                        right.push(value.clone());
+                    }
+                    Value::Object(_) => {
+                        let left_key = object_string_field(value, &["left"])?;
+                        let right_key = object_string_field(value, &["right"])?;
+                        left.push(left_key);
+                        right.push(right_key);
+                    }
+                    _ => return None,
+                }
+            }
+            (!left.is_empty()).then_some(JoinKeys { left, right })
+        }
+        Value::Object(_) => {
+            let left = object_string_field(value, &["left"])?;
+            let right = object_string_field(value, &["right"])?;
+            Some(JoinKeys {
+                left: vec![left],
+                right: vec![right],
+            })
+        }
+        _ => None,
+    }
+}
+
+fn object_string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    let Value::Object(fields) = value else {
+        return None;
+    };
+    keys.iter().find_map(|key| {
+        fields
+            .get(*key)
+            .or_else(|| {
+                let normalized = normalize_operation_key(key);
+                fields
+                    .iter()
+                    .find(|(candidate, _value)| normalize_operation_key(candidate) == normalized)
+                    .map(|(_key, value)| value)
+            })
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    })
 }
 
 fn match_dataset_string_field(dataset: &MatchDataset, keys: &[&str]) -> Option<String> {
@@ -3940,6 +4113,21 @@ Outcome:
 }"#,
         )
         .expect("write second rule");
+        fs::write(
+            rules_dir.join("CORE-000016.json"),
+            r#"{
+  "Core": { "Id": "CORE-000016", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["EC"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "ECMOOD",
+    "operator": "empty"
+  },
+  "Outcome": { "Message": "ECMOOD has oracle-specific missing-column semantics" }
+}"#,
+        )
+        .expect("write empty missing-column rule");
         let dataset_path = data_dir.join("datasets.json");
         fs::write(
             &dataset_path,
@@ -3971,7 +4159,7 @@ Outcome:
         })
         .expect("run validation");
 
-        assert_eq!(outcome.results.len(), 2);
+        assert_eq!(outcome.results.len(), 3);
         assert!(outcome
             .results
             .iter()
@@ -5665,6 +5853,173 @@ Outcome:
     }
 
     #[test]
+    fn run_validation_joins_match_dataset_with_left_right_keys() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-LEFT-RIGHT-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-LEFT-RIGHT-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "LOOKUP",
+      "Keys": [
+        { "Left": "USUBJID", "Right": "SUBJECT" },
+        "DOMAIN"
+      ]
+    }
+  ],
+  "Check": {
+    "name": "FLAG",
+    "operator": "equal_to",
+    "value": "Y"
+  },
+  "Outcome": { "Message": "Lookup flag must not be Y" }
+}"#,
+        )
+        .expect("write match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DOMAIN": ["AE", "AE"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "SUBJECT": ["S2"],
+        "DOMAIN": ["AE"],
+        "FLAG": ["Y"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_joins_usdm_match_dataset_before_unique_set() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-USDM-MATCH-DATASET.json"),
+            r#"{
+  "Core": { "Id": "CORE-USDM-MATCH-DATASET", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["Code"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "Encounter",
+      "Keys": [
+        { "Left": "parent_id", "Right": "id" },
+        "rel_type"
+      ]
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "Code" },
+      { "name": "parent_entity", "operator": "equal_to", "value": "Encounter" },
+      { "name": "parent_rel", "operator": "equal_to", "value": "environmentalSetting", "value_is_literal": true },
+      {
+        "name": "code",
+        "operator": "is_not_unique_set",
+        "value": ["parent_entity", "parent_rel", "parent_id", "codeSystem", "codeSystemVersion"]
+      }
+    ]
+  },
+  "Outcome": { "Message": "Duplicate environmental setting" }
+}"#,
+        )
+        .expect("write USDM match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "Encounter.csv",
+      "domain": "Encounter",
+      "records": {
+        "parent_entity": ["StudyDesign"],
+        "parent_id": ["StudyDesign_1"],
+        "parent_rel": ["encounters"],
+        "rel_type": ["definition"],
+        "id": ["Encounter_1"],
+        "name": ["E1"],
+        "instanceType": ["Encounter"]
+      }
+    },
+    {
+      "filename": "Code.csv",
+      "domain": "Code",
+      "records": {
+        "parent_entity": ["Encounter", "Encounter"],
+        "parent_id": ["Encounter_1", "Encounter_1"],
+        "parent_rel": ["environmentalSetting", "environmentalSetting"],
+        "rel_type": ["definition", "definition"],
+        "id": ["Code_84", "Code_85"],
+        "code": ["C51282", "C51282"],
+        "codeSystem": ["http://www.cdisc.org", "http://www.cdisc.org"],
+        "codeSystemVersion": ["2023-12-15", "2023-12-15"],
+        "decode": ["Clinic", "Hospital"],
+        "instanceType": ["Code", "Code"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write USDM match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+    }
+
+    #[test]
     fn run_validation_joins_single_match_dataset_to_each_scoped_dataset() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -5820,6 +6175,76 @@ Outcome:
             .results
             .iter()
             .all(|result| result.skipped_reason == Some(SkippedReason::UnsupportedOperator)));
+    }
+
+    #[test]
+    fn run_validation_skips_usdm_match_dataset_oracle_gap_rules() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000815.json"),
+            r#"{
+  "Core": { "Id": "CORE-000815", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["ScheduleTimeline"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "ScheduledActivityInstance",
+      "Keys": [
+        { "Left": "id", "Right": "parent_id" },
+        { "Left": "instanceType", "Right": "parent_entity" }
+      ]
+    }
+  ],
+  "Check": {
+    "name": "instanceType",
+    "operator": "equal_to",
+    "value": "ScheduleTimeline"
+  },
+  "Outcome": { "Message": "USDM match dataset has oracle-specific flatten semantics" }
+}"#,
+        )
+        .expect("write USDM match dataset rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ScheduleTimeline.csv",
+      "domain": "ScheduleTimeline",
+      "records": {
+        "id": ["ScheduleTimeline_1"],
+        "instanceType": ["ScheduleTimeline"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write USDM match dataset data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::DatasetJoinNotSupported)
+        );
     }
 
     #[test]

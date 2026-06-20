@@ -1438,13 +1438,56 @@ fn usdm_ref_pattern_matches(value: &str) -> bool {
 }
 
 fn quoted_attribute<'a>(attributes: &'a str, name: &str) -> Option<&'a str> {
-    attributes.split_whitespace().find_map(|attribute| {
-        let (key, value) = attribute.split_once('=')?;
-        if key != name {
+    let bytes = attributes.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        let key_start = index;
+        while index < bytes.len() && !bytes[index].is_ascii_whitespace() && bytes[index] != b'=' {
+            index += 1;
+        }
+        let key = &attributes[key_start..index];
+
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'=' {
+            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                index += 1;
+            }
+            continue;
+        }
+        index += 1;
+
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'"' {
+            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                index += 1;
+            }
+            continue;
+        }
+        index += 1;
+        let value_start = index;
+        while index < bytes.len() && bytes[index] != b'"' {
+            index += 1;
+        }
+        if index >= bytes.len() {
             return None;
         }
-        value.strip_prefix('"')?.strip_suffix('"')
-    })
+        let value = &attributes[value_start..index];
+        index += 1;
+
+        if key == name {
+            return Some(value);
+        }
+    }
+
+    None
 }
 
 fn sequence_value(dataset: &LoadedDataset, row: usize) -> Result<Option<String>> {
@@ -2597,6 +2640,7 @@ mod tests {
         "reference": [
           "<usdm:ref klass=\"Activity\" id=\"Activity_1\" attribute=\"label\"></usdm:ref>",
           "<usdm:ref attribute=\"label\" id=\"Activity_1\" klass=\"Activity\"/>",
+          "<usdm:ref attribute=\"maxValue\" id=\"Range 1\" klass=\"Range\"/>",
           "<usdm:ref klass=\"Range1\" id=\"Range_3\" attribute=\"maxValue\"></usdm:ref>",
           "<usdm:ref id=\"Activity_6\" attribute=\"label\" class=\"Activity\"></usdm:ref>",
           "a piece of text that includes usdm:ref"
@@ -2624,7 +2668,7 @@ mod tests {
                 &dataset
             )
             .expect("USDM ref lookahead fallback"),
-            vec![false, false, true, true, true]
+            vec![false, false, false, true, true, true]
         );
     }
 

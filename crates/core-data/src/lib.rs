@@ -1947,12 +1947,12 @@ fn join_dataset_on(
     right_prefix: &str,
     include_unmatched_left: bool,
 ) -> Result<LoadedDataset> {
-    validate_join_keys(left, right, left_keys, right_keys)?;
+    let (left_keys, right_keys) = resolve_join_key_pair(left, right, left_keys, right_keys)?;
 
     let mut index: HashMap<Vec<RowKeyValue>, Vec<usize>> = HashMap::new();
     for row in 0..right.frame.height() {
         index
-            .entry(row_key(&right.frame, right_keys, row)?)
+            .entry(row_key(&right.frame, &right_keys, row)?)
             .or_default()
             .push(row);
     }
@@ -1960,7 +1960,7 @@ fn join_dataset_on(
     let mut left_rows = Vec::new();
     let mut right_rows = Vec::new();
     for left_row in 0..left.frame.height() {
-        let key = row_key(&left.frame, left_keys, left_row)?;
+        let key = row_key(&left.frame, &left_keys, left_row)?;
         if let Some(matches) = index.get(&key) {
             for right_row in matches {
                 left_rows.push(left_row as u32);
@@ -2045,15 +2045,15 @@ fn filter_join_matches(
     right_keys: &[String],
     keep_matches: bool,
 ) -> Result<LoadedDataset> {
-    validate_join_keys(left, right, left_keys, right_keys)?;
+    let (left_keys, right_keys) = resolve_join_key_pair(left, right, left_keys, right_keys)?;
     let mut index = HashSet::new();
     for row in 0..right.frame.height() {
-        index.insert(row_key(&right.frame, right_keys, row)?);
+        index.insert(row_key(&right.frame, &right_keys, row)?);
     }
 
     let indices = (0..left.frame.height())
         .filter_map(|row| {
-            row_key(&left.frame, left_keys, row)
+            row_key(&left.frame, &left_keys, row)
                 .map(|key| (index.contains(&key) == keep_matches).then_some(row as u32))
                 .transpose()
         })
@@ -2061,12 +2061,12 @@ fn filter_join_matches(
     take_dataset_rows(left, &indices)
 }
 
-fn validate_join_keys(
+fn resolve_join_key_pair(
     left: &LoadedDataset,
     right: &LoadedDataset,
     left_keys: &[String],
     right_keys: &[String],
-) -> Result<()> {
+) -> Result<(Vec<String>, Vec<String>)> {
     if left_keys.is_empty() || right_keys.is_empty() {
         return Err(DataError::InvalidDatasetPackage(
             "join requires at least one key".to_owned(),
@@ -2078,21 +2078,31 @@ fn validate_join_keys(
         ));
     }
 
-    for key in left_keys {
-        if left.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "left join key not found: {key}"
-            )));
-        }
+    Ok((
+        resolve_join_keys(left, left_keys, "left")?,
+        resolve_join_keys(right, right_keys, "right")?,
+    ))
+}
+
+fn resolve_join_keys(dataset: &LoadedDataset, keys: &[String], side: &str) -> Result<Vec<String>> {
+    keys.iter()
+        .map(|key| {
+            actual_column_name(&dataset.frame, key).ok_or_else(|| {
+                DataError::InvalidDatasetPackage(format!("{side} join key not found: {key}"))
+            })
+        })
+        .collect()
+}
+
+fn actual_column_name(frame: &DataFrame, name: &str) -> Option<String> {
+    if frame.column(name).is_ok() {
+        return Some(name.to_owned());
     }
-    for key in right_keys {
-        if right.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "right join key not found: {key}"
-            )));
-        }
-    }
-    Ok(())
+    frame
+        .get_column_names()
+        .into_iter()
+        .find(|column| column.as_str().eq_ignore_ascii_case(name))
+        .map(|column| column.as_str().to_owned())
 }
 
 fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
@@ -2800,8 +2810,8 @@ mod tests {
         let joined = left_join_dataset_on(
             &datasets[0],
             &datasets[1],
-            &["USUBJID".to_owned()],
-            &["SUBJECT".to_owned()],
+            &["usubjid".to_owned()],
+            &["subject".to_owned()],
             "LOOKUP.",
         )
         .expect("join datasets");
