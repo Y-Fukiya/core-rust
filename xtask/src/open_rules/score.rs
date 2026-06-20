@@ -230,6 +230,11 @@ fn align_candidate_identity_to_official(
 ) -> Vec<IssueKey> {
     let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
     let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
+    let unlocated_rules = official
+        .iter()
+        .filter(|issue| issue_is_unlocated(issue))
+        .map(|issue| issue.rule_id.clone())
+        .collect::<BTreeSet<_>>();
     let official_dataset_issues = official
         .iter()
         .filter(|issue| issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
@@ -239,7 +244,14 @@ fn align_candidate_identity_to_official(
     candidate
         .into_iter()
         .map(|mut issue| {
-            if official_dataset_issues.contains(&issue_signature(&issue)) {
+            if unlocated_rules.contains(&issue.rule_id) {
+                issue.dataset.clear();
+                issue.domain.clear();
+                issue.row.clear();
+                issue.variables.clear();
+                issue.usubjid.clear();
+                issue.seq.clear();
+            } else if official_dataset_issues.contains(&issue_signature(&issue)) {
                 issue.row.clear();
                 issue.usubjid.clear();
                 issue.seq.clear();
@@ -252,6 +264,15 @@ fn align_candidate_identity_to_official(
             issue
         })
         .collect()
+}
+
+fn issue_is_unlocated(issue: &IssueKey) -> bool {
+    issue.dataset.is_empty()
+        && issue.domain.is_empty()
+        && issue.row.is_empty()
+        && issue.variables.is_empty()
+        && issue.usubjid.is_empty()
+        && issue.seq.is_empty()
 }
 
 fn issue_signature(issue: &IssueKey) -> (String, String, String, Vec<String>) {
@@ -568,6 +589,59 @@ mod tests {
             rule_id: "CORE-000012".to_owned(),
             rule_dir: dir.path().join("open/Published/CORE-000012"),
             rule_path: dir.path().join("open/Published/CORE-000012/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].official_issue_count, Some(1));
+        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
+    }
+
+    #[test]
+    fn scores_match_when_official_issue_has_no_location_fields() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-001076/negative/01");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-001076/negative/01");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            official_dir.join("results.csv"),
+            "path,attribute,value\n,parent_entity,InterventionalStudyDesign\n,id,Activity_1\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-001076,failed,ACTIVITY,ACTIVITY,32,parent_entity|id,text,1,,,\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-001076".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-001076"),
+            rule_path: dir.path().join("open/Published/CORE-001076/rule.yml"),
             case_kind: CaseKind::Negative,
             case_id: "01".to_owned(),
             case_dir: case_dir.clone(),

@@ -2293,7 +2293,11 @@ mod tests {
 
         assert_eq!(
             evaluate_condition(
-                &condition("domain", Operator::EqualTo, ValueExpr::ColumnRef("AE".to_owned())),
+                &condition(
+                    "domain",
+                    Operator::EqualTo,
+                    ValueExpr::ColumnRef("AE".to_owned())
+                ),
                 &dataset
             )
             .expect("case-insensitive target"),
