@@ -2265,8 +2265,8 @@ fn derive_filtered_group_count_dataset(
         .map(|key| dataset_column_values(dataset, key))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let mut counts = BTreeMap::new();
-    for row in 0..row_count {
-        if mask[row] {
+    for (row, keep) in mask.iter().enumerate().take(row_count) {
+        if *keep {
             *counts
                 .entry(filtered_group_count_key(&key_columns, row))
                 .or_insert(0_i64) += 1;
