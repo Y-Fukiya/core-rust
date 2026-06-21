@@ -1832,12 +1832,22 @@ fn scalar_contained_by_value(
     }
 
     right.split('|').any(|part| {
+        let part = part.trim();
         scalar_equal_with_mode(
             left,
-            &ScalarValue::String(part.trim().to_owned()),
+            &ScalarValue::String(part.to_owned()),
             case_insensitive,
-        )
+        ) || scalar_string_equal_with_mode(left, part, case_insensitive)
     })
+}
+
+fn scalar_string_equal_with_mode(left: &ScalarValue, right: &str, case_insensitive: bool) -> bool {
+    let left = left.to_string();
+    if case_insensitive {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
 }
 
 fn is_case_insensitive_operator(operator: &Operator) -> bool {
@@ -2785,6 +2795,22 @@ mod tests {
             )
             .expect("case-insensitive is not contained by"),
             vec![false, false, true, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::IsContainedBy, literal("1|3")),
+                &dataset
+            )
+            .expect("numeric is contained by pipe-delimited set"),
+            vec![true, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::IsNotContainedBy, literal("1|3")),
+                &dataset
+            )
+            .expect("numeric is not contained by pipe-delimited set"),
+            vec![false, true, false, true]
         );
     }
 
