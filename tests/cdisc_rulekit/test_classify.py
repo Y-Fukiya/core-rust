@@ -152,7 +152,7 @@ def test_condition_with_inferable_test_target_classifies_as_auto_convertible():
     assert "INFERRED_CONDITION_TARGET" in classified[0].conversion_reasons
 
 
-def test_condition_column_comparator_without_target_stays_skeleton_only():
+def test_condition_column_comparator_classifies_as_auto_convertible():
     rule = CanonicalRule(
         source="P21",
         source_rule_id="SD1315",
@@ -165,8 +165,81 @@ def test_condition_column_comparator_without_target_stays_skeleton_only():
 
     classified = classify_rules([rule], [])
 
-    assert classified[0].conversion_status == "SKELETON_ONLY"
-    assert "NO_TARGET_VARIABLE" in classified[0].conversion_reasons
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "INFERRED_CONDITION_TARGET" in classified[0].conversion_reasons
+
+
+def test_condition_with_simple_or_expected_test_classifies_as_auto_convertible():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0089",
+        p21_rule_id="SD0089",
+        standard_name="SDTM-IG",
+        p21_rule_type="Condition",
+        domains=["TE"],
+        raw_condition={"test": "TEENRL != '' @or TEDUR != ''"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "INFERRED_CONDITION_TARGET" in classified[0].conversion_reasons
+    assert "SIMPLE_LOGICAL_CONDITION" in classified[0].conversion_reasons
+
+
+def test_unique_rule_with_group_by_classifies_as_auto_convertible():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0083",
+        p21_rule_id="SD0083",
+        standard_name="SDTM-IG",
+        p21_rule_type="Unique",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+        raw_condition={"group_by": "STUDYID", "when": "USUBJID != ''"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "SIMPLE_UNIQUE_SET" in classified[0].conversion_reasons
+
+
+def test_unique_rule_without_group_by_uses_dataset_scope():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1214",
+        p21_rule_id="SD1214",
+        standard_name="SDTM-IG",
+        p21_rule_type="Unique",
+        domains=["TS"],
+        variables=["TSPARMCD"],
+        target="TSPARMCD",
+        raw_condition={"when": "TSPARMCD == 'ADDON'"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "SIMPLE_UNIQUE_SET" in classified[0].conversion_reasons
+
+
+def test_condition_column_equality_classifies_as_auto_convertible():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0085",
+        p21_rule_id="SD0085",
+        standard_name="SDTM-IG",
+        p21_rule_type="Condition",
+        domains=["IE"],
+        raw_condition={"when": "IEORRES != '' @and IESTRESC != ''", "test": "IEORRES == IESTRESC"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "AUTO_CONVERTIBLE"
+    assert "INFERRED_CONDITION_TARGET" in classified[0].conversion_reasons
 
 
 def test_classification_uses_source_rule_key_when_rule_ids_are_duplicated():

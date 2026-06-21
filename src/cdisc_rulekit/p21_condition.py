@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -11,6 +11,8 @@ class P21Predicate:
     check: dict[str, Any]
     positive_value: str
     negative_value: str
+    extra_positive_values: dict[str, str] = field(default_factory=dict)
+    extra_negative_values: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,14 @@ class P21Guard:
 class P21GuardGroup:
     checks: list[dict[str, Any]]
     values: dict[str, str]
+
+
+@dataclass(frozen=True)
+class P21ExpectedCheckGroup:
+    checks: list[dict[str, Any]]
+    positive_values: dict[str, str]
+    negative_values: dict[str, str]
+    variables: list[str]
 
 
 _SIMPLE_COMPARISON = re.compile(
@@ -51,6 +61,29 @@ def _unsupported_column_comparator(value: str, quoted: bool) -> bool:
     return not quoted and bool(_IDENTIFIER.fullmatch(value))
 
 
+def _column_comparator_predicate(variable: str, operator: str, value: str) -> P21Predicate | None:
+    other_variable = value.upper()
+    if operator in {"==", "="}:
+        return P21Predicate(
+            variable,
+            {"name": variable, "operator": "not_equal_to", "value": other_variable},
+            "MATCH",
+            "__INVALID__",
+            {other_variable: "MATCH"},
+            {other_variable: "MATCH"},
+        )
+    if operator in {"!=", "<>", "@ne"}:
+        return P21Predicate(
+            variable,
+            {"name": variable, "operator": "equal_to", "value": other_variable},
+            "__OTHER__",
+            "MATCH",
+            {other_variable: "MATCH"},
+            {other_variable: "MATCH"},
+        )
+    return None
+
+
 def parse_expected_test(expression: object) -> P21Predicate | None:
     if not _is_simple_same_record_expression(expression):
         return None
@@ -67,7 +100,7 @@ def parse_expected_test(expression: object) -> P21Predicate | None:
     if operator in {"==", "="} and value == "":
         return P21Predicate(variable, {"name": variable, "operator": "is_not_empty"}, "", "Y")
     if operator != "@re" and _unsupported_column_comparator(value, quoted):
-        return None
+        return _column_comparator_predicate(variable, operator, value)
     if operator in {"==", "="}:
         return P21Predicate(variable, {"name": variable, "operator": "not_equal_to", "value": value}, value, "__INVALID__")
     if operator == "@eqic":
@@ -76,6 +109,13 @@ def parse_expected_test(expression: object) -> P21Predicate | None:
             {"name": variable, "operator": "not_equal_to_case_insensitive", "value": value},
             value,
             "__INVALID__",
+        )
+    if operator == "@neqic":
+        return P21Predicate(
+            variable,
+            {"name": variable, "operator": "equal_to_case_insensitive", "value": value},
+            "__OTHER__",
+            value,
         )
     if operator in {"!=", "<>", "@ne"}:
         return P21Predicate(variable, {"name": variable, "operator": "equal_to", "value": value}, "__OTHER__", value)
@@ -88,6 +128,76 @@ def parse_expected_test(expression: object) -> P21Predicate | None:
             "__INVALID__",
         )
     return None
+
+
+def _logical_parts(expression: object) -> tuple[str, list[str]] | None:
+    text = str(expression or "").strip()
+    if not text or ":" in text or "(" in text or ")" in text:
+        return None
+    has_and = bool(re.search(r"@and", text, flags=re.IGNORECASE))
+    has_or = bool(re.search(r"@or", text, flags=re.IGNORECASE))
+    if has_and == has_or:
+        return None
+    operator = "@and" if has_and else "@or"
+    parts = [part.strip() for part in re.split(rf"\s*{operator}\s*", text, flags=re.IGNORECASE)]
+    if len(parts) < 2 or any(not part for part in parts):
+        return None
+    return operator, parts
+
+
+def parse_expected_check_group(expression: object) -> P21ExpectedCheckGroup | None:
+    predicate = parse_expected_test(expression)
+    if predicate:
+        positive_values = {predicate.variable: predicate.positive_value}
+        positive_values.update(predicate.extra_positive_values)
+        negative_values = {predicate.variable: predicate.negative_value}
+        negative_values.update(predicate.extra_negative_values)
+        return P21ExpectedCheckGroup(
+            checks=[predicate.check],
+            positive_values=positive_values,
+            negative_values=negative_values,
+            variables=list(dict.fromkeys([predicate.variable, *positive_values, *negative_values])),
+        )
+
+    logical = _logical_parts(expression)
+    if not logical:
+        return None
+    operator, parts = logical
+    predicates = [parse_expected_test(part) for part in parts]
+    if any(predicate is None for predicate in predicates):
+        return None
+    parsed = [predicate for predicate in predicates if predicate is not None]
+    variables = list(dict.fromkeys(predicate.variable for predicate in parsed))
+    positive_values: dict[str, str] = {}
+    negative_values: dict[str, str] = {}
+    for predicate in parsed:
+        positive_values[predicate.variable] = predicate.positive_value
+        positive_values.update(predicate.extra_positive_values)
+        negative_values[predicate.variable] = predicate.negative_value
+        negative_values.update(predicate.extra_negative_values)
+    variables = list(dict.fromkeys([*variables, *positive_values, *negative_values]))
+
+    if operator == "@or":
+        first = parsed[0]
+        positive_values = {}
+        for predicate in parsed:
+            positive_values[predicate.variable] = predicate.negative_value
+            positive_values.update(predicate.extra_negative_values)
+        positive_values[first.variable] = first.positive_value
+        positive_values.update(first.extra_positive_values)
+        return P21ExpectedCheckGroup(
+            checks=[predicate.check for predicate in parsed],
+            positive_values=positive_values,
+            negative_values=negative_values,
+            variables=list(dict.fromkeys([*variables, *positive_values, *negative_values])),
+        )
+
+    return P21ExpectedCheckGroup(
+        checks=[{"any": [predicate.check for predicate in parsed]}],
+        positive_values=positive_values,
+        negative_values=negative_values,
+        variables=variables,
+    )
 
 
 def parse_when_guard(expression: object) -> P21Guard | None:
@@ -154,5 +264,10 @@ def parse_when_guard_group(expression: object) -> P21GuardGroup | None:
 
 
 def infer_condition_target(expression: object) -> str | None:
-    predicate = parse_expected_test(expression)
-    return predicate.variable if predicate else None
+    variables = infer_condition_variables(expression)
+    return variables[0] if variables else None
+
+
+def infer_condition_variables(expression: object) -> list[str]:
+    group = parse_expected_check_group(expression)
+    return group.variables if group else []

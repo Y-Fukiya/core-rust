@@ -13,9 +13,15 @@ import yaml
 from .io_utils import ensure_dir, split_semicolon_list, write_csv
 from .map_rules import standard_key
 from .models import CanonicalRule
-from .p21_condition import infer_condition_target, parse_expected_test, parse_when_guard_group
+from .p21_condition import (
+    infer_condition_target,
+    infer_condition_variables,
+    parse_expected_check_group,
+    parse_expected_test,
+    parse_when_guard_group,
+)
 
-GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND", "CONDITION"}
+GENERATABLE_TYPES = {"MATCH", "REGEX", "REQUIRED", "FIND", "CONDITION", "UNIQUE"}
 BASE_COLUMNS = ["STUDYID", "DOMAIN", "USUBJID"]
 CORE_OPERATOR_ALIASES = {
     "does_not_match_regex": "not_matches_regex",
@@ -73,9 +79,7 @@ def _domain(rule: CanonicalRule) -> str | None:
 
 def _variable(rule: CanonicalRule) -> str | None:
     candidates = [rule.target or "", *rule.variables]
-    inferred = infer_condition_target(rule.raw_condition.get("test"))
-    if inferred:
-        candidates.append(inferred)
+    candidates.extend(infer_condition_variables(rule.raw_condition.get("test")))
     for variable in candidates:
         upper = variable.upper()
         if upper in {"DOMAIN", "DATASET", "METADATA", "VARIABLE"}:
@@ -97,6 +101,8 @@ def _required_operators(rule_type: str) -> set[str]:
         return common | {"not_exists"}
     if rule_type == "CONDITION":
         return common
+    if rule_type == "UNIQUE":
+        return common | {"is_not_unique_set"}
     return common
 
 
@@ -207,6 +213,18 @@ def _simple_condition_parts(rule: CanonicalRule, variable: str) -> tuple[tuple[s
 
 
 def _condition_checks(rule: CanonicalRule, variable: str) -> tuple[list[dict[str, Any]] | None, str | None]:
+    group = parse_expected_check_group(rule.raw_condition.get("test"))
+    if group and variable in group.variables:
+        checks: list[dict[str, Any]] = []
+        when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+        if when not in (None, ""):
+            guard_group = parse_when_guard_group(when)
+            if not guard_group:
+                return None, "MISSING_SIMPLE_SAME_RECORD_CONDITION"
+            checks.extend(guard_group.checks)
+        checks.extend(group.checks)
+        return checks, None
+
     predicate = parse_expected_test(rule.raw_condition.get("test"))
     if predicate and predicate.variable == variable:
         checks: list[dict[str, Any]] = []
@@ -227,6 +245,17 @@ def _condition_checks(rule: CanonicalRule, variable: str) -> tuple[list[dict[str
         {"name": condition_variable, "operator": "equal_to", "value": condition_value},
         {"name": target, "operator": "is_empty"},
     ], None
+
+
+def _unique_group_by(rule: CanonicalRule) -> list[str]:
+    raw = rule.raw_condition.get("group_by")
+    values = split_semicolon_list(str(raw or "").replace(",", ";"))
+    group_by = [
+        value.upper()
+        for value in values
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{1,31}", value.upper())
+    ]
+    return group_by or ["DOMAIN"]
 
 
 def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -251,6 +280,23 @@ def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[
         if error or condition_checks is None:
             return None, error or "MISSING_SIMPLE_SAME_RECORD_CONDITION"
         checks.extend(condition_checks)
+    elif rule_type == "UNIQUE":
+        group_by = _unique_group_by(rule)
+        if not group_by:
+            return None, "MISSING_UNIQUE_GROUP_BY"
+        when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+        if when not in (None, ""):
+            guard_group = parse_when_guard_group(when)
+            if not guard_group:
+                return None, "MISSING_SIMPLE_UNIQUE_GUARD"
+            checks.extend(guard_group.checks)
+        checks.append(
+            {
+                "name": variable,
+                "operator": "is_not_unique_set",
+                "value": group_by[0] if len(group_by) == 1 else group_by,
+            },
+        )
     else:
         return None, "UNSUPPORTED_RULE_TYPE"
     checks.append({"name": "DOMAIN", "operator": "equal_to", "value": domain})
@@ -325,6 +371,15 @@ def _variable_type(variable: str) -> str:
 def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -> dict[str, str]:
     if (rule.p21_rule_type or "").upper() != "CONDITION":
         return {}
+    group = parse_expected_check_group(rule.raw_condition.get("test"))
+    if group and variable in group.variables:
+        values = dict(group.positive_values if case_type == "positive" else group.negative_values)
+        when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+        guard_group = parse_when_guard_group(when)
+        if guard_group:
+            values = {**guard_group.values, **values}
+        return values
+
     predicate = parse_expected_test(rule.raw_condition.get("test"))
     if predicate and predicate.variable == variable:
         values = {
@@ -333,7 +388,7 @@ def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -
         when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
         guard_group = parse_when_guard_group(when)
         if guard_group:
-            values.update(guard_group.values)
+            values = {**guard_group.values, **values}
         return values
 
     condition_parts = _simple_condition_parts(rule, variable)
@@ -347,21 +402,61 @@ def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -
     }
 
 
+def _unique_case_rows(rule: CanonicalRule, domain: str, variable: str, case_type: str) -> list[dict[str, str]]:
+    group_by = _unique_group_by(rule)
+    guard_values: dict[str, str] = {}
+    when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
+    guard_group = parse_when_guard_group(when)
+    if guard_group:
+        guard_values.update(guard_group.values)
+
+    group_values = {
+        group: ("CDISC-P21PORT" if group == "STUDYID" else f"{group}-GROUP")
+        for group in group_by
+    }
+    positive_a, positive_b = (
+        ("1", "2") if _is_numeric_variable(variable) else ("P21PORT-001", "P21PORT-002")
+    )
+    negative = "1" if _is_numeric_variable(variable) else "P21PORT-001"
+
+    rows: list[dict[str, str]] = []
+    for index in range(2):
+        row = {
+            "STUDYID": "CDISC-P21PORT",
+            "DOMAIN": domain,
+            "USUBJID": f"P21PORT-{index + 1:03d}",
+        }
+        row.update(group_values)
+        row.update(guard_values)
+        if case_type == "positive":
+            row[variable] = positive_a if index == 0 else positive_b
+        else:
+            row[variable] = negative
+        rows.append(row)
+    return rows
+
+
 def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain: str, variable: str) -> None:
     data_dir = rule_dir / case_type / "01" / "data"
     ensure_dir(data_dir)
     dataset = _dataset_name(domain)
-    positive_value, negative_value = _positive_negative_values(rule, variable)
-    value = positive_value if case_type == "positive" else negative_value
-    condition_values = _condition_case_values(rule, variable, case_type)
-    include_target = not ((rule.p21_rule_type or "").upper() == "FIND" and case_type == "negative")
-    target_columns = [variable] if include_target else []
-    columns = list(dict.fromkeys([*BASE_COLUMNS, *condition_values.keys(), *target_columns]))
-    row = {column: "" for column in columns}
-    row.update({"STUDYID": "CDISC-P21PORT", "DOMAIN": domain, "USUBJID": "P21PORT-001"})
-    if include_target:
-        row[variable] = value
-    row.update(condition_values)
+    rule_type = (rule.p21_rule_type or "").upper()
+    if rule_type == "UNIQUE":
+        rows = _unique_case_rows(rule, domain, variable, case_type)
+        columns = list(dict.fromkeys(column for row in rows for column in row))
+    else:
+        positive_value, negative_value = _positive_negative_values(rule, variable)
+        value = positive_value if case_type == "positive" else negative_value
+        condition_values = _condition_case_values(rule, variable, case_type)
+        include_target = not (rule_type == "FIND" and case_type == "negative")
+        target_columns = [variable] if include_target else []
+        columns = list(dict.fromkeys([*BASE_COLUMNS, *condition_values.keys(), *target_columns]))
+        row = {column: "" for column in columns}
+        row.update({"STUDYID": "CDISC-P21PORT", "DOMAIN": domain, "USUBJID": "P21PORT-001"})
+        if include_target:
+            row[variable] = value
+        row.update(condition_values)
+        rows = [row]
 
     (data_dir / ".env").write_text(
         f"PRODUCT={_product_name(rule)}\nVERSION={_version_value(rule)}\n",
@@ -374,16 +469,29 @@ def _write_data_case(rule_dir: Path, case_type: str, rule: CanonicalRule, domain
             "variable": column,
             "label": column,
             "type": _variable_type(column),
-            "length": max(1, len(str(row[column])) or 1),
+            "length": max(1, *(len(str(row.get(column, ""))) for row in rows)),
         }
         for column in columns
     ]
     write_csv(data_dir / "_variables.csv", variable_rows, ["dataset", "variable", "label", "type", "length"])
-    write_csv(data_dir / f"{dataset}.csv", [row], columns)
+    write_csv(data_dir / f"{dataset}.csv", rows, columns)
+
+
+def _expected_negative_variables(rule: CanonicalRule, variable: str) -> str:
+    rule_type = (rule.p21_rule_type or "").upper()
+    if rule_type == "FIND":
+        return "DOMAIN"
+    if rule_type == "CONDITION":
+        group = parse_expected_check_group(rule.raw_condition.get("test"))
+        if group and variable in group.variables:
+            return "|".join([*group.variables, "DOMAIN"])
+    if rule_type == "UNIQUE":
+        return "|".join([variable, *_unique_group_by(rule), "DOMAIN"])
+    return f"{variable}|DOMAIN"
 
 
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
-    negative_variables = "DOMAIN" if (rule.p21_rule_type or "").upper() == "FIND" else f"{variable}|DOMAIN"
+    negative_variables = _expected_negative_variables(rule, variable)
     rows = [
         {
             "case_type": "positive",

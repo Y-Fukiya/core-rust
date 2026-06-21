@@ -5,9 +5,9 @@ import re
 from .map_rules import p21_mapping_key, standard_key
 from .macro_analysis import structural_blocking_macro_families
 from .models import CanonicalRule, RuleMapping
-from .p21_condition import infer_condition_target
+from .p21_condition import infer_condition_target, infer_condition_variables
 
-AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND"}
+AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND", "UNIQUE"}
 SUPPORTED_STANDARDS = {"SDTMIG", "ADAMIG", "SENDIG"}
 
 
@@ -82,6 +82,8 @@ def _simple_reason(rule_type: str) -> str:
         return "SIMPLE_REQUIRED_CHECK"
     if rule_type == "FIND":
         return "DATASET_PRESENCE_CHECK"
+    if rule_type == "UNIQUE":
+        return "SIMPLE_UNIQUE_SET"
     return "NO_CORE_MAPPING"
 
 
@@ -192,6 +194,8 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
             )
         if _inferred_condition_target(rule):
             reasons.append("INFERRED_CONDITION_TARGET")
+            if len(infer_condition_variables(rule.raw_condition.get("test"))) > 1:
+                reasons.append("SIMPLE_LOGICAL_CONDITION")
         reasons.append(_simple_reason(rule_type))
         return rule.with_updates(
             core_rule_id=core_rule_id,

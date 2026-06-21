@@ -513,3 +513,159 @@ def test_generate_rules_uses_valid_duration_for_iso_duration_regex(tmp_path):
     with (generated_dir / "positive" / "01" / "data" / "td.csv").open(newline="", encoding="utf-8") as handle:
         positive = next(csv.DictReader(handle))
     assert positive["TDSTOFF"] == "P1D"
+
+
+def test_generate_rules_supports_simple_or_expected_condition(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0089",
+        source_rule_key="condition-or-key",
+        p21_rule_id="SD0089",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["TE"],
+        raw_condition={"test": "TEENRL != '' @or TEDUR != ''"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET", "SIMPLE_LOGICAL_CONDITION"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_empty"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    assert _check("is_empty", name="TEENRL") in checks
+    assert _check("is_empty", name="TEDUR") in checks
+
+    with (generated_dir / "positive" / "01" / "data" / "te.csv").open(newline="", encoding="utf-8") as handle:
+        positive = next(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "te.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+
+    assert positive["TEENRL"] == "Y"
+    assert negative["TEENRL"] == ""
+    assert negative["TEDUR"] == ""
+
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
+    assert negative_expected["variables"] == "TEENRL|TEDUR|DOMAIN"
+
+
+def test_generate_rules_supports_unique_group_by_checks(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0083",
+        source_rule_key="unique-key",
+        p21_rule_id="SD0083",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Unique",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+        raw_condition={"group_by": "STUDYID", "when": "USUBJID != ''"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_UNIQUE_SET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_not_empty", "is_not_unique_set"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    unique_check = next(payload for payload in _payloads(checks, "is_not_unique_set") if payload["name"] == "USUBJID")
+    assert unique_check["value"] == "STUDYID"
+
+    with (generated_dir / "positive" / "01" / "data" / "dm.csv").open(newline="", encoding="utf-8") as handle:
+        positive_rows = list(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "dm.csv").open(newline="", encoding="utf-8") as handle:
+        negative_rows = list(csv.DictReader(handle))
+
+    assert [row["USUBJID"] for row in positive_rows] == ["P21PORT-001", "P21PORT-002"]
+    assert [row["USUBJID"] for row in negative_rows] == ["P21PORT-001", "P21PORT-001"]
+    assert {row["STUDYID"] for row in negative_rows} == {"CDISC-P21PORT"}
+
+    validation = validate_generated_rules(tmp_path / "generated_rules")
+    assert validation.ok
+
+
+def test_generate_rules_uses_domain_for_unique_without_group_by(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD1214",
+        source_rule_key="unique-domain-key",
+        p21_rule_id="SD1214",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Unique",
+        domains=["TS"],
+        variables=["TSPARMCD"],
+        target="TSPARMCD",
+        raw_condition={"when": "TSPARMCD == 'ADDON'"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_UNIQUE_SET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_not_unique_set"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    unique_check = next(
+        payload
+        for payload in _payloads(rule_yml["Check"]["all"], "is_not_unique_set")
+        if payload["name"] == "TSPARMCD"
+    )
+    assert unique_check["value"] == "DOMAIN"
+
+
+def test_generate_rules_supports_same_record_column_equality(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0085",
+        source_rule_key="condition-column-key",
+        p21_rule_id="SD0085",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["IE"],
+        raw_condition={"when": "IEORRES != '' @and IESTRESC != ''", "test": "IEORRES == IESTRESC"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "is_not_empty", "not_equal_to"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    rule_yml = yaml.safe_load((generated_dir / "rule.yml").read_text(encoding="utf-8"))
+    checks = rule_yml["Check"]["all"]
+    comparison = next(payload for payload in _payloads(checks, "not_equal_to") if payload["name"] == "IEORRES")
+    assert comparison["value"] == "IESTRESC"
+
+    with (generated_dir / "positive" / "01" / "data" / "ie.csv").open(newline="", encoding="utf-8") as handle:
+        positive = next(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "ie.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+
+    assert positive["IEORRES"] == positive["IESTRESC"]
+    assert negative["IEORRES"] != negative["IESTRESC"]
