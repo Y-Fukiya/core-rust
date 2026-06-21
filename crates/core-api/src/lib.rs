@@ -584,7 +584,6 @@ fn is_distinct_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         "CORE-000271",
         "CORE-000660",
         "CORE-000678",
-        "CORE-000896",
     ];
 
     if has_unsupported_reference_distinct_operation(rule)
@@ -1361,6 +1360,7 @@ fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
         "CORE-000893",
         "CORE-000894",
         "CORE-000895",
+        "CORE-000896",
         "CORE-000916",
         "CORE-000953",
     ];
@@ -9035,6 +9035,86 @@ Sensitivity: Record
         assert_eq!(
             outcome.results[0].errors[0].variables,
             vec!["SVPRESP".to_owned(), "VISIT".to_owned()]
+        );
+    }
+
+    #[test]
+    fn run_validation_executes_pooldef_reference_distinct_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000896.json"),
+            r#"{
+  "Core": { "Id": "CORE-000896", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "POOLDEF",
+      "id": "$pooldef_poolid",
+      "name": "POOLID",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "POOLID", "operator": "non_empty" },
+      { "name": "POOLID", "operator": "is_not_contained_by", "value": "$pooldef_poolid" }
+    ]
+  },
+  "Outcome": { "Message": "POOLID value does not match a POOLID value in the POOLDEF dataset." }
+}"#,
+        )
+        .expect("write POOLDEF reference distinct rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "vs.xpt",
+      "domain": "VS",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "VSSEQ": [1, 2],
+        "POOLID": ["POOL1", "POOL99"]
+      }
+    },
+    {
+      "filename": "pooldef.xpt",
+      "domain": "POOLDEF",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "POOLID": ["POOL1", "POOL2"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write POOLDEF reference distinct data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+        assert_eq!(
+            outcome.results[0].errors[0].variables,
+            vec!["POOLID".to_owned(), "$pooldef_poolid".to_owned()]
         );
     }
 
