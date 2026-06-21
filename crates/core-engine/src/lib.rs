@@ -421,11 +421,11 @@ fn evaluate_condition_with_options(
                 let contains = ScalarValue::from_any_value(value)
                     .into_string()
                     .map(|haystack| {
-                        if is_case_insensitive_operator(operator) {
-                            haystack.to_ascii_lowercase().contains(&needle)
-                        } else {
-                            haystack.contains(&needle)
-                        }
+                        string_contains_value(
+                            &haystack,
+                            &needle,
+                            is_case_insensitive_operator(operator),
+                        )
                     })
                     .unwrap_or(false);
                 Ok(matches!(
@@ -1841,8 +1841,28 @@ fn scalar_contained_by_value(
     })
 }
 
+fn string_contains_value(haystack: &str, needle: &str, case_insensitive: bool) -> bool {
+    if haystack.contains('|') {
+        return haystack
+            .split('|')
+            .map(str::trim)
+            .any(|part| string_equal_with_mode(part, needle, case_insensitive));
+    }
+
+    if case_insensitive {
+        haystack
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+    } else {
+        haystack.contains(needle)
+    }
+}
+
 fn scalar_string_equal_with_mode(left: &ScalarValue, right: &str, case_insensitive: bool) -> bool {
-    let left = left.to_string();
+    string_equal_with_mode(&left.to_string(), right, case_insensitive)
+}
+
+fn string_equal_with_mode(left: &str, right: &str, case_insensitive: bool) -> bool {
     if case_insensitive {
         left.eq_ignore_ascii_case(right)
     } else {
@@ -2575,6 +2595,10 @@ mod tests {
             .expect("does not contain"),
             vec![false, true, true, true]
         );
+        assert!(string_contains_value("Headache", "ache", false));
+        assert!(string_contains_value("ARMCD|SPECIES", "ARMCD", false));
+        assert!(!string_contains_value("ARMCDxxx|SPECIES", "ARMCD", false));
+        assert!(string_contains_value("armcd|species", "ARMCD", true));
         assert_eq!(
             evaluate_condition(
                 &condition("TERM", Operator::ContainsCaseInsensitive, literal("ACHE")),

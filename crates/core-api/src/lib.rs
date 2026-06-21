@@ -10550,7 +10550,7 @@ Sensitivity: Record
       "domain": "TX",
       "records": {
         "SETCD": ["A", "A", "B", "B"],
-        "TXPARMCD": ["ARMCD", "SPECIES", "SPECIES", "STRAIN"]
+        "TXPARMCD": ["ARMCD", "SPECIES", "ARMCDxxx", "STRAIN"]
       }
     }
   ]
