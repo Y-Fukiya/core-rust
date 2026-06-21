@@ -2561,6 +2561,50 @@ fn execute_dataset_operation(
                 })
                 .collect()
         }
+        "min" | "max" => {
+            let keys = string_list_field(
+                operation,
+                &["by", "keys", "group", "group_by", "group_keys"],
+            )
+            .unwrap_or_default();
+            let output = string_field(
+                operation,
+                &["id", "target", "as", "output", "column", "name"],
+            )
+            .unwrap_or_else(|| format!("${name}"));
+            let source_column = string_field(
+                operation,
+                &["source_column", "value_column", "measure", "name"],
+            )
+            .unwrap_or_else(|| "VALUE".to_owned());
+
+            if source_column.trim().is_empty() {
+                return Err(operation_skipped_result(
+                    rule,
+                    "min/max operation is missing a source variable",
+                ));
+            }
+            if keys.is_empty() {
+                return Err(operation_skipped_result(
+                    rule,
+                    "min/max operation is missing grouping keys",
+                ));
+            }
+
+            input
+                .iter()
+                .map(|dataset| {
+                    group_min_max_dataset(
+                        dataset,
+                        &keys,
+                        &source_column,
+                        &output,
+                        name == "max",
+                    )
+                    .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect()
+        }
         "sort" | "order_by" => {
             let Some(keys) = string_list_field(operation, &["by", "keys", "order_by", "sort_by"])
             else {
@@ -3031,6 +3075,143 @@ fn external_group_date_dataset(
                 .map_err(|source| operation_skipped_result(rule, source.to_string()))
         })
         .collect()
+}
+
+fn group_min_max_dataset(
+    dataset: &LoadedDataset,
+    keys: &[String],
+    source_column: &str,
+    column_name: &str,
+    choose_max: bool,
+) -> std::result::Result<LoadedDataset, DataError> {
+    if source_column.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "min/max operation requires a source column".to_owned(),
+        ));
+    }
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "min/max operation requires an output column".to_owned(),
+        ));
+    }
+    if keys.is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "min/max operation requires at least one group key".to_owned(),
+        ));
+    }
+
+    let key_columns = keys
+        .iter()
+        .map(|key| {
+            operation_column_values(dataset, key)
+                .map_err(|_source| DataError::InvalidDatasetPackage(format!("min/max key not found: {key}")))
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let source_values = operation_column_values(dataset, source_column)
+        .map_err(|_source| {
+            DataError::InvalidDatasetPackage(format!(
+                "min/max source column not found: {source_column}"
+            ))
+        })?;
+
+    let mut by_group = BTreeMap::<Vec<String>, MinMaxValue>::new();
+    for row in 0..dataset.frame().height() {
+        let Some(candidate) = source_values.get(row).and_then(to_min_max_candidate) else {
+            continue;
+        };
+        let key = filtered_group_count_key(&key_columns, row);
+        by_group
+            .entry(key)
+            .and_modify(|current| {
+                let replace = if choose_max {
+                    candidate > *current
+                } else {
+                    candidate < *current
+                };
+                if replace {
+                    *current = candidate.clone();
+                }
+            })
+            .or_insert(candidate);
+    }
+
+    let values = (0..dataset.frame().height())
+        .map(|row| {
+            let key = filtered_group_count_key(&key_columns, row);
+            by_group.get(&key).map_or(Value::Null, MinMaxValue::to_json)
+        })
+        .collect::<Vec<_>>();
+
+    derive_column_from_values_with_aliases(dataset, column_name, &values)
+}
+
+#[derive(Clone)]
+enum MinMaxValue {
+    Number(f64, String),
+    Text(String),
+}
+
+impl std::cmp::PartialEq for MinMaxValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl std::cmp::Eq for MinMaxValue {}
+
+impl std::cmp::PartialOrd for MinMaxValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::cmp::Ord for MinMaxValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Self::Number(left, _), Self::Number(right, _)) => left
+                .partial_cmp(right)
+                .unwrap_or(std::cmp::Ordering::Equal),
+            (Self::Text(left), Self::Text(right)) => left.cmp(right),
+            (Self::Number(left, left_text), Self::Text(right)) => {
+                left_text.cmp(right)
+            }
+            (Self::Text(left), Self::Number(right, right_text)) => {
+                left.cmp(right_text)
+            }
+        }
+    }
+}
+
+impl MinMaxValue {
+    fn to_json(&self) -> Value {
+        match self {
+            Self::Number(value, _) => serde_json::Number::from_f64(*value)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            Self::Text(value) => Value::String(value.clone()),
+        }
+    }
+}
+
+fn to_min_max_candidate(value: &Value) -> Option<MinMaxValue> {
+    match value {
+        Value::Null => None,
+        Value::Bool(value) => Some(MinMaxValue::Text(value.to_string())),
+        Value::Number(value) => value
+            .as_f64()
+            .map(|number| MinMaxValue::Number(number, value.to_string())),
+        Value::String(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                None
+            } else if let Ok(number) = value.parse::<f64>() {
+                Some(MinMaxValue::Number(number, value.to_owned()))
+            } else {
+                Some(MinMaxValue::Text(value.to_owned()))
+            }
+        }
+        _ => Some(MinMaxValue::Text(value.to_string())),
+    }
 }
 
 fn operation_column_values(
@@ -3983,7 +4164,7 @@ fn is_join_operation(operation: &OperationSpec) -> bool {
 }
 
 fn is_supported_operation_name(name: &str) -> bool {
-    is_join_operation_name(name)
+        is_join_operation_name(name)
         || matches!(
             name,
             "filter"
@@ -3997,6 +4178,8 @@ fn is_supported_operation_name(name: &str) -> bool {
                 | "record_count"
                 | "sort"
                 | "order_by"
+                | "min"
+                | "max"
                 | "select"
                 | "keep"
                 | "project"
