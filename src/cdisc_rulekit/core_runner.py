@@ -187,13 +187,38 @@ def write_core_run_plan(out_dir: str | Path, plan: CoreRunPlan) -> None:
 
 def _execute_core_run_item(item: CoreRunPlanItem, cwd: str | None) -> dict[str, object]:
     ensure_dir(Path(item.output_dir))
-    completed = subprocess.run(
-        item.command,
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-    )
+    return _execute_core_run_item_with_timeout(item, cwd, timeout_seconds=None)
+
+
+def _execute_core_run_item_with_timeout(
+    item: CoreRunPlanItem,
+    cwd: str | None,
+    timeout_seconds: float | None,
+) -> dict[str, object]:
+    ensure_dir(Path(item.output_dir))
+    try:
+        completed = subprocess.run(
+            item.command,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or ""
+        stderr = error.stderr or ""
+        timeout_text = f"command timed out after {timeout_seconds:g}s"
+        return {
+            "generated_rule_id": item.generated_rule_id,
+            "case_type": item.case_type,
+            "case_id": item.case_id,
+            "returncode": "TIMEOUT",
+            "status": "FAIL",
+            "stdout": stdout.strip() if isinstance(stdout, str) else "",
+            "stderr": f"{stderr.strip()}\n{timeout_text}".strip() if isinstance(stderr, str) else timeout_text,
+            "output_dir": item.output_dir,
+        }
     return {
         "generated_rule_id": item.generated_rule_id,
         "case_type": item.case_type,
@@ -210,14 +235,15 @@ def execute_core_run_plan(
     plan: CoreRunPlan,
     engine_cwd: str | Path | None = None,
     workers: int = 1,
+    timeout_seconds: float | None = None,
 ) -> CoreRunExecutionResult:
     cwd = str(engine_cwd) if engine_cwd else None
     if workers <= 1:
-        rows = [_execute_core_run_item(item, cwd) for item in plan.items]
+        rows = [_execute_core_run_item_with_timeout(item, cwd, timeout_seconds) for item in plan.items]
         return CoreRunExecutionResult(rows)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        rows = list(executor.map(lambda item: _execute_core_run_item(item, cwd), plan.items))
+        rows = list(executor.map(lambda item: _execute_core_run_item_with_timeout(item, cwd, timeout_seconds), plan.items))
     return CoreRunExecutionResult(rows)
 
 

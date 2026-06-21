@@ -1,4 +1,5 @@
 import json
+import sys
 
 from cdisc_rulekit.core_runner import build_core_run_plan, execute_core_run_plan, write_core_run_plan
 
@@ -138,3 +139,32 @@ def test_execute_core_run_plan_supports_workers(tmp_path):
 
     assert result.ok
     assert result.pass_count == 2
+
+
+def test_execute_core_run_plan_records_timeout_failures(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    fake_engine = tmp_path / "fake_engine.py"
+    fake_engine.write_text(
+        "\n".join(
+            [
+                "import time",
+                "time.sleep(5)",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command=f"{sys.executable} {fake_engine}",
+        dry_run=False,
+    )
+
+    result = execute_core_run_plan(plan, timeout_seconds=0.1)
+
+    assert not result.ok
+    assert result.fail_count == 2
+    assert result.rows[0]["status"] == "FAIL"
+    assert result.rows[0]["returncode"] == "TIMEOUT"
+    assert "timed out after 0.1s" in result.rows[0]["stderr"]
