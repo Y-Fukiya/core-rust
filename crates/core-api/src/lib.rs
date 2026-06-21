@@ -6074,6 +6074,10 @@ Outcome:
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(
+            outcome.results[0].errors[0].variables,
+            vec!["ACTARM".to_owned(), "ARM".to_owned()]
+        );
     }
 
     #[test]
