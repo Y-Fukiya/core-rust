@@ -91,6 +91,33 @@ def _dataset_csv_paths(data_dir: Path) -> list[Path]:
     )
 
 
+def _read_case_env(data_dir: Path) -> dict[str, str]:
+    env_path = data_dir / ".env"
+    values: dict[str, str] = {}
+    if not env_path.exists():
+        return values
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip().lower()] = value.strip()
+    if "version" in values:
+        values["version_dash"] = values["version"]
+        values["version"] = values["version"].replace("-", ".")
+    return values
+
+
+def _render_engine_command(engine_command: str, data_dir: Path) -> str:
+    if "{" not in engine_command:
+        return engine_command
+    values = _read_case_env(data_dir)
+    try:
+        return engine_command.format(**values)
+    except KeyError as error:
+        placeholder = str(error).strip("'")
+        raise ValueError(f"Unsupported engine-command placeholder: {placeholder}") from error
+
+
 def _command(
     engine_command: str,
     rule_dir: Path,
@@ -104,8 +131,9 @@ def _command(
     if data_mode not in {"dataset-paths", "data-dir"}:
         raise ValueError(f"Unsupported data mode: {data_mode}")
     output_argument = output_dir / "report" if output_mode == "file-base" else output_dir
+    rendered_engine_command = _render_engine_command(engine_command, data_dir)
     command = [
-        *shlex.split(engine_command),
+        *shlex.split(rendered_engine_command),
         "--local-rules",
         str(rule_dir / "rule.yml"),
     ]

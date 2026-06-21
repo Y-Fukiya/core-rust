@@ -81,6 +81,23 @@ def test_build_core_run_plan_can_write_file_base_output_for_python_core(tmp_path
     assert "--dataset-path" not in first.command
 
 
+def test_build_core_run_plan_substitutes_env_placeholders_in_engine_command(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="python core.py validate -s {product} -v {version} --output-format json",
+        output_mode="file-base",
+        data_mode="data-dir",
+    )
+
+    first = plan.items[0]
+    assert first.command[:7] == ["python", "core.py", "validate", "-s", "SDTMIG", "-v", "3.3"]
+    assert "{version}" not in first.command
+
+
 def test_execute_core_run_plan_can_run_from_engine_cwd(tmp_path):
     generated_root = tmp_path / "generated_rules"
     _generated_rule(generated_root)

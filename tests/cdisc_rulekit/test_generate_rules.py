@@ -674,6 +674,16 @@ def test_generate_rules_uses_domain_for_unique_without_group_by(tmp_path):
     )
     assert unique_check["value"] == "DOMAIN"
 
+    with (generated_dir / "positive" / "01" / "data" / "ts.csv").open(newline="", encoding="utf-8") as handle:
+        positive_rows = list(csv.DictReader(handle))
+    with (generated_dir / "negative" / "01" / "data" / "ts.csv").open(newline="", encoding="utf-8") as handle:
+        negative_rows = list(csv.DictReader(handle))
+
+    assert [row["DOMAIN"] for row in positive_rows] == ["TS", "TS"]
+    assert [row["TSPARMCD"] for row in positive_rows] == ["ADDON", "P21PORT-002"]
+    assert [row["DOMAIN"] for row in negative_rows] == ["TS", "TS"]
+    assert [row["TSPARMCD"] for row in negative_rows] == ["ADDON", "ADDON"]
+
 
 def test_generate_rules_supports_same_record_column_equality(tmp_path):
     rule = CanonicalRule(

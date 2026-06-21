@@ -458,14 +458,24 @@ def _unique_case_rows(rule: CanonicalRule, domain: str, variable: str, case_type
     if guard_group:
         guard_values.update(guard_group.values)
 
-    group_values = {
-        group: ("CDISC-P21PORT" if group == "STUDYID" else f"{group}-GROUP")
-        for group in group_by
-    }
+    group_values = {}
+    for group in group_by:
+        if group == "STUDYID":
+            group_values[group] = "CDISC-P21PORT"
+        elif group == "DOMAIN":
+            group_values[group] = domain
+        else:
+            group_values[group] = f"{group}-GROUP"
     positive_a, positive_b = (
         ("1", "2") if _is_numeric_variable(variable) else ("P21PORT-001", "P21PORT-002")
     )
     negative = "1" if _is_numeric_variable(variable) else "P21PORT-001"
+    guarded_value = guard_values.get(variable)
+    guard_check = _find_check_for_variable(guard_group.checks, variable) if guard_group else None
+    guard_operator = str(guard_check.get("operator") or "") if guard_check else ""
+    if guarded_value not in (None, "") and guard_operator in {"equal_to", "equal_to_case_insensitive"}:
+        positive_a = guarded_value
+        negative = guarded_value
 
     rows: list[dict[str, str]] = []
     for index in range(2):
