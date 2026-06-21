@@ -315,7 +315,12 @@ def compare_generated_results(
     return ComparisonResult(rows=rows)
 
 
-def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> None:
+def write_comparison_report(
+    out_dir: str | Path,
+    result: ComparisonResult,
+    *,
+    allow_actual_skipped: bool = False,
+) -> None:
     out = Path(out_dir)
     ensure_dir(out)
     write_csv(out / "comparison_summary.csv", result.rows, COMPARISON_FIELDS)
@@ -342,9 +347,12 @@ def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> No
         for row in classification_summary
         if row["classification"] in {"ACTUAL_OUTPUT_MISSING", "EXPECTED_OUTPUT_MISSING"}
     )
+    gate_ok = comparison_gate_ok(result, allow_actual_skipped=allow_actual_skipped)
     (out / "comparison_summary.json").write_text(
         json.dumps(
             {
+                "allow_actual_skipped": allow_actual_skipped,
+                "gate_ok": gate_ok,
                 "ok": result.ok,
                 "pass_count": result.pass_count,
                 "fail_count": result.fail_count,
@@ -380,8 +388,12 @@ def write_comparison_report(out_dir: str | Path, result: ComparisonResult) -> No
         "# Comparison Summary",
         "",
         f"- ok: `{str(result.ok).lower()}`",
+        f"- gate ok: `{str(gate_ok).lower()}`",
+        f"- allow actual skipped: `{str(allow_actual_skipped).lower()}`",
         f"- passed rows: `{result.pass_count}`",
         f"- failed rows: `{result.fail_count}`",
+        f"- supported mismatch rows: `{supported_mismatch_rows}`",
+        f"- skipped coverage-gap rows: `{coverage_gap_rows}`",
         "",
         "## Failures",
         "",

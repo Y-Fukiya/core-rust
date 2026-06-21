@@ -150,6 +150,10 @@ def test_compare_results_cli_can_allow_actual_skipped_as_coverage_gap(tmp_path):
     )
 
     assert "compare-results complete: ok" in compare.stdout
+    comparison = json.loads((out_dir / "comparison_summary.json").read_text(encoding="utf-8"))
+    assert comparison["ok"] is False
+    assert comparison["gate_ok"] is True
+    assert comparison["allow_actual_skipped"] is True
     classification = json.loads((out_dir / "official_core_failure_classification.json").read_text(encoding="utf-8"))
     assert classification["supported_mismatch_rows"] == 0
     assert classification["coverage_gap_rows"] == 1

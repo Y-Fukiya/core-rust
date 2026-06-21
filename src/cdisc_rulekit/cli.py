@@ -241,7 +241,7 @@ def cmd_run_core(args: argparse.Namespace) -> int:
 
 def cmd_compare_results(args: argparse.Namespace) -> int:
     result = compare_generated_results(args.generated_rules, args.actual_root)
-    write_comparison_report(args.out, result)
+    write_comparison_report(args.out, result, allow_actual_skipped=args.allow_actual_skipped)
     counts = classification_counts(result)
     ok = comparison_gate_ok(result, allow_actual_skipped=args.allow_actual_skipped)
     status = "ok" if ok else "failed"
