@@ -557,6 +557,42 @@ def test_generate_rules_supports_simple_or_expected_condition(tmp_path):
     assert negative_expected["variables"] == "TEENRL|TEDUR|DOMAIN"
 
 
+def test_generate_rules_preserves_overlapping_when_guard_for_negative_condition(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SD0053",
+        source_rule_key="condition-overlap-key",
+        p21_rule_id="SD0053",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Condition",
+        domains=["DM"],
+        raw_condition={
+            "when": "ARMCD @eqic 'NOTASSGN' @or ARM @eqic 'Not Assigned'",
+            "test": "ARMCD @eqic 'NOTASSGN' @and ARM @eqic 'Not Assigned'",
+        },
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "INFERRED_CONDITION_TARGET", "SIMPLE_LOGICAL_CONDITION"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "any", "equal_to", "equal_to_case_insensitive", "not_equal_to_case_insensitive"},
+    )
+
+    assert summary.generated_count == 1
+    generated_dir = next((tmp_path / "generated_rules").iterdir())
+    with (generated_dir / "negative" / "01" / "data" / "dm.csv").open(newline="", encoding="utf-8") as handle:
+        negative = next(csv.DictReader(handle))
+
+    assert negative["ARMCD"] == "NOTASSGN"
+    assert negative["ARM"] == "__INVALID__"
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
+    assert negative_expected["variables"] == "ARMCD|ARM|DOMAIN"
+
+
 def test_generate_rules_supports_unique_group_by_checks(tmp_path):
     rule = CanonicalRule(
         source="P21",
@@ -595,6 +631,11 @@ def test_generate_rules_supports_unique_group_by_checks(tmp_path):
     assert [row["USUBJID"] for row in positive_rows] == ["P21PORT-001", "P21PORT-002"]
     assert [row["USUBJID"] for row in negative_rows] == ["P21PORT-001", "P21PORT-001"]
     assert {row["STUDYID"] for row in negative_rows} == {"CDISC-P21PORT"}
+
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
+    assert negative_expected["expected_issue_count"] == "2"
+    assert negative_expected["variables"] == "USUBJID|DOMAIN"
 
     validation = validate_generated_rules(tmp_path / "generated_rules")
     assert validation.ok
@@ -669,3 +710,7 @@ def test_generate_rules_supports_same_record_column_equality(tmp_path):
 
     assert positive["IEORRES"] == positive["IESTRESC"]
     assert negative["IEORRES"] != negative["IESTRESC"]
+
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
+    assert negative_expected["variables"] == "IEORRES|IESTRESC|DOMAIN"

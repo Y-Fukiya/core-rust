@@ -377,7 +377,7 @@ def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -
         when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
         guard_group = parse_when_guard_group(when)
         if guard_group:
-            values = {**guard_group.values, **values}
+            values = _merge_guard_values(values, guard_group, case_type)
         return values
 
     predicate = parse_expected_test(rule.raw_condition.get("test"))
@@ -388,7 +388,7 @@ def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -
         when = rule.raw_condition.get("when") or rule.raw_condition.get("if")
         guard_group = parse_when_guard_group(when)
         if guard_group:
-            values = {**guard_group.values, **values}
+            values = _merge_guard_values(values, guard_group, case_type)
         return values
 
     condition_parts = _simple_condition_parts(rule, variable)
@@ -400,6 +400,54 @@ def _condition_case_values(rule: CanonicalRule, variable: str, case_type: str) -
         condition_variable: condition_value,
         variable: positive_value if case_type == "positive" else negative_value,
     }
+
+
+def _merge_guard_values(values: dict[str, str], guard_group: Any, case_type: str) -> dict[str, str]:
+    if case_type != "negative":
+        return {**guard_group.values, **values}
+
+    merged = dict(values)
+    for variable, guard_value in guard_group.values.items():
+        current_value = merged.get(variable)
+        guard_check = _find_check_for_variable(guard_group.checks, variable)
+        if current_value is None or not _value_satisfies_check(current_value, guard_check):
+            merged[variable] = guard_value
+    return merged
+
+
+def _find_check_for_variable(checks: list[dict[str, Any]], variable: str) -> dict[str, Any] | None:
+    for check in checks:
+        name = check.get("name")
+        if isinstance(name, str) and name.upper() == variable.upper():
+            return check
+        for key in ("all", "any"):
+            child_match = _find_check_for_variable(
+                [child for child in check.get(key, []) or [] if isinstance(child, dict)],
+                variable,
+            )
+            if child_match:
+                return child_match
+    return None
+
+
+def _value_satisfies_check(value: str, check: dict[str, Any] | None) -> bool:
+    if not check:
+        return False
+    operator = str(check.get("operator") or "")
+    expected = str(check.get("value") or "")
+    if operator in {"equal_to", "==", "="}:
+        return value == expected
+    if operator == "equal_to_case_insensitive":
+        return value.casefold() == expected.casefold()
+    if operator in {"not_equal_to", "!=", "<>"}:
+        return value != expected
+    if operator == "not_equal_to_case_insensitive":
+        return value.casefold() != expected.casefold()
+    if operator == "is_empty":
+        return value == ""
+    if operator == "is_not_empty":
+        return value != ""
+    return False
 
 
 def _unique_case_rows(rule: CanonicalRule, domain: str, variable: str, case_type: str) -> list[dict[str, str]]:
@@ -482,12 +530,32 @@ def _expected_negative_variables(rule: CanonicalRule, variable: str) -> str:
     if rule_type == "FIND":
         return "DOMAIN"
     if rule_type == "CONDITION":
-        group = parse_expected_check_group(rule.raw_condition.get("test"))
-        if group and variable in group.variables:
-            return "|".join([*group.variables, "DOMAIN"])
+        check, _error = _build_check(rule, _domain(rule) or "", variable)
+        if check:
+            return "|".join(_check_variable_names(check))
     if rule_type == "UNIQUE":
-        return "|".join([variable, *_unique_group_by(rule), "DOMAIN"])
+        check, _error = _build_check(rule, _domain(rule) or "", variable)
+        if check:
+            return "|".join(_check_variable_names(check))
     return f"{variable}|DOMAIN"
+
+
+def _check_variable_names(check: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    name = check.get("name")
+    if isinstance(name, str) and name:
+        names.append(name.upper())
+    for key in ("all", "any"):
+        for child in check.get(key, []) or []:
+            if isinstance(child, dict):
+                names.extend(_check_variable_names(child))
+    return list(dict.fromkeys(names))
+
+
+def _expected_negative_issue_count(rule: CanonicalRule) -> int:
+    if (rule.p21_rule_type or "").upper() == "UNIQUE":
+        return 2
+    return 1
 
 
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
@@ -505,7 +573,7 @@ def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, d
         {
             "case_type": "negative",
             "case_id": "01",
-            "expected_issue_count": 1,
+            "expected_issue_count": _expected_negative_issue_count(rule),
             "rule_id": rule_id,
             "dataset": domain,
             "row": 1,
