@@ -571,13 +571,7 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
 }
 
 fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000770",
-        "CORE-000884",
-        "CORE-000891",
-        "CORE-000894",
-        "CORE-000895",
-    ];
+    const RULE_IDS: &[&str] = &["CORE-000770", "CORE-000884", "CORE-000894", "CORE-000895"];
 
     !rule.operations.is_empty() && RULE_IDS.contains(&rule.core_id.as_str())
 }
@@ -1363,6 +1357,7 @@ fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
         "CORE-000604",
         "CORE-000620",
         "CORE-000772",
+        "CORE-000891",
         "CORE-000893",
         "CORE-000916",
         "CORE-000953",
@@ -6076,7 +6071,7 @@ Outcome:
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
         assert_eq!(
             outcome.results[0].errors[0].variables,
-            vec!["ACTARM".to_owned(), "ARM".to_owned()]
+            vec!["LOOKUP.FLAG".to_owned()]
         );
     }
 
@@ -6225,6 +6220,10 @@ Outcome:
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(
+            outcome.results[0].errors[0].variables,
+            vec!["ACTARM".to_owned(), "ARM".to_owned()]
+        );
     }
 
     #[test]
@@ -10505,6 +10504,78 @@ Sensitivity: Record
     }
 
     #[test]
+    fn run_validation_executes_grouped_distinct_operation_for_required_txparmcd() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000891.json"),
+            r#"{
+  "Core": { "Id": "CORE-000891", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["TX"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "TX",
+      "group": ["SETCD"],
+      "id": "$txparmcd",
+      "name": "TXPARMCD",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "name": "$txparmcd",
+    "operator": "does_not_contain",
+    "value": "ARMCD"
+  },
+  "Outcome": {
+    "Message": "TX dataset should include a TXPARMCD = ARMCD record per SETCD.",
+    "Output Variables": ["SETCD", "$txparmcd"]
+  }
+}"#,
+        )
+        .expect("write grouped distinct rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "tx.xpt",
+      "domain": "TX",
+      "records": {
+        "SETCD": ["A", "A", "B", "B"],
+        "TXPARMCD": ["ARMCD", "SPECIES", "SPECIES", "STRAIN"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write grouped distinct data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(3));
+        assert_eq!(
+            outcome.results[0].errors[0].variables,
+            vec!["SETCD".to_owned(), "$txparmcd".to_owned()]
+        );
+    }
+
+    #[test]
     fn run_validation_executes_record_count_operation_inline_filter() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -10658,9 +10729,9 @@ Sensitivity: Record
         fs::create_dir_all(&data_dir).expect("data dir");
 
         fs::write(
-            rules_dir.join("CORE-000891.json"),
+            rules_dir.join("CORE-000894.json"),
             r#"{
-  "Core": { "Id": "CORE-000891", "Status": "Published" },
+  "Core": { "Id": "CORE-000894", "Status": "Published" },
   "Scope": { "Domains": {}, "Classes": {} },
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
