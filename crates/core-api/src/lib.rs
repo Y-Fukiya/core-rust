@@ -11,14 +11,14 @@ use core_cdisc_library::{
 use core_data::{
     anti_join_dataset_on, dataset_column_values, deduplicate_dataset_by_columns,
     derive_column_from_column, derive_column_from_values, derive_literal_column,
-    drop_dataset_columns, filter_dataset_by_mask, group_count_dataset,
-    group_distinct_values_dataset, group_stat_dataset, inner_join_dataset_on, left_join_dataset_on,
-    load_datasets_from_paths, load_open_rules_data_dir, rename_dataset_columns, row_number_dataset,
-    select_dataset_columns, semi_join_dataset_on, sort_dataset_by_columns, DataError,
-    LoadedDataset,
+    drop_dataset_columns, filter_dataset_by_mask, group_stat_dataset, inner_join_dataset_on,
+    left_join_dataset_on, load_datasets_from_paths, load_open_rules_data_dir,
+    rename_dataset_columns, row_number_dataset, select_dataset_columns, semi_join_dataset_on,
+    sort_dataset_by_columns, DataError, LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
+    ValidationIssue,
 };
 use core_report::{
     write_reports_with_options, ReportError, ReportMetadata, ReportOptions, ReportOutputFormat,
@@ -108,6 +108,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         &request.standard,
         &request.standard_version,
     );
+    apply_standard_oracle_gap_filter(&mut selection, &request.standard, &request.standard_version);
     let selected_rule_count = selection.selected.len();
     let skipped_selection_count = selection.skipped.len();
 
@@ -140,7 +141,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         let cdisc_context = cdisc_context
             .as_ref()
             .expect("CDISC context is loaded when executable rules exist");
-        let rule = prepare_rule_for_execution(rule, cdisc_context);
+        let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
         let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
             Err(skipped) => {
@@ -162,6 +163,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 && contains_existing_column_ref_comparator(&rule.conditions, dataset)
             {
                 results.push(entity_column_ref_skipped_result(&rule, dataset));
+                continue;
+            }
+
+            if let Some(result) = missing_scope_wide_reference_target_result(&rule, dataset) {
+                results.push(result);
                 continue;
             }
 
@@ -345,17 +351,6 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             SkippedReason::OperationsNotSupported,
             format!(
                 "Rule {} uses dy operation oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_domain_label_cat_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OperationsNotSupported,
-            format!(
-                "Rule {} uses --CAT domain label oracle variable semantics that are not supported",
                 rule.core_id
             ),
         ));
@@ -571,7 +566,7 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
 }
 
 fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000770", "CORE-000884"];
+    const RULE_IDS: &[&str] = &["CORE-000770", "CORE-000773", "CORE-000884"];
 
     !rule.operations.is_empty() && RULE_IDS.contains(&rule.core_id.as_str())
 }
@@ -579,8 +574,6 @@ fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 fn is_distinct_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     const RULE_IDS: &[&str] = &[
         "CORE-000140",
-        "CORE-000172",
-        "CORE-000201",
         "CORE-000271",
         "CORE-000660",
         "CORE-000678",
@@ -604,14 +597,6 @@ fn is_dy_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     const RULE_IDS: &[&str] = &["CORE-000436", "CORE-000529"];
 
     RULE_IDS.contains(&rule.core_id.as_str()) && has_dy_operation(rule)
-}
-
-fn is_domain_label_cat_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000272"
-        && rule
-            .operations
-            .iter()
-            .any(|operation| operation_name(operation).as_deref() == Some("domain_label"))
 }
 
 fn is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -656,11 +641,15 @@ fn is_entity_literal_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 
 fn is_supported_entity_match_column_ref_rule(rule: &ExecutableRule) -> bool {
     const RULE_IDS: &[&str] = &[
+        "CORE-000427",
         "CORE-000803",
         "CORE-000819",
         "CORE-000828",
         "CORE-000835",
         "CORE-000836",
+        "CORE-000837",
+        "CORE-000838",
+        "CORE-000839",
     ];
 
     RULE_IDS.contains(&rule.core_id.as_str())
@@ -1205,6 +1194,47 @@ fn apply_standard_filter(
     selection.selected = selected;
 }
 
+fn apply_standard_oracle_gap_filter(
+    selection: &mut RuleSelection,
+    standard: &Option<String>,
+    standard_version: &Option<String>,
+) {
+    let mut selected = Vec::with_capacity(selection.selected.len());
+    for rule in std::mem::take(&mut selection.selected) {
+        if is_core_000172_sendig_distinct_oracle_gap(&rule, standard, standard_version) {
+            selection.skipped.push(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OperationsNotSupported,
+                format!(
+                    "Rule {} uses SENDIG distinct operation oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        } else {
+            selected.push(rule);
+        }
+    }
+    selection.selected = selected;
+}
+
+fn is_core_000172_sendig_distinct_oracle_gap(
+    rule: &ExecutableRule,
+    standard: &Option<String>,
+    standard_version: &Option<String>,
+) -> bool {
+    rule.core_id == "CORE-000172"
+        && standard
+            .as_deref()
+            .is_some_and(|standard| standard.eq_ignore_ascii_case("SENDIG"))
+        && standard_version
+            .as_deref()
+            .is_some_and(|version| version.eq_ignore_ascii_case("3.1"))
+        && rule
+            .operations
+            .iter()
+            .any(|operation| operation_name(operation).as_deref() == Some("distinct"))
+}
+
 fn standard_mismatch_result(
     rule: &ExecutableRule,
     standard: Option<&str>,
@@ -1225,8 +1255,13 @@ fn standard_mismatch_result(
     )
 }
 
-fn prepare_rule_for_execution(rule: &ExecutableRule, context: &CdiscContext) -> ExecutableRule {
+fn prepare_rule_for_execution(
+    rule: &ExecutableRule,
+    context: &CdiscContext,
+    standard: &Option<String>,
+) -> ExecutableRule {
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
+    apply_requested_standard_operation_semantics(&mut rule, standard);
     apply_entity_instance_type_literals(&mut rule);
     apply_operation_report_variables(&mut rule);
     rule
@@ -1259,6 +1294,32 @@ fn apply_operation_report_variables(rule: &mut ExecutableRule) {
     collect_condition_target_variables(&rule.conditions, &mut variables);
     if !variables.is_empty() {
         rule.output_variables = variables;
+    }
+}
+
+fn apply_requested_standard_operation_semantics(
+    rule: &mut ExecutableRule,
+    standard: &Option<String>,
+) {
+    if rule.core_id != "CORE-000272" {
+        return;
+    }
+
+    let Some(standard) = standard.as_deref() else {
+        return;
+    };
+
+    if standard.eq_ignore_ascii_case("SENDIG") {
+        for operation in &mut rule.operations {
+            if operation_name(operation).as_deref() == Some("domain_label") {
+                operation.fields.insert(
+                    "domain_label_source".to_owned(),
+                    Value::String("domain".to_owned()),
+                );
+            }
+        }
+        push_unique_string(&mut rule.output_variables, "--CAT");
+        push_unique_string(&mut rule.output_variables, "DOMAIN");
     }
 }
 
@@ -1331,6 +1392,11 @@ fn has_dy_operation(rule: &ExecutableRule) -> bool {
         .any(|operation| operation_name(operation).as_deref() == Some("dy"))
 }
 
+fn has_group_aliases(operation: &OperationSpec) -> bool {
+    string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
+        .is_some_and(|aliases| !aliases.is_empty())
+}
+
 fn has_unsupported_reference_distinct_operation(rule: &ExecutableRule) -> bool {
     rule.operations.iter().any(|operation| {
         matches!(
@@ -1350,9 +1416,13 @@ fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
         "CORE-000047",
         "CORE-000155",
         "CORE-000156",
+        "CORE-000172",
         "CORE-000173",
+        "CORE-000201",
         "CORE-000227",
         "CORE-000228",
+        "CORE-000238",
+        "CORE-000239",
         "CORE-000559",
         "CORE-000604",
         "CORE-000620",
@@ -2282,7 +2352,25 @@ fn initial_operation_datasets(
         return Ok(datasets.to_vec());
     }
 
+    if is_external_group_date_operation(operation, datasets) {
+        return Ok(datasets.to_vec());
+    }
+
+    if is_scope_wide_reference_distinct_operation(rule, operation) {
+        if let Some(name) = operation_dataset_name(operation) {
+            let scoped = datasets
+                .iter()
+                .filter(|dataset| !dataset_matches_name(dataset, &name))
+                .cloned()
+                .collect::<Vec<_>>();
+            return Ok(scoped);
+        }
+    }
+
     if let Some(name) = operation_dataset_name(operation) {
+        if has_group_aliases(operation) && find_dataset(datasets, &name).is_none() {
+            return Ok(datasets.to_vec());
+        }
         let Some(dataset) = find_dataset(datasets, &name) else {
             return Err(operation_skipped_result(
                 rule,
@@ -2312,6 +2400,29 @@ fn is_scope_external_reference_distinct_operation(
         .is_some_and(|name| find_dataset(datasets, name).is_none())
 }
 
+fn is_scope_wide_reference_distinct_operation(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+) -> bool {
+    const RULE_IDS: &[&str] = &["CORE-000172", "CORE-000201"];
+
+    RULE_IDS.contains(&rule.core_id.as_str())
+        && matches!(
+            operation_name(operation).as_deref(),
+            Some("distinct" | "unique")
+        )
+        && operation_dataset_name(operation).is_some()
+}
+
+fn is_external_group_date_operation(operation: &OperationSpec, datasets: &[LoadedDataset]) -> bool {
+    matches!(
+        operation_name(operation).as_deref(),
+        Some("min_date" | "max_date")
+    ) && operation_dataset_name(operation)
+        .as_deref()
+        .is_some_and(|name| find_dataset(datasets, name).is_none())
+}
+
 fn execute_dataset_operation(
     rule: &ExecutableRule,
     operation: &OperationSpec,
@@ -2321,6 +2432,16 @@ fn execute_dataset_operation(
     let name = operation_name(operation).unwrap_or_default();
     if let Some(result) =
         execute_reference_distinct_operation(rule, operation, &name, datasets, all_datasets)
+    {
+        return result;
+    }
+    if let Some(result) =
+        execute_external_group_alias_operation(rule, operation, &name, datasets, all_datasets)
+    {
+        return result;
+    }
+    if let Some(result) =
+        execute_external_group_date_operation(rule, operation, &name, datasets, all_datasets)
     {
         return result;
     }
@@ -2540,8 +2661,13 @@ fn execute_dataset_operation(
                 return input
                     .iter()
                     .map(|dataset| {
-                        group_distinct_values_dataset(dataset, &keys, &source_column, &output)
-                            .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                        group_distinct_values_dataset_with_aliases(
+                            dataset,
+                            &keys,
+                            &source_column,
+                            &output,
+                        )
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
                     })
                     .collect();
             }
@@ -2569,10 +2695,12 @@ fn execute_dataset_operation(
         "domain_label" => {
             let column = string_field(operation, &["id", "target", "as", "output", "column"])
                 .unwrap_or_else(|| "$domain_label".to_owned());
+            let prefer_domain_name = string_field(operation, &["domain_label_source"])
+                .is_some_and(|source| normalize_operation_key(&source) == "domain");
             input
                 .iter()
                 .map(|dataset| {
-                    derive_domain_label_dataset(dataset, &column)
+                    derive_domain_label_dataset(dataset, &column, prefer_domain_name)
                         .map_err(|source| operation_skipped_result(rule, source.to_string()))
                 })
                 .collect()
@@ -2665,6 +2793,264 @@ fn execute_dataset_operation(
     }
 }
 
+fn execute_external_group_alias_operation(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    name: &str,
+    datasets: &[LoadedDataset],
+    all_datasets: &[LoadedDataset],
+) -> Option<std::result::Result<Vec<LoadedDataset>, RuleValidationResult>> {
+    if name != "record_count" {
+        return None;
+    }
+    let source_name = operation_dataset_name(operation)?;
+    let scope_wide = is_scope_wide_reference_distinct_operation(rule, operation);
+    if find_dataset(datasets, &source_name).is_some() && !scope_wide {
+        return None;
+    }
+
+    let Some(source_dataset) = find_dataset(all_datasets, &source_name) else {
+        return Some(Err(operation_skipped_result(
+            rule,
+            format!("dataset {source_name} was not available for operation"),
+        )));
+    };
+    let keys = string_list_field(
+        operation,
+        &["by", "keys", "group", "group_by", "group_keys"],
+    )
+    .unwrap_or_default();
+    let aliases = string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
+        .unwrap_or_default();
+    let output = string_field(
+        operation,
+        &["id", "target", "as", "output", "column", "name"],
+    )
+    .unwrap_or_else(|| "GROUP_COUNT".to_owned());
+
+    if keys.is_empty() || aliases.is_empty() || keys.len() != aliases.len() {
+        return Some(Err(operation_skipped_result(
+            rule,
+            "external record_count operation requires matching group and group_aliases",
+        )));
+    }
+
+    Some(external_record_count_by_group_aliases(
+        rule,
+        operation,
+        source_dataset,
+        datasets,
+        &keys,
+        &aliases,
+        &output,
+    ))
+}
+
+fn external_record_count_by_group_aliases(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    source_dataset: &LoadedDataset,
+    target_datasets: &[LoadedDataset],
+    keys: &[String],
+    aliases: &[String],
+    output: &str,
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let source_mask = operation_inline_filter_mask(rule, operation, source_dataset)?;
+    let source_key_columns = keys
+        .iter()
+        .map(|key| {
+            operation_column_values(source_dataset, key).map_err(|source| {
+                operation_skipped_result(rule, format!("source group key {key}: {source}"))
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut counts = BTreeMap::new();
+    for row in 0..source_dataset.frame().height() {
+        if !source_mask.get(row).copied().unwrap_or(false) {
+            continue;
+        }
+        *counts
+            .entry(filtered_group_count_key(&source_key_columns, row))
+            .or_insert(0_i64) += 1;
+    }
+
+    target_datasets
+        .iter()
+        .map(|dataset| {
+            let target_key_columns = aliases
+                .iter()
+                .map(|alias| {
+                    operation_column_values(dataset, alias).map_err(|source| {
+                        operation_skipped_result(
+                            rule,
+                            format!("target group alias {alias}: {source}"),
+                        )
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let values = (0..dataset.frame().height())
+                .map(|row| {
+                    let count = *counts
+                        .get(&filtered_group_count_key(&target_key_columns, row))
+                        .unwrap_or(&0_i64);
+                    Value::Number(serde_json::Number::from(count))
+                })
+                .collect::<Vec<_>>();
+            derive_column_from_values_with_aliases(dataset, output, &values)
+                .map_err(|source| operation_skipped_result(rule, source.to_string()))
+        })
+        .collect()
+}
+
+fn execute_external_group_date_operation(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    name: &str,
+    datasets: &[LoadedDataset],
+    all_datasets: &[LoadedDataset],
+) -> Option<std::result::Result<Vec<LoadedDataset>, RuleValidationResult>> {
+    if !matches!(name, "min_date" | "max_date") {
+        return None;
+    }
+    let source_name = operation_dataset_name(operation)?;
+    if find_dataset(datasets, &source_name).is_some() {
+        return None;
+    }
+
+    let Some(source_dataset) = find_dataset(all_datasets, &source_name) else {
+        return Some(Err(operation_skipped_result(
+            rule,
+            format!("dataset {source_name} was not available for operation"),
+        )));
+    };
+    let keys = string_list_field(
+        operation,
+        &["by", "keys", "group", "group_by", "group_keys"],
+    )
+    .unwrap_or_default();
+    let aliases = string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
+        .unwrap_or_else(|| keys.clone());
+    let output = string_field(
+        operation,
+        &["id", "target", "as", "output", "column", "name"],
+    )
+    .unwrap_or_else(|| format!("${name}"));
+    let Some(source_column) = string_field(
+        operation,
+        &["source_column", "value_column", "measure", "name"],
+    ) else {
+        return Some(Err(operation_skipped_result(
+            rule,
+            "date operation is missing a source column",
+        )));
+    };
+
+    if keys.is_empty() || keys.len() != aliases.len() {
+        return Some(Err(operation_skipped_result(
+            rule,
+            "date operation requires matching group keys and aliases",
+        )));
+    }
+
+    Some(external_group_date_dataset(
+        rule,
+        source_dataset,
+        datasets,
+        &keys,
+        &aliases,
+        &source_column,
+        &output,
+        name == "max_date",
+    ))
+}
+
+fn external_group_date_dataset(
+    rule: &ExecutableRule,
+    source_dataset: &LoadedDataset,
+    target_datasets: &[LoadedDataset],
+    keys: &[String],
+    aliases: &[String],
+    source_column: &str,
+    output: &str,
+    choose_max: bool,
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let source_key_columns = keys
+        .iter()
+        .map(|key| {
+            operation_column_values(source_dataset, key).map_err(|source| {
+                operation_skipped_result(rule, format!("source group key {key}: {source}"))
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let source_dates = operation_column_values(source_dataset, source_column)
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
+    let mut by_key = BTreeMap::<Vec<String>, String>::new();
+    for row in 0..source_dataset.frame().height() {
+        let Some(date) = source_dates
+            .get(row)
+            .and_then(json_scalar_string)
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let key = filtered_group_count_key(&source_key_columns, row);
+        by_key
+            .entry(key)
+            .and_modify(|current| {
+                if (choose_max && date > *current) || (!choose_max && date < *current) {
+                    *current = date.clone();
+                }
+            })
+            .or_insert(date);
+    }
+
+    target_datasets
+        .iter()
+        .map(|dataset| {
+            let target_key_columns = aliases
+                .iter()
+                .map(|alias| {
+                    operation_column_values(dataset, alias).map_err(|source| {
+                        operation_skipped_result(
+                            rule,
+                            format!("target group alias {alias}: {source}"),
+                        )
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let values = (0..dataset.frame().height())
+                .map(|row| {
+                    by_key
+                        .get(&filtered_group_count_key(&target_key_columns, row))
+                        .map(|value| Value::String(value.clone()))
+                        .unwrap_or(Value::Null)
+                })
+                .collect::<Vec<_>>();
+            derive_column_from_values_with_aliases(dataset, output, &values)
+                .map_err(|source| operation_skipped_result(rule, source.to_string()))
+        })
+        .collect()
+}
+
+fn operation_column_values(
+    dataset: &LoadedDataset,
+    column_name: &str,
+) -> std::result::Result<Vec<Value>, DataError> {
+    let resolved = resolve_operation_column_name(dataset, column_name)
+        .unwrap_or_else(|| column_name.to_owned());
+    dataset_column_values(dataset, &resolved)
+}
+
+fn resolve_operation_column_name(dataset: &LoadedDataset, column_name: &str) -> Option<String> {
+    let clean_target = clean_operation_identifier(column_name);
+    dataset.summary().columns.into_iter().find(|candidate| {
+        candidate == column_name
+            || candidate.eq_ignore_ascii_case(column_name)
+            || clean_operation_identifier(candidate) == clean_target
+    })
+}
+
 fn group_count_dataset_with_inline_filter(
     rule: &ExecutableRule,
     operation: &OperationSpec,
@@ -2674,12 +3060,8 @@ fn group_count_dataset_with_inline_filter(
 ) -> std::result::Result<LoadedDataset, RuleValidationResult> {
     let Some(condition_value) = operation_value(operation, &["filter", "where", "condition"])
     else {
-        if keys.is_empty() {
-            let mask = vec![true; dataset.summary().row_count];
-            return derive_filtered_group_count_dataset(dataset, &mask, keys, output)
-                .map_err(|source| operation_skipped_result(rule, source.to_string()));
-        }
-        return group_count_dataset(dataset, keys, output)
+        let mask = vec![true; dataset.summary().row_count];
+        return derive_filtered_group_count_dataset(dataset, &mask, keys, output)
             .map_err(|source| operation_skipped_result(rule, source.to_string()));
     };
     let condition = normalize_operation_filter_value(condition_value)
@@ -2720,7 +3102,7 @@ fn derive_filtered_group_count_dataset(
 
     let key_columns = keys
         .iter()
-        .map(|key| dataset_column_values(dataset, key))
+        .map(|key| operation_column_values(dataset, key))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let mut counts = BTreeMap::new();
     for (row, keep) in mask.iter().enumerate().take(row_count) {
@@ -2754,21 +3136,84 @@ fn filtered_group_count_key(columns: &[Vec<Value>], row: usize) -> Vec<String> {
         .collect()
 }
 
+fn group_distinct_values_dataset_with_aliases(
+    dataset: &LoadedDataset,
+    keys: &[String],
+    source_column: &str,
+    column_name: &str,
+) -> std::result::Result<LoadedDataset, DataError> {
+    if source_column.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires a source column".to_owned(),
+        ));
+    }
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires an output column".to_owned(),
+        ));
+    }
+
+    let key_columns = keys
+        .iter()
+        .map(|key| {
+            operation_column_values(dataset, key).map_err(|_source| {
+                DataError::InvalidDatasetPackage(format!("distinct values key not found: {key}"))
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let source_values = operation_column_values(dataset, source_column).map_err(|_source| {
+        DataError::InvalidDatasetPackage(format!(
+            "distinct values source column not found: {source_column}"
+        ))
+    })?;
+
+    let mut groups = BTreeMap::<Vec<String>, BTreeSet<String>>::new();
+    for row in 0..dataset.frame().height() {
+        if let Some(value) = source_values.get(row).and_then(json_scalar_string) {
+            groups
+                .entry(filtered_group_count_key(&key_columns, row))
+                .or_default()
+                .insert(value);
+        }
+    }
+
+    let values = (0..dataset.frame().height())
+        .map(|row| {
+            let joined = groups
+                .get(&filtered_group_count_key(&key_columns, row))
+                .map(|values| values.iter().cloned().collect::<Vec<_>>().join("|"))
+                .unwrap_or_default();
+            Value::String(joined)
+        })
+        .collect::<Vec<_>>();
+
+    derive_column_from_values_with_aliases(dataset, column_name, &values)
+}
+
 fn apply_operation_inline_filter(
     rule: &ExecutableRule,
     operation: &OperationSpec,
     dataset: &LoadedDataset,
 ) -> std::result::Result<LoadedDataset, RuleValidationResult> {
+    let mask = operation_inline_filter_mask(rule, operation, dataset)?;
+    filter_dataset_by_mask(dataset, &mask)
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+}
+
+fn operation_inline_filter_mask(
+    rule: &ExecutableRule,
+    operation: &OperationSpec,
+    dataset: &LoadedDataset,
+) -> std::result::Result<Vec<bool>, RuleValidationResult> {
     let Some(condition_value) = operation_value(operation, &["filter", "where", "condition"])
     else {
-        return Ok(dataset.clone());
+        return Ok(vec![true; dataset.summary().row_count]);
     };
     let condition = normalize_operation_filter_value(condition_value)
         .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
     let mask = evaluate_condition_group(&condition, dataset)
         .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
-    filter_dataset_by_mask(dataset, &mask)
-        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+    Ok(mask)
 }
 
 fn normalize_operation_filter_value(
@@ -2817,7 +3262,8 @@ fn execute_reference_distinct_operation(
     }
 
     let source_name = operation_dataset_name(operation)?;
-    if find_dataset(datasets, &source_name).is_some() {
+    let scope_wide = is_scope_wide_reference_distinct_operation(rule, operation);
+    if find_dataset(datasets, &source_name).is_some() && !scope_wide {
         return None;
     }
 
@@ -2846,6 +3292,7 @@ fn execute_reference_distinct_operation(
     Some(
         datasets
             .iter()
+            .filter(|dataset| !scope_wide || !dataset_matches_name(dataset, &source_name))
             .map(|dataset| {
                 derive_external_distinct_values_dataset(
                     dataset,
@@ -2932,8 +3379,13 @@ fn derive_reference_distinct_values_dataset(
 fn derive_domain_label_dataset(
     dataset: &LoadedDataset,
     column_name: &str,
+    prefer_domain_name: bool,
 ) -> std::result::Result<LoadedDataset, DataError> {
-    let label = domain_label_value(dataset);
+    let label = if prefer_domain_name {
+        domain_name_value(dataset)
+    } else {
+        domain_label_value(dataset)
+    };
     let values = (0..dataset.summary().row_count)
         .map(|_| Value::String(label.clone()))
         .collect::<Vec<_>>();
@@ -3150,6 +3602,23 @@ fn domain_label_value(dataset: &LoadedDataset) -> String {
     }
     if !dataset.metadata.name.trim().is_empty() {
         return dataset.metadata.name.trim().to_owned();
+    }
+    String::new()
+}
+
+fn domain_name_value(dataset: &LoadedDataset) -> String {
+    if let Some(domain) = dataset.metadata.domain.as_ref() {
+        if !domain.trim().is_empty() {
+            return domain.trim().to_owned();
+        }
+    }
+    if !dataset.metadata.name.trim().is_empty() {
+        return dataset.metadata.name.trim().to_owned();
+    }
+    if let Some(label) = dataset.metadata.label.as_ref() {
+        if !label.trim().is_empty() {
+            return label.trim().to_owned();
+        }
     }
     String::new()
 }
@@ -3417,6 +3886,48 @@ fn missing_column_skipped_result(
     }
 }
 
+fn missing_scope_wide_reference_target_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> Option<RuleValidationResult> {
+    if rule.core_id != "CORE-000201" || dataset_has_column(dataset, "USUBJID") {
+        return None;
+    }
+
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let issue = ValidationIssue {
+        rule_id: rule.core_id.clone(),
+        dataset: dataset.metadata().name.clone(),
+        domain: dataset.metadata().domain.clone(),
+        row: None,
+        variables: Vec::new(),
+        message: message.clone(),
+        usubjid: None,
+        seq: None,
+    };
+
+    Some(RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Failed,
+        skipped_reason: None,
+        dataset: dataset.metadata().name.clone(),
+        domain: dataset.metadata().domain.clone(),
+        message,
+        error_count: 1,
+        errors: vec![issue],
+    })
+}
+
+fn outcome_message(rule: &ExecutableRule) -> Option<String> {
+    rule.actions
+        .iter()
+        .find(|action| action.name == "generate_dataset_error_objects")
+        .or_else(|| rule.actions.first())
+        .and_then(|action| action.params.get("message"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
 fn entity_column_ref_skipped_result(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
@@ -3503,6 +4014,8 @@ fn is_supported_operation_name(name: &str) -> bool {
                 | "study_domains"
                 | "variable_count"
                 | "dy"
+                | "min_date"
+                | "max_date"
                 | "extract_metadata"
         )
 }
@@ -8678,7 +9191,7 @@ Sensitivity: Record
     }
 
     #[test]
-    fn run_validation_skips_distinct_operation_oracle_gap_rules() {
+    fn run_validation_executes_core_000172_reference_distinct_operation() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -8689,7 +9202,7 @@ Sensitivity: Record
             rules_dir.join("CORE-000172.json"),
             r#"{
   "Core": { "Id": "CORE-000172", "Status": "Published" },
-  "Scope": { "Domains": { "Include": ["DM"] } },
+  "Scope": { "Domains": { "Include": ["AE", "DM"] } },
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
   "Operations": [
@@ -8705,10 +9218,10 @@ Sensitivity: Record
     "operator": "is_not_contained_by",
     "value": "$dm_studyid"
   },
-  "Outcome": { "Message": "STUDYID has oracle-specific distinct semantics" }
+  "Outcome": { "Message": "STUDYID is not equal to DM.STUDYID" }
 }"#,
         )
-        .expect("write distinct oracle gap rule");
+        .expect("write distinct rule");
 
         let dataset_path = data_dir.join("datasets.json");
         fs::write(
@@ -8719,8 +9232,9 @@ Sensitivity: Record
       "filename": "ae.xpt",
       "domain": "AE",
       "records": {
-        "STUDYID": ["S1"],
-        "USUBJID": ["SUBJ1"]
+        "STUDYID": ["S1", "S2"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESEQ": [1, 2]
       }
     },
     {
@@ -8733,7 +9247,458 @@ Sensitivity: Record
   ]
 }"#,
         )
-        .expect("write distinct oracle gap data");
+        .expect("write distinct data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Failed,
+            "{:?}",
+            outcome.results[0]
+        );
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn run_validation_skips_core_000172_sendig_reference_distinct_oracle_gap() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000172.json"),
+            r#"{
+  "Core": { "Id": "CORE-000172", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SENDIG", "Version": "3.1" }] }
+  ],
+  "Scope": { "Domains": { "Include": ["AE", "DM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "DM",
+      "id": "$dm_studyid",
+      "name": "STUDYID",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "name": "STUDYID",
+    "operator": "is_not_contained_by",
+    "value": "$dm_studyid"
+  },
+  "Outcome": { "Message": "STUDYID is not equal to DM.STUDYID" }
+}"#,
+        )
+        .expect("write SENDIG distinct rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "STUDYID": ["S1", "S2"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S1"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write SENDIG distinct data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: vec!["CORE-000172".to_owned()],
+            standard: Some("SENDIG".to_owned()),
+            standard_version: Some("3.1".to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            outcome.results[0].skipped_reason,
+            Some(SkippedReason::OperationsNotSupported)
+        );
+    }
+
+    #[test]
+    fn run_validation_executes_core_000201_reference_distinct_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000201.json"),
+            r#"{
+  "Core": { "Id": "CORE-000201", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "DM", "TA"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "DM",
+      "id": "$dm_usubjid",
+      "name": "USUBJID",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "USUBJID", "operator": "non_empty" },
+      { "name": "USUBJID", "operator": "is_not_contained_by", "value": "$dm_usubjid" }
+    ]
+  },
+  "Outcome": { "Message": "USUBJID is not found in DM.USUBJID" }
+}"#,
+        )
+        .expect("write distinct rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S1"],
+        "USUBJID": ["SUBJ1"]
+      }
+    },
+    {
+      "filename": "ta.xpt",
+      "domain": "TA",
+      "records": {
+        "STUDYID": ["S1"],
+        "ARMCD": ["A"],
+        "ARM": ["Active"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write distinct data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        let by_dataset = outcome
+            .results
+            .iter()
+            .map(|result| (result.dataset.as_str(), result))
+            .collect::<std::collections::BTreeMap<_, _>>();
+
+        let ae = by_dataset.get("AE").expect("AE result");
+        assert_eq!(ae.execution_status, ExecutionStatus::Failed, "{ae:?}");
+        assert_eq!(ae.error_count, 1);
+        assert_eq!(ae.errors[0].row, Some(2));
+        assert_eq!(ae.errors[0].seq.as_deref(), Some("2"));
+
+        let ta = by_dataset.get("TA").expect("TA result");
+        assert_eq!(ta.execution_status, ExecutionStatus::Failed, "{ta:?}");
+        assert_eq!(ta.error_count, 1);
+        assert_eq!(ta.errors[0].row, None);
+        assert!(ta.errors[0].variables.is_empty());
+    }
+
+    #[test]
+    fn run_validation_executes_core_000239_external_min_date_operation() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000239.json"),
+            r#"{
+  "Core": { "Id": "CORE-000239", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "EX",
+      "id": "$ex_usubjid",
+      "name": "USUBJID",
+      "operator": "distinct"
+    },
+    {
+      "domain": "EX",
+      "group": ["USUBJID"],
+      "id": "$min_ex_exstdtc",
+      "name": "EXSTDTC",
+      "operator": "min_date"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "USUBJID", "operator": "is_contained_by", "value": "$ex_usubjid" },
+      { "name": "RFXSTDTC", "operator": "not_equal_to", "value": "$min_ex_exstdtc" }
+    ]
+  },
+  "Outcome": {
+    "Message": "RFXSTDTC does not equal the earliest value of EX.EXSTDTC",
+    "Output Variables": ["RFXSTDTC", "$min_ex_exstdtc"]
+  }
+}"#,
+        )
+        .expect("write min date rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "RFXSTDTC": ["2020-01-02", "2020-02-03"]
+      }
+    },
+    {
+      "filename": "ex.xpt",
+      "domain": "EX",
+      "records": {
+        "STUDYID": ["S1", "S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ2"],
+        "EXSTDTC": ["2020-01-03", "2020-01-02", "2020-02-01"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write min date data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Failed,
+            "{:?}",
+            outcome.results[0]
+        );
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_executes_core_000238_external_max_date_operations() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000238.json"),
+            r#"{
+  "Core": { "Id": "CORE-000238", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "EX",
+      "id": "$ex_usubjid",
+      "name": "USUBJID",
+      "operator": "distinct"
+    },
+    {
+      "domain": "EX",
+      "group": ["USUBJID"],
+      "id": "$max_ex_exstdtc",
+      "name": "EXSTDTC",
+      "operator": "max_date"
+    },
+    {
+      "domain": "EX",
+      "group": ["USUBJID"],
+      "id": "$max_ex_exendtc",
+      "name": "EXENDTC",
+      "operator": "max_date"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "USUBJID", "operator": "is_contained_by", "value": "$ex_usubjid" },
+      { "name": "RFXENDTC", "operator": "not_equal_to", "value": "$max_ex_exstdtc" },
+      { "name": "RFXENDTC", "operator": "not_equal_to", "value": "$max_ex_exendtc" }
+    ]
+  },
+  "Outcome": {
+    "Message": "RFXENDTC does not equal the latest value of EX.EXSTDTC or EX.EXENDTC",
+    "Output Variables": ["RFXENDTC", "$max_ex_exstdtc", "$max_ex_exendtc"]
+  }
+}"#,
+        )
+        .expect("write max date rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "RFXENDTC": ["2020-01-05", "2020-02-04"]
+      }
+    },
+    {
+      "filename": "ex.xpt",
+      "domain": "EX",
+      "records": {
+        "STUDYID": ["S1", "S1", "S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ2", "SUBJ2"],
+        "EXSTDTC": ["2020-01-01", "2020-01-03", "2020-02-01", "2020-02-02"],
+        "EXENDTC": ["2020-01-02", "2020-01-05", "2020-02-02", "2020-02-03"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write max date data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(
+            outcome.results[0].execution_status,
+            ExecutionStatus::Failed,
+            "{:?}",
+            outcome.results[0]
+        );
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_skips_core_000773_date_operation_oracle_gap() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000773.json"),
+            r#"{
+  "Core": { "Id": "CORE-000773", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["MA"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "DS",
+      "group": ["USUBJID"],
+      "id": "$dsstdtc",
+      "name": "DSSTDTC",
+      "operator": "max_date"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "--DTC", "operator": "non_empty" },
+      { "name": "--DTC", "operator": "date_greater_than", "value": "$dsstdtc" }
+    ]
+  },
+  "Outcome": { "Message": "--DTC may not be later than DS.DSSTDTC" }
+}"#,
+        )
+        .expect("write date gap rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ma.xpt",
+      "domain": "MA",
+      "records": {
+        "STUDYID": ["S1"],
+        "USUBJID": ["SUBJ1"],
+        "MADTC": ["2020-01-02T00:00:01"]
+      }
+    },
+    {
+      "filename": "ds.xpt",
+      "domain": "DS",
+      "records": {
+        "STUDYID": ["S1"],
+        "USUBJID": ["SUBJ1"],
+        "DSSTDTC": ["2020-01-02T00:00:00"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write date gap data");
 
         let outcome = run_validation(ValidateRequest {
             rule_paths: vec![rules_dir],
@@ -8818,7 +9783,7 @@ Sensitivity: Record
     }
 
     #[test]
-    fn run_validation_skips_domain_label_cat_oracle_gap_rule() {
+    fn run_validation_executes_core_000272_domain_label_cat_rule() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -8829,6 +9794,9 @@ Sensitivity: Record
             rules_dir.join("CORE-000272.json"),
             r#"{
   "Core": { "Id": "CORE-000272", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SDTMIG", "Version": "3.4" }] }
+  ],
   "Scope": { "Domains": { "Include": ["LB"] } },
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
@@ -8843,10 +9811,10 @@ Sensitivity: Record
     "operator": "equal_to_case_insensitive",
     "value": "$domain_label"
   },
-  "Outcome": { "Message": "--CAT has oracle-specific domain label variable semantics" }
+  "Outcome": { "Message": "--CAT is equal to DOMAIN." }
 }"#,
         )
-        .expect("write domain label oracle gap rule");
+        .expect("write domain label rule");
 
         let dataset_path = data_dir.join("datasets.json");
         fs::write(
@@ -8860,7 +9828,7 @@ Sensitivity: Record
       "records": {
         "STUDYID": ["S1"],
         "USUBJID": ["SUBJ1"],
-        "LBCAT": ["LB"]
+        "LBCAT": ["Laboratory Test Results"]
       }
     }
   ]
@@ -8871,6 +9839,9 @@ Sensitivity: Record
         let outcome = run_validation(ValidateRequest {
             rule_paths: vec![rules_dir],
             dataset_paths: vec![dataset_path],
+            include_rules: vec!["CORE-000272".to_owned()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some("3.4".to_owned()),
             ..Default::default()
         })
         .expect("run validation");
@@ -8878,11 +9849,92 @@ Sensitivity: Record
         assert_eq!(outcome.results.len(), 1);
         assert_eq!(
             outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
+            ExecutionStatus::Failed,
+            "{:?}",
+            outcome.results[0]
         );
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+    }
+
+    #[test]
+    fn run_validation_executes_core_000272_sendig_domain_name_cat_rule() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000272.json"),
+            r#"{
+  "Core": { "Id": "CORE-000272", "Status": "Published" },
+  "Authorities": [
+    { "Standards": [{ "Name": "SENDIG", "Version": "3.1" }] }
+  ],
+  "Scope": { "Domains": { "Include": ["LB"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "id": "$domain_label",
+      "operator": "domain_label"
+    }
+  ],
+  "Check": {
+    "name": "--CAT",
+    "operator": "equal_to_case_insensitive",
+    "value": "$domain_label"
+  },
+  "Outcome": { "Message": "--CAT is equal to DOMAIN." }
+}"#,
+        )
+        .expect("write SENDIG domain name rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "lb.xpt",
+      "domain": "LB",
+      "label": "Laboratory Test Results",
+      "records": {
+        "STUDYID": ["S1"],
+        "DOMAIN": ["LB"],
+        "USUBJID": ["SUBJ1"],
+        "LBSEQ": [1],
+        "LBCAT": ["LB"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write SENDIG domain name data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            include_rules: vec!["CORE-000272".to_owned()],
+            standard: Some("SENDIG".to_owned()),
+            standard_version: Some("3.1".to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
         assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OperationsNotSupported)
+            outcome.results[0].execution_status,
+            ExecutionStatus::Failed,
+            "{:?}",
+            outcome.results[0]
+        );
+        assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(
+            outcome.results[0].errors[0].variables,
+            vec!["LBCAT".to_owned(), "DOMAIN".to_owned()]
         );
     }
 
@@ -10653,6 +11705,262 @@ Sensitivity: Record
     }
 
     #[test]
+    fn run_validation_executes_open_rules_distinct_with_schema_normalized_keys() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-DISTINCT-SCHEMA-KEYS.yml"),
+            r#"Core:
+  Id: CORE-DISTINCT-SCHEMA-KEYS
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - ACTIVITY
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - group:
+      - parent_id
+    id: $activity_ids_for_parent
+    name: id
+    operator: distinct
+Check:
+  name: $activity_ids_for_parent
+  operator: contains
+  value: Activity_2
+Outcome:
+  Message: Parent contains Activity_2
+"#,
+        )
+        .expect("write distinct schema rule");
+
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Dataset,Label\nActivity.csv,Activity,Activity\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nActivity,parent_id,Parent Entity Id,String,[1]\nActivity,id,Activity Id,String,[1]\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("Activity.csv"),
+            "parent_id,id\nDesign_1,Activity_1\nDesign_1,Activity_2\nDesign_2,Activity_3\n",
+        )
+        .expect("write activity csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[1].row, Some(2));
+    }
+
+    #[test]
+    fn run_validation_executes_core_000837_entity_column_ref_distinct_set() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000837.yml"),
+            r#"Core:
+  Id: CORE-000837
+  Status: Published
+Scope:
+  Entities:
+    Include:
+      - Activity
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - group:
+      - parent_id
+      - rel_type
+    id: $activity_ids_for_study_design
+    name: id
+    operator: distinct
+Check:
+  all:
+    - name: instanceType
+      operator: equal_to
+      value: Activity
+    - name: rel_type
+      operator: equal_to
+      value: definition
+    - any:
+        - all:
+            - name: previousId
+              operator: exists
+            - name: previousId
+              operator: non_empty
+            - name: previousId
+              operator: is_not_contained_by
+              value: $activity_ids_for_study_design
+        - all:
+            - name: nextId
+              operator: exists
+            - name: nextId
+              operator: non_empty
+            - name: nextId
+              operator: is_not_contained_by
+              value: $activity_ids_for_study_design
+Outcome:
+  Message: Activity references must stay within the same study design
+  Output Variables:
+    - id
+    - parent_id
+    - previousId
+    - nextId
+    - $activity_ids_for_study_design
+"#,
+        )
+        .expect("write entity column-ref rule");
+
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Dataset,Label\nActivity.csv,Activity,Activity\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nActivity,parent_id,Parent Entity Id,String,[1]\nActivity,rel_type,Type of Relationship,String,[1]\nActivity,id,Activity Id,String,[1]\nActivity,instanceType,Instance Type,String,[1]\nActivity,previousId,Previous Activity,String,[0..1]\nActivity,nextId,Next Activity,String,[0..1]\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("Activity.csv"),
+            "parent_id,rel_type,id,instanceType,previousId,nextId\nDesign_1,definition,Activity_1,Activity,,Activity_2\nDesign_1,definition,Activity_2,Activity,Activity_1,Activity_3\nDesign_2,definition,Activity_3,Activity,Activity_2,\n",
+        )
+        .expect("write activity csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results[0].errors[1].row, Some(3));
+    }
+
+    #[test]
+    fn run_validation_executes_core_000427_record_count_column_ref_comparisons() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-000427.yml"),
+            r#"Core:
+  Id: CORE-000427
+  Status: Published
+Scope:
+  Entities:
+    Include:
+      - Code
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - group:
+      - codeSystem
+      - codeSystemVersion
+      - code
+    id: $num_records_in_codesystemversion_with_code
+    operator: record_count
+  - group:
+      - codeSystem
+      - codeSystemVersion
+      - decode
+    id: $num_records_in_codesystemversion_with_decode
+    operator: record_count
+  - group:
+      - codeSystem
+      - codeSystemVersion
+      - code
+      - decode
+    id: $num_records_in_codesystemversion_with_code_decode
+    operator: record_count
+Check:
+  all:
+    - name: instanceType
+      operator: equal_to
+      value: Code
+    - any:
+        - name: $num_records_in_codesystemversion_with_code
+          operator: not_equal_to
+          value: $num_records_in_codesystemversion_with_code_decode
+        - name: $num_records_in_codesystemversion_with_decode
+          operator: not_equal_to
+          value: $num_records_in_codesystemversion_with_code_decode
+Outcome:
+  Message: Code and decode should have a one-to-one relationship
+  Output Variables:
+    - codeSystem
+    - codeSystemVersion
+    - code
+    - decode
+    - $num_records_in_codesystemversion_with_code
+    - $num_records_in_codesystemversion_with_decode
+    - $num_records_in_codesystemversion_with_code_decode
+"#,
+        )
+        .expect("write record count column-ref rule");
+
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Dataset,Label\nCode.csv,Code,Code\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nCode,codeSystem,Code System,String,[1]\nCode,codeSystemVersion,Code System Version,String,[1]\nCode,code,Code,String,[1]\nCode,decode,Decode,String,[1]\nCode,instanceType,Instance Type,String,[1]\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("Code.csv"),
+            "codeSystem,codeSystemVersion,code,decode,instanceType\nCDISC,2024-01,A,Alpha,Code\nCDISC,2024-01,A,Beta,Code\nCDISC,2024-01,B,Gamma,Code\n",
+        )
+        .expect("write code csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[1].row, Some(2));
+    }
+
+    #[test]
     fn run_validation_executes_record_count_operation_inline_filter() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
@@ -10720,6 +12028,73 @@ Sensitivity: Record
         assert_eq!(outcome.results[0].errors[0].row, Some(1));
         assert_eq!(outcome.results[0].errors[1].row, Some(2));
         assert_eq!(outcome.results[0].errors[2].row, Some(3));
+    }
+
+    #[test]
+    fn run_validation_executes_open_rules_record_count_with_schema_normalized_keys() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-RECORD-COUNT-SCHEMA-KEYS.yml"),
+            r#"Core:
+  Id: CORE-RECORD-COUNT-SCHEMA-KEYS
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - CODE
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - group:
+      - codeSystem
+      - codeSystemVersion
+      - code
+    id: $num_records_with_code
+    operator: record_count
+Check:
+  name: $num_records_with_code
+  operator: greater_than
+  value: 1
+Outcome:
+  Message: Duplicate code within a code system version
+"#,
+        )
+        .expect("write record count schema rule");
+
+        fs::write(
+            data_dir.join("_datasets.csv"),
+            "Filename,Dataset,Label\nCode.csv,Code,Code\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\nCode,codeSystem,Code System,String,[1]\nCode,codeSystemVersion,Code System Version,String,[1]\nCode,code,Code,String,[1]\nCode,instanceType,Instance Type,String,[1]\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("Code.csv"),
+            "codeSystem,codeSystemVersion,code,instanceType\nCDISC,2024-01,X,Code\nCDISC,2024-01,X,Code\nCDISC,2024-01,Y,Code\n",
+        )
+        .expect("write code csv");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
+        assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results[0].errors[1].row, Some(2));
     }
 
     #[test]
@@ -10795,6 +12170,95 @@ Sensitivity: Record
         assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
         assert_eq!(outcome.results[0].error_count, 1);
         assert_eq!(outcome.results[0].errors[0].row, None);
+    }
+
+    #[test]
+    fn run_validation_maps_external_record_count_operation_by_group_aliases() {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+
+        fs::write(
+            rules_dir.join("CORE-ENTITY-RECORD-COUNT.json"),
+            r#"{
+  "Core": { "Id": "CORE-ENTITY-RECORD-COUNT", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyVersion"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "StudyIdentifier",
+      "filter": {
+        "parent_entity": "StudyVersion",
+        "parent_rel": "studyIdentifiers",
+        "rel_type": "definition",
+        "studyIdentifierScope.organizationType.code": "C70793",
+        "studyIdentifierScope.organizationType.codeSystem": "http://www.cdisc.org"
+      },
+      "group": ["parent_id"],
+      "group_aliases": ["id"],
+      "id": "$num_sponsor_ids",
+      "operator": "record_count"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "StudyVersion" },
+      {
+        "any": [
+          { "name": "$num_sponsor_ids", "operator": "empty" },
+          { "name": "$num_sponsor_ids", "operator": "not_equal_to", "value": 1 }
+        ]
+      }
+    ]
+  },
+  "Outcome": { "Message": "StudyVersion must have exactly one sponsor identifier" }
+}"#,
+        )
+        .expect("write external record count rule");
+
+        let dataset_path = data_dir.join("datasets.json");
+        fs::write(
+            &dataset_path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "StudyVersion.csv",
+      "domain": "StudyVersion",
+      "records": {
+        "ID": ["StudyVersion_1", "StudyVersion_2", "StudyVersion_3"],
+        "instanceType": ["StudyVersion", "StudyVersion", "StudyVersion"]
+      }
+    },
+    {
+      "filename": "StudyIdentifier.csv",
+      "domain": "StudyIdentifier",
+      "records": {
+        "parent_entity": ["StudyVersion", "StudyVersion", "StudyVersion", "StudyVersion"],
+        "PARENT_ID": ["StudyVersion_1", "StudyVersion_1", "StudyVersion_2", "StudyVersion_3"],
+        "parent_rel": ["studyIdentifiers", "studyIdentifiers", "studyIdentifiers", "studyIdentifiers"],
+        "rel_type": ["definition", "definition", "definition", "definition"],
+        "studyIdentifierScope.organizationType.code": ["C70793", "C70793", "C70793", "C93453"],
+        "studyIdentifierScope.organizationType.codeSystem": ["http://www.cdisc.org", "http://www.cdisc.org", "http://www.cdisc.org", "http://www.cdisc.org"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write external record count data");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![dataset_path],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].error_count, 2);
     }
 
     #[test]
