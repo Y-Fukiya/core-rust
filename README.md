@@ -210,6 +210,14 @@ python -m cdisc_rulekit.cli compare-results \
 python -m cdisc_rulekit.cli export-rules \
   --generated-rules output/generated_rules \
   --open-rules-repo input/cdisc-open-rules
+
+# Export only comparison-passed rules to a dedicated target subtree (recommended for PR-ready candidates)
+python -m cdisc_rulekit.cli export-rules \
+  --generated-rules output/generated_rules \
+  --open-rules-repo input/cdisc-open-rules \
+  --comparison-summary output/reports/comparison_summary.csv \
+  --only-passed \
+  --target-subdir Unpublished/NEW-RULE/FINAL-PASS
 ```
 
 `run-core --dry-run` writes the planned engine commands without executing them.
@@ -241,6 +249,16 @@ Latest SDTM-IG pilot result:
 - CORE execution comparison: 34 passed, 0 failed
 - Remaining skipped rows are generation-scope coverage gaps, not supported CORE
   mismatches. Keep them separate from wrong results when expanding generation.
+
+- Latest full SDTM-IG rerun: `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard`
+- Final official-core rerun (version-template):
+  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template`
+- Generated draft rules: 552
+- Structural comparison result: 1094 passed, 10 non-pass / 1104 total
+- PASS rules by rule-id: 547
+- CORE skipped coverage gaps: 5 rules (e.g., `SD1234`, `SD1326`)
+- PASS-only export manifest example:
+  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template/reports/comparison_summary.csv`
 
 Latest expanded SDTM-IG draft export:
 
