@@ -2594,14 +2594,8 @@ fn execute_dataset_operation(
             input
                 .iter()
                 .map(|dataset| {
-                    group_min_max_dataset(
-                        dataset,
-                        &keys,
-                        &source_column,
-                        &output,
-                        name == "max",
-                    )
-                    .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                    group_min_max_dataset(dataset, &keys, &source_column, &output, name == "max")
+                        .map_err(|source| operation_skipped_result(rule, source.to_string()))
                 })
                 .collect()
         }
@@ -3103,16 +3097,16 @@ fn group_min_max_dataset(
     let key_columns = keys
         .iter()
         .map(|key| {
-            operation_column_values(dataset, key)
-                .map_err(|_source| DataError::InvalidDatasetPackage(format!("min/max key not found: {key}")))
+            operation_column_values(dataset, key).map_err(|_source| {
+                DataError::InvalidDatasetPackage(format!("min/max key not found: {key}"))
+            })
         })
         .collect::<std::result::Result<Vec<_>, _>>()?;
-    let source_values = operation_column_values(dataset, source_column)
-        .map_err(|_source| {
-            DataError::InvalidDatasetPackage(format!(
-                "min/max source column not found: {source_column}"
-            ))
-        })?;
+    let source_values = operation_column_values(dataset, source_column).map_err(|_source| {
+        DataError::InvalidDatasetPackage(format!(
+            "min/max source column not found: {source_column}"
+        ))
+    })?;
 
     let mut by_group = BTreeMap::<Vec<String>, MinMaxValue>::new();
     for row in 0..dataset.frame().height() {
@@ -3168,16 +3162,12 @@ impl std::cmp::PartialOrd for MinMaxValue {
 impl std::cmp::Ord for MinMaxValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Self::Number(left, _), Self::Number(right, _)) => left
-                .partial_cmp(right)
-                .unwrap_or(std::cmp::Ordering::Equal),
+            (Self::Number(left, _), Self::Number(right, _)) => {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            }
             (Self::Text(left), Self::Text(right)) => left.cmp(right),
-            (Self::Number(left, left_text), Self::Text(right)) => {
-                left_text.cmp(right)
-            }
-            (Self::Text(left), Self::Number(right, right_text)) => {
-                left.cmp(right_text)
-            }
+            (Self::Number(left, left_text), Self::Text(right)) => left_text.cmp(right),
+            (Self::Text(left), Self::Number(right, right_text)) => left.cmp(right_text),
         }
     }
 }
@@ -4164,7 +4154,7 @@ fn is_join_operation(operation: &OperationSpec) -> bool {
 }
 
 fn is_supported_operation_name(name: &str) -> bool {
-        is_join_operation_name(name)
+    is_join_operation_name(name)
         || matches!(
             name,
             "filter"
