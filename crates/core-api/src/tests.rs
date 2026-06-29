@@ -1096,6 +1096,7 @@ fn run_validation_executes_open_rules_date_operators() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1163,6 +1164,7 @@ fn run_validation_executes_core_000653_date_end_before_start() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1226,6 +1228,7 @@ fn run_validation_executes_core_000505_invalid_study_start_dates() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1314,6 +1317,7 @@ fn run_validation_executes_core_000139_incomplete_reference_start_date() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1404,6 +1408,7 @@ fn run_validation_executes_core_000138_incomplete_start_dates_and_dm_dataset_iss
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1491,6 +1496,7 @@ fn run_validation_executes_core_000324_invalid_end_relative_timing() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1561,6 +1567,7 @@ fn run_validation_executes_core_000460_invalid_trial_set_dates() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1635,6 +1642,7 @@ fn run_validation_executes_core_000572_invalid_end_relative_timing_after_referen
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1708,6 +1716,7 @@ fn run_validation_executes_core_000572_cm_dataset_marker_when_dtc_absent() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1773,6 +1782,7 @@ fn run_validation_executes_core_000095_unplanned_element_description() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1835,6 +1845,7 @@ fn run_validation_executes_core_000095_se_dataset_marker_when_seupdes_absent() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1903,6 +1914,7 @@ fn run_validation_executes_core_000711_reference_start_after_end_dates() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1972,6 +1984,7 @@ fn run_validation_executes_core_000714_treatment_start_after_end_dates() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2044,6 +2057,7 @@ fn run_validation_executes_core_000866_observation_start_after_end_dates() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2179,6 +2193,7 @@ fn run_validation_executes_target_is_not_sorted_by_operator() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2237,6 +2252,7 @@ fn run_validation_executes_empty_within_except_last_row_operator() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2292,6 +2308,7 @@ fn run_validation_executes_not_present_on_multiple_rows_within_operator() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2347,6 +2364,7 @@ fn run_validation_executes_is_not_unique_set_operator() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2402,6 +2420,7 @@ fn run_validation_executes_is_inconsistent_across_dataset_operator() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2460,6 +2479,7 @@ fn run_validation_reports_inconsistent_across_dataset_oracle_gap_failures() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2629,6 +2649,7 @@ fn run_validation_executes_core_000651_missing_tptnum_as_dataset_issue() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2696,6 +2717,7 @@ fn run_validation_executes_core_000651_missing_pp_for_scat_tpt_relationship() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2834,6 +2856,7 @@ fn run_validation_executes_domain_presence_rule_against_loaded_datasets() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2891,6 +2914,7 @@ fn run_validation_executes_domain_presence_variable_exists_operation() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2946,6 +2970,7 @@ fn run_validation_executes_dataset_metadata_record_count_rule() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -4187,6 +4212,7 @@ fn run_validation_executes_core_000595_missing_casno_oracle_issue() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -4727,6 +4753,7 @@ fn run_validation_executes_core_000466_missing_uschfl_as_null() {
     let positive = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![positive_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run positive validation");
@@ -4786,6 +4813,7 @@ fn run_validation_reports_date_operator_oracle_gap_failures() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -8658,6 +8686,7 @@ fn run_validation_executes_core_000201_reference_distinct_operation() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");

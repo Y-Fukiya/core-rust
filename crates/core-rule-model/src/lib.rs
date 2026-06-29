@@ -616,7 +616,13 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
                     message: source.to_string(),
                 })?;
             let mut value_literals = yaml_condition_value_literals(&source);
-            normalize_yaml_condition_value_literals(&mut value, &mut value_literals);
+            normalize_yaml_condition_value_literals(&mut value, &mut value_literals)?;
+            if !value_literals.is_empty() {
+                return Err(RuleModelError::InvalidRuleFormat(
+                    "YAML condition value literal normalization left unmatched scalar values"
+                        .to_owned(),
+                ));
+            }
             value
         }
         Some(other) => return Err(RuleModelError::UnsupportedExtension(other.to_owned())),
@@ -676,10 +682,7 @@ fn yaml_condition_value_literals(source: &str) -> VecDeque<String> {
 }
 
 fn yaml_boolish_scalar(value: &str) -> Option<&str> {
-    let scalar = value
-        .split_once('#')
-        .map_or(value, |(value, _comment)| value)
-        .trim();
+    let scalar = strip_yaml_comment(value).trim();
     if scalar.starts_with(['"', '\'']) {
         return None;
     }
@@ -690,10 +693,41 @@ fn yaml_boolish_scalar(value: &str) -> Option<&str> {
     .then_some(scalar)
 }
 
+fn strip_yaml_comment(value: &str) -> &str {
+    let mut quoted = None;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if let Some(quote) = quoted {
+            if quote == '"' && ch == '\\' && !escaped {
+                escaped = true;
+                continue;
+            }
+            if ch == quote && !escaped {
+                quoted = None;
+            }
+            escaped = false;
+            continue;
+        }
+        if matches!(ch, '"' | '\'') {
+            quoted = Some(ch);
+            continue;
+        }
+        if ch == '#'
+            && value[..index]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace)
+        {
+            return &value[..index];
+        }
+    }
+    value
+}
+
 fn normalize_yaml_condition_value_literals(
     value: &mut Value,
     value_literals: &mut VecDeque<String>,
-) {
+) -> Result<()> {
     match value {
         Value::Object(object) => {
             if object.contains_key("operator") && object.contains_key("value") {
@@ -702,16 +736,17 @@ fn normalize_yaml_condition_value_literals(
                 }
             }
             for child in object.values_mut() {
-                normalize_yaml_condition_value_literals(child, value_literals);
+                normalize_yaml_condition_value_literals(child, value_literals)?;
             }
         }
         Value::Array(values) => {
             for value in values {
-                normalize_yaml_condition_value_literals(value, value_literals);
+                normalize_yaml_condition_value_literals(value, value_literals)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn normalize_yaml_condition_value(value: &mut Value, value_literals: &mut VecDeque<String>) {
@@ -2471,6 +2506,42 @@ Outcome:
         let rule = load_rule_file(&path).expect("load YAML rule");
         let ConditionGroup::Leaf(condition) = rule.conditions else {
             panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));
+    }
+
+    #[test]
+    fn yaml_condition_value_literals_do_not_treat_hash_without_space_as_comment() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  all:
+    - name: AVAL
+      operator: equal_to
+      value: No#1
+    - name: AESER
+      operator: equal_to
+      value: Yes
+      value_is_literal: true
+Outcome:
+  Message: AESER must be Yes
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::All(conditions) = rule.conditions else {
+            panic!("expected all condition");
+        };
+        let ConditionGroup::Leaf(condition) = &conditions[1] else {
+            panic!("expected second leaf condition");
         };
 
         assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));

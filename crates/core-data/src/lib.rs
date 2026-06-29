@@ -7860,6 +7860,15 @@ pub fn load_dataset_package_json(path: impl AsRef<Path>) -> Result<Vec<LoadedDat
 
 pub fn load_xpt_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
     let path = path.as_ref();
+    let metadata = fs::metadata(path).map_err(|source| DataError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.len() > XPT_MAX_FILE_BYTES as u64 {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT file exceeds maximum supported size of {XPT_MAX_FILE_BYTES} bytes"
+        )));
+    }
     let bytes = fs::read(path).map_err(|source| DataError::Io {
         path: path.to_path_buf(),
         source,
@@ -7949,6 +7958,7 @@ const XPT_MAX_FILE_BYTES: usize = 512 * 1024 * 1024;
 const XPT_MAX_VARIABLES: usize = 10_000;
 const XPT_MAX_OBSERVATION_BYTES: usize = 1024 * 1024;
 const XPT_MAX_ROWS: usize = 5_000_000;
+const XPT_MAX_CELLS: usize = 50_000_000;
 
 fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
     if bytes.len() > XPT_MAX_FILE_BYTES {
@@ -8046,6 +8056,14 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
     if row_count > XPT_MAX_ROWS {
         return Err(DataError::InvalidDatasetPackage(format!(
             "XPT row count exceeds maximum supported count of {XPT_MAX_ROWS}"
+        )));
+    }
+    let cell_count = row_count
+        .checked_mul(variable_count)
+        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT cell count overflow".to_owned()))?;
+    if cell_count > XPT_MAX_CELLS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT cell count exceeds maximum supported count of {XPT_MAX_CELLS}"
         )));
     }
     let mut records = variables
@@ -9264,6 +9282,7 @@ fn cell_to_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Op
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::fs::File;
 
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
@@ -9854,6 +9873,22 @@ mod tests {
                 .get(1)
                 .expect("row 2"),
             AnyValue::Int64(2)
+        );
+    }
+
+    #[test]
+    fn load_xpt_dataset_rejects_oversized_file_before_reading() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("huge.xpt");
+        let file = File::create(&path).expect("create xpt");
+        file.set_len(XPT_MAX_FILE_BYTES as u64 + 1)
+            .expect("set sparse len");
+        drop(file);
+
+        let error = load_xpt_dataset(&path).expect_err("oversized xpt rejected");
+
+        assert!(
+            matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("exceeds maximum supported size"))
         );
     }
 

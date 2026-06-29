@@ -173,6 +173,13 @@ fn is_regression(baseline: &ScoreBucket, current: &ScoreBucket) -> bool {
     if baseline == current {
         return false;
     }
+    if matches!(
+        baseline,
+        ScoreBucket::SupportedMatch | ScoreBucket::SupportedMismatch
+    ) && *current == ScoreBucket::SkippedUnsupported
+    {
+        return true;
+    }
     if *baseline == ScoreBucket::SupportedMatch {
         return true;
     }
@@ -273,6 +280,20 @@ mod tests {
 
         assert!(report.should_fail());
         assert_eq!(report.regressions.len(), 1);
+    }
+
+    #[test]
+    fn baseline_fails_when_supported_case_becomes_skipped() {
+        let report = compare_scoreboards(
+            &scoreboard(ScoreBucket::SupportedMismatch),
+            &scoreboard(ScoreBucket::SkippedUnsupported),
+        );
+
+        assert!(report.should_fail());
+        assert!(report.regressions.iter().any(|regression| {
+            regression.case_key == "Published/CORE-OPEN-0001/negative/01"
+                && regression.message == "case bucket regressed"
+        }));
     }
 
     #[test]

@@ -98,9 +98,20 @@ pub struct ScoreSummary {
 pub struct Scoreboard {
     pub upstream: UpstreamInfo,
     pub summary: ScoreSummary,
+    #[serde(default)]
+    pub gate: ScoreGate,
     pub by_scope: Vec<GroupSummary>,
     pub by_case_kind: Vec<GroupSummary>,
     pub cases: Vec<ScoredCase>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ScoreGate {
+    pub min_coverage: Option<f64>,
+    pub max_skipped_unsupported: Option<usize>,
+    pub coverage_threshold_failed: bool,
+    pub skipped_unsupported_threshold_failed: bool,
+    pub should_fail: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -113,11 +124,14 @@ pub fn run(args: ScoreArgs) -> anyhow::Result<bool> {
     let cases = discover_cases(&args.open_rules_root, &args.scope)?;
     let scored = score_cases(&cases, &args.core_rs_results_root);
     let upstream = load_upstream_info(&args.open_rules_root)?;
-    let scoreboard = Scoreboard::new(upstream, scored);
+    let scoreboard = Scoreboard::new_with_gate(
+        upstream,
+        scored,
+        args.min_coverage,
+        args.max_skipped_unsupported,
+    );
     write_scoreboard(&args.out, &scoreboard)?;
-    Ok(scoreboard.summary.should_fail()
-        || coverage_threshold_failed(&scoreboard.summary, args.min_coverage)
-        || skipped_unsupported_threshold_failed(&scoreboard.summary, args.max_skipped_unsupported))
+    Ok(scoreboard.gate.should_fail)
 }
 
 pub fn score_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Vec<ScoredCase> {
@@ -228,27 +242,8 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         };
     }
 
-    let wildcard_official = official_has_wildcard_issue(&official.issues);
-    let official_issues = if wildcard_official {
-        official
-            .issues
-            .into_iter()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    } else {
-        official.issues
-    };
+    let official_issues = official.issues;
     let candidate_issues = align_candidate_identity_to_official(&official_issues, candidate.issues);
-    let candidate_issues = if wildcard_official {
-        candidate_issues
-            .into_iter()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    } else {
-        candidate_issues
-    };
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
@@ -266,13 +261,6 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         extra,
         ..base
     }
-}
-
-fn official_has_wildcard_issue(official: &[IssueKey]) -> bool {
-    official.iter().any(|issue| {
-        issue_is_unlocated(issue)
-            || (issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
-    })
 }
 
 fn issue_multiset_diff(
@@ -489,16 +477,49 @@ fn case_is_unverified_synthetic_oracle(case: &ScoredCase) -> bool {
 }
 
 impl Scoreboard {
+    #[cfg(test)]
     pub fn new(upstream: UpstreamInfo, cases: Vec<ScoredCase>) -> Self {
+        Self::new_with_gate(upstream, cases, None, None)
+    }
+
+    pub fn new_with_gate(
+        upstream: UpstreamInfo,
+        cases: Vec<ScoredCase>,
+        min_coverage: Option<f64>,
+        max_skipped_unsupported: Option<usize>,
+    ) -> Self {
         let summary = ScoreSummary::from_cases(&cases);
+        let gate = ScoreGate::new(&summary, min_coverage, max_skipped_unsupported);
         let by_scope = grouped_summary(&cases, |case| case.scope.clone());
         let by_case_kind = grouped_summary(&cases, |case| case.case_kind.clone());
         Self {
             upstream,
             summary,
+            gate,
             by_scope,
             by_case_kind,
             cases,
+        }
+    }
+}
+
+impl ScoreGate {
+    fn new(
+        summary: &ScoreSummary,
+        min_coverage: Option<f64>,
+        max_skipped_unsupported: Option<usize>,
+    ) -> Self {
+        let coverage_threshold_failed = coverage_threshold_failed(summary, min_coverage);
+        let skipped_unsupported_threshold_failed =
+            skipped_unsupported_threshold_failed(summary, max_skipped_unsupported);
+        Self {
+            min_coverage,
+            max_skipped_unsupported,
+            coverage_threshold_failed,
+            skipped_unsupported_threshold_failed,
+            should_fail: summary.should_fail()
+                || coverage_threshold_failed
+                || skipped_unsupported_threshold_failed,
         }
     }
 }
@@ -953,7 +974,7 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
     }
 
     #[test]
-    fn scores_match_when_official_dataset_issue_has_candidate_record_issues() {
+    fn scores_mismatch_when_wildcard_official_has_duplicate_candidate_issues() {
         let dir = tempdir().expect("tempdir");
         let case_dir = dir
             .path()
@@ -999,11 +1020,11 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
 
-        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMismatch);
         assert_eq!(scored[0].official_issue_count, Some(1));
-        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert_eq!(scored[0].candidate_issue_count, Some(2));
         assert!(scored[0].missing.is_empty());
-        assert!(scored[0].extra.is_empty());
+        assert_eq!(scored[0].extra.len(), 1);
     }
 
     #[test]
@@ -1053,8 +1074,8 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
         let scored = score_cases(&[case], &dir.path().join("candidate"));
 
         assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
-        assert_eq!(scored[0].official_issue_count, Some(1));
-        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert_eq!(scored[0].official_issue_count, Some(2));
+        assert_eq!(scored[0].candidate_issue_count, Some(2));
         assert!(scored[0].missing.is_empty());
         assert!(scored[0].extra.is_empty());
     }

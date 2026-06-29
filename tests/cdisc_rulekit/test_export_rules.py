@@ -23,6 +23,7 @@ def test_export_generated_rules_copies_to_unpublished_new_rule_without_overwrite
     rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
     source_rule = _generated_rule(generated_root, rule_id)
     open_rules_repo = tmp_path / "cdisc-open-rules"
+    open_rules_repo.mkdir()
 
     first = export_generated_rules(generated_root, open_rules_repo)
 
@@ -73,6 +74,7 @@ def test_export_generated_rules_can_filter_to_comparison_passed_rules(tmp_path):
         encoding="utf-8",
     )
     open_rules_repo = tmp_path / "cdisc-open-rules"
+    open_rules_repo.mkdir()
 
     summary = export_generated_rules(
         generated_root,
@@ -109,9 +111,12 @@ def test_export_generated_rules_does_not_filter_without_only_passed(tmp_path):
         encoding="utf-8",
     )
 
+    open_rules_repo = tmp_path / "cdisc-open-rules"
+    open_rules_repo.mkdir()
+
     summary = export_generated_rules(
         generated_root,
-        tmp_path / "cdisc-open-rules",
+        open_rules_repo,
         comparison_summary=comparison,
     )
 
@@ -132,9 +137,22 @@ def test_export_generated_rules_rejects_empty_generated_directory(tmp_path):
         export_generated_rules(generated_root, tmp_path / "cdisc-open-rules")
 
 
+def test_export_generated_rules_rejects_missing_open_rules_repo(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    open_rules_repo = tmp_path / "missing-cdisc-open-rules"
+
+    with pytest.raises(ValueError, match="open_rules_repo does not exist"):
+        export_generated_rules(generated_root, open_rules_repo)
+
+    assert not open_rules_repo.exists()
+
+
 def test_export_generated_rules_rejects_target_subdir_outside_open_rules_repo(tmp_path):
     generated_root = tmp_path / "generated_rules"
     _generated_rule(generated_root)
+    open_rules_repo = tmp_path / "cdisc-open-rules"
+    open_rules_repo.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
     protected = outside / "P21PORT-SDTMIG-SD1210-ABCDEF01"
@@ -144,7 +162,7 @@ def test_export_generated_rules_rejects_target_subdir_outside_open_rules_repo(tm
     with pytest.raises(ValueError, match="inside open_rules_repo"):
         export_generated_rules(
             generated_root,
-            tmp_path / "cdisc-open-rules",
+            open_rules_repo,
             target_subdir="../outside",
             overwrite=True,
         )
