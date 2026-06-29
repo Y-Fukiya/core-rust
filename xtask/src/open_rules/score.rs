@@ -229,6 +229,13 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     }
 }
 
+fn score_missing_official_with_synthetic_candidate_oracle(
+    _case: &OpenRulesCase,
+    _base: &ScoredCase,
+) -> Option<ScoredCase> {
+    None
+}
+
 fn missing_official_reason(case: &OpenRulesCase, candidate_report_csv: &Path) -> Option<String> {
     if !candidate_report_csv.is_file() {
         return Some("missing official results.csv; candidate report absent".to_owned());
