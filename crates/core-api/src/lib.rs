@@ -9398,7 +9398,6 @@ fn json_scalar_string(value: &Value) -> Option<String> {
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
-}
 
 fn operation_input_datasets(
     rule: &ExecutableRule,
