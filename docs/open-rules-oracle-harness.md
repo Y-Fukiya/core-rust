@@ -94,6 +94,11 @@ Read these fields together:
   differ.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
+- `native_engine_supported_accuracy`: accuracy for supported cases evaluated
+  without known rule-id-specific execution rewrites.
+- `rule_id_hand_port_supported_accuracy`: accuracy for supported cases whose
+  executable semantics are hand-ported or adjusted by CORE rule id before
+  engine execution.
 
 The synthetic oracle counters remain in the JSON schema for older scoreboard
 compatibility, but current scoring should leave them at zero.
@@ -102,12 +107,24 @@ compatibility, but current scoring should leave them at zero.
 cases have `skipped_reason` values. Use that section as the first coverage
 triage list before promoting more cases into supported coverage.
 
+`summary.md` also includes an `Execution Provenance` section. Use it to keep
+native operator-engine coverage separate from rule-id hand ports. A full
+`supported_accuracy` claim is useful for regression tracking, but it should not
+be presented as pure generic engine capability unless the native-engine
+provenance counters support that claim.
+
 ## Metrics
 
 ```text
 supported_accuracy = supported_match / (supported_match + supported_mismatch)
 coverage = (supported_match + supported_mismatch) / total_cases
 official_coverage = official_oracle_match / total_cases
+native_engine_supported_accuracy =
+  native_engine_supported_match /
+  (native_engine_supported_match + native_engine_supported_mismatch)
+rule_id_hand_port_supported_accuracy =
+  rule_id_hand_port_supported_match /
+  (rule_id_hand_port_supported_match + rule_id_hand_port_supported_mismatch)
 ```
 
 Coverage can be low while supported accuracy is high. That means the roadmap is

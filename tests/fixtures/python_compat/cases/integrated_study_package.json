@@ -1,6 +1,6 @@
 {
   "name": "integrated_study_package",
-  "description": "Stored Python/CDISC-compatible expected output for integrated DatasetPackageJson + Define-XML + CT + Operations + JSONATA coverage.",
+  "description": "Stored golden regression output modeled after Python/CDISC behavior for integrated DatasetPackageJson + Define-XML + CT + Operations + JSONATA coverage.",
   "rule_paths": ["rules/integrated"],
   "dataset_paths": ["datasets/integrated/study_package.json"],
   "define_xml_paths": ["cdisc/integrated_define.xml"],

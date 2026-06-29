@@ -226,7 +226,7 @@ fn bucket_name(bucket: &Option<ScoreBucket>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crate::open_rules::score::{ScoreBucket, Scoreboard, ScoredCase};
+    use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard, ScoredCase};
     use crate::open_rules::upstream::UpstreamInfo;
 
     use super::*;
@@ -249,6 +249,7 @@ mod tests {
                 official_results_csv: "official.csv".into(),
                 candidate_report_csv: "report.csv".into(),
                 bucket,
+                execution_provenance: ExecutionProvenance::NativeEngine,
                 reason: None,
                 skipped_reasons: Vec::new(),
                 official_issue_count: Some(1),

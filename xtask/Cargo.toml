@@ -10,6 +10,7 @@ anyhow.workspace = true
 clap.workspace = true
 core-api.workspace = true
 core-report.workspace = true
+core-rule-model.workspace = true
 csv.workspace = true
 serde.workspace = true
 serde_json.workspace = true

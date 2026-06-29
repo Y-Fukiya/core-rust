@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::open_rules::score::{ScoreBucket, Scoreboard};
+use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard};
 
 pub fn write_scoreboard(out_dir: &Path, scoreboard: &Scoreboard) -> Result<()> {
     fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
@@ -61,6 +61,40 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             percent_or_na(summary.supported_accuracy)
         ),
         format!("| Coverage | {} |", percent_or_na(summary.coverage)),
+        format!(
+            "| Native engine supported accuracy | {} |",
+            percent_or_na(summary.native_engine_supported_accuracy)
+        ),
+        format!(
+            "| Rule-id hand-port supported accuracy | {} |",
+            percent_or_na(summary.rule_id_hand_port_supported_accuracy)
+        ),
+        String::new(),
+        "## Execution Provenance".to_owned(),
+        String::new(),
+        "| Provenance | Supported match | Supported mismatch | Accuracy |".to_owned(),
+        "|---|---:|---:|---:|".to_owned(),
+        provenance_row(
+            "Native engine",
+            summary.native_engine_supported_match,
+            summary.native_engine_supported_mismatch,
+            summary.native_engine_supported_accuracy,
+        ),
+        provenance_row(
+            "Rule-id hand-port",
+            summary.rule_id_hand_port_supported_match,
+            summary.rule_id_hand_port_supported_mismatch,
+            summary.rule_id_hand_port_supported_accuracy,
+        ),
+        provenance_row(
+            "Unknown",
+            summary.unknown_provenance_supported_match,
+            summary.unknown_provenance_supported_mismatch,
+            summary.unknown_provenance_supported_accuracy,
+        ),
+        String::new(),
+        "Native engine rows are official-oracle supported cases evaluated without known rule-id-specific execution rewrites. Rule-id hand-port rows are supported cases whose rule semantics are hand-ported or adjusted by CORE rule id before engine execution."
+            .to_owned(),
         String::new(),
         "## Gate".to_owned(),
         String::new(),
@@ -264,16 +298,28 @@ fn push_case_section(
             .map(|reason| format!(": {reason}"))
             .unwrap_or_default();
         lines.push(format!(
-            "- `{}` {}/{}{} official={} candidate={}",
+            "- `{}` {}/{} provenance={}{} official={} candidate={}",
             case.rule_id,
             case.case_kind,
             case.case_id,
+            provenance_text(case.execution_provenance),
             reason,
             count_text(case.official_issue_count),
             count_text(case.candidate_issue_count)
         ));
     }
     lines.push(String::new());
+}
+
+fn provenance_row(label: &str, matches: usize, mismatches: usize, accuracy: Option<f64>) -> String {
+    format!(
+        "| {label} | {matches} | {mismatches} | {} |",
+        percent_or_na(accuracy)
+    )
+}
+
+fn provenance_text(provenance: ExecutionProvenance) -> &'static str {
+    provenance.as_str()
 }
 
 fn count_text(value: Option<usize>) -> String {
@@ -296,7 +342,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::open_rules::score::{ScoreBucket, ScoreSummary, Scoreboard, ScoredCase};
+    use crate::open_rules::score::{
+        ExecutionProvenance, ScoreBucket, ScoreSummary, Scoreboard, ScoredCase,
+    };
     use crate::open_rules::upstream::UpstreamInfo;
 
     use super::*;
@@ -322,6 +370,7 @@ mod tests {
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     bucket: ScoreBucket::SupportedMismatch,
+                    execution_provenance: ExecutionProvenance::NativeEngine,
                     reason: None,
                     skipped_reasons: Vec::new(),
                     official_issue_count: Some(1),
@@ -338,6 +387,7 @@ mod tests {
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     bucket: ScoreBucket::SkippedUnsupported,
+                    execution_provenance: ExecutionProvenance::NativeEngine,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
                     official_issue_count: Some(0),
@@ -354,6 +404,7 @@ mod tests {
                     official_results_csv: "missing-results.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     bucket: ScoreBucket::SupportedMatch,
+                    execution_provenance: ExecutionProvenance::RuleIdHandPort,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
                             .to_owned(),
@@ -379,6 +430,10 @@ mod tests {
         assert!(markdown.contains("| Synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
+        assert!(markdown.contains("## Execution Provenance"));
+        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% |"));
+        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% |"));
+        assert!(markdown.contains("provenance=native_engine"));
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));

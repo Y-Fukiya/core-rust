@@ -14,7 +14,8 @@ CORE rules engine can look like.
 
 - Experimenting with CDISC CORE-like rules in a small, fast Rust codebase.
 - Running supplemental validation against SDTM/ADaM-style fixture or study data.
-- Comparing Rust behavior with Python/CDISC-compatible expected outputs.
+- Comparing Rust behavior with stored golden regression outputs modeled after
+  Python/CDISC behavior.
 - Producing JSON, CSV, and log reports for traceable validation results.
 - Developing validation engine features such as rule normalization, dataset
   operations, JSONATA-like conditions, Define-XML metadata, controlled
@@ -70,7 +71,8 @@ The repository includes golden fixtures for:
 - integrated DatasetPackageJson + Define-XML + CT flows
 - SDTM/ADaM-like multi-domain packages
 - regulatory-style SDTM/ADaM fixtures
-- Python/CDISC-compatible expected output comparisons
+- stored golden regression output comparisons modeled after Python/CDISC
+  behavior
 - issue identity traceability with `usubjid` and sequence fields
 - CSV and log report structure
 - GitHub Actions CI running format, check, and workspace tests
@@ -291,6 +293,11 @@ workflow and its uploaded scoreboard artifacts. The repository-local fixture is
 the enforced PR gate; see `docs/open-rules-upstream-status.md` for the current
 policy.
 
+Open Rules scoreboards distinguish native engine-supported cases from
+rule-id hand-ported cases. Use `native_engine_supported_accuracy` and
+`rule_id_hand_port_supported_accuracy` when describing what the generic engine
+can do versus what has been manually migrated for compatibility.
+
 Latest expanded SDTM-IG draft export:
 
 - Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
@@ -350,9 +357,11 @@ Minimal generated outputs include:
 
 ## Compatibility Position
 
-The goal is to move toward Python/CDISC-compatible behavior where practical, but
+The goal is to move toward Python/CDISC-aligned behavior where practical, but
 the project intentionally publishes its current state as a technical preview.
-Compatibility should be treated as evidence-based rather than guaranteed:
+The `python_compat` fixtures are stored golden regression expectations, not an
+independent CI run of the Python `cdisc-rules-engine`. Compatibility should be
+treated as evidence-based rather than guaranteed:
 
 - If a behavior is covered by a golden fixture, regressions should be caught by
   CI.
