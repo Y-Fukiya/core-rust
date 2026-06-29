@@ -111,6 +111,26 @@ target/core-rust-report/report.csv
 target/core-rust-report/validation.log
 ```
 
+By default, validation findings are written to reports and the CLI exits
+successfully if execution completed. Use `--strict` when validation results
+should be a CI gate:
+
+```sh
+cargo run -p core-cli -- validate \
+  --local-rules tests/fixtures/rules/regulatory \
+  --dataset-path tests/fixtures/datasets/regulatory/study_package.json \
+  --define-xml tests/fixtures/cdisc/regulatory_define.xml \
+  --ct tests/fixtures/cdisc/regulatory_ct.json \
+  --external-dictionary tests/fixtures/cdisc/regulatory_external_dictionary.csv \
+  --log-level info \
+  --output target/core-rust-report \
+  --strict
+```
+
+`--strict` fails on failed or skipped validation results after reports are
+written. For finer control, use `--fail-on failed`, `--fail-on skipped`, or
+`--fail-on failed,skipped`.
+
 Show CLI help:
 
 ```sh
@@ -258,6 +278,11 @@ from supported accuracy and before `core-api` stopped oracle-based result
 synthesis. Treat those reports as historical debugging artifacts only. For
 current conformance claims, rerun the Open Rules harness and cite the generated
 `scoreboard.json` / `summary.md` from that run.
+
+Full upstream Open Rules compatibility is tracked by the scheduled observe
+workflow and its uploaded scoreboard artifacts. The repository-local fixture is
+the enforced PR gate; see `docs/open-rules-upstream-status.md` for the current
+policy.
 
 Latest expanded SDTM-IG draft export:
 
