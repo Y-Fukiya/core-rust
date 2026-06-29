@@ -298,6 +298,10 @@ rule-id hand-ported cases. Use `native_engine_supported_accuracy` and
 `rule_id_hand_port_supported_accuracy` when describing what the generic engine
 can do versus what has been manually migrated for compatibility.
 
+For future full-corpus regression gating and large Rust module cleanup, see
+`docs/open-rules-upstream-regression-gate.md` and
+`docs/rust-file-split-plan.md`.
+
 Latest expanded SDTM-IG draft export:
 
 - Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
