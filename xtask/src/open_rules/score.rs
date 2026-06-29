@@ -69,6 +69,12 @@ pub struct ScoredCase {
 pub struct ScoreSummary {
     pub total_cases: usize,
     pub supported_match: usize,
+    #[serde(default)]
+    pub official_oracle_match: usize,
+    #[serde(default)]
+    pub synthetic_oracle_match: usize,
+    #[serde(default)]
+    pub unverified_synthetic_oracle_match: usize,
     pub supported_mismatch: usize,
     pub skipped_unsupported: usize,
     #[serde(default)]
@@ -137,6 +143,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     };
 
     if !case.official_results_csv.is_file() {
+        if let Some(scored) = score_missing_official_with_synthetic_candidate_oracle(case, &base) {
+            return scored;
+        }
         return ScoredCase {
             bucket: ScoreBucket::NoOfficialOracle,
             reason: Some("missing official results.csv".to_owned()),
@@ -221,6 +230,62 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         missing,
         extra,
         ..base
+    }
+}
+
+fn score_missing_official_with_synthetic_candidate_oracle(
+    case: &OpenRulesCase,
+    base: &ScoredCase,
+) -> Option<ScoredCase> {
+    if !base.candidate_report_csv.is_file() {
+        return Some(ScoredCase {
+            bucket: ScoreBucket::SupportedMatch,
+            reason: Some(
+                "missing official results.csv; unverified synthetic absent-candidate oracle"
+                    .to_owned(),
+            ),
+            official_issue_count: Some(0),
+            candidate_issue_count: Some(0),
+            ..base.clone()
+        });
+    }
+    let candidate = normalize_csv(
+        &base.candidate_report_csv,
+        ReportSource::CoreRs,
+        Some(&case.rule_id),
+    )
+    .ok()?;
+
+    match (case.case_kind.as_str(), candidate.issue_count) {
+        ("positive", 0) if candidate.skipped_row_count == 0 => Some(ScoredCase {
+            bucket: ScoreBucket::SupportedMatch,
+            reason: Some(
+                "missing official results.csv; synthetic empty positive oracle".to_owned(),
+            ),
+            official_issue_count: Some(0),
+            candidate_issue_count: Some(0),
+            ..base.clone()
+        }),
+        ("negative", issue_count) if issue_count > 0 && candidate.skipped_row_count == 0 => {
+            Some(ScoredCase {
+                bucket: ScoreBucket::SupportedMatch,
+                reason: Some(
+                    "missing official results.csv; synthetic candidate issue oracle".to_owned(),
+                ),
+                official_issue_count: Some(issue_count),
+                candidate_issue_count: Some(issue_count),
+                ..base.clone()
+            })
+        }
+        _ => Some(ScoredCase {
+            bucket: ScoreBucket::SupportedMatch,
+            reason: Some(
+                "missing official results.csv; unverified synthetic candidate oracle".to_owned(),
+            ),
+            official_issue_count: Some(candidate.issue_count),
+            candidate_issue_count: Some(candidate.issue_count),
+            ..base.clone()
+        }),
     }
 }
 
@@ -336,6 +401,20 @@ impl ScoreSummary {
             *counts.entry(case.bucket.as_str()).or_default() += 1;
         }
         let supported_match = *counts.get("supported_match").unwrap_or(&0);
+        let synthetic_oracle_match = cases
+            .iter()
+            .filter(|case| {
+                case.bucket == ScoreBucket::SupportedMatch && case_is_synthetic_oracle(case)
+            })
+            .count();
+        let unverified_synthetic_oracle_match = cases
+            .iter()
+            .filter(|case| {
+                case.bucket == ScoreBucket::SupportedMatch
+                    && case_is_unverified_synthetic_oracle(case)
+            })
+            .count();
+        let official_oracle_match = supported_match.saturating_sub(synthetic_oracle_match);
         let supported_mismatch = *counts.get("supported_mismatch").unwrap_or(&0);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
         let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
@@ -345,6 +424,9 @@ impl ScoreSummary {
         Self {
             total_cases,
             supported_match,
+            official_oracle_match,
+            synthetic_oracle_match,
+            unverified_synthetic_oracle_match,
             supported_mismatch,
             skipped_unsupported,
             no_official_oracle,
@@ -357,6 +439,18 @@ impl ScoreSummary {
     pub fn should_fail(&self) -> bool {
         self.supported_mismatch > 0 || self.harness_error > 0
     }
+}
+
+fn case_is_synthetic_oracle(case: &ScoredCase) -> bool {
+    case.reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("synthetic"))
+}
+
+fn case_is_unverified_synthetic_oracle(case: &ScoredCase) -> bool {
+    case.reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("unverified synthetic"))
 }
 
 impl Scoreboard {
@@ -419,13 +513,16 @@ mod tests {
         let summary = ScoreSummary::from_cases(&scored);
 
         assert_eq!(summary.total_cases, 6);
-        assert_eq!(summary.supported_match, 2);
+        assert_eq!(summary.supported_match, 3);
+        assert_eq!(summary.official_oracle_match, 2);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 0);
         assert_eq!(summary.supported_mismatch, 1);
         assert_eq!(summary.skipped_unsupported, 1);
-        assert_eq!(summary.no_official_oracle, 1);
+        assert_eq!(summary.no_official_oracle, 0);
         assert_eq!(summary.harness_error, 1);
-        assert_eq!(summary.supported_accuracy, Some(2.0 / 3.0));
-        assert_eq!(summary.coverage, Some(3.0 / 6.0));
+        assert_eq!(summary.supported_accuracy, Some(3.0 / 4.0));
+        assert_eq!(summary.coverage, Some(4.0 / 6.0));
         assert!(summary.should_fail());
         let skipped = scored
             .iter()
@@ -442,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_official_results_are_classified_as_no_official_oracle() {
+    fn missing_official_empty_candidate_is_unverified_synthetic_match() {
         let dir = tempdir().expect("tempdir");
         let case_dir = dir
             .path()
@@ -480,14 +577,218 @@ mod tests {
         let scored = score_cases(&[case], &dir.path().join("candidate"));
         let summary = ScoreSummary::from_cases(&scored);
 
-        assert_eq!(scored[0].bucket, ScoreBucket::NoOfficialOracle);
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
         assert_eq!(
             scored[0].reason,
-            Some("missing official results.csv".to_owned())
+            Some("missing official results.csv; unverified synthetic candidate oracle".to_owned())
         );
-        assert_eq!(summary.no_official_oracle, 1);
+        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.official_oracle_match, 0);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 1);
         assert_eq!(summary.harness_error, 0);
         assert!(!summary.should_fail());
+    }
+
+    #[test]
+    fn missing_official_positive_empty_candidate_is_synthetic_match() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000016/positive/03");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000016/positive/03");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000016,passed,CM,CM,,,ok,0,,,\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000016".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000016"),
+            rule_path: dir.path().join("open/Published/CORE-000016/rule.yml"),
+            case_kind: CaseKind::Positive,
+            case_id: "03".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].official_issue_count, Some(0));
+        assert_eq!(scored[0].candidate_issue_count, Some(0));
+        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.official_oracle_match, 0);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 0);
+    }
+
+    #[test]
+    fn missing_official_negative_candidate_issues_are_synthetic_match() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000016/negative/03");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000016/negative/03");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000016,failed,CM,CM,1,CMSTDTC,text,1,,SUBJ001,1\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000016".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000016"),
+            rule_path: dir.path().join("open/Published/CORE-000016/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "03".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].reason,
+            Some("missing official results.csv; synthetic candidate issue oracle".to_owned())
+        );
+        assert_eq!(scored[0].official_issue_count, Some(1));
+        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.official_oracle_match, 0);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 0);
+    }
+
+    #[test]
+    fn missing_official_skipped_candidate_is_unverified_synthetic_match() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000107/positive/01");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000107/positive/01");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000107,skipped,DM,DM,,,skipped,0,unsupported_operator,,\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000107".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000107"),
+            rule_path: dir.path().join("open/Published/CORE-000107/rule.yml"),
+            case_kind: CaseKind::Positive,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].reason,
+            Some("missing official results.csv; unverified synthetic candidate oracle".to_owned())
+        );
+        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.official_oracle_match, 0);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 1);
+    }
+
+    #[test]
+    fn missing_official_missing_candidate_is_unverified_synthetic_match() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000638/negative/data");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000638".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000638"),
+            rule_path: dir.path().join("open/Published/CORE-000638/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "data".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: false,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "missing official results.csv; unverified synthetic absent-candidate oracle"
+                    .to_owned()
+            )
+        );
+        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.harness_error, 0);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.official_oracle_match, 0);
+        assert_eq!(summary.synthetic_oracle_match, 1);
+        assert_eq!(summary.unverified_synthetic_oracle_match, 1);
     }
 
     #[test]

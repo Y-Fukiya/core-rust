@@ -11,10 +11,13 @@ core-data.workspace = true
 core-engine.workspace = true
 core-report.workspace = true
 core-rule-model.workspace = true
+csv.workspace = true
+regex.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-serde.workspace = true
 tempfile.workspace = true

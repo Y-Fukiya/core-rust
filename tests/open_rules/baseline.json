@@ -9,6 +9,9 @@
   "summary": {
     "total_cases": 2,
     "supported_match": 2,
+    "official_oracle_match": 2,
+    "synthetic_oracle_match": 0,
+    "unverified_synthetic_oracle_match": 0,
     "supported_mismatch": 0,
     "skipped_unsupported": 0,
     "harness_error": 0,
@@ -21,6 +24,9 @@
       "summary": {
         "total_cases": 2,
         "supported_match": 2,
+        "official_oracle_match": 2,
+        "synthetic_oracle_match": 0,
+        "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "skipped_unsupported": 0,
         "harness_error": 0,
@@ -35,6 +41,9 @@
       "summary": {
         "total_cases": 1,
         "supported_match": 1,
+        "official_oracle_match": 1,
+        "synthetic_oracle_match": 0,
+        "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "skipped_unsupported": 0,
         "harness_error": 0,
@@ -47,6 +56,9 @@
       "summary": {
         "total_cases": 1,
         "supported_match": 1,
+        "official_oracle_match": 1,
+        "synthetic_oracle_match": 0,
+        "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "skipped_unsupported": 0,
         "harness_error": 0,

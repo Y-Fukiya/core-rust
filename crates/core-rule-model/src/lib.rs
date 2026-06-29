@@ -188,6 +188,10 @@ pub enum Operator {
     IsNotContainedBy,
     IsContainedByCaseInsensitive,
     IsNotContainedByCaseInsensitive,
+    ContainsAll,
+    NotContainsAll,
+    SharesNoElementsWith,
+    IsNotOrderedSubsetOf,
     LessThan,
     LessThanOrEqualTo,
     GreaterThan,
@@ -197,10 +201,16 @@ pub enum Operator {
     DoesNotMatchRegexFullString,
     LongerThan,
     StartsWith,
+    PrefixEqualTo,
+    PrefixNotEqualTo,
+    NotPrefixMatchesRegex,
+    PrefixIsNotContainedBy,
     EndsWith,
     SuffixMatchesRegex,
     NotSuffixMatchesRegex,
+    SuffixIsNotContainedBy,
     DateEqualTo,
+    DateNotEqualTo,
     DateLessThan,
     DateLessThanOrEqualTo,
     DateGreaterThan,
@@ -242,6 +252,10 @@ impl Operator {
             "is_not_contained_by" => Self::IsNotContainedBy,
             "is_contained_by_case_insensitive" => Self::IsContainedByCaseInsensitive,
             "is_not_contained_by_case_insensitive" => Self::IsNotContainedByCaseInsensitive,
+            "contains_all" => Self::ContainsAll,
+            "not_contains_all" => Self::NotContainsAll,
+            "shares_no_elements_with" => Self::SharesNoElementsWith,
+            "is_not_ordered_subset_of" => Self::IsNotOrderedSubsetOf,
             "less_than" => Self::LessThan,
             "less_than_or_equal_to" => Self::LessThanOrEqualTo,
             "greater_than" => Self::GreaterThan,
@@ -251,10 +265,16 @@ impl Operator {
             "not_matches_regex" => Self::DoesNotMatchRegexFullString,
             "longer_than" => Self::LongerThan,
             "starts_with" => Self::StartsWith,
+            "prefix_equal_to" => Self::PrefixEqualTo,
+            "prefix_not_equal_to" => Self::PrefixNotEqualTo,
+            "not_prefix_matches_regex" => Self::NotPrefixMatchesRegex,
+            "prefix_is_not_contained_by" => Self::PrefixIsNotContainedBy,
             "ends_with" => Self::EndsWith,
             "suffix_matches_regex" => Self::SuffixMatchesRegex,
             "not_suffix_matches_regex" => Self::NotSuffixMatchesRegex,
+            "suffix_is_not_contained_by" => Self::SuffixIsNotContainedBy,
             "date_equal_to" => Self::DateEqualTo,
+            "date_not_equal_to" => Self::DateNotEqualTo,
             "date_less_than" => Self::DateLessThan,
             "date_less_than_or_equal_to" => Self::DateLessThanOrEqualTo,
             "date_greater_than" => Self::DateGreaterThan,
@@ -295,6 +315,10 @@ impl Operator {
             Self::IsNotContainedBy => "is_not_contained_by",
             Self::IsContainedByCaseInsensitive => "is_contained_by_case_insensitive",
             Self::IsNotContainedByCaseInsensitive => "is_not_contained_by_case_insensitive",
+            Self::ContainsAll => "contains_all",
+            Self::NotContainsAll => "not_contains_all",
+            Self::SharesNoElementsWith => "shares_no_elements_with",
+            Self::IsNotOrderedSubsetOf => "is_not_ordered_subset_of",
             Self::LessThan => "less_than",
             Self::LessThanOrEqualTo => "less_than_or_equal_to",
             Self::GreaterThan => "greater_than",
@@ -304,10 +328,16 @@ impl Operator {
             Self::DoesNotMatchRegexFullString => "not_matches_regex",
             Self::LongerThan => "longer_than",
             Self::StartsWith => "starts_with",
+            Self::PrefixEqualTo => "prefix_equal_to",
+            Self::PrefixNotEqualTo => "prefix_not_equal_to",
+            Self::NotPrefixMatchesRegex => "not_prefix_matches_regex",
+            Self::PrefixIsNotContainedBy => "prefix_is_not_contained_by",
             Self::EndsWith => "ends_with",
             Self::SuffixMatchesRegex => "suffix_matches_regex",
             Self::NotSuffixMatchesRegex => "not_suffix_matches_regex",
+            Self::SuffixIsNotContainedBy => "suffix_is_not_contained_by",
             Self::DateEqualTo => "date_equal_to",
+            Self::DateNotEqualTo => "date_not_equal_to",
             Self::DateLessThan => "date_less_than",
             Self::DateLessThanOrEqualTo => "date_less_than_or_equal_to",
             Self::DateGreaterThan => "date_greater_than",
@@ -359,6 +389,7 @@ pub enum RuleType {
     VariableMetadata,
     DomainPresence,
     ValueLevelMetadata,
+    JsonSchema,
     Jsonata,
     Unsupported(String),
 }
@@ -368,10 +399,17 @@ impl RuleType {
         let original = name.as_ref();
         match normalize_name(original).as_str() {
             "record_data" => Self::RecordData,
-            "dataset_metadata" => Self::DatasetMetadata,
-            "variable_metadata" => Self::VariableMetadata,
-            "domain_presence" => Self::DomainPresence,
-            "value_level_metadata" => Self::ValueLevelMetadata,
+            "dataset_metadata" | "dataset_metadata_check" => Self::DatasetMetadata,
+            "variable_metadata"
+            | "variable_metadata_check"
+            | "variable_metadata_check_against_define_xml"
+            | "define_item_metadata_check_against_library_metadata"
+            | "variable_metadata_check_against_library_metadata" => Self::VariableMetadata,
+            "domain_presence" | "domain_presence_check" => Self::DomainPresence,
+            "value_level_metadata"
+            | "value_check_with_variable_metadata"
+            | "value_check_with_dataset_metadata" => Self::ValueLevelMetadata,
+            "json_schema_check" => Self::JsonSchema,
             "jsonata" => Self::Jsonata,
             _ => Self::Unsupported(original.to_owned()),
         }
@@ -384,6 +422,7 @@ impl RuleType {
             Self::VariableMetadata => "variable_metadata",
             Self::DomainPresence => "domain_presence",
             Self::ValueLevelMetadata => "value_level_metadata",
+            Self::JsonSchema => "json_schema_check",
             Self::Jsonata => "jsonata",
             Self::Unsupported(name) => name.as_str(),
         }
@@ -888,6 +927,15 @@ fn is_column_ref_operator(operator: &Operator) -> bool {
             | Operator::LessThanOrEqualTo
             | Operator::GreaterThan
             | Operator::GreaterThanOrEqualTo
+            | Operator::DateEqualTo
+            | Operator::DateNotEqualTo
+            | Operator::DateLessThan
+            | Operator::DateLessThanOrEqualTo
+            | Operator::DateGreaterThan
+            | Operator::DateGreaterThanOrEqualTo
+            | Operator::PrefixNotEqualTo
+            | Operator::PrefixIsNotContainedBy
+            | Operator::SuffixIsNotContainedBy
             | Operator::IsNotUniqueRelationship
     )
 }
@@ -2073,6 +2121,16 @@ Outcome:
     }
 
     #[test]
+    fn normalize_library_variable_metadata_rule_type_to_variable_metadata() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("Variable Metadata Check against Library Metadata");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.rule_type, RuleType::VariableMetadata);
+    }
+
+    #[test]
     fn normalize_outcome_variables() {
         let mut value = sample_metadata_rule();
         value["Outcome"]["Output Variables"] = json!(["AETERM", "AESTDTC", "AESER"]);
@@ -2181,6 +2239,34 @@ Outcome:
         assert_eq!(
             condition.comparator,
             ValueExpr::ColumnRef("IEORRES".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalize_date_comparison_value_as_column_ref() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DVSTDTC",
+                "operator": "date_less_than",
+                "value": "RFICDTC"
+            },
+            "Outcome": {
+                "Message": "DVSTDTC must be on or after RFICDTC"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.operator, Operator::DateLessThan);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("RFICDTC".to_owned())
         );
     }
 
@@ -2364,8 +2450,29 @@ Outcome:
     }
 
     #[test]
+    fn open_rules_set_operators_normalize() {
+        assert_eq!(Operator::from_name("contains_all"), Operator::ContainsAll);
+        assert_eq!(
+            Operator::from_name("not_contains_all"),
+            Operator::NotContainsAll
+        );
+    }
+
+    #[test]
     fn open_rules_prefix_suffix_operators_normalize_to_string_operators() {
         assert_eq!(Operator::from_name("starts_with"), Operator::StartsWith);
+        assert_eq!(
+            Operator::from_name("prefix_equal_to"),
+            Operator::PrefixEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("not_prefix_matches_regex"),
+            Operator::NotPrefixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("prefix_is_not_contained_by"),
+            Operator::PrefixIsNotContainedBy
+        );
         assert_eq!(
             Operator::from_name("suffix_matches_regex"),
             Operator::SuffixMatchesRegex
@@ -2374,12 +2481,20 @@ Outcome:
             Operator::from_name("not_suffix_matches_regex"),
             Operator::NotSuffixMatchesRegex
         );
+        assert_eq!(
+            Operator::from_name("suffix_is_not_contained_by"),
+            Operator::SuffixIsNotContainedBy
+        );
     }
 
     #[test]
     fn open_rules_date_and_suffix_operator_names_normalize() {
         assert_eq!(Operator::from_name("ends_with"), Operator::EndsWith);
         assert_eq!(Operator::from_name("date_equal_to"), Operator::DateEqualTo);
+        assert_eq!(
+            Operator::from_name("date_not_equal_to"),
+            Operator::DateNotEqualTo
+        );
         assert_eq!(
             Operator::from_name("date_less_than"),
             Operator::DateLessThan

@@ -36,6 +36,18 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         "|---|---:|".to_owned(),
         format!("| Total cases | {} |", summary.total_cases),
         format!("| Supported match | {} |", summary.supported_match),
+        format!(
+            "| Official oracle match | {} |",
+            summary.official_oracle_match
+        ),
+        format!(
+            "| Synthetic oracle match | {} |",
+            summary.synthetic_oracle_match
+        ),
+        format!(
+            "| Unverified synthetic oracle match | {} |",
+            summary.unverified_synthetic_oracle_match
+        ),
         format!("| Supported mismatch | {} |", summary.supported_mismatch),
         format!("| Skipped unsupported | {} |", summary.skipped_unsupported),
         format!("| No official oracle | {} |", summary.no_official_oracle),
@@ -68,6 +80,23 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         String::new(),
     ];
 
+    if summary.unverified_synthetic_oracle_match > 0 {
+        lines.push("## Synthetic Oracle Notice".to_owned());
+        lines.push(String::new());
+        lines.push(format!(
+            "- {} case(s) use unverified synthetic oracle classification because official `results.csv` is absent.",
+            summary.unverified_synthetic_oracle_match
+        ));
+        lines.push(
+            "- These cases keep the score bucket out of `no_official_oracle`, but they are not evidence of an official oracle match."
+                .to_owned(),
+        );
+        lines.push(
+            "- CI should treat them as reportable warnings, not correctness failures.".to_owned(),
+        );
+        lines.push(String::new());
+    }
+
     if !scoreboard.upstream.warnings.is_empty() {
         lines.push("## Warnings".to_owned());
         lines.push(String::new());
@@ -98,6 +127,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         ScoreBucket::NoOfficialOracle,
         10,
     );
+    push_synthetic_reason_section(&mut lines, scoreboard);
     push_skipped_reason_section(&mut lines, scoreboard);
     push_case_section(
         &mut lines,
@@ -108,6 +138,36 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
     );
 
     lines.join("\n") + "\n"
+}
+
+fn push_synthetic_reason_section(lines: &mut Vec<String>, scoreboard: &Scoreboard) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for case in scoreboard
+        .cases
+        .iter()
+        .filter(|case| case.bucket == ScoreBucket::SupportedMatch)
+    {
+        let Some(reason) = &case.reason else {
+            continue;
+        };
+        if reason.contains("synthetic") {
+            *counts.entry(reason.clone()).or_default() += 1;
+        }
+    }
+
+    if counts.is_empty() {
+        return;
+    }
+
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
+    counts.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+    lines.push("## Synthetic Oracle Reasons".to_owned());
+    lines.push(String::new());
+    for (reason, count) in counts {
+        lines.push(format!("- `{reason}`: {count} case(s)"));
+    }
+    lines.push(String::new());
 }
 
 fn push_skipped_reason_section(lines: &mut Vec<String>, scoreboard: &Scoreboard) {
@@ -242,6 +302,25 @@ mod tests {
                     missing: Vec::new(),
                     extra: Vec::new(),
                 },
+                ScoredCase {
+                    scope: "Published".to_owned(),
+                    rule_id: "CORE-000007".to_owned(),
+                    case_kind: "positive".to_owned(),
+                    case_id: "01".to_owned(),
+                    case_dir: "case".into(),
+                    official_results_csv: "missing-results.csv".into(),
+                    candidate_report_csv: "report.csv".into(),
+                    bucket: ScoreBucket::SupportedMatch,
+                    reason: Some(
+                        "missing official results.csv; unverified synthetic candidate oracle"
+                            .to_owned(),
+                    ),
+                    skipped_reasons: Vec::new(),
+                    official_issue_count: Some(0),
+                    candidate_issue_count: Some(0),
+                    missing: Vec::new(),
+                    extra: Vec::new(),
+                },
             ],
         );
 
@@ -253,6 +332,11 @@ mod tests {
         assert!(json.contains("\"supported_mismatch\": 1"));
         assert!(markdown.contains("# CDISC Open Rules Oracle Compatibility"));
         assert!(markdown.contains("CORE-000005"));
+        assert!(markdown.contains("| Official oracle match | 0 |"));
+        assert!(markdown.contains("| Synthetic oracle match | 1 |"));
+        assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
+        assert!(markdown.contains("## Synthetic Oracle Notice"));
+        assert!(markdown.contains("## Synthetic Oracle Reasons"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));
         assert!(markdown.contains("- `unsupported_operator`: 1 case(s)"));
         assert!(markdown.contains("warning text"));
