@@ -157,7 +157,10 @@ fn is_regression(baseline: &ScoreBucket, current: &ScoreBucket) -> bool {
 fn is_failing_new_bucket(bucket: &ScoreBucket) -> bool {
     matches!(
         bucket,
-        ScoreBucket::SupportedMismatch | ScoreBucket::HarnessError
+        ScoreBucket::SupportedMismatch
+            | ScoreBucket::HarnessError
+            | ScoreBucket::NoOfficialOracle
+            | ScoreBucket::MixedSkippedAndIssues
     )
 }
 

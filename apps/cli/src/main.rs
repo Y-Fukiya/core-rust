@@ -106,6 +106,7 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         rule_paths: args.local_rules,
         dataset_paths,
         dataset_loader: Default::default(),
+        open_rules_oracle_compat: false,
         define_xml_paths: args.define_xml,
         ct_paths: args.ct,
         external_dictionary_paths: args.external_dictionary,

@@ -69,6 +69,7 @@ pub struct ValidateRequest {
     pub rule_paths: Vec<PathBuf>,
     pub dataset_paths: Vec<PathBuf>,
     pub dataset_loader: DatasetLoader,
+    pub open_rules_oracle_compat: bool,
     pub define_xml_paths: Vec<PathBuf>,
     pub ct_paths: Vec<PathBuf>,
     pub external_dictionary_paths: Vec<PathBuf>,
@@ -105,6 +106,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
+    let open_rules_compat = request.open_rules_oracle_compat
+        || matches!(request.dataset_loader, DatasetLoader::OpenRulesDataDir);
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
     apply_standard_filter(
         &mut selection,
@@ -112,14 +115,20 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         &request.standard,
         &request.standard_version,
     );
-    apply_standard_oracle_gap_filter(&mut selection, &request.standard, &request.standard_version);
+    if open_rules_compat {
+        apply_standard_oracle_gap_filter(
+            &mut selection,
+            &request.standard,
+            &request.standard_version,
+        );
+    }
     let selected_rule_count = selection.selected.len();
     let skipped_selection_count = selection.skipped.len();
 
     let mut results = selection.skipped.into_iter().collect::<Vec<_>>();
     let mut executable_rules = Vec::new();
     for rule in selection.selected {
-        if let Some(skipped) = skipped_unsupported_rule(&rule) {
+        if let Some(skipped) = skipped_unsupported_rule(&rule, open_rules_compat) {
             results.push(skipped);
         } else {
             executable_rules.push(rule);
@@ -146,13 +155,15 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             .as_ref()
             .ok_or_else(|| ApiError::Internal("missing CDISC context".to_owned()))?;
         let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
-        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
-            results.push(result);
-            continue;
-        }
-        if let Some(result) = core_000744_relrec_faobj_result(&rule, &datasets) {
-            results.push(result);
-            continue;
+        if open_rules_compat {
+            if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
+                results.push(result);
+                continue;
+            }
+            if let Some(result) = core_000744_relrec_faobj_result(&rule, &datasets) {
+                results.push(result);
+                continue;
+            }
         }
         let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
@@ -166,7 +177,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         for dataset in &execution_datasets {
             let dataset = add_core_000324_missing_cm_dtc(dataset, &rule)?;
 
-            if is_missing_column_oracle_gap_rule(&rule)
+            if open_rules_compat
+                && is_missing_column_oracle_gap_rule(&rule)
                 && !should_defer_positive_zero_oracle_gap_probe(&rule)
                 && rule.core_id != "CORE-000547"
                 && contains_missing_target_column(&rule.conditions, &dataset)
@@ -175,7 +187,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 continue;
             }
 
-            if rule.entities.is_some()
+            if open_rules_compat
+                && rule.entities.is_some()
                 && !is_supported_entity_match_column_ref_rule(&rule)
                 && contains_existing_column_ref_comparator(&rule.conditions, &dataset)
                 && !should_defer_entity_column_ref_oracle_gap(&rule)
@@ -200,17 +213,24 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             match validate_rule(&rule, &validation_dataset) {
                 Ok(result) => {
                     let result = normalize_validation_result(&rule, &validation_dataset, result);
-                    if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result) {
-                        results.push(skipped);
-                    } else {
-                        results.push(result);
+                    if open_rules_compat {
+                        if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result) {
+                            results.push(skipped);
+                            continue;
+                        }
                     }
+                    results.push(result);
                 }
                 Err(source) => {
                     if should_ignore_evaluation_error(&rule, &source, execution_datasets.len()) {
                         continue;
                     }
-                    results.push(skipped_result_for_evaluation_error(&rule, &dataset, source));
+                    results.push(skipped_result_for_evaluation_error(
+                        &rule,
+                        &dataset,
+                        source,
+                        open_rules_compat,
+                    ));
                 }
             }
         }
@@ -693,7 +713,10 @@ pub fn select_rules(
     Ok(RuleSelection { selected, skipped })
 }
 
-fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResult> {
+fn skipped_unsupported_rule(
+    rule: &ExecutableRule,
+    open_rules_compat: bool,
+) -> Option<RuleValidationResult> {
     if !matches!(
         rule.rule_type,
         RuleType::RecordData
@@ -737,7 +760,7 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if is_required_value_metadata_oracle_gap_rule(rule) {
+    if open_rules_compat && is_required_value_metadata_oracle_gap_rule(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::OracleSemanticsGap,
@@ -770,21 +793,6 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if is_known_unsafe_positive_zero_probe_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if should_defer_positive_zero_oracle_gap_probe(rule) {
-        return None;
-    }
-
     if let Some(operation) = unsupported_operation(rule) {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
@@ -796,70 +804,87 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if is_operation_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses operation oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
+    if open_rules_compat {
+        if is_known_unsafe_positive_zero_probe_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
 
-    if is_distinct_operation_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses distinct operation oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
+        if should_defer_positive_zero_oracle_gap_probe(rule) {
+            return None;
+        }
 
-    if is_dy_operation_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses dy operation oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
+        if is_operation_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses operation oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
 
-    if is_dataset_presence_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses dataset presence oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
+        if is_distinct_operation_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses distinct operation oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
 
-    if is_domain_presence_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses domain presence oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
+        if is_dy_operation_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses dy operation oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
 
-    if is_variable_metadata_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses variable metadata oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
+        if is_dataset_presence_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses dataset presence oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
+
+        if is_domain_presence_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses domain presence oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
+
+        if is_variable_metadata_oracle_gap_rule(rule) {
+            return Some(RuleValidationResult::skipped_rule(
+                rule.core_id.clone(),
+                SkippedReason::OracleSemanticsGap,
+                format!(
+                    "Rule {} uses variable metadata oracle semantics that are not supported",
+                    rule.core_id
+                ),
+            ));
+        }
     }
 
     if contains_column_ref_comparator(&rule.conditions) {
@@ -873,175 +898,10 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
         ));
     }
 
-    if is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses domain placeholder column-ref comparator oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_entity_literal_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses entity literal oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if contains_full_regex_wildcard_target(&rule.conditions) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses wildcard regex target semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if contains_longer_than_target(&rule.conditions, "ETCD")
-        && scope_matches(&scope_values(rule.domains.as_ref(), "Include"), "SE")
-        && !should_defer_etcd_length_oracle_gap(rule)
-    {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses ETCD length semantics for SE that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if contains_longer_than_target(&rule.conditions, "ARMCD")
-        && contains_target(&rule.conditions, "TXPARMCD")
-        && contains_longer_than_target(&rule.conditions, "TXVAL")
-    {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses cross-domain ARMCD/TXVAL length semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_empty_non_empty_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses empty/non_empty oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_date_operator_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses date oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_sort_operator_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses sort oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_unique_set_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses unique set oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_not_unique_relationship_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses not-unique relationship oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_inconsistent_across_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses inconsistent across dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_usdm_match_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::DatasetJoinNotSupported,
-            format!(
-                "Rule {} uses USDM match dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_multi_base_match_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses multi-base match dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_duplicate_match_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses duplicate match dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-
-    if is_relrec_or_supp_match_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses RELREC/SUPP-- match dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
+    if open_rules_compat {
+        if let Some(skipped) = skipped_open_rules_oracle_gap_after_operator_checks(rule) {
+            return Some(skipped);
+        }
     }
 
     if is_usdm_planned_number_jsonata_rule(rule) || is_usdm_study_role_jsonata_rule(rule) {
@@ -1119,6 +979,120 @@ fn skipped_unsupported_rule(rule: &ExecutableRule) -> Option<RuleValidationResul
             ),
         )
     })
+}
+
+fn skipped_open_rules_oracle_gap_after_operator_checks(
+    rule: &ExecutableRule,
+) -> Option<RuleValidationResult> {
+    let skipped = |message: String| {
+        Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::OracleSemanticsGap,
+            message,
+        ))
+    };
+
+    if is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses domain placeholder column-ref comparator oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_entity_literal_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses entity literal oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if contains_full_regex_wildcard_target(&rule.conditions) {
+        return skipped(format!(
+            "Rule {} uses wildcard regex target semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if contains_longer_than_target(&rule.conditions, "ETCD")
+        && scope_matches(&scope_values(rule.domains.as_ref(), "Include"), "SE")
+        && !should_defer_etcd_length_oracle_gap(rule)
+    {
+        return skipped(format!(
+            "Rule {} uses ETCD length semantics for SE that are not supported",
+            rule.core_id
+        ));
+    }
+    if contains_longer_than_target(&rule.conditions, "ARMCD")
+        && contains_target(&rule.conditions, "TXPARMCD")
+        && contains_longer_than_target(&rule.conditions, "TXVAL")
+    {
+        return skipped(format!(
+            "Rule {} uses cross-domain ARMCD/TXVAL length semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_empty_non_empty_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses empty/non_empty oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_date_operator_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses date oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_sort_operator_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses sort oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_unique_set_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses unique set oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_not_unique_relationship_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses not-unique relationship oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_inconsistent_across_dataset_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses inconsistent across dataset oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_usdm_match_dataset_oracle_gap_rule(rule) {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::DatasetJoinNotSupported,
+            format!(
+                "Rule {} uses USDM match dataset oracle semantics that are not supported",
+                rule.core_id
+            ),
+        ));
+    }
+    if is_multi_base_match_dataset_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses multi-base match dataset oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_duplicate_match_dataset_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses duplicate match dataset oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    if is_relrec_or_supp_match_dataset_oracle_gap_rule(rule) {
+        return skipped(format!(
+            "Rule {} uses RELREC/SUPP-- match dataset oracle semantics that are not supported",
+            rule.core_id
+        ));
+    }
+    None
 }
 
 fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -8853,23 +8827,11 @@ fn operation_skipped_result(
     message: impl Into<String>,
 ) -> RuleValidationResult {
     let message = message.into();
-    let reason = if is_runtime_operation_oracle_gap(rule, &message) {
-        SkippedReason::OracleSemanticsGap
-    } else {
-        SkippedReason::OperationsNotSupported
-    };
     RuleValidationResult::skipped_rule(
         rule.core_id.clone(),
-        reason,
+        SkippedReason::OperationsNotSupported,
         format!("Rule {} cannot run operation: {}", rule.core_id, message),
     )
-}
-
-fn is_runtime_operation_oracle_gap(rule: &ExecutableRule, message: &str) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000712" | "CORE-000916" | "CORE-000953"
-    ) && message.contains("reference distinct source column not found")
 }
 
 fn join_keys(operation: &OperationSpec) -> Option<(Vec<String>, Vec<String>)> {
@@ -8904,15 +8866,9 @@ fn join_keys(operation: &OperationSpec) -> Option<(Vec<String>, Vec<String>)> {
 }
 
 fn join_skipped_result(rule: &ExecutableRule, message: impl Into<String>) -> RuleValidationResult {
-    let skipped_reason = if should_defer_relrec_or_supp_match_dataset_oracle_gap(rule) {
-        SkippedReason::OracleSemanticsGap
-    } else {
-        SkippedReason::DatasetJoinNotSupported
-    };
-
     RuleValidationResult::skipped_rule(
         rule.core_id.clone(),
-        skipped_reason,
+        SkippedReason::DatasetJoinNotSupported,
         format!(
             "Rule {} cannot run dataset join: {}",
             rule.core_id,
@@ -9305,8 +9261,12 @@ fn skipped_result_for_evaluation_error(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
     source: EngineError,
+    open_rules_compat: bool,
 ) -> RuleValidationResult {
-    if matches!(source, EngineError::MissingColumn(_)) && is_missing_column_oracle_gap_rule(rule) {
+    if open_rules_compat
+        && matches!(source, EngineError::MissingColumn(_))
+        && is_missing_column_oracle_gap_rule(rule)
+    {
         return missing_column_skipped_result(rule, dataset);
     }
     evaluation_skipped_result(rule, dataset, source)

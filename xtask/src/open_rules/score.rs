@@ -30,6 +30,7 @@ pub enum ScoreBucket {
     SupportedMatch,
     SupportedMismatch,
     SkippedUnsupported,
+    MixedSkippedAndIssues,
     NoOfficialOracle,
     HarnessError,
 }
@@ -40,6 +41,7 @@ impl ScoreBucket {
             Self::SupportedMatch => "supported_match",
             Self::SupportedMismatch => "supported_mismatch",
             Self::SkippedUnsupported => "skipped_unsupported",
+            Self::MixedSkippedAndIssues => "mixed_skipped_and_issues",
             Self::NoOfficialOracle => "no_official_oracle",
             Self::HarnessError => "harness_error",
         }
@@ -77,6 +79,8 @@ pub struct ScoreSummary {
     pub unverified_synthetic_oracle_match: usize,
     pub supported_mismatch: usize,
     pub skipped_unsupported: usize,
+    #[serde(default)]
+    pub mixed_skipped_and_issues: usize,
     #[serde(default)]
     pub no_official_oracle: usize,
     pub harness_error: usize,
@@ -183,7 +187,21 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         }
     };
 
-    if candidate.skipped_row_count > 0 {
+    if candidate.skipped_row_count > 0 && candidate.issue_count > 0 {
+        let skipped_reasons = candidate
+            .skipped_reasons
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        return ScoredCase {
+            bucket: ScoreBucket::MixedSkippedAndIssues,
+            reason: Some("candidate output mixes skipped rows and issue rows".to_owned()),
+            skipped_reasons,
+            official_issue_count: Some(official.issue_count),
+            candidate_issue_count: Some(candidate.issue_count),
+            ..base
+        };
+    } else if candidate.skipped_row_count > 0 {
         let skipped_reasons = candidate
             .skipped_reasons
             .keys()
@@ -334,6 +352,7 @@ impl ScoreSummary {
         let official_oracle_match = supported_match.saturating_sub(synthetic_oracle_match);
         let supported_mismatch = *counts.get("supported_mismatch").unwrap_or(&0);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
+        let mixed_skipped_and_issues = *counts.get("mixed_skipped_and_issues").unwrap_or(&0);
         let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
         let harness_error = *counts.get("harness_error").unwrap_or(&0);
         let supported = supported_match + supported_mismatch;
@@ -346,6 +365,7 @@ impl ScoreSummary {
             unverified_synthetic_oracle_match,
             supported_mismatch,
             skipped_unsupported,
+            mixed_skipped_and_issues,
             no_official_oracle,
             harness_error,
             supported_accuracy: (supported > 0).then(|| supported_match as f64 / supported as f64),
@@ -354,7 +374,10 @@ impl ScoreSummary {
     }
 
     pub fn should_fail(&self) -> bool {
-        self.supported_mismatch > 0 || self.harness_error > 0 || self.no_official_oracle > 0
+        self.supported_mismatch > 0
+            || self.harness_error > 0
+            || self.no_official_oracle > 0
+            || self.mixed_skipped_and_issues > 0
     }
 }
 
@@ -406,7 +429,7 @@ fn grouped_summary(
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use crate::open_rules::discovery::{CaseKind, OpenRulesCase};
     use pretty_assertions::assert_eq;
@@ -453,6 +476,57 @@ mod tests {
             skipped.reason,
             Some("candidate skipped rows: unsupported_operator".to_owned())
         );
+    }
+
+    #[test]
+    fn scores_mixed_skipped_and_issue_candidate_as_failing_bucket() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-MIXED/negative/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\nCORE-MIXED,DM,1,USUBJID\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-MIXED/negative/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-MIXED,skipped,DM,DM,,,,0,unsupported_rule_type,,\n\
+CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-MIXED".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-MIXED"),
+            rule_path: dir.path().join("open/Published/CORE-MIXED/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-MIXED/negative/01/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::MixedSkippedAndIssues);
+        assert_eq!(summary.mixed_skipped_and_issues, 1);
+        assert!(summary.should_fail());
     }
 
     #[test]

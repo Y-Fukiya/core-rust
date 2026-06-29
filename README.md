@@ -193,13 +193,15 @@ python -m cdisc_rulekit.cli run-core \
 
 # Official Python CORE source checkout. Use absolute paths when --engine-cwd is
 # set because CORE reads resources relative to its repository root.
+CORE_RUST_ROOT="$PWD"
+CORE_ENGINE="$CORE_RUST_ROOT/input/cdisc-rules-engine"
 python -m cdisc_rulekit.cli run-core \
-  --generated-rules /Users/yfukiya/Documents/core-rust/output/generated_rules \
-  --out /Users/yfukiya/Documents/core-rust/output/core_cli_run \
-  --engine-command "/Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/.venv/bin/python /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
+  --generated-rules "$CORE_RUST_ROOT/output/generated_rules" \
+  --out "$CORE_RUST_ROOT/output/core_cli_run" \
+  --engine-command "$CORE_ENGINE/.venv/bin/python $CORE_ENGINE/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
   --output-mode file-base \
   --data-mode data-dir \
-  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine \
+  --engine-cwd "$CORE_ENGINE" \
   --workers 6
 
 python -m cdisc_rulekit.cli compare-results \

@@ -112,6 +112,55 @@ def test_compare_generated_results_does_not_pass_multi_issue_case_on_one_matchin
     assert result.rows[0]["status"] == "PARTIAL_STRUCTURAL_CHECK"
 
 
+def test_compare_generated_results_matches_issue_index_schema_for_multi_issue_case(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD1210-UNIQUE"
+    rule_dir = generated_root / rule_id
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "expected_results.csv").write_text(
+        "\n".join(
+            [
+                "case_type,case_id,issue_index,expected_issue_count,rule_id,dataset,row,variables,usubjid,seq",
+                f"positive,01,,0,{rule_id},DM,,,,",
+                f"negative,01,1,2,{rule_id},DM,1,USUBJID,,",
+                f"negative,01,2,2,{rule_id},DM,2,USUBJID,,",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    for case_type, rows in {
+        "positive": [],
+        "negative": [
+            {"rule_id": rule_id, "dataset": "DM", "row": 1, "variables": ["USUBJID"]},
+            {"rule_id": rule_id, "dataset": "DM", "row": 2, "variables": ["USUBJID"]},
+        ],
+    }.items():
+        actual_dir = tmp_path / "core_runs" / rule_id / case_type / "01"
+        actual_dir.mkdir(parents=True)
+        (actual_dir / "report.json").write_text(
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "rule_id": rule_id,
+                            "execution_status": "failed" if rows else "passed",
+                            "dataset": "DM",
+                            "error_count": len(rows),
+                            "errors": rows,
+                        },
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+    result = compare_generated_results(generated_root, tmp_path / "core_runs")
+
+    assert result.ok
+    assert result.pass_count == 2
+
+
 def test_compare_generated_results_matches_optional_usubjid_and_seq_when_expected(tmp_path):
     generated_root = tmp_path / "generated_rules"
     rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"

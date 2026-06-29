@@ -600,30 +600,36 @@ def _expected_negative_issue_count(rule: CanonicalRule) -> int:
 
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
     negative_variables = _expected_negative_variables(rule, variable)
+    negative_count = _expected_negative_issue_count(rule)
     rows = [
         {
             "case_type": "positive",
             "case_id": "01",
+            "issue_index": "",
             "expected_issue_count": 0,
             "rule_id": rule_id,
             "dataset": domain,
             "row": "",
             "variables": "",
-        },
+        }
+    ]
+    rows.extend(
         {
             "case_type": "negative",
             "case_id": "01",
-            "expected_issue_count": _expected_negative_issue_count(rule),
+            "issue_index": index,
+            "expected_issue_count": negative_count,
             "rule_id": rule_id,
             "dataset": domain,
-            "row": 1,
+            "row": index,
             "variables": negative_variables,
-        },
-    ]
+        }
+        for index in range(1, negative_count + 1)
+    )
     write_csv(
         rule_dir / "expected_results.csv",
         rows,
-        ["case_type", "case_id", "expected_issue_count", "rule_id", "dataset", "row", "variables"],
+        ["case_type", "case_id", "issue_index", "expected_issue_count", "rule_id", "dataset", "row", "variables"],
     )
 
 

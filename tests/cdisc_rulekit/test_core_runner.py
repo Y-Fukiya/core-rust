@@ -231,3 +231,21 @@ def test_execute_core_run_plan_records_timeout_failures(tmp_path):
     assert result.rows[0]["status"] == "FAIL"
     assert result.rows[0]["returncode"] == "TIMEOUT"
     assert "timed out after 0.1s" in result.rows[0]["stderr"]
+
+
+def test_execute_core_run_plan_records_missing_executable_as_failure(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="definitely-missing-core-runner",
+        dry_run=False,
+    )
+
+    result = execute_core_run_plan(plan, workers=2)
+
+    assert not result.ok
+    assert result.fail_count == 2
+    assert result.rows[0]["status"] == "FAIL"
+    assert result.rows[0]["returncode"] == "HARNESS_ERROR"
