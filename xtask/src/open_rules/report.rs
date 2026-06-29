@@ -62,6 +62,36 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         ),
         format!("| Coverage | {} |", percent_or_na(summary.coverage)),
         String::new(),
+        "## Gate".to_owned(),
+        String::new(),
+        "| Gate | Value |".to_owned(),
+        "|---|---:|".to_owned(),
+        format!(
+            "| Minimum coverage | {} |",
+            scoreboard
+                .gate
+                .min_coverage
+                .map(percent)
+                .unwrap_or_else(|| "not set".to_owned())
+        ),
+        format!(
+            "| Maximum skipped unsupported | {} |",
+            scoreboard
+                .gate
+                .max_skipped_unsupported
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "not set".to_owned())
+        ),
+        format!(
+            "| Coverage threshold failed | {} |",
+            scoreboard.gate.coverage_threshold_failed
+        ),
+        format!(
+            "| Skipped unsupported threshold failed | {} |",
+            scoreboard.gate.skipped_unsupported_threshold_failed
+        ),
+        format!("| Gate failed | {} |", scoreboard.gate.should_fail),
+        String::new(),
         "## Upstream".to_owned(),
         String::new(),
         format!("- Repo: `{}`", scoreboard.upstream.repo),
@@ -122,6 +152,13 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         "Harness Errors",
         scoreboard,
         ScoreBucket::HarnessError,
+        50,
+    );
+    push_case_section(
+        &mut lines,
+        "Mixed Skipped And Issues",
+        scoreboard,
+        ScoreBucket::MixedSkippedAndIssues,
         50,
     );
     push_case_section(
@@ -246,9 +283,11 @@ fn count_text(value: Option<usize>) -> String {
 }
 
 fn percent_or_na(value: Option<f64>) -> String {
-    value
-        .map(|value| format!("{:.2}%", value * 100.0))
-        .unwrap_or_else(|| "n/a".to_owned())
+    value.map(percent).unwrap_or_else(|| "n/a".to_owned())
+}
+
+fn percent(value: f64) -> String {
+    format!("{:.2}%", value * 100.0)
 }
 
 #[cfg(test)]

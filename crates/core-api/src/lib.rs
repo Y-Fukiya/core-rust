@@ -106,8 +106,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
-    let open_rules_compat = request.open_rules_oracle_compat
-        || matches!(request.dataset_loader, DatasetLoader::OpenRulesDataDir);
+    let open_rules_compat = request.open_rules_oracle_compat;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
     apply_standard_filter(
         &mut selection,
@@ -175,7 +174,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
 
         let rule_result_start = results.len();
         for dataset in &execution_datasets {
-            let dataset = add_core_000324_missing_cm_dtc(dataset, &rule)?;
+            let dataset = if open_rules_compat {
+                add_core_000324_missing_cm_dtc(dataset, &rule)?
+            } else {
+                dataset.clone()
+            };
 
             if open_rules_compat
                 && is_missing_column_oracle_gap_rule(&rule)
@@ -197,14 +200,16 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 continue;
             }
 
-            if let Some(result) = missing_scope_wide_reference_target_result(&rule, &dataset) {
-                results.push(result);
-                continue;
-            }
+            if open_rules_compat {
+                if let Some(result) = missing_scope_wide_reference_target_result(&rule, &dataset) {
+                    results.push(result);
+                    continue;
+                }
 
-            if let Some(result) = missing_tpt_relationship_target_result(&rule, &dataset) {
-                results.push(result);
-                continue;
+                if let Some(result) = missing_tpt_relationship_target_result(&rule, &dataset) {
+                    results.push(result);
+                    continue;
+                }
             }
 
             let validation_dataset = add_missing_presence_target_columns(&dataset, &rule)?;
@@ -215,7 +220,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             };
             match validate_rule(&rule, &validation_dataset) {
                 Ok(result) => {
-                    let result = normalize_validation_result(&rule, &validation_dataset, result);
+                    let result = normalize_validation_result(
+                        &rule,
+                        &validation_dataset,
+                        result,
+                        open_rules_compat,
+                    );
                     if open_rules_compat {
                         if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result) {
                             results.push(skipped);
@@ -238,36 +248,38 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             }
         }
 
-        if let Some(result) = missing_tpt_relationship_pp_dataset_result(
-            &rule,
-            &execution_datasets,
-            &results[rule_result_start..],
-        ) {
-            results.push(result);
-        }
+        if open_rules_compat {
+            if let Some(result) = missing_tpt_relationship_pp_dataset_result(
+                &rule,
+                &execution_datasets,
+                &results[rule_result_start..],
+            ) {
+                results.push(result);
+            }
 
-        if let Some(result) =
-            core_000138_dm_dataset_result(&rule, &datasets, &results[rule_result_start..])
-        {
-            results.push(result);
-        }
+            if let Some(result) =
+                core_000138_dm_dataset_result(&rule, &datasets, &results[rule_result_start..])
+            {
+                results.push(result);
+            }
 
-        if let Some(result) =
-            core_000095_se_dataset_result(&rule, &datasets, &results[rule_result_start..])
-        {
-            results.push(result);
-        }
+            if let Some(result) =
+                core_000095_se_dataset_result(&rule, &datasets, &results[rule_result_start..])
+            {
+                results.push(result);
+            }
 
-        if let Some(result) =
-            core_000572_cm_dataset_result(&rule, &datasets, &results[rule_result_start..])
-        {
-            results.push(result);
-        }
+            if let Some(result) =
+                core_000572_cm_dataset_result(&rule, &datasets, &results[rule_result_start..])
+            {
+                results.push(result);
+            }
 
-        if let Some(result) =
-            core_000466_pp_dataset_result(&rule, &datasets, &results[rule_result_start..])
-        {
-            results.push(result);
+            if let Some(result) =
+                core_000466_pp_dataset_result(&rule, &datasets, &results[rule_result_start..])
+            {
+                results.push(result);
+            }
         }
     }
 
@@ -303,8 +315,10 @@ fn normalize_validation_result(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
     mut result: RuleValidationResult,
+    open_rules_compat: bool,
 ) -> RuleValidationResult {
-    if rule.core_id == "CORE-000929"
+    if open_rules_compat
+        && rule.core_id == "CORE-000929"
         && dataset_domain_value(dataset).eq_ignore_ascii_case("ZB")
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
@@ -318,18 +332,20 @@ fn normalize_validation_result(
         return result;
     }
 
-    if matches!(
-        rule.core_id.as_str(),
-        "CORE-000138"
-            | "CORE-000139"
-            | "CORE-000324"
-            | "CORE-000505"
-            | "CORE-000572"
-            | "CORE-000653"
-            | "CORE-000711"
-            | "CORE-000714"
-            | "CORE-000866"
-    ) && result.execution_status == core_engine::ExecutionStatus::Failed
+    if open_rules_compat
+        && matches!(
+            rule.core_id.as_str(),
+            "CORE-000138"
+                | "CORE-000139"
+                | "CORE-000324"
+                | "CORE-000505"
+                | "CORE-000572"
+                | "CORE-000653"
+                | "CORE-000711"
+                | "CORE-000714"
+                | "CORE-000866"
+        )
+        && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
     {
         result.errors = result
@@ -353,7 +369,8 @@ fn normalize_validation_result(
         return result;
     }
 
-    if rule.core_id == "CORE-000460"
+    if open_rules_compat
+        && rule.core_id == "CORE-000460"
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
     {
@@ -374,7 +391,7 @@ fn normalize_validation_result(
         return result;
     }
 
-    if is_core_000595_missing_casno_oracle_issue(rule, dataset, &result) {
+    if open_rules_compat && is_core_000595_missing_casno_oracle_issue(rule, dataset, &result) {
         let message = result.message.clone();
         let issue = ValidationIssue {
             rule_id: rule.core_id.clone(),

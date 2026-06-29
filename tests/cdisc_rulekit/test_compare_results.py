@@ -1,6 +1,11 @@
 import json
 
-from cdisc_rulekit.compare_results import compare_generated_results, comparison_gate_ok, write_comparison_report
+from cdisc_rulekit.compare_results import (
+    classification_counts,
+    compare_generated_results,
+    comparison_gate_ok,
+    write_comparison_report,
+)
 
 
 def _expected_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
@@ -415,6 +420,52 @@ def test_compare_generated_results_empty_input_is_not_ok(tmp_path):
 
     assert not result.ok
     assert not comparison_gate_ok(result, allow_actual_skipped=True)
+
+
+def test_compare_generated_results_reports_empty_expected_results_per_rule(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    empty_rule = generated_root / "P21PORT-SDTMIG-EMPTY"
+    empty_rule.mkdir(parents=True)
+    (empty_rule / "expected_results.csv").write_text(
+        "case_type,case_id,expected_issue_count,rule_id,dataset,row,variables\n",
+        encoding="utf-8",
+    )
+    _expected_rule(generated_root, "P21PORT-SDTMIG-PASS")
+    actual_dir = tmp_path / "core_runs" / "P21PORT-SDTMIG-PASS" / "positive" / "01"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    negative_dir = tmp_path / "core_runs" / "P21PORT-SDTMIG-PASS" / "negative" / "01"
+    negative_dir.mkdir(parents=True)
+    (negative_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "rule_id": "P21PORT-SDTMIG-PASS",
+                        "execution_status": "failed",
+                        "dataset": "DM",
+                        "error_count": 1,
+                        "errors": [
+                            {
+                                "rule_id": "P21PORT-SDTMIG-PASS",
+                                "dataset": "DM",
+                                "row": 1,
+                                "variables": ["RFICDTC"],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    result = compare_generated_results(generated_root, tmp_path / "core_runs")
+
+    assert not result.ok
+    empty = next(row for row in result.rows if row["generated_rule_id"] == "P21PORT-SDTMIG-EMPTY")
+    assert empty["status"] == "EXPECTED_EMPTY"
+    assert classification_counts(result)["EXPECTED_OUTPUT_EMPTY"] == 1
 
 
 def test_compare_generated_results_reports_missing_actual_output(tmp_path):

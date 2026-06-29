@@ -32,7 +32,9 @@ jobs:
             --open-rules-root ../cdisc-open-rules \
             --core-rs-results-root target/open-rules-core-rs-upstream \
             --out target/open-rules-scoreboard-upstream \
-            --strict-lock
+            --strict-lock \
+            --min-coverage 1.0 \
+            --max-skipped-unsupported 0
 
       - name: Upload upstream scoreboard
         if: always()

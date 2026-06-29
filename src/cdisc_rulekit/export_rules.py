@@ -46,6 +46,8 @@ def _copy_rule_dir(source: Path, target: Path, overwrite: bool) -> dict[str, obj
 
 def _resolve_target_root(open_rules_repo: str | Path, target_subdir: str | Path) -> Path:
     repo_root = Path(open_rules_repo).resolve()
+    if not repo_root.is_dir():
+        raise ValueError(f"{repo_root}: open_rules_repo does not exist or is not a directory")
     subdir = Path(target_subdir)
     if subdir.is_absolute() or ".." in subdir.parts:
         raise ValueError("target_subdir must be a relative path inside open_rules_repo")
@@ -89,7 +91,6 @@ def export_generated_rules(
     only_passed: bool = False,
 ) -> ExportSummary:
     generated_root = Path(generated_rules_dir)
-    target_root = _resolve_target_root(open_rules_repo, target_subdir)
     if not generated_root.exists():
         raise ValueError(f"{generated_root}: generated rules directory does not exist")
     rule_dirs = sorted(path for path in generated_root.iterdir() if path.is_dir())
@@ -98,6 +99,7 @@ def export_generated_rules(
     if only_passed and comparison_summary is None:
         raise ValueError("comparison_summary is required when only_passed is true")
     passed_rule_ids = _comparison_passed_rule_ids(Path(comparison_summary)) if only_passed else None
+    target_root = _resolve_target_root(open_rules_repo, target_subdir)
     ensure_dir(target_root)
     rows = [
         _copy_rule_dir(rule_dir, target_root / rule_dir.name, overwrite)

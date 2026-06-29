@@ -321,6 +321,8 @@ def _failure_classification(row: dict[str, object]) -> str:
         return "PARTIAL_STRUCTURAL_CHECK"
     if status == "EXPECTED_MISSING":
         return "EXPECTED_OUTPUT_MISSING"
+    if status == "EXPECTED_EMPTY":
+        return "EXPECTED_OUTPUT_EMPTY"
     if status != "FAIL":
         return status or "UNKNOWN_NON_PASS"
 
@@ -346,6 +348,7 @@ def _classification_description(classification: str) -> str:
         "ACTUAL_SKIPPED_BY_CORE": "Official CORE skipped execution; coverage gap, not a correctness mismatch.",
         "ACTUAL_OUTPUT_MISSING": "No actual CORE report was found for the generated case.",
         "EXPECTED_OUTPUT_MISSING": "The generated rule is missing expected_results.csv.",
+        "EXPECTED_OUTPUT_EMPTY": "The generated rule has an empty expected_results.csv.",
         "NEGATIVE_DID_NOT_TRIGGER": "Negative generated data expected an issue but official CORE reported none.",
         "POSITIVE_TRIGGERED_UNEXPECTEDLY": "Positive generated data expected no issue but official CORE reported one.",
         "ISSUE_COUNT_MISMATCH": "Expected and actual issue counts differ.",
@@ -419,6 +422,25 @@ def compare_generated_results(
             )
             continue
         expected_rows = _read_csv(expected_path)
+        if not expected_rows:
+            rows.append(
+                {
+                    "generated_rule_id": rule_dir.name,
+                    "case_type": "",
+                    "case_id": "",
+                    "expected_issue_count": "",
+                    "actual_issue_count": "",
+                    "status": "EXPECTED_EMPTY",
+                    "rule_id": rule_dir.name,
+                    "dataset": "",
+                    "row": "",
+                    "variables": "",
+                    "usubjid": "",
+                    "seq": "",
+                    "notes": f"{expected_path} contains no expected rows",
+                },
+            )
+            continue
         if expected_rows and "issue_index" in expected_rows[0]:
             grouped: dict[tuple[str, str], list[dict[str, str]]] = {}
             for expected in expected_rows:
@@ -461,7 +483,8 @@ def write_comparison_report(
     missing_output_rows = sum(
         int(row["row_count"])
         for row in classification_summary
-        if row["classification"] in {"ACTUAL_OUTPUT_MISSING", "EXPECTED_OUTPUT_MISSING"}
+        if row["classification"]
+        in {"ACTUAL_OUTPUT_MISSING", "EXPECTED_OUTPUT_MISSING", "EXPECTED_OUTPUT_EMPTY"}
     )
     gate_ok = comparison_gate_ok(result, allow_actual_skipped=allow_actual_skipped)
     (out / "comparison_summary.json").write_text(
