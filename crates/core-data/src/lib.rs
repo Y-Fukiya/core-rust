@@ -9433,14 +9433,16 @@ mod tests {
     }
 
     #[test]
-    fn load_open_rules_data_dir_allows_no_datasets_without_variables_schema() {
+    fn load_open_rules_data_dir_creates_empty_json_schema_issue_dataset_without_schema() {
         let dir = tempdir().expect("tempdir");
         fs::write(dir.path().join(".env"), "PRODUCT=SDTMIG\n").expect("write env");
 
         let result =
             load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
 
-        assert!(result.datasets.is_empty());
+        assert_eq!(result.datasets.len(), 1);
+        assert_eq!(result.datasets[0].metadata.name, "JSONSchemaIssue");
+        assert_eq!(result.datasets[0].frame().height(), 0);
         assert!(result.warnings.is_empty());
     }
 
