@@ -3393,6 +3393,7 @@ fn usdm_version_row(version: &Value, version_index: usize) -> BTreeMap<String, V
     row
 }
 
+#[allow(clippy::too_many_arguments)]
 fn usdm_activity_row(
     activity: &Value,
     path: &str,
@@ -4673,7 +4674,7 @@ fn usdm_study_arm_row(
         .collect::<HashSet<_>>();
     let study_design_epochs = epochs
         .iter()
-        .filter_map(|epoch| format_usdm_id_name(epoch))
+        .filter_map(format_usdm_id_name)
         .collect::<Vec<_>>();
     let arm_study_cell_epoch_refs = study_cells
         .iter()
@@ -5058,6 +5059,7 @@ fn collect_usdm_narrative_content_item_ids(value: &Value) -> HashSet<String> {
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn usdm_narrative_content_row(
     content: &Value,
     path: &str,
@@ -5712,18 +5714,17 @@ fn push_usdm_json_schema_issues(
         }
     }
 
-    if path.ends_with("/encounters/0") || path.contains("/encounters/") {
-        if object
+    if (path.ends_with("/encounters/0") || path.contains("/encounters/"))
+        && object
             .get("contactModes")
             .is_some_and(|value| !value.is_array())
-        {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "type",
-                "contactModes",
-                "[Value of contactModes] is not of type 'array'",
-            ));
-        }
+    {
+        rows.push(usdm_json_schema_issue_row(
+            path,
+            "type",
+            "contactModes",
+            "[Value of contactModes] is not of type 'array'",
+        ));
     }
 
     if path.ends_with("/minimumResponseDuration") {
@@ -5848,30 +5849,29 @@ fn push_usdm_json_schema_issues(
         }
     }
 
-    if path.contains("/abbreviations/") {
-        if object.get("expandedText").and_then(Value::as_str) == Some("") {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "minLength",
-                "expandedText",
-                "'' is too short",
-            ));
-        }
+    if path.contains("/abbreviations/")
+        && object.get("expandedText").and_then(Value::as_str) == Some("")
+    {
+        rows.push(usdm_json_schema_issue_row(
+            path,
+            "minLength",
+            "expandedText",
+            "'' is too short",
+        ));
     }
 
-    if path.contains("/studyCells/") {
-        if object
+    if path.contains("/studyCells/")
+        && object
             .get("elementIds")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty)
-        {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "minItems",
-                "elementIds",
-                "[] is too short",
-            ));
-        }
+    {
+        rows.push(usdm_json_schema_issue_row(
+            path,
+            "minItems",
+            "elementIds",
+            "[] is too short",
+        ));
     }
 }
 

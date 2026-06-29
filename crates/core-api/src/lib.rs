@@ -450,6 +450,7 @@ fn normalize_validation_result(
     result
 }
 
+#[allow(clippy::if_same_then_else)]
 fn oracle_gap_result_after_execution(
     rule: &ExecutableRule,
     result: &RuleValidationResult,
@@ -611,9 +612,7 @@ fn core_000744_relrec_faobj_result(
         return None;
     }
 
-    let Some(fa) = find_dataset(datasets, "FA") else {
-        return None;
-    };
+    let fa = find_dataset(datasets, "FA")?;
 
     if !dataset_has_column(fa, "FALNKID")
         && !dataset_has_column(fa, "FALNKGRP")
@@ -898,10 +897,11 @@ fn open_rules_official_oracle_result_for_rule_id(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .unwrap_or_default();
-        if dataset.is_empty() && variable.is_empty() {
-            if dataset_idx.is_some() || variable_idx.is_some() {
-                continue;
-            }
+        if dataset.is_empty()
+            && variable.is_empty()
+            && (dataset_idx.is_some() || variable_idx.is_some())
+        {
+            continue;
         }
         let row = record_idx
             .and_then(|idx| record.get(idx))
@@ -7615,6 +7615,7 @@ fn execute_external_group_date_operation(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn external_group_date_dataset(
     rule: &ExecutableRule,
     source_dataset: &LoadedDataset,
@@ -7746,6 +7747,7 @@ fn execute_external_group_min_max_operation(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn external_group_min_max_dataset(
     rule: &ExecutableRule,
     source_dataset: &LoadedDataset,
