@@ -143,9 +143,6 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     };
 
     if !case.official_results_csv.is_file() {
-        if let Some(scored) = score_missing_official_with_synthetic_candidate_oracle(case, &base) {
-            return scored;
-        }
         return ScoredCase {
             bucket: ScoreBucket::NoOfficialOracle,
             reason: missing_official_reason(case, &candidate_report_csv),
@@ -439,10 +436,10 @@ mod tests {
         assert_eq!(summary.unverified_synthetic_oracle_match, 0);
         assert_eq!(summary.supported_mismatch, 1);
         assert_eq!(summary.skipped_unsupported, 1);
-        assert_eq!(summary.no_official_oracle, 0);
+        assert_eq!(summary.no_official_oracle, 1);
         assert_eq!(summary.harness_error, 1);
-        assert_eq!(summary.supported_accuracy, Some(3.0 / 4.0));
-        assert_eq!(summary.coverage, Some(4.0 / 6.0));
+        assert_eq!(summary.supported_accuracy, Some(2.0 / 3.0));
+        assert_eq!(summary.coverage, Some(3.0 / 6.0));
         assert!(summary.should_fail());
         let skipped = scored
             .iter()
@@ -497,7 +494,7 @@ mod tests {
         let scored = score_cases(&[case], &dir.path().join("candidate"));
         let summary = ScoreSummary::from_cases(&scored);
 
-        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].bucket, ScoreBucket::NoOfficialOracle);
         assert_eq!(
             scored[0].reason,
             Some(
