@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import pytest
 
 from cdisc_rulekit.export_rules import export_generated_rules
 
@@ -40,6 +41,15 @@ def test_export_generated_rules_copies_to_unpublished_new_rule_without_overwrite
     assert second.skipped_count == 1
     assert "Description: first" in (target_rule / "rule.yml").read_text(encoding="utf-8")
     assert second.rows[0]["skip_reason"] == "TARGET_EXISTS"
+
+
+def test_export_generated_rules_does_not_create_target_for_missing_input(tmp_path):
+    open_rules_repo = tmp_path / "cdisc-open-rules"
+
+    with pytest.raises(ValueError, match="does not exist"):
+        export_generated_rules(tmp_path / "missing-generated", open_rules_repo)
+
+    assert not (open_rules_repo / "Unpublished" / "NEW-RULE").exists()
 
 
 def test_export_generated_rules_can_filter_to_comparison_passed_rules(tmp_path):
@@ -107,6 +117,39 @@ def test_export_generated_rules_does_not_filter_without_only_passed(tmp_path):
 
     assert summary.exported_count == 2
     assert summary.skipped_count == 0
+
+
+def test_export_generated_rules_rejects_missing_generated_directory(tmp_path):
+    with pytest.raises(ValueError, match="generated rules directory does not exist"):
+        export_generated_rules(tmp_path / "missing", tmp_path / "cdisc-open-rules")
+
+
+def test_export_generated_rules_rejects_empty_generated_directory(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    generated_root.mkdir()
+
+    with pytest.raises(ValueError, match="no generated rule directories found"):
+        export_generated_rules(generated_root, tmp_path / "cdisc-open-rules")
+
+
+def test_export_generated_rules_rejects_target_subdir_outside_open_rules_repo(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    protected = outside / "P21PORT-SDTMIG-SD1210-ABCDEF01"
+    protected.mkdir()
+    (protected / "keep.txt").write_text("do not delete", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside open_rules_repo"):
+        export_generated_rules(
+            generated_root,
+            tmp_path / "cdisc-open-rules",
+            target_subdir="../outside",
+            overwrite=True,
+        )
+
+    assert (protected / "keep.txt").exists()
 
 
 def test_export_rules_cli_supports_overwrite(tmp_path):

@@ -28,6 +28,11 @@ CORE_OPERATOR_ALIASES = {
     "is_empty": "empty",
     "is_not_empty": "non_empty",
 }
+UNSUPPORTED_RUST_REGEX_PATTERNS = [
+    re.compile(r"(?<!\\)\(\?([=!]|<[=!])"),
+    re.compile(r"(?<!\\)\\[1-9]"),
+    re.compile(r"(?<!\\)\\k<"),
+]
 SUMMARY_FIELDS = [
     "source_rule_key",
     "p21_rule_id",
@@ -117,6 +122,20 @@ def _operators_in_check(check: dict[str, Any]) -> set[str]:
     return operators
 
 
+def _unsupported_regex_in_check(check: dict[str, Any]) -> str | None:
+    if check.get("operator") == "does_not_match_regex":
+        reason = _unsupported_rust_regex_reason(check.get("value"))
+        if reason:
+            return reason
+    for key in ("all", "any"):
+        for child in check.get(key, []) or []:
+            if isinstance(child, dict):
+                reason = _unsupported_regex_in_check(child)
+                if reason:
+                    return reason
+    return None
+
+
 def _unsupported_operator(required: set[str], allowed: set[str]) -> str | None:
     for operator in sorted(required):
         if operator not in allowed:
@@ -130,6 +149,14 @@ def _full_match_regex(pattern: object) -> object:
     if pattern.startswith("^") and pattern.endswith("$"):
         return pattern
     return f"^(?:{pattern})$"
+
+
+def _unsupported_rust_regex_reason(pattern: object) -> str | None:
+    if not isinstance(pattern, str):
+        return None
+    if any(unsupported.search(pattern) for unsupported in UNSUPPORTED_RUST_REGEX_PATTERNS):
+        return "UNSUPPORTED_RUST_REGEX_SYNTAX"
+    return None
 
 
 def _numeric_literal(value: object) -> object:
@@ -267,6 +294,9 @@ def _build_check(rule: CanonicalRule, domain: str, variable: str) -> tuple[dict[
         pattern = _regex_pattern(rule)
         if not pattern:
             return None, "MISSING_REGEX_PATTERN"
+        unsupported_regex = _unsupported_rust_regex_reason(pattern)
+        if unsupported_regex:
+            return None, unsupported_regex
         checks.append({"name": variable, "operator": "does_not_match_regex", "value": pattern})
     elif rule_type == "MATCH":
         terms = _match_terms(rule)
@@ -570,30 +600,36 @@ def _expected_negative_issue_count(rule: CanonicalRule) -> int:
 
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
     negative_variables = _expected_negative_variables(rule, variable)
+    negative_count = _expected_negative_issue_count(rule)
     rows = [
         {
             "case_type": "positive",
             "case_id": "01",
+            "issue_index": "",
             "expected_issue_count": 0,
             "rule_id": rule_id,
             "dataset": domain,
             "row": "",
             "variables": "",
-        },
+        }
+    ]
+    rows.extend(
         {
             "case_type": "negative",
             "case_id": "01",
-            "expected_issue_count": _expected_negative_issue_count(rule),
+            "issue_index": index,
+            "expected_issue_count": negative_count,
             "rule_id": rule_id,
             "dataset": domain,
-            "row": 1,
+            "row": index,
             "variables": negative_variables,
-        },
-    ]
+        }
+        for index in range(1, negative_count + 1)
+    )
     write_csv(
         rule_dir / "expected_results.csv",
         rows,
-        ["case_type", "case_id", "expected_issue_count", "rule_id", "dataset", "row", "variables"],
+        ["case_type", "case_id", "issue_index", "expected_issue_count", "rule_id", "dataset", "row", "variables"],
     )
 
 
@@ -646,6 +682,8 @@ def _generate_one(
         return _skip_row(rule, "FUZZY_CANDIDATE_REQUIRES_REVIEW")
     if "FUZZY_CORE_CANDIDATE" in rule.conversion_reasons:
         warnings.append("FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW")
+    if "UNSUPPORTED_RUST_REGEX_SYNTAX" in rule.conversion_reasons:
+        return _skip_row(rule, "UNSUPPORTED_RUST_REGEX_SYNTAX")
     rule_type = (rule.p21_rule_type or "").upper()
     if rule_type not in GENERATABLE_TYPES:
         return _skip_row(rule, f"UNSUPPORTED_RULE_TYPE:{rule.p21_rule_type}")
@@ -658,6 +696,9 @@ def _generate_one(
     check, check_error = _build_check(rule, domain, variable)
     if check_error or check is None:
         return _skip_row(rule, check_error or "CHECK_NOT_GENERATABLE")
+    unsupported_regex = _unsupported_regex_in_check(check)
+    if unsupported_regex:
+        return _skip_row(rule, unsupported_regex)
     required_operators = _required_operators(rule_type) | _operators_in_check(check)
     missing_operator = _unsupported_operator(required_operators, allowed_operators)
     if missing_operator:
@@ -691,6 +732,8 @@ def generate_rules(
     limit: int | None = None,
     include_fuzzy_candidates: bool = False,
 ) -> GenerationSummary:
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be zero or greater")
     selected = rules[:limit] if limit is not None else rules
     root = Path(out_dir)
     ensure_dir(root / "reports")

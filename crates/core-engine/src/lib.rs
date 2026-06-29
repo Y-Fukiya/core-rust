@@ -56,6 +56,7 @@ pub enum SkippedReason {
     UnsupportedRuleType,
     UnsupportedOperator,
     OperationsNotSupported,
+    OracleSemanticsGap,
     JsonataNotSupported,
     DatasetJoinNotSupported,
     EvaluationError,
@@ -110,7 +111,10 @@ pub fn validate_rule(
     dataset: &LoadedDataset,
 ) -> Result<RuleValidationResult> {
     let dataset_presence_exists = (matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
-        && rule.rule_type == RuleType::RecordData)
+        && matches!(
+            rule.rule_type,
+            RuleType::RecordData | RuleType::DomainPresence
+        ))
         || contains_relationship_operator(&rule.conditions);
     let mask =
         evaluate_condition_group_with_options(&rule.conditions, dataset, dataset_presence_exists)?;
@@ -124,7 +128,13 @@ pub fn validate_rule(
         .ok_or(EngineError::MissingSensitivity)?
     {
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
-        Sensitivity::Dataset if rule.rule_type == RuleType::RecordData => {
+        Sensitivity::Group => group_level_issues(rule, dataset, &mask, &variables, &message)?,
+        Sensitivity::Dataset
+            if matches!(
+                rule.rule_type,
+                RuleType::RecordData | RuleType::DomainPresence
+            ) =>
+        {
             record_level_issues(rule, dataset, &mask, &variables, &message)?
         }
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),
@@ -455,6 +465,31 @@ fn evaluate_condition_with_options(
                 ) == contained)
             })
         }
+        Operator::ContainsAll | Operator::NotContainsAll => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                let contains_all = scalar_contains_all(&left, &right, false);
+                Ok(matches!(operator, Operator::ContainsAll) == contains_all)
+            })
+        }
+        Operator::SharesNoElementsWith => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                Ok(scalar_shares_no_elements_with(&left, &right))
+            })
+        }
+        Operator::IsNotOrderedSubsetOf => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                Ok(!scalar_is_ordered_subset_of(&left, &right))
+            })
+        }
         Operator::LessThan
         | Operator::LessThanOrEqualTo
         | Operator::GreaterThan
@@ -479,6 +514,7 @@ fn evaluate_condition_with_options(
             })
         }
         Operator::DateEqualTo
+        | Operator::DateNotEqualTo
         | Operator::DateLessThan
         | Operator::DateLessThanOrEqualTo
         | Operator::DateGreaterThan
@@ -490,6 +526,7 @@ fn evaluate_condition_with_options(
                 Ok(compare_complete_dates(&left, &right)
                     .map(|ordering| match operator {
                         Operator::DateEqualTo => ordering == Ordering::Equal,
+                        Operator::DateNotEqualTo => ordering != Ordering::Equal,
                         Operator::DateLessThan => ordering == Ordering::Less,
                         Operator::DateLessThanOrEqualTo => {
                             matches!(ordering, Ordering::Less | Ordering::Equal)
@@ -573,6 +610,7 @@ fn evaluate_condition_with_options(
             row_count,
             column,
             &condition.comparator,
+            &condition.options,
         ),
         Operator::IsInconsistentAcrossDataset => evaluate_inconsistent_across_dataset(
             dataset,
@@ -653,8 +691,52 @@ fn evaluate_condition_with_options(
                 Ok(value.chars().count() > max_len)
             })
         }
-        Operator::StartsWith => {
-            let prefix = string_comparator(operator, &condition.comparator)?;
+        Operator::StartsWith | Operator::PrefixNotEqualTo => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let Some(prefix) =
+                    resolve_scalar_comparator(comparator, dataset, frame, row)?.into_string()
+                else {
+                    return Ok(false);
+                };
+                let starts_with = value.starts_with(&prefix);
+                Ok(matches!(operator, Operator::StartsWith) == starts_with)
+            })
+        }
+        Operator::PrefixEqualTo => {
+            let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let prefix = string_prefix(&value, prefix_len);
+                let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
+                Ok(scalar_equal_with_mode(
+                    &ScalarValue::String(prefix),
+                    &right,
+                    false,
+                ))
+            })
+        }
+        Operator::NotPrefixMatchesRegex => {
+            let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&pattern)?;
             evaluate_column(column, row_count, |value, _row| {
                 let Some(value) = ScalarValue::from_any_value(value).into_string() else {
                     return Ok(false);
@@ -662,7 +744,43 @@ fn evaluate_condition_with_options(
                 if value.is_empty() {
                     return Ok(false);
                 }
-                Ok(value.starts_with(&prefix))
+                Ok(!regex.is_match(&string_prefix(&value, prefix_len)))
+            })
+        }
+        Operator::PrefixIsNotContainedBy | Operator::SuffixIsNotContainedBy => {
+            let part_len = option_usize(
+                &condition.options.extra,
+                if matches!(operator, Operator::PrefixIsNotContainedBy) {
+                    "prefix"
+                } else {
+                    "suffix"
+                },
+            )
+            .ok_or_else(|| EngineError::MissingComparator {
+                operator: operator.as_name().to_owned(),
+            })?;
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let part = if matches!(operator, Operator::PrefixIsNotContainedBy) {
+                    string_prefix(&value, part_len)
+                } else {
+                    string_suffix(&value, part_len)
+                };
+                let contained = scalar_matches_comparator(
+                    &ScalarValue::String(part),
+                    comparator,
+                    dataset,
+                    frame,
+                    row,
+                    false,
+                )?;
+                Ok(!contained)
             })
         }
         Operator::EndsWith => {
@@ -1026,6 +1144,7 @@ fn evaluate_not_unique_relationship(
     row_count: usize,
     target_column: &Column,
     comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
 ) -> Result<BooleanMask> {
     let related_column_name = expand_domain_placeholder(
         dataset,
@@ -1058,6 +1177,9 @@ fn evaluate_not_unique_relationship(
         row_values.push(Some((target, related)));
     }
 
+    let target_to_comparator_only =
+        option_string(&options.extra, "direction").as_deref() == Some("target_to_comparator");
+
     Ok(row_values
         .into_iter()
         .map(|values| {
@@ -1067,9 +1189,10 @@ fn evaluate_not_unique_relationship(
             related_by_target
                 .get(&target)
                 .is_some_and(|values| values.len() > 1)
-                || target_by_related
-                    .get(&related)
-                    .is_some_and(|values| values.len() > 1)
+                || (!target_to_comparator_only
+                    && target_by_related
+                        .get(&related)
+                        .is_some_and(|values| values.len() > 1))
         })
         .collect())
 }
@@ -1320,6 +1443,53 @@ fn record_level_issues(
                 message: message.to_owned(),
                 usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
                 seq: sequence_value(dataset, row)?,
+            })
+        })
+        .collect()
+}
+
+fn group_level_issues(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    mask: &[bool],
+    variables: &[String],
+    message: &str,
+) -> Result<Vec<ValidationIssue>> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut issues = Vec::new();
+    for (row, _failed) in mask.iter().enumerate().filter(|(_row, failed)| **failed) {
+        let signature = group_issue_signature(dataset, variables, row)?;
+        if !seen.insert(signature) {
+            continue;
+        }
+        issues.push(ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: dataset.metadata().name.clone(),
+            domain: dataset.metadata().domain.clone(),
+            row: Some(row + 1),
+            variables: variables.to_vec(),
+            message: message.to_owned(),
+            usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
+            seq: sequence_value(dataset, row)?,
+        });
+    }
+    Ok(issues)
+}
+
+fn group_issue_signature(
+    dataset: &LoadedDataset,
+    variables: &[String],
+    row: usize,
+) -> Result<Vec<String>> {
+    variables
+        .iter()
+        .map(|variable| {
+            cell_string(dataset.frame(), variable, row).map(|value| {
+                format!(
+                    "{}={}",
+                    variable.to_ascii_uppercase(),
+                    value.unwrap_or_default()
+                )
             })
         })
         .collect()
@@ -1671,6 +1841,21 @@ fn scalar_matches_comparator(
     }
 }
 
+fn string_prefix(value: &str, len: usize) -> String {
+    value.chars().take(len).collect()
+}
+
+fn string_suffix(value: &str, len: usize) -> String {
+    value
+        .chars()
+        .rev()
+        .take(len)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
 fn resolve_scalar_comparator(
     comparator: &ValueExpr,
     dataset: &LoadedDataset,
@@ -1692,6 +1877,60 @@ fn resolve_scalar_comparator(
             comparator: comparator.clone(),
         }),
     }
+}
+
+fn resolve_scalar_list_comparator(
+    comparator: &ValueExpr,
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row: usize,
+) -> Result<ScalarValue> {
+    let ValueExpr::List(values) = comparator else {
+        return resolve_scalar_comparator(comparator, dataset, frame, row);
+    };
+
+    let mut resolved = Vec::new();
+    for value in values {
+        if let Some(reference) = value.as_str() {
+            if let Some(column) = reference_column(frame, dataset, reference)? {
+                let scalar = ScalarValue::from_any_value(column.get(row)?);
+                resolved.extend(scalar_list_values(&scalar).map(|value| value.to_string()));
+                continue;
+            }
+        }
+        let scalar = json_value_to_scalar(value);
+        resolved.extend(scalar_list_values(&scalar).map(|value| value.to_string()));
+    }
+
+    Ok(ScalarValue::String(resolved.join("|")))
+}
+
+fn reference_column<'a>(
+    frame: &'a DataFrame,
+    dataset: &LoadedDataset,
+    value: &str,
+) -> Result<Option<&'a Column>> {
+    let raw = value.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+
+    let mut candidates = vec![raw.to_owned()];
+    if let Some(clean) = raw
+        .strip_prefix('$')
+        .filter(|reference| !reference.is_empty())
+    {
+        candidates.push(clean.to_owned());
+    }
+
+    for candidate in candidates {
+        let column_name = expand_domain_placeholder(dataset, &candidate);
+        if let Some(column) = optional_column(frame, &column_name)? {
+            return Ok(Some(column));
+        }
+    }
+
+    Ok(None)
 }
 
 fn expand_domain_placeholder(dataset: &LoadedDataset, name: &str) -> String {
@@ -1806,6 +2045,14 @@ fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensit
         (ScalarValue::Null, ScalarValue::Null) => true,
         (ScalarValue::Null, _) | (_, ScalarValue::Null) => false,
         (ScalarValue::Bool(left), ScalarValue::Bool(right)) => left == right,
+        (ScalarValue::Bool(left), ScalarValue::String(right))
+        | (ScalarValue::String(right), ScalarValue::Bool(left)) => {
+            match right.trim().to_ascii_lowercase().as_str() {
+                "true" => *left,
+                "false" => !*left,
+                _ => false,
+            }
+        }
         (ScalarValue::String(left), ScalarValue::String(right)) if case_insensitive => {
             left.eq_ignore_ascii_case(right)
         }
@@ -1839,6 +2086,58 @@ fn scalar_contained_by_value(
             case_insensitive,
         ) || scalar_string_equal_with_mode(left, part, case_insensitive)
     })
+}
+
+fn scalar_contains_all(left: &ScalarValue, right: &ScalarValue, case_insensitive: bool) -> bool {
+    scalar_list_values(right).all(|value| {
+        scalar_contained_by_value(&value, left, case_insensitive)
+            || scalar_string_equal_with_mode(left, &value.to_string(), case_insensitive)
+    })
+}
+
+fn scalar_shares_no_elements_with(left: &ScalarValue, right: &ScalarValue) -> bool {
+    !scalar_list_values(left).any(|left_value| {
+        scalar_list_values(right)
+            .any(|right_value| scalar_equal_with_mode(&left_value, &right_value, false))
+    })
+}
+
+fn scalar_is_ordered_subset_of(left: &ScalarValue, right: &ScalarValue) -> bool {
+    let left_values = scalar_list_values(left)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    let right_values = scalar_list_values(right)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    if left_values.is_empty() {
+        return true;
+    }
+
+    let mut right_index = 0;
+    for left_value in left_values {
+        let Some(next_index) = right_values[right_index..]
+            .iter()
+            .position(|right_value| right_value == &left_value)
+        else {
+            return false;
+        };
+        right_index += next_index + 1;
+    }
+    true
+}
+
+fn scalar_list_values(value: &ScalarValue) -> Box<dyn Iterator<Item = ScalarValue> + '_> {
+    match value {
+        ScalarValue::String(value) if value.contains('|') => Box::new(
+            value
+                .split('|')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(|part| ScalarValue::String(part.to_owned())),
+        ),
+        ScalarValue::String(value) if value.trim().is_empty() => Box::new(std::iter::empty()),
+        other => Box::new(std::iter::once(other.clone())),
+    }
 }
 
 fn string_contains_value(haystack: &str, needle: &str, case_insensitive: bool) -> bool {
@@ -1897,7 +2196,55 @@ fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> 
 }
 
 fn compare_complete_dates(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> {
-    Some(parse_complete_date(left.as_string()?)?.cmp(&parse_complete_date(right.as_string()?)?))
+    Some(
+        parse_orderable_date_for_comparison(left.as_string()?)?
+            .cmp(&parse_orderable_date_for_comparison(right.as_string()?)?),
+    )
+}
+
+fn parse_orderable_date_for_comparison(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    parse_orderable_complete_date(value).or_else(|| parse_orderable_incomplete_date(value))
+}
+
+fn parse_orderable_incomplete_date(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    if value.len() == 4 && value.chars().all(|character| character.is_ascii_digit()) {
+        return Some((parse_fixed_digits(value)?, 1, 1, 0, 0, 0));
+    }
+
+    if value.len() == 7 && value.as_bytes().get(4) == Some(&b'-') {
+        let year = parse_fixed_digits(value.get(0..4)?)?;
+        let month = parse_fixed_digits(value.get(5..7)?)? as u8;
+        if (1..=12).contains(&month) {
+            return Some((year, month, 1, 0, 0, 0));
+        }
+    }
+
+    None
+}
+
+fn parse_orderable_complete_date(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    let (year, month, day) = parse_complete_date(value)?;
+    let remainder = value.get(10..).unwrap_or_default();
+    if remainder.is_empty() {
+        return Some((year, month, day, 0, 0, 0));
+    }
+    let time = remainder
+        .strip_prefix('T')
+        .or_else(|| remainder.strip_prefix(' '))?;
+    if time.len() < 5 || time.as_bytes().get(2) != Some(&b':') {
+        return None;
+    }
+    let hour = parse_fixed_digits(time.get(0..2)?)? as u8;
+    let minute = parse_fixed_digits(time.get(3..5)?)? as u8;
+    let second = if time.as_bytes().get(5) == Some(&b':') {
+        parse_fixed_digits(time.get(6..8)?)? as u8
+    } else {
+        0
+    };
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    Some((year, month, day, hour, minute, second))
 }
 
 fn parse_complete_date(value: &str) -> Option<(u16, u8, u8)> {
@@ -1934,8 +2281,16 @@ fn classify_date_value(value: &str) -> Option<DateValueState> {
     if value.is_empty() {
         return None;
     }
-    if parse_complete_date(value).is_some() {
+    if parse_orderable_complete_date(value).is_some() {
         return Some(DateValueState::Complete);
+    }
+    if parse_complete_date(value).is_some()
+        && value
+            .get(10..)
+            .and_then(|remainder| remainder.strip_prefix('T'))
+            .is_some_and(is_incomplete_iso_datetime_time)
+    {
+        return Some(DateValueState::Incomplete);
     }
     if is_incomplete_date(value) {
         return Some(DateValueState::Incomplete);
@@ -1949,21 +2304,66 @@ fn is_incomplete_date(value: &str) -> bool {
     }
 
     if value.len() == 7 {
-        let Some(year) = value.get(0..4) else {
-            return false;
-        };
-        let Some(separator) = value.get(4..5) else {
-            return false;
-        };
-        let Some(month) = value.get(5..7) else {
-            return false;
-        };
-        return separator == "-"
-            && year.chars().all(|character| character.is_ascii_digit())
-            && parse_fixed_digits(month).is_some_and(|month| (1..=12).contains(&month));
+        let year = value.get(0..4);
+        let separator = value.get(4..5);
+        let month = value.get(5..7);
+        if matches!(separator, Some("-"))
+            && year.is_some_and(|year| year.chars().all(|character| character.is_ascii_digit()))
+            && month
+                .and_then(parse_fixed_digits)
+                .is_some_and(|month| (1..=12).contains(&month))
+        {
+            return true;
+        }
+    }
+
+    if let Some(month_day) = value.strip_prefix("--") {
+        if month_day.len() == 5
+            && month_day.as_bytes().get(2) == Some(&b'-')
+            && parse_fixed_digits(&month_day[0..2]).is_some_and(|month| (1..=12).contains(&month))
+            && parse_fixed_digits(&month_day[3..5]).is_some_and(|day| (1..=31).contains(&day))
+        {
+            return true;
+        }
+    }
+
+    if value.len() == 9 && value.as_bytes().get(4..7) == Some(&b"---"[..]) {
+        return value[0..4]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+            && parse_fixed_digits(&value[7..9]).is_some_and(|day| (1..=31).contains(&day));
+    }
+
+    if value.len() == 10 && value.as_bytes().get(4..8) == Some(&b"----"[..]) {
+        return value[0..4]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+            && parse_fixed_digits(&value[8..10]).is_some_and(|day| (1..=31).contains(&day));
+    }
+
+    if value
+        .strip_prefix("-----T")
+        .is_some_and(is_incomplete_iso_time)
+    {
+        return true;
     }
 
     false
+}
+
+fn is_incomplete_iso_time(value: &str) -> bool {
+    if value.len() < 2 {
+        return false;
+    }
+    parse_fixed_digits(&value[0..2]).is_some_and(|hour| hour <= 23)
+}
+
+fn is_incomplete_iso_datetime_time(value: &str) -> bool {
+    if value.len() == 2 {
+        return parse_fixed_digits(value).is_some_and(|hour| hour <= 23);
+    }
+
+    value.contains('-') && value.contains(':')
 }
 
 fn parse_fixed_digits(value: &str) -> Option<u16> {
@@ -2514,7 +2914,12 @@ mod tests {
             &ScalarValue::Number(1.0),
             false
         ));
-        assert!(!scalar_equal_with_mode(
+        assert!(scalar_equal_with_mode(
+            &ScalarValue::Bool(true),
+            &ScalarValue::String("True".to_owned()),
+            false
+        ));
+        assert!(scalar_equal_with_mode(
             &ScalarValue::Bool(false),
             &ScalarValue::String("false".to_owned()),
             false
@@ -2836,6 +3241,56 @@ mod tests {
             .expect("numeric is not contained by pipe-delimited set"),
             vec![false, true, false, true]
         );
+        assert!(scalar_contains_all(
+            &ScalarValue::String("AE|CM|DS".to_owned()),
+            &ScalarValue::String("AE|CM".to_owned()),
+            false
+        ));
+        assert!(!scalar_contains_all(
+            &ScalarValue::String("AE|CM|DS".to_owned()),
+            &ScalarValue::String("AE|LB".to_owned()),
+            false
+        ));
+    }
+
+    #[test]
+    fn evaluates_is_not_ordered_subset_of_operator() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "meta.xpt",
+      "domain": "META",
+      "records": {
+        "ORDER": ["STUDYID|DOMAIN|AETERM", "DOMAIN|STUDYID"],
+        "MODEL": ["STUDYID|DOMAIN|AETERM|AESEQ", "STUDYID|DOMAIN"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "ORDER",
+                    Operator::IsNotOrderedSubsetOf,
+                    ValueExpr::ColumnRef("MODEL".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not ordered subset of"),
+            vec![false, true]
+        );
     }
 
     #[test]
@@ -2886,7 +3341,15 @@ mod tests {
                 &dataset
             )
             .expect("date equal"),
-            vec![false, true, false, false]
+            vec![false, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateNotEqualTo, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date not equal"),
+            vec![true, true, true, false]
         );
         assert_eq!(
             evaluate_condition(
@@ -2894,7 +3357,7 @@ mod tests {
                 &dataset
             )
             .expect("date less than"),
-            vec![true, false, false, false]
+            vec![true, false, true, false]
         );
         assert_eq!(
             evaluate_condition(
@@ -2945,6 +3408,128 @@ mod tests {
             )
             .expect("invalid duration"),
             vec![false, false, false, true]
+        );
+    }
+
+    #[test]
+    fn incomplete_iso8601_dates_are_not_invalid_dates() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ts.xpt",
+      "domain": "TS",
+      "records": {
+        "TSSEQ": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "TSVAL": [
+          "2003-12",
+          "2003",
+          "2003-12-15T13",
+          "2003-12-15T-:15",
+                "2003-12-15T13:-:17",
+                "2003---15",
+                "2013----14",
+                "--12-15",
+                "-----T07:15"
+            ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TSVAL", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![false; 9]
+        );
+    }
+
+    #[test]
+    fn malformed_iso8601_datetime_suffix_is_invalid_date() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "tx.xpt",
+      "domain": "TX",
+      "records": {
+        "TXSEQ": [1, 2],
+        "TXVAL": ["2022-03-22T05-x", "2022-03-22T05:30"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TXVAL", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![true, false]
+        );
+    }
+
+    #[test]
+    fn date_comparisons_order_incomplete_dates_by_known_prefix() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "RFSTDTC": ["2006-03", "2018-04-17", "2018-11"],
+        "RFENDTC": ["2006-01-16", "2018-04", "2018"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RFSTDTC",
+                    Operator::DateGreaterThan,
+                    ValueExpr::ColumnRef("RFENDTC".to_owned())
+                ),
+                &dataset
+            )
+            .expect("date greater than"),
+            vec![true, true, true]
         );
     }
 
@@ -3076,6 +3661,28 @@ mod tests {
             )
             .expect("is not unique relationship"),
             vec![true, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_target_to_comparator_only() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned()),
+                    serde_json::Map::from_iter([(
+                        "direction".to_owned(),
+                        json!("target_to_comparator")
+                    )])
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, false, false]
         );
     }
 

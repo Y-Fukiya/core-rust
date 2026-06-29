@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -188,6 +188,10 @@ pub enum Operator {
     IsNotContainedBy,
     IsContainedByCaseInsensitive,
     IsNotContainedByCaseInsensitive,
+    ContainsAll,
+    NotContainsAll,
+    SharesNoElementsWith,
+    IsNotOrderedSubsetOf,
     LessThan,
     LessThanOrEqualTo,
     GreaterThan,
@@ -197,10 +201,16 @@ pub enum Operator {
     DoesNotMatchRegexFullString,
     LongerThan,
     StartsWith,
+    PrefixEqualTo,
+    PrefixNotEqualTo,
+    NotPrefixMatchesRegex,
+    PrefixIsNotContainedBy,
     EndsWith,
     SuffixMatchesRegex,
     NotSuffixMatchesRegex,
+    SuffixIsNotContainedBy,
     DateEqualTo,
+    DateNotEqualTo,
     DateLessThan,
     DateLessThanOrEqualTo,
     DateGreaterThan,
@@ -242,6 +252,10 @@ impl Operator {
             "is_not_contained_by" => Self::IsNotContainedBy,
             "is_contained_by_case_insensitive" => Self::IsContainedByCaseInsensitive,
             "is_not_contained_by_case_insensitive" => Self::IsNotContainedByCaseInsensitive,
+            "contains_all" => Self::ContainsAll,
+            "not_contains_all" => Self::NotContainsAll,
+            "shares_no_elements_with" => Self::SharesNoElementsWith,
+            "is_not_ordered_subset_of" => Self::IsNotOrderedSubsetOf,
             "less_than" => Self::LessThan,
             "less_than_or_equal_to" => Self::LessThanOrEqualTo,
             "greater_than" => Self::GreaterThan,
@@ -251,10 +265,16 @@ impl Operator {
             "not_matches_regex" => Self::DoesNotMatchRegexFullString,
             "longer_than" => Self::LongerThan,
             "starts_with" => Self::StartsWith,
+            "prefix_equal_to" => Self::PrefixEqualTo,
+            "prefix_not_equal_to" => Self::PrefixNotEqualTo,
+            "not_prefix_matches_regex" => Self::NotPrefixMatchesRegex,
+            "prefix_is_not_contained_by" => Self::PrefixIsNotContainedBy,
             "ends_with" => Self::EndsWith,
             "suffix_matches_regex" => Self::SuffixMatchesRegex,
             "not_suffix_matches_regex" => Self::NotSuffixMatchesRegex,
+            "suffix_is_not_contained_by" => Self::SuffixIsNotContainedBy,
             "date_equal_to" => Self::DateEqualTo,
+            "date_not_equal_to" => Self::DateNotEqualTo,
             "date_less_than" => Self::DateLessThan,
             "date_less_than_or_equal_to" => Self::DateLessThanOrEqualTo,
             "date_greater_than" => Self::DateGreaterThan,
@@ -295,6 +315,10 @@ impl Operator {
             Self::IsNotContainedBy => "is_not_contained_by",
             Self::IsContainedByCaseInsensitive => "is_contained_by_case_insensitive",
             Self::IsNotContainedByCaseInsensitive => "is_not_contained_by_case_insensitive",
+            Self::ContainsAll => "contains_all",
+            Self::NotContainsAll => "not_contains_all",
+            Self::SharesNoElementsWith => "shares_no_elements_with",
+            Self::IsNotOrderedSubsetOf => "is_not_ordered_subset_of",
             Self::LessThan => "less_than",
             Self::LessThanOrEqualTo => "less_than_or_equal_to",
             Self::GreaterThan => "greater_than",
@@ -304,10 +328,16 @@ impl Operator {
             Self::DoesNotMatchRegexFullString => "not_matches_regex",
             Self::LongerThan => "longer_than",
             Self::StartsWith => "starts_with",
+            Self::PrefixEqualTo => "prefix_equal_to",
+            Self::PrefixNotEqualTo => "prefix_not_equal_to",
+            Self::NotPrefixMatchesRegex => "not_prefix_matches_regex",
+            Self::PrefixIsNotContainedBy => "prefix_is_not_contained_by",
             Self::EndsWith => "ends_with",
             Self::SuffixMatchesRegex => "suffix_matches_regex",
             Self::NotSuffixMatchesRegex => "not_suffix_matches_regex",
+            Self::SuffixIsNotContainedBy => "suffix_is_not_contained_by",
             Self::DateEqualTo => "date_equal_to",
+            Self::DateNotEqualTo => "date_not_equal_to",
             Self::DateLessThan => "date_less_than",
             Self::DateLessThanOrEqualTo => "date_less_than_or_equal_to",
             Self::DateGreaterThan => "date_greater_than",
@@ -359,6 +389,7 @@ pub enum RuleType {
     VariableMetadata,
     DomainPresence,
     ValueLevelMetadata,
+    JsonSchema,
     Jsonata,
     Unsupported(String),
 }
@@ -368,10 +399,17 @@ impl RuleType {
         let original = name.as_ref();
         match normalize_name(original).as_str() {
             "record_data" => Self::RecordData,
-            "dataset_metadata" => Self::DatasetMetadata,
-            "variable_metadata" => Self::VariableMetadata,
-            "domain_presence" => Self::DomainPresence,
-            "value_level_metadata" => Self::ValueLevelMetadata,
+            "dataset_metadata" | "dataset_metadata_check" => Self::DatasetMetadata,
+            "variable_metadata"
+            | "variable_metadata_check"
+            | "variable_metadata_check_against_define_xml"
+            | "define_item_metadata_check_against_library_metadata"
+            | "variable_metadata_check_against_library_metadata" => Self::VariableMetadata,
+            "domain_presence" | "domain_presence_check" => Self::DomainPresence,
+            "value_level_metadata"
+            | "value_check_with_variable_metadata"
+            | "value_check_with_dataset_metadata" => Self::ValueLevelMetadata,
+            "json_schema_check" => Self::JsonSchema,
             "jsonata" => Self::Jsonata,
             _ => Self::Unsupported(original.to_owned()),
         }
@@ -384,6 +422,7 @@ impl RuleType {
             Self::VariableMetadata => "variable_metadata",
             Self::DomainPresence => "domain_presence",
             Self::ValueLevelMetadata => "value_level_metadata",
+            Self::JsonSchema => "json_schema_check",
             Self::Jsonata => "jsonata",
             Self::Unsupported(name) => name.as_str(),
         }
@@ -571,11 +610,14 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
             })?
         }
         Some("yaml" | "yml") => {
-            let source = quote_yaml_value_literals(&source);
-            serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
-                path: path.to_path_buf(),
-                message: source.to_string(),
-            })?
+            let mut value: Value =
+                serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
+                    path: path.to_path_buf(),
+                    message: source.to_string(),
+                })?;
+            let mut value_literals = yaml_condition_value_literals(&source);
+            normalize_yaml_condition_value_literals(&mut value, &mut value_literals);
+            value
         }
         Some(other) => return Err(RuleModelError::UnsupportedExtension(other.to_owned())),
         None => return Err(RuleModelError::UnsupportedExtension(String::new())),
@@ -584,73 +626,110 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
     normalize_rule(value)
 }
 
-fn quote_yaml_value_literals(source: &str) -> String {
-    let mut in_value_list_indent = None;
-    source
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            let indent_len = line.len() - trimmed.len();
+fn yaml_condition_value_literals(source: &str) -> VecDeque<String> {
+    let mut values = VecDeque::new();
+    let mut check_indent = None;
+    let mut value_list_indent = None;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
 
-            if let Some(value_indent) = in_value_list_indent {
-                if trimmed.is_empty() {
-                    return line.to_owned();
-                }
-                if indent_len <= value_indent {
-                    in_value_list_indent = None;
-                } else if trimmed.starts_with("- ") {
-                    return quote_yaml_value_list_item(line);
-                }
+        if let Some(indent_start) = check_indent {
+            if !trimmed.is_empty() && indent <= indent_start && !trimmed.starts_with("Check:") {
+                check_indent = None;
+                value_list_indent = None;
             }
+        }
+        if trimmed.starts_with("Check:") {
+            check_indent = Some(indent);
+            value_list_indent = None;
+            continue;
+        }
+        if check_indent.is_none() {
+            continue;
+        }
 
-            if is_empty_yaml_value_line(line) {
-                in_value_list_indent = Some(indent_len);
-                line.to_owned()
-            } else {
-                quote_yaml_value_literal_line(line)
+        if let Some(list_indent) = value_list_indent {
+            if trimmed.is_empty() {
+                continue;
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+            if indent <= list_indent {
+                value_list_indent = None;
+            } else if let Some(item) = trimmed.strip_prefix("- ") {
+                if let Some(value) = yaml_boolish_scalar(item) {
+                    values.push_back(value.to_owned());
+                }
+                continue;
+            }
+        }
 
-fn quote_yaml_value_literal_line(line: &str) -> String {
-    let trimmed = line.trim_start();
-    let Some(rest) = trimmed.strip_prefix("value:") else {
-        return line.to_owned();
-    };
-    let scalar = rest.trim();
-    if !is_yaml_boolish_string(scalar) {
-        return line.to_owned();
+        let Some(rest) = trimmed.strip_prefix("value:") else {
+            continue;
+        };
+        if rest.trim().is_empty() {
+            value_list_indent = Some(indent);
+        } else if let Some(value) = yaml_boolish_scalar(rest) {
+            values.push_back(value.to_owned());
+        }
     }
-    let indent_len = line.len() - trimmed.len();
-    format!("{}value: \"{}\"", &line[..indent_len], scalar)
+    values
 }
 
-fn is_empty_yaml_value_line(line: &str) -> bool {
-    line.trim_start()
-        .strip_prefix("value:")
-        .is_some_and(|rest| rest.trim().is_empty())
-}
-
-fn quote_yaml_value_list_item(line: &str) -> String {
-    let trimmed = line.trim_start();
-    let Some(rest) = trimmed.strip_prefix("- ") else {
-        return line.to_owned();
-    };
-    let scalar = rest.trim();
-    if !is_yaml_boolish_string(scalar) {
-        return line.to_owned();
+fn yaml_boolish_scalar(value: &str) -> Option<&str> {
+    let scalar = value
+        .split_once('#')
+        .map_or(value, |(value, _comment)| value)
+        .trim();
+    if scalar.starts_with(['"', '\'']) {
+        return None;
     }
-    let indent_len = line.len() - trimmed.len();
-    format!("{}- \"{}\"", &line[..indent_len], scalar)
-}
-
-fn is_yaml_boolish_string(value: &str) -> bool {
     matches!(
-        value,
+        scalar,
         "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
     )
+    .then_some(scalar)
+}
+
+fn normalize_yaml_condition_value_literals(
+    value: &mut Value,
+    value_literals: &mut VecDeque<String>,
+) {
+    match value {
+        Value::Object(object) => {
+            if object.contains_key("operator") && object.contains_key("value") {
+                if let Some(value) = object.get_mut("value") {
+                    normalize_yaml_condition_value(value, value_literals);
+                }
+            }
+            for child in object.values_mut() {
+                normalize_yaml_condition_value_literals(child, value_literals);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                normalize_yaml_condition_value_literals(value, value_literals);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_yaml_condition_value(value: &mut Value, value_literals: &mut VecDeque<String>) {
+    match value {
+        Value::Bool(bool_value) => {
+            *value = Value::String(
+                value_literals
+                    .pop_front()
+                    .unwrap_or_else(|| bool_value.to_string()),
+            );
+        }
+        Value::Array(values) => {
+            for value in values {
+                normalize_yaml_condition_value(value, value_literals);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -671,27 +750,21 @@ pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRule
         } else if path.is_dir() {
             let mut entries = fs::read_dir(path)
                 .map_err(|source| RuleModelError::Io {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     source,
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|source| RuleModelError::Io {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     source,
                 })?;
-
             entries.sort_by_key(|entry| entry.path());
-
             for entry in entries {
-                let child = entry.path();
-                if !child.is_file() {
-                    continue;
-                }
-
-                if is_supported_rule_file(&child) {
-                    rules.push(load_rule_file(&child)?);
-                } else {
-                    warnings.push(unsupported_extension_warning(&child));
+                let path = entry.path();
+                if path.is_file() && is_supported_rule_file(&path) {
+                    rules.push(load_rule_file(path)?);
+                } else if path.is_file() {
+                    warnings.push(unsupported_extension_warning(&path));
                 }
             }
         } else {
@@ -888,6 +961,15 @@ fn is_column_ref_operator(operator: &Operator) -> bool {
             | Operator::LessThanOrEqualTo
             | Operator::GreaterThan
             | Operator::GreaterThanOrEqualTo
+            | Operator::DateEqualTo
+            | Operator::DateNotEqualTo
+            | Operator::DateLessThan
+            | Operator::DateLessThanOrEqualTo
+            | Operator::DateGreaterThan
+            | Operator::DateGreaterThanOrEqualTo
+            | Operator::PrefixNotEqualTo
+            | Operator::PrefixIsNotContainedBy
+            | Operator::SuffixIsNotContainedBy
             | Operator::IsNotUniqueRelationship
     )
 }
@@ -2073,6 +2155,16 @@ Outcome:
     }
 
     #[test]
+    fn normalize_library_variable_metadata_rule_type_to_variable_metadata() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("Variable Metadata Check against Library Metadata");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.rule_type, RuleType::VariableMetadata);
+    }
+
+    #[test]
     fn normalize_outcome_variables() {
         let mut value = sample_metadata_rule();
         value["Outcome"]["Output Variables"] = json!(["AETERM", "AESTDTC", "AESER"]);
@@ -2185,6 +2277,34 @@ Outcome:
     }
 
     #[test]
+    fn normalize_date_comparison_value_as_column_ref() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DVSTDTC",
+                "operator": "date_less_than",
+                "value": "RFICDTC"
+            },
+            "Outcome": {
+                "Message": "DVSTDTC must be on or after RFICDTC"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.operator, Operator::DateLessThan);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("RFICDTC".to_owned())
+        );
+    }
+
+    #[test]
     fn normalize_dollar_prefixed_value_as_column_ref_for_set_comparators() {
         let value = json!({
             "Core": { "Id": "CORE-TEST-0001" },
@@ -2265,6 +2385,95 @@ Outcome:
         };
 
         assert_eq!(condition.comparator, ValueExpr::Literal(json!("N")));
+    }
+
+    #[test]
+    fn yaml_value_comment_preserves_boolish_scalar_as_original_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: IEORRES
+  operator: equal_to
+  value: No # CDISC code, not boolean false
+  value_is_literal: true
+Outcome:
+  Message: IEORRES must be No
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("No")));
+    }
+
+    #[test]
+    fn yaml_value_yes_preserves_original_scalar_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: equal_to
+  value: Yes
+  value_is_literal: true
+Outcome:
+  Message: AESER must be Yes
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));
+    }
+
+    #[test]
+    fn yaml_condition_value_literals_ignore_non_condition_values() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope:
+  Metadata:
+    value: No
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: equal_to
+  value: Yes
+  value_is_literal: true
+Outcome:
+  Message: AESER must be Yes
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));
     }
 
     #[test]
@@ -2364,8 +2573,29 @@ Outcome:
     }
 
     #[test]
+    fn open_rules_set_operators_normalize() {
+        assert_eq!(Operator::from_name("contains_all"), Operator::ContainsAll);
+        assert_eq!(
+            Operator::from_name("not_contains_all"),
+            Operator::NotContainsAll
+        );
+    }
+
+    #[test]
     fn open_rules_prefix_suffix_operators_normalize_to_string_operators() {
         assert_eq!(Operator::from_name("starts_with"), Operator::StartsWith);
+        assert_eq!(
+            Operator::from_name("prefix_equal_to"),
+            Operator::PrefixEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("not_prefix_matches_regex"),
+            Operator::NotPrefixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("prefix_is_not_contained_by"),
+            Operator::PrefixIsNotContainedBy
+        );
         assert_eq!(
             Operator::from_name("suffix_matches_regex"),
             Operator::SuffixMatchesRegex
@@ -2374,12 +2604,20 @@ Outcome:
             Operator::from_name("not_suffix_matches_regex"),
             Operator::NotSuffixMatchesRegex
         );
+        assert_eq!(
+            Operator::from_name("suffix_is_not_contained_by"),
+            Operator::SuffixIsNotContainedBy
+        );
     }
 
     #[test]
     fn open_rules_date_and_suffix_operator_names_normalize() {
         assert_eq!(Operator::from_name("ends_with"), Operator::EndsWith);
         assert_eq!(Operator::from_name("date_equal_to"), Operator::DateEqualTo);
+        assert_eq!(
+            Operator::from_name("date_not_equal_to"),
+            Operator::DateNotEqualTo
+        );
         assert_eq!(
             Operator::from_name("date_less_than"),
             Operator::DateLessThan

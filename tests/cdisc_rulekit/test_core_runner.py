@@ -98,6 +98,52 @@ def test_build_core_run_plan_substitutes_env_placeholders_in_engine_command(tmp_
     assert "{version}" not in first.command
 
 
+def test_build_core_run_plan_preserves_env_placeholder_as_single_argument(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_dir = _generated_rule(generated_root)
+    for env_path in rule_dir.glob("*/01/data/.env"):
+        env_path.write_text("PRODUCT=SDTMIG --unexpected-flag\nVERSION=3-3\n", encoding="utf-8")
+
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="python core.py validate -s {product} -v {version}",
+        output_mode="file-base",
+        data_mode="data-dir",
+    )
+
+    first = plan.items[0]
+    assert first.command[first.command.index("-s") + 1] == "SDTMIG --unexpected-flag"
+    assert "--unexpected-flag" not in first.command
+
+
+def test_build_core_run_plan_handles_quoted_env_placeholder_as_single_argument(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_dir = _generated_rule(generated_root)
+    for env_path in rule_dir.glob("*/01/data/.env"):
+        env_path.write_text("PRODUCT=SDTMIG 3.4\nVERSION=3-4\n", encoding="utf-8")
+
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="python core.py validate -s '{product}' -v {version}",
+        output_mode="file-base",
+        data_mode="data-dir",
+    )
+
+    first = plan.items[0]
+    assert first.command[first.command.index("-s") + 1] == "SDTMIG 3.4"
+    assert first.command[first.command.index("-v") + 1] == "3.4"
+
+
+def test_empty_core_run_execution_is_not_ok():
+    result = execute_core_run_plan(build_core_run_plan("/does/not/exist", "/tmp/runs"))
+
+    assert not result.ok
+    assert result.pass_count == 0
+    assert result.fail_count == 0
+
+
 def test_execute_core_run_plan_can_run_from_engine_cwd(tmp_path):
     generated_root = tmp_path / "generated_rules"
     _generated_rule(generated_root)
@@ -185,3 +231,21 @@ def test_execute_core_run_plan_records_timeout_failures(tmp_path):
     assert result.rows[0]["status"] == "FAIL"
     assert result.rows[0]["returncode"] == "TIMEOUT"
     assert "timed out after 0.1s" in result.rows[0]["stderr"]
+
+
+def test_execute_core_run_plan_records_missing_executable_as_failure(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="definitely-missing-core-runner",
+        dry_run=False,
+    )
+
+    result = execute_core_run_plan(plan, workers=2)
+
+    assert not result.ok
+    assert result.fail_count == 2
+    assert result.rows[0]["status"] == "FAIL"
+    assert result.rows[0]["returncode"] == "HARNESS_ERROR"

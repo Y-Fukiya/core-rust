@@ -60,8 +60,6 @@ pub fn normalize_csv(
     let issues = issue_rows
         .into_iter()
         .flat_map(|row| expand_issue_key(normalize_row(row, default_rule_id)))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .collect::<Vec<_>>();
 
     Ok(NormalizedCsv {
@@ -89,7 +87,9 @@ pub fn normalize_scalar(value: &str) -> String {
 fn read_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
     let source =
         std::fs::read_to_string(path).with_context(|| format!("read CSV {}", path.display()))?;
-    let source = resolve_merge_conflicts(&source);
+    if has_merge_conflict_markers(&source) {
+        anyhow::bail!("CSV contains merge conflict markers: {}", path.display());
+    }
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
         .from_reader(source.as_bytes());
@@ -112,33 +112,10 @@ fn read_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
     Ok(rows)
 }
 
-fn resolve_merge_conflicts(source: &str) -> String {
-    enum State {
-        Normal,
-        Head,
-        Incoming,
-    }
-
-    let mut state = State::Normal;
-    let mut lines = Vec::new();
-    for line in source.lines() {
-        if line.starts_with("<<<<<<<") {
-            state = State::Head;
-            continue;
-        }
-        if matches!(state, State::Head) && line.starts_with("=======") {
-            state = State::Incoming;
-            continue;
-        }
-        if matches!(state, State::Incoming) && line.starts_with(">>>>>>>") {
-            state = State::Normal;
-            continue;
-        }
-        if matches!(state, State::Normal | State::Incoming) {
-            lines.push(line);
-        }
-    }
-    lines.join("\n") + "\n"
+fn has_merge_conflict_markers(source: &str) -> bool {
+    source.lines().any(|line| {
+        line.starts_with("<<<<<<<") || line.starts_with("=======") || line.starts_with(">>>>>>>")
+    })
 }
 
 fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) -> IssueKey {
@@ -372,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn official_merge_conflict_marker_rows_are_not_issue_keys() {
+    fn official_merge_conflict_marker_rows_are_rejected() {
         let dir = tempdir().expect("tempdir");
         let report = dir.path().join("results.csv");
         fs::write(
@@ -381,12 +358,10 @@ mod tests {
         )
         .expect("write report");
 
-        let normalized =
-            normalize_csv(&report, ReportSource::Official, Some("CORE-000159")).expect("normalize");
+        let error = normalize_csv(&report, ReportSource::Official, Some("CORE-000159"))
+            .expect_err("conflict markers should fail normalization");
 
-        assert_eq!(normalized.issue_count, 1);
-        assert_eq!(normalized.issues[0].dataset, "LB");
-        assert_eq!(normalized.issues[0].variables, vec!["LBTESTCD"]);
+        assert!(error.to_string().contains("merge conflict markers"));
     }
 
     #[test]

@@ -1,5 +1,11 @@
 # P21→OPEN RULES Conversion (SDTM-IG) — PR Readiness Summary
 
+> Historical note: this summary was produced before the Open Rules oracle
+> scorer was hardened to exclude missing official oracles from supported
+> accuracy and before `core-api` stopped oracle-based result synthesis. Do not
+> use these numbers as current conformance evidence. Rerun the Open Rules
+> harness and cite its current `scoreboard.json` / `summary.md` instead.
+
 ## Scope and target
 
 - Scope: SDTM-IG P21 rule conversion candidates for final expanded pilot.
@@ -42,4 +48,3 @@
 - This PR is scoped to PASS rules only.
 - The five skipped rules are not false-negatives; they are currently treated as
   official CORE coverage gaps.
-

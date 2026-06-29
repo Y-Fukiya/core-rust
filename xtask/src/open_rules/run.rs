@@ -42,6 +42,16 @@ pub struct RunScoreArgs {
 
     #[arg(long)]
     pub strict_lock: bool,
+
+    #[arg(
+        long,
+        value_name = "RATIO",
+        value_parser = crate::open_rules::score::parse_coverage_ratio
+    )]
+    pub min_coverage: Option<f64>,
+
+    #[arg(long, value_name = "COUNT")]
+    pub max_skipped_unsupported: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,6 +94,8 @@ pub fn run_score(args: RunScoreArgs) -> Result<bool> {
         core_rs_results_root: args.core_rs_results_root,
         out: args.out,
         scope: args.scope,
+        min_coverage: args.min_coverage,
+        max_skipped_unsupported: args.max_skipped_unsupported,
     })?;
 
     Ok(run_summary.failed > 0 || score_failed)
@@ -181,6 +193,7 @@ fn env_value(env: &BTreeMap<String, String>, key: &str) -> Option<String> {
 mod tests {
     use std::path::Path;
 
+    use clap::Parser as _;
     use tempfile::tempdir;
 
     use crate::open_rules::discovery::discover_cases;
@@ -264,6 +277,38 @@ mod tests {
     }
 
     #[test]
+    fn run_score_cli_rejects_invalid_min_coverage() {
+        let valid = RunScoreArgs::try_parse_from([
+            "run-score",
+            "--open-rules-root",
+            "open",
+            "--core-rs-results-root",
+            "candidate",
+            "--out",
+            "scoreboard",
+            "--min-coverage",
+            "1.0",
+        ])
+        .expect("valid min coverage");
+        assert_eq!(valid.min_coverage, Some(1.0));
+
+        for invalid in ["-0.1", "1.1", "NaN", "inf", "Infinity"] {
+            let result = RunScoreArgs::try_parse_from([
+                "run-score",
+                "--open-rules-root",
+                "open",
+                "--core-rs-results-root",
+                "candidate",
+                "--out",
+                "scoreboard",
+                "--min-coverage",
+                invalid,
+            ]);
+            assert!(result.is_err(), "{invalid} should be rejected");
+        }
+    }
+
+    #[test]
     fn run_score_generates_reports_and_scoreboard() {
         let open_rules_root = repo_root().join("tests/fixtures/open_rules_executable");
         let candidate_root = tempdir().expect("candidate root");
@@ -275,6 +320,8 @@ mod tests {
             out: scoreboard_root.path().to_path_buf(),
             scope: Vec::new(),
             strict_lock: false,
+            min_coverage: None,
+            max_skipped_unsupported: None,
         })
         .expect("run score");
 

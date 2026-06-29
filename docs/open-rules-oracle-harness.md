@@ -71,11 +71,32 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 | `supported_match` | Candidate ran and normalized issue keys match the official oracle. | zero |
 | `supported_mismatch` | Candidate ran but normalized issue keys differ. | non-zero |
 | `skipped_unsupported` | Candidate output contains skipped rows. | zero |
-| `no_official_oracle` | The case has no official `results.csv`, so there is no oracle to score against. | zero |
+| `mixed_skipped_and_issues` | Candidate output mixes skipped rows and issue rows for the same case. | non-zero |
+| `no_official_oracle` | The case has no official `results.csv`; it is excluded from supported accuracy and fails the score gate until explicitly resolved. | non-zero |
 | `harness_error` | Official or candidate report is missing, malformed, or cannot be scored. | non-zero |
 
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
 mismatches are correctness problems.
+
+## Missing Official Oracle Policy
+
+Some upstream cases do not include official `results/results.csv`. The harness
+classifies these cases as `no_official_oracle`, even when a candidate report
+exists and appears plausible. Candidate output must not become its own oracle,
+so missing-official cases are excluded from `supported_match`,
+`supported_mismatch`, `supported_accuracy`, and `coverage`.
+
+Read these fields together:
+
+- `official_oracle_match`: supported matches backed by committed official
+  `results.csv`.
+- `supported_mismatch`: official-oracle-backed cases where structural issue keys
+  differ.
+- `no_official_oracle`: cases retained for accounting but excluded from
+  supported accuracy.
+
+The synthetic oracle counters remain in the JSON schema for older scoreboard
+compatibility, but current scoring should leave them at zero.
 
 `summary.md` also includes a `Skipped Unsupported Reasons` section when skipped
 cases have `skipped_reason` values. Use that section as the first coverage
@@ -86,10 +107,14 @@ triage list before promoting more cases into supported coverage.
 ```text
 supported_accuracy = supported_match / (supported_match + supported_mismatch)
 coverage = (supported_match + supported_mismatch) / total_cases
+official_coverage = official_oracle_match / total_cases
 ```
 
 Coverage can be low while supported accuracy is high. That means the roadmap is
 large, not that supported behavior is wrong.
+
+`coverage` is now official-oracle-backed coverage because missing-official cases
+are excluded from the supported numerator.
 
 ## Normalization
 
@@ -132,6 +157,11 @@ state. The baseline command fails on regressions such as:
 - baseline cases missing from the current scoreboard.
 
 Improvements to `supported_match` are allowed and printed as improvements.
+
+The run-score command exits non-zero for correctness failures, harness failures,
+or unresolved official oracle gaps: `supported_mismatch > 0`,
+`harness_error > 0`, `no_official_oracle > 0`, or
+`mixed_skipped_and_issues > 0`.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests

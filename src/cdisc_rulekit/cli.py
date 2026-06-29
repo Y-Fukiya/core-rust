@@ -9,6 +9,7 @@ from .classify import classify_rules
 from .compare_results import classification_counts, compare_generated_results, comparison_gate_ok, write_comparison_report
 from .core_runner import (
     DEFAULT_ENGINE_COMMAND,
+    DEFAULT_TIMEOUT_SECONDS,
     build_core_run_plan,
     execute_core_run_plan,
     write_core_run_execution_report,
@@ -190,6 +191,8 @@ def cmd_build_readonly(args: argparse.Namespace) -> int:
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
+    if args.limit is not None and args.limit < 0:
+        raise ValueError("limit must be zero or greater")
     rules = _rules_with_conversion_status(args.p21_catalog, args.conversion_status)
     operator_rows = _read_csv_rows(args.operator_inventory)
     allowed_operators = operator_set_from_inventory_rows(operator_rows)
@@ -223,6 +226,9 @@ def cmd_run_core(args: argparse.Namespace) -> int:
         data_mode=args.data_mode,
     )
     write_core_run_plan(root / "reports", plan)
+    if plan.case_count == 0:
+        print("run-core failed: no generated cases found")
+        return 1
     if args.dry_run:
         print(f"run-core dry-run complete: {plan.case_count} cases planned")
         return 0
@@ -407,7 +413,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_core.add_argument("--data-mode", choices=["dataset-paths", "data-dir"], default="dataset-paths")
     run_core.add_argument("--engine-cwd", type=Path, default=None)
     run_core.add_argument("--workers", type=int, default=1)
-    run_core.add_argument("--timeout-seconds", type=float, default=None)
+    run_core.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Per-case timeout in seconds; use 0 to disable.",
+    )
     run_core.add_argument("--dry-run", action="store_true")
     run_core.set_defaults(func=cmd_run_core)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,7 @@ from pathlib import Path
 from .io_utils import ensure_dir, write_csv
 
 DEFAULT_ENGINE_COMMAND = "cargo run -p core-cli -- validate"
+DEFAULT_TIMEOUT_SECONDS = 300.0
 EXECUTION_FIELDS = [
     "generated_rule_id",
     "case_type",
@@ -69,7 +71,7 @@ class CoreRunExecutionResult:
 
     @property
     def ok(self) -> bool:
-        return self.fail_count == 0
+        return bool(self.rows) and self.fail_count == 0
 
 
 def _case_data_dirs(rule_dir: Path) -> list[tuple[str, str, Path]]:
@@ -107,15 +109,26 @@ def _read_case_env(data_dir: Path) -> dict[str, str]:
     return values
 
 
-def _render_engine_command(engine_command: str, data_dir: Path) -> str:
+_PLACEHOLDER_PATTERN = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _render_engine_command(engine_command: str, data_dir: Path) -> list[str]:
     if "{" not in engine_command:
-        return engine_command
+        return shlex.split(engine_command)
     values = _read_case_env(data_dir)
-    try:
-        return engine_command.format(**values)
-    except KeyError as error:
-        placeholder = str(error).strip("'")
-        raise ValueError(f"Unsupported engine-command placeholder: {placeholder}") from error
+    placeholders = set(_PLACEHOLDER_PATTERN.findall(engine_command))
+    missing = sorted(placeholder for placeholder in placeholders if placeholder not in values)
+    if missing:
+        raise ValueError(f"Unsupported engine-command placeholder: {missing[0]}")
+    sentinel_prefix = "__CDISC_RULEKIT_PLACEHOLDER_"
+    rendered = engine_command
+    for placeholder in placeholders:
+        rendered = rendered.replace(f"{{{placeholder}}}", f"{sentinel_prefix}{placeholder}__")
+    command = shlex.split(rendered)
+    for placeholder in placeholders:
+        sentinel = f"{sentinel_prefix}{placeholder}__"
+        command = [part.replace(sentinel, values[placeholder]) for part in command]
+    return command
 
 
 def _command(
@@ -131,9 +144,8 @@ def _command(
     if data_mode not in {"dataset-paths", "data-dir"}:
         raise ValueError(f"Unsupported data mode: {data_mode}")
     output_argument = output_dir / "report" if output_mode == "file-base" else output_dir
-    rendered_engine_command = _render_engine_command(engine_command, data_dir)
     command = [
-        *shlex.split(rendered_engine_command),
+        *_render_engine_command(engine_command, data_dir),
         "--local-rules",
         str(rule_dir / "rule.yml"),
     ]
@@ -247,6 +259,17 @@ def _execute_core_run_item_with_timeout(
             "stderr": f"{stderr.strip()}\n{timeout_text}".strip() if isinstance(stderr, str) else timeout_text,
             "output_dir": item.output_dir,
         }
+    except OSError as error:
+        return {
+            "generated_rule_id": item.generated_rule_id,
+            "case_type": item.case_type,
+            "case_id": item.case_id,
+            "returncode": "HARNESS_ERROR",
+            "status": "FAIL",
+            "stdout": "",
+            "stderr": str(error),
+            "output_dir": item.output_dir,
+        }
     return {
         "generated_rule_id": item.generated_rule_id,
         "case_type": item.case_type,
@@ -263,15 +286,16 @@ def execute_core_run_plan(
     plan: CoreRunPlan,
     engine_cwd: str | Path | None = None,
     workers: int = 1,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
 ) -> CoreRunExecutionResult:
     cwd = str(engine_cwd) if engine_cwd else None
+    effective_timeout = None if timeout_seconds == 0 else timeout_seconds
     if workers <= 1:
-        rows = [_execute_core_run_item_with_timeout(item, cwd, timeout_seconds) for item in plan.items]
+        rows = [_execute_core_run_item_with_timeout(item, cwd, effective_timeout) for item in plan.items]
         return CoreRunExecutionResult(rows)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        rows = list(executor.map(lambda item: _execute_core_run_item_with_timeout(item, cwd, timeout_seconds), plan.items))
+        rows = list(executor.map(lambda item: _execute_core_run_item_with_timeout(item, cwd, effective_timeout), plan.items))
     return CoreRunExecutionResult(rows)
 
 

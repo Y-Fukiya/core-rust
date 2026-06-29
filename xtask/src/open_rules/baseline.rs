@@ -123,9 +123,34 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
         }
     }
 
+    if coverage_regressed(baseline, current) {
+        regressions.push(difference(
+            "summary/coverage".to_owned(),
+            None,
+            None,
+            "coverage regressed",
+        ));
+    }
+    if current.summary.skipped_unsupported > baseline.summary.skipped_unsupported {
+        regressions.push(difference(
+            "summary/skipped_unsupported".to_owned(),
+            None,
+            None,
+            "skipped_unsupported increased",
+        ));
+    }
+
     BaselineReport {
         regressions,
         improvements,
+    }
+}
+
+fn coverage_regressed(baseline: &Scoreboard, current: &Scoreboard) -> bool {
+    match (baseline.summary.coverage, current.summary.coverage) {
+        (Some(baseline), Some(current)) => current < baseline,
+        (Some(_), None) => true,
+        _ => false,
     }
 }
 
@@ -157,7 +182,10 @@ fn is_regression(baseline: &ScoreBucket, current: &ScoreBucket) -> bool {
 fn is_failing_new_bucket(bucket: &ScoreBucket) -> bool {
     matches!(
         bucket,
-        ScoreBucket::SupportedMismatch | ScoreBucket::HarnessError
+        ScoreBucket::SupportedMismatch
+            | ScoreBucket::HarnessError
+            | ScoreBucket::NoOfficialOracle
+            | ScoreBucket::MixedSkippedAndIssues
     )
 }
 
@@ -256,5 +284,35 @@ mod tests {
 
         assert!(!report.should_fail());
         assert_eq!(report.improvements.len(), 1);
+    }
+
+    #[test]
+    fn baseline_fails_when_coverage_regresses() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.coverage = Some(0.5);
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report
+            .regressions
+            .iter()
+            .any(|regression| regression.case_key == "summary/coverage"));
+    }
+
+    #[test]
+    fn baseline_fails_when_skipped_unsupported_increases() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.skipped_unsupported = baseline.summary.skipped_unsupported + 1;
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report
+            .regressions
+            .iter()
+            .any(|regression| regression.case_key == "summary/skipped_unsupported"));
     }
 }

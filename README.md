@@ -193,13 +193,15 @@ python -m cdisc_rulekit.cli run-core \
 
 # Official Python CORE source checkout. Use absolute paths when --engine-cwd is
 # set because CORE reads resources relative to its repository root.
+CORE_RUST_ROOT="$PWD"
+CORE_ENGINE="$CORE_RUST_ROOT/input/cdisc-rules-engine"
 python -m cdisc_rulekit.cli run-core \
-  --generated-rules /Users/yfukiya/Documents/core-rust/output/generated_rules \
-  --out /Users/yfukiya/Documents/core-rust/output/core_cli_run \
-  --engine-command "/Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/.venv/bin/python /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
+  --generated-rules "$CORE_RUST_ROOT/output/generated_rules" \
+  --out "$CORE_RUST_ROOT/output/core_cli_run" \
+  --engine-command "$CORE_ENGINE/.venv/bin/python $CORE_ENGINE/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
   --output-mode file-base \
   --data-mode data-dir \
-  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine \
+  --engine-cwd "$CORE_ENGINE" \
   --workers 6
 
 python -m cdisc_rulekit.cli compare-results \
@@ -242,7 +244,7 @@ mismatches.
 `export_manifest.json` / `export_manifest.csv`. Existing target directories are
 not overwritten unless `--overwrite` is supplied.
 
-Latest SDTM-IG pilot result:
+Historical SDTM-IG pilot result:
 
 - Successful run directory: `output/sdtmig_phase2_rerun5`
 - Generated high-confidence draft rules: 17
@@ -250,15 +252,12 @@ Latest SDTM-IG pilot result:
 - Remaining skipped rows are generation-scope coverage gaps, not supported CORE
   mismatches. Keep them separate from wrong results when expanding generation.
 
-- Latest full SDTM-IG rerun: `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard`
-- Final official-core rerun (version-template):
-  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template`
-- Generated draft rules: 552
-- Structural comparison result: 1094 passed, 10 non-pass / 1104 total
-- PASS rules by rule-id: 547
-- CORE skipped coverage gaps: 5 rules (e.g., `SD1234`, `SD1326`)
-- PASS-only export manifest example:
-  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template/reports/comparison_summary.csv`
+Older SDTM-IG full rerun reports under `output/` were produced before the
+Open Rules oracle scorer was tightened to exclude missing-official-oracle cases
+from supported accuracy and before `core-api` stopped oracle-based result
+synthesis. Treat those reports as historical debugging artifacts only. For
+current conformance claims, rerun the Open Rules harness and cite the generated
+`scoreboard.json` / `summary.md` from that run.
 
 Latest expanded SDTM-IG draft export:
 
@@ -280,27 +279,11 @@ Official Python CORE smoke:
   0 failed
 - `compare-results` against that official CORE output: 2 passed, 0 failed
 
-Official Python CORE full run:
+Historical official Python CORE full run:
 
-- Run directory: `output/sdtmig_official_core_fix_find_regex_numeric`
-- Generated rules directory: `output/sdtmig_phase2_fix_find_regex_numeric`
-- Generated rules executed: 395
-- Case executions: 790
-- CORE CLI execution summary: 790 passed, 0 failed
-- Structural comparison summary: 778 passed, 12 non-pass
-- Supported mismatch rows: 0
-- Skipped coverage-gap rows: 12
-- Supported-mismatch gate:
-  `compare-results --allow-actual-skipped` returns ok because the remaining
-  non-pass rows are official CORE skipped coverage gaps.
-- Non-pass classification:
-  - `ACTUAL_SKIPPED_BY_CORE`: 12 rows / 6 rules
-  - `PASS`: 778 rows / 389 rules
-- Classification artifacts:
-  `reports/official_core_failure_classification.{csv,json,md}`
-- Accepted export target:
-  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-OFFICIAL-CORE-PASS`
-- Accepted export result: 389 exported, 6 skipped by comparison status
+The Python CORE run reports under `output/` are also historical. They are useful
+for reproducing the P21 conversion workflow, but they are not a substitute for
+the Rust Open Rules oracle scoreboard after the scorer hardening changes.
 
 Minimal generated outputs include:
 

@@ -1,6 +1,7 @@
 import csv
 import json
 
+import pytest
 import yaml
 
 from cdisc_rulekit.generate_rules import generate_rules, operator_set_from_inventory_rows
@@ -85,6 +86,22 @@ def test_generate_rules_writes_minimal_required_rule_and_test_data(tmp_path):
 
     validation = validate_generated_rules(tmp_path / "generated_rules")
     assert validation.ok
+
+
+def test_validate_generated_rules_rejects_empty_generated_directory(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    generated_root.mkdir()
+
+    validation = validate_generated_rules(generated_root)
+
+    assert not validation.ok
+    assert validation.checked_rule_count == 0
+    assert "no generated rule directories found" in validation.issues[0]
+
+
+def test_generate_rules_rejects_negative_limit(tmp_path):
+    with pytest.raises(ValueError, match="limit must be zero or greater"):
+        generate_rules([], tmp_path / "generated_rules", set(), limit=-1)
 
 
 def test_generate_rules_skips_fuzzy_candidates_and_unknown_operators(tmp_path):
@@ -454,6 +471,33 @@ def test_generate_rules_wraps_regex_patterns_for_official_core_full_match(tmp_pa
     checks = rule_yml["Check"]["all"]
     regex_check = next(payload for payload in _payloads(checks, "does_not_match_regex") if payload["name"] == "TSVAL")
     assert regex_check["value"] == r"^(?:([0-9]*))$"
+
+
+def test_generate_rules_skips_regex_with_unsupported_rust_syntax(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDREGEX-LOOKBEHIND",
+        source_rule_key="regex-lookbehind-key",
+        p21_rule_id="SDREGEX-LOOKBEHIND",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Regex",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+        raw_condition={"test": r"(?<=SUBJ)\d+"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_REGEX"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "does_not_match_regex"},
+    )
+
+    assert summary.generated_count == 0
+    assert summary.rows[0]["skip_reason"] == "UNSUPPORTED_RUST_REGEX_SYNTAX"
 
 
 def test_generate_rules_preserves_numeric_literals_for_official_core_comparison(tmp_path):

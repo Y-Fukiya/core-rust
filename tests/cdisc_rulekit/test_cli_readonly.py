@@ -120,6 +120,8 @@ def test_build_readonly_accepts_open_rules_zip(
         for path in open_rules_repo_path.rglob("*"):
             if path.is_file():
                 zip_handle.write(path, path.relative_to(open_rules_repo_path.parent))
+        zip_handle.writestr("open_rules/__pycache__/ignored.pyc", b"cache")
+        zip_handle.writestr("open_rules/.pytest_cache/ignored", "cache")
 
     out_dir = tmp_path / "output"
     env = os.environ.copy()
@@ -152,6 +154,8 @@ def test_build_readonly_accepts_open_rules_zip(
 
     assert "build-readonly complete: 1 P21 rules, 1 CORE rules" in result.stdout
     assert (out_dir / "_work" / "open_rules_zip" / "open_rules" / "Published" / "CORE-000001" / "rule.yml").exists()
+    assert not (out_dir / "_work" / "open_rules_zip" / "open_rules" / "__pycache__").exists()
+    assert not (out_dir / "_work" / "open_rules_zip" / "open_rules" / ".pytest_cache").exists()
 
 
 def test_pilot_preflight_reports_input_readiness(
