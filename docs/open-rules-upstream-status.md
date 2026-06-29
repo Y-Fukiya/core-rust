@@ -17,3 +17,6 @@ Use the uploaded scoreboard artifacts to inspect the current
 `supported_match`, `supported_mismatch`, `skipped_unsupported`,
 `no_official_oracle`, and `harness_error` buckets. Do not treat historical run
 logs as current conformance claims.
+
+The proposed next step is a separate full upstream regression gate, not a
+100%-coverage gate. See `docs/open-rules-upstream-regression-gate.md`.

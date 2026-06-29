@@ -1,6 +1,6 @@
 {
   "name": "sdtm_adam_full_study_package",
-  "description": "Stored Python/CDISC-compatible expected output for SDTM/ADaM-like multi-domain package with Define-XML, CT, external dictionaries, JSONATA, joins, and Operations.",
+  "description": "Stored golden regression output modeled after Python/CDISC behavior for SDTM/ADaM-like multi-domain package with Define-XML, CT, external dictionaries, JSONATA, joins, and Operations.",
   "rule_paths": ["rules/sdtm_adam"],
   "dataset_paths": ["datasets/sdtm_adam/study_package.json"],
   "define_xml_paths": ["cdisc/sdtm_adam_define.xml"],
