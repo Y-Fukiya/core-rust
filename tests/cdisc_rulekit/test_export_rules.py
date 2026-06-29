@@ -110,6 +110,19 @@ def test_export_generated_rules_does_not_filter_without_only_passed(tmp_path):
     assert summary.skipped_count == 0
 
 
+def test_export_generated_rules_rejects_missing_generated_directory(tmp_path):
+    with pytest.raises(ValueError, match="generated rules directory does not exist"):
+        export_generated_rules(tmp_path / "missing", tmp_path / "cdisc-open-rules")
+
+
+def test_export_generated_rules_rejects_empty_generated_directory(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    generated_root.mkdir()
+
+    with pytest.raises(ValueError, match="no generated rule directories found"):
+        export_generated_rules(generated_root, tmp_path / "cdisc-open-rules")
+
+
 def test_export_generated_rules_rejects_target_subdir_outside_open_rules_repo(tmp_path):
     generated_root = tmp_path / "generated_rules"
     _generated_rule(generated_root)

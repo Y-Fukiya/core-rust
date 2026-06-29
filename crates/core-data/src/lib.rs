@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use indexmap::IndexMap;
 use polars::prelude::*;
@@ -7446,7 +7446,7 @@ fn load_open_rules_dataset(
     variables: Vec<OpenRulesVariable>,
     warnings: &mut Vec<LoadDataWarning>,
 ) -> Result<LoadedDataset> {
-    let path = data_dir.join(&dataset.filename);
+    let path = resolve_open_rules_dataset_path(data_dir, &dataset.filename)?;
     let rows = read_csv_records(&path)?;
     let declared = variables
         .iter()
@@ -7677,6 +7677,38 @@ fn ensure_csv_filename(value: &str) -> String {
     } else {
         format!("{value}.csv")
     }
+}
+
+fn resolve_open_rules_dataset_path(data_dir: &Path, filename: &str) -> Result<PathBuf> {
+    let relative = Path::new(filename);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || relative.file_name().and_then(|name| name.to_str()) != Some(filename)
+    {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "unsafe dataset filename: {filename}"
+        )));
+    }
+
+    let root = data_dir.canonicalize().map_err(|source| DataError::Io {
+        path: data_dir.to_path_buf(),
+        source,
+    })?;
+    let path = root
+        .join(relative)
+        .canonicalize()
+        .map_err(|source| DataError::Io {
+            path: data_dir.join(relative),
+            source,
+        })?;
+    if !path.starts_with(&root) {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "dataset filename escapes data dir: {filename}"
+        )));
+    }
+    Ok(path)
 }
 
 fn normalize_dataset_name(value: &str) -> String {
@@ -7913,8 +7945,17 @@ enum XptVariableType {
 
 const XPT_CARD_LEN: usize = 80;
 const XPT_NAMESTR_LEN: usize = 140;
+const XPT_MAX_FILE_BYTES: usize = 512 * 1024 * 1024;
+const XPT_MAX_VARIABLES: usize = 10_000;
+const XPT_MAX_OBSERVATION_BYTES: usize = 1024 * 1024;
+const XPT_MAX_ROWS: usize = 5_000_000;
 
 fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
+    if bytes.len() > XPT_MAX_FILE_BYTES {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT file exceeds maximum supported size of {XPT_MAX_FILE_BYTES} bytes"
+        )));
+    }
     if bytes.len() < XPT_CARD_LEN {
         return Err(DataError::InvalidDatasetPackage(
             "XPT file is shorter than one 80-byte record".to_owned(),
@@ -7936,10 +7977,22 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
             "XPT NAMESTR header declares zero variables".to_owned(),
         ));
     }
+    if variable_count > XPT_MAX_VARIABLES {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT NAMESTR header declares too many variables: {variable_count}"
+        )));
+    }
 
-    let namestr_start = namestr_header + XPT_CARD_LEN;
-    let namestr_len = variable_count * XPT_NAMESTR_LEN;
-    if bytes.len() < namestr_start + namestr_len {
+    let namestr_start = namestr_header
+        .checked_add(XPT_CARD_LEN)
+        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT NAMESTR start overflow".to_owned()))?;
+    let namestr_len = variable_count.checked_mul(XPT_NAMESTR_LEN).ok_or_else(|| {
+        DataError::InvalidDatasetPackage("XPT NAMESTR length overflow".to_owned())
+    })?;
+    let namestr_end = namestr_start
+        .checked_add(namestr_len)
+        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT NAMESTR end overflow".to_owned()))?;
+    if bytes.len() < namestr_end {
         return Err(DataError::InvalidDatasetPackage(
             "XPT file ended before all NAMESTR records were available".to_owned(),
         ));
@@ -7947,25 +8000,41 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
 
     let variables = (0..variable_count)
         .map(|index| {
-            parse_xpt_namestr(&bytes[namestr_start + index * XPT_NAMESTR_LEN..][..XPT_NAMESTR_LEN])
+            let offset = namestr_start + index * XPT_NAMESTR_LEN;
+            parse_xpt_namestr(&bytes[offset..][..XPT_NAMESTR_LEN])
         })
         .collect::<Result<Vec<_>>>()?;
     let observation_len = variables
         .iter()
         .map(|variable| variable.length)
-        .sum::<usize>();
+        .try_fold(0usize, |acc, length| acc.checked_add(length))
+        .ok_or_else(|| {
+            DataError::InvalidDatasetPackage("XPT observation length overflow".to_owned())
+        })?;
     if observation_len == 0 {
         return Err(DataError::InvalidDatasetPackage(
             "XPT observation length is zero".to_owned(),
         ));
     }
+    if observation_len > XPT_MAX_OBSERVATION_BYTES {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT observation length exceeds maximum supported size of {XPT_MAX_OBSERVATION_BYTES} bytes"
+        )));
+    }
 
-    let mut data_start = namestr_start + round_up_to_card(namestr_len);
+    let rounded_namestr_len = round_up_to_card(namestr_len)?;
+    let mut data_start = namestr_start
+        .checked_add(rounded_namestr_len)
+        .ok_or_else(|| {
+            DataError::InvalidDatasetPackage("XPT observation data start overflow".to_owned())
+        })?;
     if bytes
-        .get(data_start..data_start + XPT_CARD_LEN)
+        .get(data_start..data_start.saturating_add(XPT_CARD_LEN))
         .is_some_and(|card| ascii_card(card).starts_with("HEADER RECORD*******OBS"))
     {
-        data_start += XPT_CARD_LEN;
+        data_start = data_start.checked_add(XPT_CARD_LEN).ok_or_else(|| {
+            DataError::InvalidDatasetPackage("XPT OBS header end overflow".to_owned())
+        })?;
     }
     if data_start > bytes.len() {
         return Err(DataError::InvalidDatasetPackage(
@@ -7974,6 +8043,11 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
     }
 
     let row_chunks = observation_chunks(&bytes[data_start..], observation_len);
+    if row_chunks.len() > XPT_MAX_ROWS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT row count exceeds maximum supported count of {XPT_MAX_ROWS}"
+        )));
+    }
     let mut records = variables
         .iter()
         .map(|variable| (variable.name.clone(), Vec::with_capacity(row_chunks.len())))
@@ -8163,8 +8237,11 @@ fn ascii_card(card: &[u8]) -> String {
     String::from_utf8_lossy(card).into_owned()
 }
 
-fn round_up_to_card(value: usize) -> usize {
-    value.div_ceil(XPT_CARD_LEN) * XPT_CARD_LEN
+fn round_up_to_card(value: usize) -> Result<usize> {
+    value
+        .div_ceil(XPT_CARD_LEN)
+        .checked_mul(XPT_CARD_LEN)
+        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT card length overflow".to_owned()))
 }
 
 fn records_to_frame(records: &IndexMap<String, Vec<Value>>) -> PolarsResult<DataFrame> {
@@ -9262,6 +9339,50 @@ mod tests {
         assert_eq!(
             dataset_column_values(dataset, "CMTRT").expect("CMTRT values"),
             vec![serde_json::json!("ASPIRIN"), serde_json::json!("PLACEBO")]
+        );
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_rejects_dataset_filename_parent_dir() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\n../outside,Outside\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nOUTSIDE,USUBJID,Subject,Char,20\n",
+        )
+        .expect("write variables csv");
+
+        let error = load_open_rules_data_dir(dir.path()).expect_err("unsafe filename rejected");
+
+        assert!(
+            matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("unsafe dataset filename"))
+        );
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_rejects_dataset_filename_absolute_path() {
+        let dir = tempdir().expect("tempdir");
+        let outside = dir.path().join("outside.csv");
+        fs::write(&outside, "USUBJID\n01\n").expect("write outside csv");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            format!("Filename,Label\n{},Outside\n", outside.display()),
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nOUTSIDE,USUBJID,Subject,Char,20\n",
+        )
+        .expect("write variables csv");
+
+        let error = load_open_rules_data_dir(dir.path()).expect_err("absolute filename rejected");
+
+        assert!(
+            matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("unsafe dataset filename"))
         );
     }
 

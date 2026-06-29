@@ -610,11 +610,13 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
             })?
         }
         Some("yaml" | "yml") => {
-            let source = quote_yaml_value_literals(&source);
-            serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
-                path: path.to_path_buf(),
-                message: source.to_string(),
-            })?
+            let mut value: Value =
+                serde_saphyr::from_str(&source).map_err(|source| RuleModelError::YamlParse {
+                    path: path.to_path_buf(),
+                    message: source.to_string(),
+                })?;
+            normalize_yaml_condition_value_literals(&mut value);
+            value
         }
         Some(other) => return Err(RuleModelError::UnsupportedExtension(other.to_owned())),
         None => return Err(RuleModelError::UnsupportedExtension(String::new())),
@@ -623,73 +625,39 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
     normalize_rule(value)
 }
 
-fn quote_yaml_value_literals(source: &str) -> String {
-    let mut in_value_list_indent = None;
-    source
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            let indent_len = line.len() - trimmed.len();
-
-            if let Some(value_indent) = in_value_list_indent {
-                if trimmed.is_empty() {
-                    return line.to_owned();
-                }
-                if indent_len <= value_indent {
-                    in_value_list_indent = None;
-                } else if trimmed.starts_with("- ") {
-                    return quote_yaml_value_list_item(line);
+fn normalize_yaml_condition_value_literals(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if object.contains_key("operator") && object.contains_key("value") {
+                if let Some(value) = object.get_mut("value") {
+                    normalize_yaml_condition_value(value);
                 }
             }
-
-            if is_empty_yaml_value_line(line) {
-                in_value_list_indent = Some(indent_len);
-                line.to_owned()
-            } else {
-                quote_yaml_value_literal_line(line)
+            for child in object.values_mut() {
+                normalize_yaml_condition_value_literals(child);
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn quote_yaml_value_literal_line(line: &str) -> String {
-    let trimmed = line.trim_start();
-    let Some(rest) = trimmed.strip_prefix("value:") else {
-        return line.to_owned();
-    };
-    let scalar = rest.trim();
-    if !is_yaml_boolish_string(scalar) {
-        return line.to_owned();
+        }
+        Value::Array(values) => {
+            for value in values {
+                normalize_yaml_condition_value_literals(value);
+            }
+        }
+        _ => {}
     }
-    let indent_len = line.len() - trimmed.len();
-    format!("{}value: \"{}\"", &line[..indent_len], scalar)
 }
 
-fn is_empty_yaml_value_line(line: &str) -> bool {
-    line.trim_start()
-        .strip_prefix("value:")
-        .is_some_and(|rest| rest.trim().is_empty())
-}
-
-fn quote_yaml_value_list_item(line: &str) -> String {
-    let trimmed = line.trim_start();
-    let Some(rest) = trimmed.strip_prefix("- ") else {
-        return line.to_owned();
-    };
-    let scalar = rest.trim();
-    if !is_yaml_boolish_string(scalar) {
-        return line.to_owned();
+fn normalize_yaml_condition_value(value: &mut Value) {
+    match value {
+        Value::Bool(bool_value) => {
+            *value = Value::String(if *bool_value { "Y" } else { "N" }.to_owned());
+        }
+        Value::Array(values) => {
+            for value in values {
+                normalize_yaml_condition_value(value);
+            }
+        }
+        _ => {}
     }
-    let indent_len = line.len() - trimmed.len();
-    format!("{}- \"{}\"", &line[..indent_len], scalar)
-}
-
-fn is_yaml_boolish_string(value: &str) -> bool {
-    matches!(
-        value,
-        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
-    )
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -710,27 +678,21 @@ pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRule
         } else if path.is_dir() {
             let mut entries = fs::read_dir(path)
                 .map_err(|source| RuleModelError::Io {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     source,
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|source| RuleModelError::Io {
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     source,
                 })?;
-
             entries.sort_by_key(|entry| entry.path());
-
             for entry in entries {
-                let child = entry.path();
-                if !child.is_file() {
-                    continue;
-                }
-
-                if is_supported_rule_file(&child) {
-                    rules.push(load_rule_file(&child)?);
-                } else {
-                    warnings.push(unsupported_extension_warning(&child));
+                let path = entry.path();
+                if path.is_file() && is_supported_rule_file(&path) {
+                    rules.push(load_rule_file(path)?);
+                } else if path.is_file() {
+                    warnings.push(unsupported_extension_warning(&path));
                 }
             }
         } else {
@@ -2341,6 +2303,35 @@ Check:
   value_is_literal: true
 Outcome:
   Message: IEORRES must be N
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("N")));
+    }
+
+    #[test]
+    fn yaml_value_comment_preserves_boolish_scalar_as_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: IEORRES
+  operator: equal_to
+  value: No # CDISC code, not boolean false
+  value_is_literal: true
+Outcome:
+  Message: IEORRES must be No
 "#,
         )
         .expect("write rule");

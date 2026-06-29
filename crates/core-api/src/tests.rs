@@ -673,6 +673,7 @@ fn run_validation_skips_core_000039_missing_svpresp_as_oracle_gap() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir.clone()],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -837,6 +838,7 @@ fn run_validation_skips_missing_column_oracle_gap_rules() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -899,6 +901,7 @@ fn run_validation_skips_core_000674_missing_placeholder_column_as_oracle_gap() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2756,6 +2759,7 @@ fn run_validation_executes_dataset_presence_and_skips_known_gap_rules() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -3345,6 +3349,7 @@ fn run_validation_skips_core_000356_required_value_dataset_metadata_oracle_gap()
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -4376,6 +4381,7 @@ fn run_validation_skips_wildcard_target_rules_before_engine_execution() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -4946,6 +4952,7 @@ fn run_validation_skips_etcd_length_rules_for_se_scope() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -5012,6 +5019,7 @@ fn run_validation_skips_cross_domain_armcd_txval_length_rules() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -5138,6 +5146,7 @@ fn run_validation_skips_entity_scope_column_ref_comparators() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -8213,7 +8222,7 @@ fn run_validation_reports_duplicate_match_dataset_oracle_gap_failures() {
 }
 
 #[test]
-fn run_validation_skips_relrec_and_supp_match_dataset_oracle_gap_rules() {
+fn run_validation_skips_relrec_and_supp_match_dataset_rules() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -8298,6 +8307,7 @@ fn run_validation_skips_relrec_and_supp_match_dataset_oracle_gap_rules() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -8307,10 +8317,10 @@ fn run_validation_skips_relrec_and_supp_match_dataset_oracle_gap_rules() {
         .results
         .iter()
         .all(|result| result.execution_status == ExecutionStatus::Skipped));
-    assert!(outcome
-        .results
-        .iter()
-        .all(|result| result.skipped_reason == Some(SkippedReason::OracleSemanticsGap)));
+    assert!(outcome.results.iter().all(|result| matches!(
+        result.skipped_reason,
+        Some(SkippedReason::OracleSemanticsGap | SkippedReason::DatasetJoinNotSupported)
+    )));
 }
 
 #[test]
@@ -8553,6 +8563,7 @@ fn run_validation_skips_core_000172_sendig_reference_distinct_oracle_gap() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         include_rules: vec!["CORE-000172".to_owned()],
         standard: Some("SENDIG".to_owned()),
         standard_version: Some("3.1".to_owned()),
@@ -9089,6 +9100,7 @@ fn run_validation_executes_grouped_external_min_max_operations() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");

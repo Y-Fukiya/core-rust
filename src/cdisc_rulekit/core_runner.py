@@ -259,6 +259,17 @@ def _execute_core_run_item_with_timeout(
             "stderr": f"{stderr.strip()}\n{timeout_text}".strip() if isinstance(stderr, str) else timeout_text,
             "output_dir": item.output_dir,
         }
+    except OSError as error:
+        return {
+            "generated_rule_id": item.generated_rule_id,
+            "case_type": item.case_type,
+            "case_id": item.case_id,
+            "returncode": "HARNESS_ERROR",
+            "status": "FAIL",
+            "stdout": "",
+            "stderr": str(error),
+            "output_dir": item.output_dir,
+        }
     return {
         "generated_rule_id": item.generated_rule_id,
         "case_type": item.case_type,

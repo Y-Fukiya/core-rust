@@ -166,6 +166,87 @@ def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> boo
     return True
 
 
+def _issue_signature_from_issue(issue: dict[str, object]) -> tuple[str, str, str, tuple[str, ...], str, str]:
+    return (
+        str(issue.get("rule_id") or ""),
+        str(issue.get("dataset") or ""),
+        str(issue.get("row") or ""),
+        tuple(_variables(issue.get("variables"))),
+        str(issue.get("usubjid") or ""),
+        str(issue.get("seq") or ""),
+    )
+
+
+def _issue_signature_from_expected(expected: dict[str, str], rule_id: str) -> tuple[str, str, str, tuple[str, ...], str, str]:
+    return (
+        expected.get("rule_id") or rule_id,
+        expected.get("dataset") or "",
+        expected.get("row") or "",
+        tuple(_variables(expected.get("variables"))),
+        expected.get("usubjid") or "",
+        expected.get("seq") or "",
+    )
+
+
+def _compare_issue_index_group(
+    rule_id: str,
+    case_type: str,
+    case_id: str,
+    expected_rows: list[dict[str, str]],
+    actual_root: Path,
+) -> dict[str, object]:
+    first = expected_rows[0]
+    expected_count = int(first.get("expected_issue_count") or 0)
+    actual_dir = actual_root / rule_id / case_type / case_id
+    issues, missing_note, skipped_count = _actual_issues(actual_dir)
+    issue_rows = [row for row in expected_rows if row.get("issue_index")]
+    base = {
+        "generated_rule_id": rule_id,
+        "case_type": case_type,
+        "case_id": case_id,
+        "expected_issue_count": expected_count,
+        "rule_id": first.get("rule_id") or rule_id,
+        "dataset": first.get("dataset") or "",
+        "row": first.get("row") or "",
+        "variables": first.get("variables") or "",
+        "usubjid": first.get("usubjid") or "",
+        "seq": first.get("seq") or "",
+    }
+    if issues is None:
+        return {**base, "actual_issue_count": "", "status": "ACTUAL_MISSING", "notes": missing_note}
+    if skipped_count and issues:
+        return {
+            **base,
+            "actual_issue_count": len(issues),
+            "status": "ACTUAL_MIXED_SKIPPED_AND_ISSUES",
+            "notes": "actual CORE output contains skipped result(s) and issue(s)",
+        }
+    if skipped_count:
+        return {
+            **base,
+            "actual_issue_count": len(issues),
+            "status": "ACTUAL_SKIPPED",
+            "notes": "actual CORE output contains skipped result(s)",
+        }
+    actual_count = len(issues)
+    if expected_count != actual_count:
+        return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "issue count mismatch"}
+    if expected_count == 0:
+        return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
+    if len(issue_rows) != expected_count:
+        return {
+            **base,
+            "actual_issue_count": actual_count,
+            "status": "FAIL",
+            "notes": "issue_index rows do not match expected_issue_count",
+        }
+    expected_set = {_issue_signature_from_expected(row, rule_id) for row in issue_rows}
+    actual_set = {_issue_signature_from_issue(issue) for issue in issues}
+    if expected_set == actual_set:
+        return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
+    return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "structural issue fields did not match"}
+
+
 def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> dict[str, object]:
     case_type = expected["case_type"]
     case_id = expected["case_id"]
@@ -336,7 +417,15 @@ def compare_generated_results(
                 },
             )
             continue
-        for expected in _read_csv(expected_path):
+        expected_rows = _read_csv(expected_path)
+        if expected_rows and "issue_index" in expected_rows[0]:
+            grouped: dict[tuple[str, str], list[dict[str, str]]] = {}
+            for expected in expected_rows:
+                grouped.setdefault((expected["case_type"], expected["case_id"]), []).append(expected)
+            for (case_type, case_id), group in sorted(grouped.items()):
+                rows.append(_compare_issue_index_group(rule_dir.name, case_type, case_id, group, actual_root_path))
+            continue
+        for expected in expected_rows:
             rows.append(_compare_row(rule_dir.name, expected, actual_root_path))
     return ComparisonResult(rows=rows)
 

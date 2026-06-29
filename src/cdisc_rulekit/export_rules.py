@@ -91,7 +91,11 @@ def export_generated_rules(
     generated_root = Path(generated_rules_dir)
     target_root = _resolve_target_root(open_rules_repo, target_subdir)
     ensure_dir(target_root)
-    rule_dirs = sorted(path for path in generated_root.iterdir() if path.is_dir()) if generated_root.exists() else []
+    if not generated_root.exists():
+        raise ValueError(f"{generated_root}: generated rules directory does not exist")
+    rule_dirs = sorted(path for path in generated_root.iterdir() if path.is_dir())
+    if not rule_dirs:
+        raise ValueError(f"{generated_root}: no generated rule directories found")
     if only_passed and comparison_summary is None:
         raise ValueError("comparison_summary is required when only_passed is true")
     passed_rule_ids = _comparison_passed_rule_ids(Path(comparison_summary)) if only_passed else None
