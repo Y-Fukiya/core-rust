@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
-from .map_rules import standard_key
+from .map_rules import p21_mapping_key, standard_key
+from .macro_analysis import structural_blocking_macro_families
 from .models import CanonicalRule, RuleMapping
+from .p21_condition import infer_condition_target, infer_condition_variables
 
-AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND"}
+AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND", "UNIQUE"}
 SUPPORTED_STANDARDS = {"SDTMIG", "ADAMIG", "SENDIG"}
 
 
@@ -32,19 +33,42 @@ def _raw_has_value(rule: CanonicalRule, *fields: str) -> bool:
     return any(rule.raw_condition.get(field) not in (None, "") for field in fields)
 
 
-def _has_unresolved_macro(rule: CanonicalRule) -> bool:
-    values = [str(value) for value in rule.raw_condition.values() if value not in (None, "")]
-    values.extend(rule.variables)
-    pattern = re.compile(r"(\{[^}]*[A-Z_][^}]*\}|\$[A-Z0-9_]+|--)")
-    return any(pattern.search(value.upper()) for value in values)
-
-
 def _has_concrete_domain(rule: CanonicalRule) -> bool:
     return any(domain and domain.upper() != "GLOBAL" for domain in rule.domains)
 
 
+def _special_cross_dataset_domain(domain: str) -> bool:
+    normalized = domain.upper()
+    return normalized == "RELREC" or normalized.startswith("SUPP")
+
+
+def _has_cross_dataset_dependency(rule: CanonicalRule) -> bool:
+    domains = {domain.upper() for domain in rule.domains if domain}
+    if domains and all(_special_cross_dataset_domain(domain) for domain in domains):
+        return True
+
+    fields = [
+        rule.target,
+        rule.source_path,
+        rule.raw_condition.get("target"),
+        rule.raw_condition.get("from"),
+        rule.raw_condition.get("search"),
+        rule.raw_condition.get("where"),
+        rule.raw_condition.get("matching"),
+    ]
+    fields.extend(rule.variables)
+    haystack = " ".join(str(value or "") for value in fields).upper()
+    return bool(re.search(r"\bRELREC\b|\bSUPP[A-Z0-9_]*\b", haystack))
+
+
+def _inferred_condition_target(rule: CanonicalRule) -> str | None:
+    if (rule.p21_rule_type or "").upper() != "CONDITION":
+        return None
+    return infer_condition_target(rule.raw_condition.get("test"))
+
+
 def _has_target_variable(rule: CanonicalRule) -> bool:
-    return bool(rule.target or rule.variables)
+    return bool(rule.target or rule.variables or _inferred_condition_target(rule))
 
 
 def _simple_reason(rule_type: str) -> str:
@@ -54,13 +78,17 @@ def _simple_reason(rule_type: str) -> str:
         return "SIMPLE_REGEX"
     if rule_type == "CONDITION":
         return "SIMPLE_SAME_RECORD_CONDITION"
+    if rule_type == "REQUIRED":
+        return "SIMPLE_REQUIRED_CHECK"
     if rule_type == "FIND":
         return "DATASET_PRESENCE_CHECK"
+    if rule_type == "UNIQUE":
+        return "SIMPLE_UNIQUE_SET"
     return "NO_CORE_MAPPING"
 
 
-def _mapping_by_rule_id(mappings: list[RuleMapping]) -> dict[str, RuleMapping]:
-    return {mapping.p21_rule_id: mapping for mapping in mappings}
+def _mapping_by_rule_key(mappings: list[RuleMapping]) -> dict[str, RuleMapping]:
+    return {mapping.p21_rule_key or mapping.p21_rule_id: mapping for mapping in mappings}
 
 
 def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule:
@@ -116,7 +144,7 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
             conversion_confidence=confidence,
         )
 
-    if _text_contains(rule, "RELREC", "SUPP"):
+    if _has_cross_dataset_dependency(rule):
         reasons.append("CROSS_DATASET_DEPENDENCY")
         return rule.with_updates(
             core_rule_id=core_rule_id,
@@ -134,8 +162,10 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
             conversion_confidence=confidence,
         )
 
-    if _has_unresolved_macro(rule):
+    macro_families = structural_blocking_macro_families(rule)
+    if macro_families:
         reasons.append("UNRESOLVED_VARIABLE_MACRO")
+        reasons.extend(f"P21_MACRO_{family}" for family in macro_families)
         return rule.with_updates(
             core_rule_id=core_rule_id,
             conversion_status="MANUAL_REQUIRED",
@@ -162,6 +192,10 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
                 conversion_reasons=reasons,
                 conversion_confidence=confidence,
             )
+        if _inferred_condition_target(rule):
+            reasons.append("INFERRED_CONDITION_TARGET")
+            if len(infer_condition_variables(rule.raw_condition.get("test"))) > 1:
+                reasons.append("SIMPLE_LOGICAL_CONDITION")
         reasons.append(_simple_reason(rule_type))
         return rule.with_updates(
             core_rule_id=core_rule_id,
@@ -183,9 +217,8 @@ def classify_rules(
     p21_rules: list[CanonicalRule],
     mappings: list[RuleMapping],
 ) -> list[CanonicalRule]:
-    mapping_by_id = _mapping_by_rule_id(mappings)
+    mapping_by_key = _mapping_by_rule_key(mappings)
     classified: list[CanonicalRule] = []
     for rule in p21_rules:
-        rule_id = rule.p21_rule_id or rule.source_rule_id
-        classified.append(_classify(rule, mapping_by_id.get(rule_id)))
+        classified.append(_classify(rule, mapping_by_key.get(p21_mapping_key(rule))))
     return classified

@@ -31,6 +31,10 @@ def overlap(left: list[str], right: list[str]) -> list[str]:
     return sorted({item.upper() for item in left} & {item.upper() for item in right})
 
 
+def p21_mapping_key(rule: CanonicalRule) -> str:
+    return rule.source_rule_key or rule.p21_rule_id or rule.source_rule_id
+
+
 def _cg_mapping(p21_rule: CanonicalRule, core_rules: list[CanonicalRule]) -> RuleMapping | None:
     best: RuleMapping | None = None
     for core_rule in core_rules:
@@ -49,6 +53,7 @@ def _cg_mapping(p21_rule: CanonicalRule, core_rules: list[CanonicalRule]) -> Rul
             confidence += 0.04
         candidate = RuleMapping(
             p21_rule_id=p21_rule.p21_rule_id or p21_rule.source_rule_id,
+            p21_rule_key=p21_mapping_key(p21_rule),
             core_rule_id=core_rule.core_rule_id,
             match_type="CG_ID",
             confidence=min(confidence, 1.0),
@@ -94,6 +99,7 @@ def _fuzzy_mapping(p21_rule: CanonicalRule, core_rules: list[CanonicalRule]) -> 
             continue
         candidate = RuleMapping(
             p21_rule_id=p21_rule.p21_rule_id or p21_rule.source_rule_id,
+            p21_rule_key=p21_mapping_key(p21_rule),
             core_rule_id=core_rule.core_rule_id,
             match_type="FUZZY",
             confidence=round(score, 4),
@@ -115,10 +121,12 @@ def map_p21_to_core(
     mappings: list[RuleMapping] = []
     for p21_rule in p21_rules:
         p21_rule_id = p21_rule.p21_rule_id or p21_rule.source_rule_id
+        p21_rule_key = p21_mapping_key(p21_rule)
         mapping = _cg_mapping(p21_rule, core_rules) or _fuzzy_mapping(p21_rule, core_rules)
         if mapping is None:
             mapping = RuleMapping(
                 p21_rule_id=p21_rule_id,
+                p21_rule_key=p21_rule_key,
                 core_rule_id=None,
                 match_type="NONE",
                 confidence=0.0,

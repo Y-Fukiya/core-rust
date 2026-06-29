@@ -1,0 +1,33 @@
+{
+  "Core": {
+    "Id": "CORE-CLINICAL-FD-SDTM-0001",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "SDTMIG",
+          "Version": "3.4"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {
+      "Include": ["DM"]
+    },
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "SEX",
+    "operator": "is_not_contained_by",
+    "value": ["F", "M"]
+  },
+  "Outcome": {
+    "Message": "DM SEX must use the expected clinical_fd values"
+  }
+}

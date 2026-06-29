@@ -188,12 +188,47 @@ pub enum Operator {
     IsNotContainedBy,
     IsContainedByCaseInsensitive,
     IsNotContainedByCaseInsensitive,
+    ContainsAll,
+    NotContainsAll,
+    SharesNoElementsWith,
+    IsNotOrderedSubsetOf,
     LessThan,
     LessThanOrEqualTo,
     GreaterThan,
     GreaterThanOrEqualTo,
     MatchesRegex,
     DoesNotMatchRegex,
+    DoesNotMatchRegexFullString,
+    LongerThan,
+    StartsWith,
+    PrefixEqualTo,
+    PrefixNotEqualTo,
+    NotPrefixMatchesRegex,
+    PrefixIsNotContainedBy,
+    EndsWith,
+    SuffixMatchesRegex,
+    NotSuffixMatchesRegex,
+    SuffixIsNotContainedBy,
+    DateEqualTo,
+    DateNotEqualTo,
+    DateLessThan,
+    DateLessThanOrEqualTo,
+    DateGreaterThan,
+    DateGreaterThanOrEqualTo,
+    InvalidDate,
+    InvalidDuration,
+    IsCompleteDate,
+    IsIncompleteDate,
+    TargetIsNotSortedBy,
+    EmptyWithinExceptLastRow,
+    DoesNotHaveNextCorrespondingRecord,
+    NotPresentOnMultipleRowsWithin,
+    InconsistentEnumeratedColumns,
+    IsNotUniqueSet,
+    IsUniqueSet,
+    IsNotUniqueRelationship,
+    IsInconsistentAcrossDataset,
+    DoesNotEqualStringPart,
     IsEmpty,
     IsNotEmpty,
     Unsupported(String),
@@ -217,14 +252,49 @@ impl Operator {
             "is_not_contained_by" => Self::IsNotContainedBy,
             "is_contained_by_case_insensitive" => Self::IsContainedByCaseInsensitive,
             "is_not_contained_by_case_insensitive" => Self::IsNotContainedByCaseInsensitive,
+            "contains_all" => Self::ContainsAll,
+            "not_contains_all" => Self::NotContainsAll,
+            "shares_no_elements_with" => Self::SharesNoElementsWith,
+            "is_not_ordered_subset_of" => Self::IsNotOrderedSubsetOf,
             "less_than" => Self::LessThan,
             "less_than_or_equal_to" => Self::LessThanOrEqualTo,
             "greater_than" => Self::GreaterThan,
             "greater_than_or_equal_to" => Self::GreaterThanOrEqualTo,
             "matches_regex" => Self::MatchesRegex,
             "does_not_match_regex" => Self::DoesNotMatchRegex,
-            "is_empty" => Self::IsEmpty,
-            "is_not_empty" => Self::IsNotEmpty,
+            "not_matches_regex" => Self::DoesNotMatchRegexFullString,
+            "longer_than" => Self::LongerThan,
+            "starts_with" => Self::StartsWith,
+            "prefix_equal_to" => Self::PrefixEqualTo,
+            "prefix_not_equal_to" => Self::PrefixNotEqualTo,
+            "not_prefix_matches_regex" => Self::NotPrefixMatchesRegex,
+            "prefix_is_not_contained_by" => Self::PrefixIsNotContainedBy,
+            "ends_with" => Self::EndsWith,
+            "suffix_matches_regex" => Self::SuffixMatchesRegex,
+            "not_suffix_matches_regex" => Self::NotSuffixMatchesRegex,
+            "suffix_is_not_contained_by" => Self::SuffixIsNotContainedBy,
+            "date_equal_to" => Self::DateEqualTo,
+            "date_not_equal_to" => Self::DateNotEqualTo,
+            "date_less_than" => Self::DateLessThan,
+            "date_less_than_or_equal_to" => Self::DateLessThanOrEqualTo,
+            "date_greater_than" => Self::DateGreaterThan,
+            "date_greater_than_or_equal_to" => Self::DateGreaterThanOrEqualTo,
+            "invalid_date" => Self::InvalidDate,
+            "invalid_duration" => Self::InvalidDuration,
+            "is_complete_date" => Self::IsCompleteDate,
+            "is_incomplete_date" => Self::IsIncompleteDate,
+            "target_is_not_sorted_by" => Self::TargetIsNotSortedBy,
+            "empty_within_except_last_row" => Self::EmptyWithinExceptLastRow,
+            "does_not_have_next_corresponding_record" => Self::DoesNotHaveNextCorrespondingRecord,
+            "not_present_on_multiple_rows_within" => Self::NotPresentOnMultipleRowsWithin,
+            "inconsistent_enumerated_columns" => Self::InconsistentEnumeratedColumns,
+            "is_not_unique_set" => Self::IsNotUniqueSet,
+            "is_unique_set" => Self::IsUniqueSet,
+            "is_not_unique_relationship" => Self::IsNotUniqueRelationship,
+            "is_inconsistent_across_dataset" => Self::IsInconsistentAcrossDataset,
+            "does_not_equal_string_part" => Self::DoesNotEqualStringPart,
+            "is_empty" | "empty" => Self::IsEmpty,
+            "is_not_empty" | "non_empty" => Self::IsNotEmpty,
             _ => Self::Unsupported(original.to_owned()),
         }
     }
@@ -245,12 +315,47 @@ impl Operator {
             Self::IsNotContainedBy => "is_not_contained_by",
             Self::IsContainedByCaseInsensitive => "is_contained_by_case_insensitive",
             Self::IsNotContainedByCaseInsensitive => "is_not_contained_by_case_insensitive",
+            Self::ContainsAll => "contains_all",
+            Self::NotContainsAll => "not_contains_all",
+            Self::SharesNoElementsWith => "shares_no_elements_with",
+            Self::IsNotOrderedSubsetOf => "is_not_ordered_subset_of",
             Self::LessThan => "less_than",
             Self::LessThanOrEqualTo => "less_than_or_equal_to",
             Self::GreaterThan => "greater_than",
             Self::GreaterThanOrEqualTo => "greater_than_or_equal_to",
             Self::MatchesRegex => "matches_regex",
             Self::DoesNotMatchRegex => "does_not_match_regex",
+            Self::DoesNotMatchRegexFullString => "not_matches_regex",
+            Self::LongerThan => "longer_than",
+            Self::StartsWith => "starts_with",
+            Self::PrefixEqualTo => "prefix_equal_to",
+            Self::PrefixNotEqualTo => "prefix_not_equal_to",
+            Self::NotPrefixMatchesRegex => "not_prefix_matches_regex",
+            Self::PrefixIsNotContainedBy => "prefix_is_not_contained_by",
+            Self::EndsWith => "ends_with",
+            Self::SuffixMatchesRegex => "suffix_matches_regex",
+            Self::NotSuffixMatchesRegex => "not_suffix_matches_regex",
+            Self::SuffixIsNotContainedBy => "suffix_is_not_contained_by",
+            Self::DateEqualTo => "date_equal_to",
+            Self::DateNotEqualTo => "date_not_equal_to",
+            Self::DateLessThan => "date_less_than",
+            Self::DateLessThanOrEqualTo => "date_less_than_or_equal_to",
+            Self::DateGreaterThan => "date_greater_than",
+            Self::DateGreaterThanOrEqualTo => "date_greater_than_or_equal_to",
+            Self::InvalidDate => "invalid_date",
+            Self::InvalidDuration => "invalid_duration",
+            Self::IsCompleteDate => "is_complete_date",
+            Self::IsIncompleteDate => "is_incomplete_date",
+            Self::TargetIsNotSortedBy => "target_is_not_sorted_by",
+            Self::EmptyWithinExceptLastRow => "empty_within_except_last_row",
+            Self::DoesNotHaveNextCorrespondingRecord => "does_not_have_next_corresponding_record",
+            Self::NotPresentOnMultipleRowsWithin => "not_present_on_multiple_rows_within",
+            Self::InconsistentEnumeratedColumns => "inconsistent_enumerated_columns",
+            Self::IsNotUniqueSet => "is_not_unique_set",
+            Self::IsUniqueSet => "is_unique_set",
+            Self::IsNotUniqueRelationship => "is_not_unique_relationship",
+            Self::IsInconsistentAcrossDataset => "is_inconsistent_across_dataset",
+            Self::DoesNotEqualStringPart => "does_not_equal_string_part",
             Self::IsEmpty => "is_empty",
             Self::IsNotEmpty => "is_not_empty",
             Self::Unsupported(name) => name.as_str(),
@@ -284,6 +389,7 @@ pub enum RuleType {
     VariableMetadata,
     DomainPresence,
     ValueLevelMetadata,
+    JsonSchema,
     Jsonata,
     Unsupported(String),
 }
@@ -293,10 +399,17 @@ impl RuleType {
         let original = name.as_ref();
         match normalize_name(original).as_str() {
             "record_data" => Self::RecordData,
-            "dataset_metadata" => Self::DatasetMetadata,
-            "variable_metadata" => Self::VariableMetadata,
-            "domain_presence" => Self::DomainPresence,
-            "value_level_metadata" => Self::ValueLevelMetadata,
+            "dataset_metadata" | "dataset_metadata_check" => Self::DatasetMetadata,
+            "variable_metadata"
+            | "variable_metadata_check"
+            | "variable_metadata_check_against_define_xml"
+            | "define_item_metadata_check_against_library_metadata"
+            | "variable_metadata_check_against_library_metadata" => Self::VariableMetadata,
+            "domain_presence" | "domain_presence_check" => Self::DomainPresence,
+            "value_level_metadata"
+            | "value_check_with_variable_metadata"
+            | "value_check_with_dataset_metadata" => Self::ValueLevelMetadata,
+            "json_schema_check" => Self::JsonSchema,
             "jsonata" => Self::Jsonata,
             _ => Self::Unsupported(original.to_owned()),
         }
@@ -309,6 +422,7 @@ impl RuleType {
             Self::VariableMetadata => "variable_metadata",
             Self::DomainPresence => "domain_presence",
             Self::ValueLevelMetadata => "value_level_metadata",
+            Self::JsonSchema => "json_schema_check",
             Self::Jsonata => "jsonata",
             Self::Unsupported(name) => name.as_str(),
         }
@@ -510,9 +624,31 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
 }
 
 fn quote_yaml_value_literals(source: &str) -> String {
+    let mut in_value_list_indent = None;
     source
         .lines()
-        .map(quote_yaml_value_literal_line)
+        .map(|line| {
+            let trimmed = line.trim_start();
+            let indent_len = line.len() - trimmed.len();
+
+            if let Some(value_indent) = in_value_list_indent {
+                if trimmed.is_empty() {
+                    return line.to_owned();
+                }
+                if indent_len <= value_indent {
+                    in_value_list_indent = None;
+                } else if trimmed.starts_with("- ") {
+                    return quote_yaml_value_list_item(line);
+                }
+            }
+
+            if is_empty_yaml_value_line(line) {
+                in_value_list_indent = Some(indent_len);
+                line.to_owned()
+            } else {
+                quote_yaml_value_literal_line(line)
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -523,14 +659,37 @@ fn quote_yaml_value_literal_line(line: &str) -> String {
         return line.to_owned();
     };
     let scalar = rest.trim();
-    if !matches!(
-        scalar,
-        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
-    ) {
+    if !is_yaml_boolish_string(scalar) {
         return line.to_owned();
     }
     let indent_len = line.len() - trimmed.len();
     format!("{}value: \"{}\"", &line[..indent_len], scalar)
+}
+
+fn is_empty_yaml_value_line(line: &str) -> bool {
+    line.trim_start()
+        .strip_prefix("value:")
+        .is_some_and(|rest| rest.trim().is_empty())
+}
+
+fn quote_yaml_value_list_item(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("- ") else {
+        return line.to_owned();
+    };
+    let scalar = rest.trim();
+    if !is_yaml_boolish_string(scalar) {
+        return line.to_owned();
+    }
+    let indent_len = line.len() - trimmed.len();
+    format!("{}- \"{}\"", &line[..indent_len], scalar)
+}
+
+fn is_yaml_boolish_string(value: &str) -> bool {
+    matches!(
+        value,
+        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
+    )
 }
 
 pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
@@ -742,6 +901,12 @@ fn value_expr_from_condition_value(
         return ValueExpr::Literal(value);
     }
 
+    if let Value::String(column) = &value {
+        if column.trim_start().starts_with('$') {
+            return ValueExpr::ColumnRef(clean_jsonata_identifier(column));
+        }
+    }
+
     if is_column_ref_operator(operator) {
         if let Value::String(column) = &value {
             return ValueExpr::ColumnRef(column.clone());
@@ -762,6 +927,16 @@ fn is_column_ref_operator(operator: &Operator) -> bool {
             | Operator::LessThanOrEqualTo
             | Operator::GreaterThan
             | Operator::GreaterThanOrEqualTo
+            | Operator::DateEqualTo
+            | Operator::DateNotEqualTo
+            | Operator::DateLessThan
+            | Operator::DateLessThanOrEqualTo
+            | Operator::DateGreaterThan
+            | Operator::DateGreaterThanOrEqualTo
+            | Operator::PrefixNotEqualTo
+            | Operator::PrefixIsNotContainedBy
+            | Operator::SuffixIsNotContainedBy
+            | Operator::IsNotUniqueRelationship
     )
 }
 
@@ -1946,6 +2121,16 @@ Outcome:
     }
 
     #[test]
+    fn normalize_library_variable_metadata_rule_type_to_variable_metadata() {
+        let mut value = sample_metadata_rule();
+        value["Rule Type"] = json!("Variable Metadata Check against Library Metadata");
+
+        let rule = normalize_rule(value).expect("normalize rule");
+
+        assert_eq!(rule.rule_type, RuleType::VariableMetadata);
+    }
+
+    #[test]
     fn normalize_outcome_variables() {
         let mut value = sample_metadata_rule();
         value["Outcome"]["Output Variables"] = json!(["AETERM", "AESTDTC", "AESER"]);
@@ -2058,6 +2243,61 @@ Outcome:
     }
 
     #[test]
+    fn normalize_date_comparison_value_as_column_ref() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "DVSTDTC",
+                "operator": "date_less_than",
+                "value": "RFICDTC"
+            },
+            "Outcome": {
+                "Message": "DVSTDTC must be on or after RFICDTC"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.operator, Operator::DateLessThan);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("RFICDTC".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalize_dollar_prefixed_value_as_column_ref_for_set_comparators() {
+        let value = json!({
+            "Core": { "Id": "CORE-TEST-0001" },
+            "Scope": {},
+            "Rule Type": "Record Data",
+            "Check": {
+                "name": "IDVAR",
+                "operator": "is_not_contained_by",
+                "value": "$rdomain_variables"
+            },
+            "Outcome": {
+                "Message": "IDVAR must exist in RDOMAIN"
+            }
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("rdomain_variables".to_owned())
+        );
+    }
+
+    #[test]
     fn normalize_regex_string_value_as_literal_pattern() {
         let value = json!({
             "Core": { "Id": "CORE-TEST-0001" },
@@ -2114,6 +2354,39 @@ Outcome:
     }
 
     #[test]
+    fn yaml_value_list_preserves_bare_y_n_as_strings() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: is_not_contained_by
+  value:
+    - Y
+    - N
+Outcome:
+  Message: AESER must be Y or N
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::List(vec![json!("Y"), json!("N")])
+        );
+    }
+
+    #[test]
     fn normalize_outcome_message_to_generate_dataset_error_objects_action() {
         let rule = normalize_rule(sample_metadata_rule()).expect("normalize rule");
 
@@ -2140,6 +2413,164 @@ Outcome:
             condition.operator,
             Operator::Unsupported("mystery_operator".to_owned())
         );
+    }
+
+    #[test]
+    fn normalize_is_not_unique_relationship_value_as_column_ref() {
+        let mut value = sample_metadata_rule();
+        value["Check"] = json!({
+            "name": "--TPT",
+            "operator": "is_not_unique_relationship",
+            "value": "--TPTNUM"
+        });
+
+        let rule = normalize_rule(value).expect("normalize rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.operator, Operator::IsNotUniqueRelationship);
+        assert_eq!(
+            condition.comparator,
+            ValueExpr::ColumnRef("--TPTNUM".to_owned())
+        );
+    }
+
+    #[test]
+    fn open_rules_regex_operator_aliases_normalize_to_regex_operators() {
+        assert_eq!(
+            Operator::from_name("not_matches_regex"),
+            Operator::DoesNotMatchRegexFullString
+        );
+    }
+
+    #[test]
+    fn open_rules_length_operator_normalizes_to_length_operator() {
+        assert_eq!(Operator::from_name("longer_than"), Operator::LongerThan);
+    }
+
+    #[test]
+    fn open_rules_set_operators_normalize() {
+        assert_eq!(Operator::from_name("contains_all"), Operator::ContainsAll);
+        assert_eq!(
+            Operator::from_name("not_contains_all"),
+            Operator::NotContainsAll
+        );
+    }
+
+    #[test]
+    fn open_rules_prefix_suffix_operators_normalize_to_string_operators() {
+        assert_eq!(Operator::from_name("starts_with"), Operator::StartsWith);
+        assert_eq!(
+            Operator::from_name("prefix_equal_to"),
+            Operator::PrefixEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("not_prefix_matches_regex"),
+            Operator::NotPrefixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("prefix_is_not_contained_by"),
+            Operator::PrefixIsNotContainedBy
+        );
+        assert_eq!(
+            Operator::from_name("suffix_matches_regex"),
+            Operator::SuffixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("not_suffix_matches_regex"),
+            Operator::NotSuffixMatchesRegex
+        );
+        assert_eq!(
+            Operator::from_name("suffix_is_not_contained_by"),
+            Operator::SuffixIsNotContainedBy
+        );
+    }
+
+    #[test]
+    fn open_rules_date_and_suffix_operator_names_normalize() {
+        assert_eq!(Operator::from_name("ends_with"), Operator::EndsWith);
+        assert_eq!(Operator::from_name("date_equal_to"), Operator::DateEqualTo);
+        assert_eq!(
+            Operator::from_name("date_not_equal_to"),
+            Operator::DateNotEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("date_less_than"),
+            Operator::DateLessThan
+        );
+        assert_eq!(
+            Operator::from_name("date_less_than_or_equal_to"),
+            Operator::DateLessThanOrEqualTo
+        );
+        assert_eq!(
+            Operator::from_name("date_greater_than"),
+            Operator::DateGreaterThan
+        );
+        assert_eq!(
+            Operator::from_name("date_greater_than_or_equal_to"),
+            Operator::DateGreaterThanOrEqualTo
+        );
+        assert_eq!(Operator::from_name("invalid_date"), Operator::InvalidDate);
+        assert_eq!(
+            Operator::from_name("invalid_duration"),
+            Operator::InvalidDuration
+        );
+        assert_eq!(
+            Operator::from_name("is_complete_date"),
+            Operator::IsCompleteDate
+        );
+        assert_eq!(
+            Operator::from_name("is_incomplete_date"),
+            Operator::IsIncompleteDate
+        );
+    }
+
+    #[test]
+    fn open_rules_order_operator_name_normalizes() {
+        assert_eq!(
+            Operator::from_name("target_is_not_sorted_by"),
+            Operator::TargetIsNotSortedBy
+        );
+        assert_eq!(
+            Operator::from_name("empty_within_except_last_row"),
+            Operator::EmptyWithinExceptLastRow
+        );
+        assert_eq!(
+            Operator::from_name("does_not_have_next_corresponding_record"),
+            Operator::DoesNotHaveNextCorrespondingRecord
+        );
+        assert_eq!(
+            Operator::from_name("not_present_on_multiple_rows_within"),
+            Operator::NotPresentOnMultipleRowsWithin
+        );
+        assert_eq!(
+            Operator::from_name("inconsistent_enumerated_columns"),
+            Operator::InconsistentEnumeratedColumns
+        );
+        assert_eq!(
+            Operator::from_name("is_not_unique_set"),
+            Operator::IsNotUniqueSet
+        );
+        assert_eq!(Operator::from_name("is_unique_set"), Operator::IsUniqueSet);
+        assert_eq!(
+            Operator::from_name("is_not_unique_relationship"),
+            Operator::IsNotUniqueRelationship
+        );
+        assert_eq!(
+            Operator::from_name("is_inconsistent_across_dataset"),
+            Operator::IsInconsistentAcrossDataset
+        );
+        assert_eq!(
+            Operator::from_name("does_not_equal_string_part"),
+            Operator::DoesNotEqualStringPart
+        );
+    }
+
+    #[test]
+    fn open_rules_empty_operators_normalize_to_empty_operators() {
+        assert_eq!(Operator::from_name("empty"), Operator::IsEmpty);
+        assert_eq!(Operator::from_name("non_empty"), Operator::IsNotEmpty);
     }
 
     #[test]

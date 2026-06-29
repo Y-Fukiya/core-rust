@@ -4,6 +4,7 @@ use std::{
 };
 
 use core_api::{run_validation, ValidateRequest};
+use core_engine::ExecutionStatus;
 use pretty_assertions::assert_eq;
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -183,6 +184,102 @@ fn golden_validates_sdtm_adam_like_study_package() {
         read_json(&fixtures.join("python_compat/expected/sdtm_adam_full_study_package.json"));
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn golden_validates_clinical_fd_sdtm_fixture() {
+    let fixtures = fixture_root();
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/clinical_fd_sdtm")],
+        dataset_paths: vec![fixtures.join("datasets/clinical_fd_sdtm/study_package.json")],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        ..Default::default()
+    })
+    .expect("run clinical_fd SDTM fixture validation");
+
+    assert_eq!(outcome.results.len(), 4);
+
+    let result = |rule_id: &str| {
+        outcome
+            .results
+            .iter()
+            .find(|result| result.rule_id == rule_id)
+            .expect("clinical_fd fixture result")
+    };
+
+    assert_eq!(
+        result("CORE-CLINICAL-FD-SDTM-0001").execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(result("CORE-CLINICAL-FD-SDTM-0001").error_count, 0);
+
+    assert_eq!(
+        result("CORE-CLINICAL-FD-SDTM-0002").execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(result("CORE-CLINICAL-FD-SDTM-0002").error_count, 0);
+
+    assert_eq!(
+        result("CORE-CLINICAL-FD-SDTM-0003").execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(result("CORE-CLINICAL-FD-SDTM-0003").error_count, 4);
+
+    assert_eq!(
+        result("CORE-CLINICAL-FD-SDTM-0004").execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(result("CORE-CLINICAL-FD-SDTM-0004").error_count, 34);
+}
+
+#[test]
+fn golden_validates_random_cdisc_adam_fixture() {
+    let fixtures = fixture_root();
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![fixtures.join("rules/random_cdisc_adam")],
+        dataset_paths: vec![fixtures.join("datasets/random_cdisc_adam/study_package.json")],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        ..Default::default()
+    })
+    .expect("run random.cdisc.data ADaM fixture validation");
+
+    assert_eq!(outcome.results.len(), 4);
+
+    let result = |rule_id: &str| {
+        outcome
+            .results
+            .iter()
+            .find(|result| result.rule_id == rule_id)
+            .expect("random.cdisc.data fixture result")
+    };
+
+    assert_eq!(
+        result("CORE-RANDOM-CDISC-ADAM-0001").execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(result("CORE-RANDOM-CDISC-ADAM-0001").error_count, 0);
+
+    assert_eq!(
+        result("CORE-RANDOM-CDISC-ADAM-0002").execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(result("CORE-RANDOM-CDISC-ADAM-0002").error_count, 0);
+
+    assert_eq!(
+        result("CORE-RANDOM-CDISC-ADAM-0003").execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(result("CORE-RANDOM-CDISC-ADAM-0003").error_count, 4);
+
+    assert_eq!(
+        result("CORE-RANDOM-CDISC-ADAM-0004").execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(result("CORE-RANDOM-CDISC-ADAM-0004").error_count, 15);
 }
 
 #[test]

@@ -8,6 +8,7 @@ from .models import CanonicalRule, OperatorInventoryItem, RuleMapping
 P21_CATALOG_FIELDS = [
     "source",
     "source_rule_id",
+    "source_rule_key",
     "p21_rule_id",
     "cdisc_rule_ids",
     "standard_name",
@@ -30,6 +31,7 @@ P21_CATALOG_FIELDS = [
 CORE_CATALOG_FIELDS = [
     "source",
     "source_rule_id",
+    "source_rule_key",
     "core_rule_id",
     "cdisc_rule_ids",
     "standard_name",
@@ -51,6 +53,7 @@ OPERATOR_FIELDS = ["core_rule_id", "source_path", "operator", "path", "node_kind
 
 MAPPING_FIELDS = [
     "p21_rule_id",
+    "p21_rule_key",
     "core_rule_id",
     "match_type",
     "confidence",
@@ -65,6 +68,7 @@ MAPPING_FIELDS = [
 CONVERSION_STATUS_FIELDS = [
     "source",
     "source_rule_id",
+    "source_rule_key",
     "p21_rule_id",
     "core_rule_id",
     "cdisc_rule_ids",

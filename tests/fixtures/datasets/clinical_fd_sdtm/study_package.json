@@ -1,0 +1,577 @@
+{
+  "source": {
+    "name": "clinical_fd",
+    "repository": "https://github.com/sas2r/clinical_fd",
+    "license": "MIT",
+    "note": "Small deterministic SDTM subset generated from clinical_fd fake clinical data."
+  },
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "label": "clinical_fd DM subset",
+      "domain": "DM",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "DOMAIN",
+          "label": "DOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "SUBJID",
+          "label": "SUBJID",
+          "type": "Char",
+          "length": 4
+        },
+        {
+          "name": "RFSTDTC",
+          "label": "RFSTDTC",
+          "type": "Char",
+          "length": 10
+        },
+        {
+          "name": "RFENDTC",
+          "label": "RFENDTC",
+          "type": "Char",
+          "length": 10
+        },
+        {
+          "name": "SEX",
+          "label": "SEX",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "AGE",
+          "label": "AGE",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "RACE",
+          "label": "RACE",
+          "type": "Char",
+          "length": 5
+        },
+        {
+          "name": "ETHNIC",
+          "label": "ETHNIC",
+          "type": "Char",
+          "length": 22
+        },
+        {
+          "name": "ARM",
+          "label": "ARM",
+          "type": "Char",
+          "length": 20
+        },
+        {
+          "name": "ACTARM",
+          "label": "ACTARM",
+          "type": "Char",
+          "length": 20
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "DOMAIN": ["DM", "DM", "DM", "DM", "DM"],
+        "USUBJID": ["01-701-1015", "01-701-1023", "01-701-1028", "01-701-1034", "01-701-1047"],
+        "SUBJID": ["1015", "1023", "1028", "1034", "1047"],
+        "RFSTDTC": ["2014-01-02", "2012-08-05", "2013-07-19", "2014-07-01", "2013-02-12"],
+        "RFENDTC": ["2014-07-02", "2012-09-02", "2014-01-14", "2014-12-30", "2013-03-29"],
+        "SEX": ["F", "M", "M", "F", "F"],
+        "AGE": [63, 64, 71, 77, 85],
+        "RACE": ["WHITE", "WHITE", "WHITE", "WHITE", "WHITE"],
+        "ETHNIC": ["HISPANIC OR LATINO", "HISPANIC OR LATINO", "NOT HISPANIC OR LATINO", "NOT HISPANIC OR LATINO", "NOT HISPANIC OR LATINO"],
+        "ARM": ["Placebo", "Placebo", "Xanomeline High Dose", "Xanomeline High Dose", "Placebo"],
+        "ACTARM": ["Placebo", "Placebo", "Xanomeline High Dose", "Xanomeline High Dose", "Placebo"]
+      }
+    },
+    {
+      "filename": "ae.xpt",
+      "label": "clinical_fd AE subset",
+      "domain": "AE",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "DOMAIN",
+          "label": "DOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "AESEQ",
+          "label": "AESEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "AESPID",
+          "label": "AESPID",
+          "type": "Char",
+          "length": 3
+        },
+        {
+          "name": "AETERM",
+          "label": "AETERM",
+          "type": "Char",
+          "length": 36
+        },
+        {
+          "name": "AEDECOD",
+          "label": "AEDECOD",
+          "type": "Char",
+          "length": 36
+        },
+        {
+          "name": "AESEV",
+          "label": "AESEV",
+          "type": "Char",
+          "length": 8
+        },
+        {
+          "name": "AESER",
+          "label": "AESER",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "AESTDTC",
+          "label": "AESTDTC",
+          "type": "Char",
+          "length": 10
+        },
+        {
+          "name": "AEENDTC",
+          "label": "AEENDTC",
+          "type": "Char",
+          "length": 10
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "DOMAIN": ["AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE"],
+        "USUBJID": ["01-701-1015", "01-701-1015", "01-701-1015", "01-701-1023", "01-701-1023", "01-701-1023", "01-701-1023", "01-701-1028", "01-701-1028", "01-701-1034", "01-701-1034", "01-701-1047"],
+        "AESEQ": [1, 2, 3, 3, 1, 2, 4, 1, 2, 1, 2, 4],
+        "AESPID": ["E07", "E08", "E06", "E10", "E08", "E09", "E08", "E04", "E05", "E08", "E07", "E09"],
+        "AETERM": ["APPLICATION SITE ERYTHEMA", "APPLICATION SITE PRURITUS", "DIARRHOEA", "ATRIOVENTRICULAR BLOCK SECOND DEGREE", "ERYTHEMA", "ERYTHEMA", "ERYTHEMA", "APPLICATION SITE ERYTHEMA", "APPLICATION SITE PRURITUS", "APPLICATION SITE PRURITUS", "FATIGUE", "BUNDLE BRANCH BLOCK LEFT"],
+        "AEDECOD": ["APPLICATION SITE ERYTHEMA", "APPLICATION SITE PRURITUS", "DIARRHOEA", "ATRIOVENTRICULAR BLOCK SECOND DEGREE", "ERYTHEMA", "ERYTHEMA", "ERYTHEMA", "APPLICATION SITE ERYTHEMA", "APPLICATION SITE PRURITUS", "APPLICATION SITE PRURITUS", "FATIGUE", "BUNDLE BRANCH BLOCK LEFT"],
+        "AESEV": ["MILD", "MILD", "MILD", "MILD", "MILD", "MODERATE", "MILD", "MILD", "MILD", "MILD", "MILD", "MILD"],
+        "AESER": ["N", "N", "N", "N", "N", "N", "N", "N", "N", "N", "N", "N"],
+        "AESTDTC": ["2014-01-03", "2014-01-03", "2014-01-09", "2012-08-26", "2012-08-07", "2012-08-07", "2012-08-07", "2013-07-21", "2013-08-08", "2014-08-27", "2014-11-02", "2013-03-10"],
+        "AEENDTC": ["", "", "2014-01-11", "", "2012-08-30", "", "2012-08-30", "", "", "", "", ""]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "label": "clinical_fd SUPPAE subset",
+      "domain": "SUPPAE",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "RDOMAIN",
+          "label": "RDOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "IDVAR",
+          "label": "IDVAR",
+          "type": "Char",
+          "length": 5
+        },
+        {
+          "name": "IDVARVAL",
+          "label": "IDVARVAL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "QNAM",
+          "label": "QNAM",
+          "type": "Char",
+          "length": 7
+        },
+        {
+          "name": "QLABEL",
+          "label": "QLABEL",
+          "type": "Char",
+          "length": 23
+        },
+        {
+          "name": "QVAL",
+          "label": "QVAL",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "QORIG",
+          "label": "QORIG",
+          "type": "Char",
+          "length": 7
+        },
+        {
+          "name": "QEVAL",
+          "label": "QEVAL",
+          "type": "Char",
+          "length": 22
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "RDOMAIN": ["AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE", "AE"],
+        "USUBJID": ["01-701-1015", "01-701-1015", "01-701-1015", "01-701-1023", "01-701-1023", "01-701-1023", "01-701-1023", "01-701-1028", "01-701-1028", "01-701-1034", "01-701-1034", "01-701-1047"],
+        "IDVAR": ["AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ", "AESEQ"],
+        "IDVARVAL": ["1", "2", "3", "1", "2", "3", "4", "1", "2", "1", "2", "1"],
+        "QNAM": ["AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM", "AETRTEM"],
+        "QLABEL": ["TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG", "TREATMENT EMERGENT FLAG"],
+        "QVAL": ["Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y", "Y"],
+        "QORIG": ["DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED", "DERIVED"],
+        "QEVAL": ["CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR", "CLINICAL STUDY SPONSOR"]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "label": "clinical_fd RELREC subset",
+      "domain": "RELREC",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "RDOMAIN",
+          "label": "RDOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "IDVAR",
+          "label": "IDVAR",
+          "type": "Char",
+          "length": 5
+        },
+        {
+          "name": "IDVARVAL",
+          "label": "IDVARVAL",
+          "type": "Char",
+          "length": 4
+        },
+        {
+          "name": "RELTYPE",
+          "label": "RELTYPE",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "RELID",
+          "label": "RELID",
+          "type": "Char",
+          "length": 15
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "RDOMAIN": ["AE", "AE", "DS", "DS"],
+        "USUBJID": ["01-701-1023", "01-701-1047", "01-701-1023", "01-701-1047"],
+        "IDVAR": ["AESEQ", "AESEQ", "DSSEQ", "DSSEQ"],
+        "IDVARVAL": ["   2", "   4", "   1", "   1"],
+        "RELTYPE": ["", "", "", ""],
+        "RELID": ["01-701-1023-E09", "01-701-1047-E09", "01-701-1023-E09", "01-701-1047-E09"]
+      }
+    },
+    {
+      "filename": "vs.xpt",
+      "label": "clinical_fd VS subset",
+      "domain": "VS",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "DOMAIN",
+          "label": "DOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "VSSEQ",
+          "label": "VSSEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "VSTESTCD",
+          "label": "VSTESTCD",
+          "type": "Char",
+          "length": 5
+        },
+        {
+          "name": "VSTEST",
+          "label": "VSTEST",
+          "type": "Char",
+          "length": 24
+        },
+        {
+          "name": "VSORRES",
+          "label": "VSORRES",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "VSORRESU",
+          "label": "VSORRESU",
+          "type": "Char",
+          "length": 4
+        },
+        {
+          "name": "VSSTRESC",
+          "label": "VSSTRESC",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "VSSTRESN",
+          "label": "VSSTRESN",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "VSSTRESU",
+          "label": "VSSTRESU",
+          "type": "Char",
+          "length": 4
+        },
+        {
+          "name": "VSDTC",
+          "label": "VSDTC",
+          "type": "Char",
+          "length": 10
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "DOMAIN": ["VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS", "VS"],
+        "USUBJID": ["01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015"],
+        "VSSEQ": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+        "VSTESTCD": ["DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP", "DIABP"],
+        "VSTEST": ["Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure", "Diastolic Blood Pressure"],
+        "VSORRES": ["64", "83", "57", "68", "59", "71", "56", "51", "61", "67", "61", "65", "56", "50", "54", "64", "55", "53", "72", "61"],
+        "VSORRESU": ["mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg"],
+        "VSSTRESC": ["64", "83", "57", "68", "59", "71", "56", "51", "61", "67", "61", "65", "56", "50", "54", "64", "55", "53", "72", "61"],
+        "VSSTRESN": [64, 83, 57, 68, 59, 71, 56, 51, 61, 67, 61, 65, 56, 50, 54, 64, 55, 53, 72, 61],
+        "VSSTRESU": ["mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg", "mmHg"],
+        "VSDTC": ["2013-12-26", "2013-12-26", "2013-12-26", "2013-12-31", "2013-12-31", "2013-12-31", "2014-01-02", "2014-01-02", "2014-01-02", "2014-01-14", "2014-01-14", "2014-01-14", "2014-01-16", "2014-01-16", "2014-01-16", "2014-01-30", "2014-01-30", "2014-01-30", "2014-02-01", "2014-02-01"]
+      }
+    },
+    {
+      "filename": "lb.xpt",
+      "label": "clinical_fd LB subset",
+      "domain": "LB",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "DOMAIN",
+          "label": "DOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "LBSEQ",
+          "label": "LBSEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "LBTESTCD",
+          "label": "LBTESTCD",
+          "type": "Char",
+          "length": 3
+        },
+        {
+          "name": "LBTEST",
+          "label": "LBTEST",
+          "type": "Char",
+          "length": 20
+        },
+        {
+          "name": "LBORRES",
+          "label": "LBORRES",
+          "type": "Char",
+          "length": 3
+        },
+        {
+          "name": "LBSTRESC",
+          "label": "LBSTRESC",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "LBSTRESN",
+          "label": "LBSTRESN",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "LBSTRESU",
+          "label": "LBSTRESU",
+          "type": "Char",
+          "length": 3
+        },
+        {
+          "name": "LBDTC",
+          "label": "LBDTC",
+          "type": "Char",
+          "length": 16
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "DOMAIN": ["LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB", "LB"],
+        "USUBJID": ["01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015"],
+        "LBSEQ": [1, 39, 74, 104, 134, 164, 199, 229, 259, 294, 2, 40, 75, 105, 135, 165, 200, 230, 260, 295],
+        "LBTESTCD": ["ALB", "ALB", "ALB", "ALB", "ALB", "ALB", "ALB", "ALB", "ALB", "ALB", "ALP", "ALP", "ALP", "ALP", "ALP", "ALP", "ALP", "ALP", "ALP", "ALP"],
+        "LBTEST": ["Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Albumin", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase", "Alkaline Phosphatase"],
+        "LBORRES": ["3.8", "3.9", "3.8", "3.7", "3.8", "3.8", "3.7", "3.7", "3.8", "3.8", "34", "50", "41", "43", "47", "53", "41", "45", "46", "44"],
+        "LBSTRESC": ["38", "39", "38", "37", "38", "38", "37", "37", "38", "38", "34", "50", "41", "43", "47", "53", "41", "45", "46", "44"],
+        "LBSTRESN": [38, 39, 38, 37, 38, 38, 37, 37, 38, 38, 34, 50, 41, 43, 47, 53, 41, 45, 46, 44],
+        "LBSTRESU": ["g/L", "g/L", "g/L", "g/L", "g/L", "g/L", "g/L", "g/L", "g/L", "g/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L", "U/L"],
+        "LBDTC": ["2013-12-26T14:45", "2014-01-16T13:17", "2014-01-30T08:50", "2014-02-12T12:56", "2014-03-05T12:25", "2014-03-26T15:15", "2014-05-07T11:21", "2014-05-21T10:58", "2014-06-18T13:00", "2014-07-02T11:45", "2013-12-26T14:45", "2014-01-16T13:17", "2014-01-30T08:50", "2014-02-12T12:56", "2014-03-05T12:25", "2014-03-26T15:15", "2014-05-07T11:21", "2014-05-21T10:58", "2014-06-18T13:00", "2014-07-02T11:45"]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "label": "clinical_fd CM subset",
+      "domain": "CM",
+      "variables": [
+        {
+          "name": "STUDYID",
+          "label": "STUDYID",
+          "type": "Char",
+          "length": 12
+        },
+        {
+          "name": "DOMAIN",
+          "label": "DOMAIN",
+          "type": "Char",
+          "length": 2
+        },
+        {
+          "name": "USUBJID",
+          "label": "USUBJID",
+          "type": "Char",
+          "length": 11
+        },
+        {
+          "name": "CMSEQ",
+          "label": "CMSEQ",
+          "type": "Num",
+          "length": 8
+        },
+        {
+          "name": "CMSPID",
+          "label": "CMSPID",
+          "type": "Char",
+          "length": 1
+        },
+        {
+          "name": "CMTRT",
+          "label": "CMTRT",
+          "type": "Char",
+          "length": 15
+        },
+        {
+          "name": "CMDECOD",
+          "label": "CMDECOD",
+          "type": "Char",
+          "length": 20
+        },
+        {
+          "name": "CMSTDTC",
+          "label": "CMSTDTC",
+          "type": "Char",
+          "length": 10
+        },
+        {
+          "name": "CMENDTC",
+          "label": "CMENDTC",
+          "type": "Char",
+          "length": 1
+        }
+      ],
+      "records": {
+        "STUDYID": ["CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01", "CDISCPILOT01"],
+        "DOMAIN": ["CM", "CM", "CM", "CM", "CM", "CM", "CM", "CM", "CM", "CM", "CM", "CM"],
+        "USUBJID": ["01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015", "01-701-1015"],
+        "CMSEQ": [1, 5, 9, 13, 18, 23, 28, 33, 17, 22, 27, 32],
+        "CMSPID": ["1", "1", "1", "1", "1", "1", "1", "1", "5", "5", "5", "5"],
+        "CMTRT": ["ASPIRIN", "ASPIRIN", "ASPIRIN", "ASPIRIN", "ASPIRIN", "ASPIRIN", "ASPIRIN", "ASPIRIN", "NEOSPORIN /USA/", "NEOSPORIN /USA/", "NEOSPORIN /USA/", "NEOSPORIN /USA/"],
+        "CMDECOD": ["ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "ACETYLSALICYLIC ACID", "UNCODED", "UNCODED", "UNCODED", "UNCODED"],
+        "CMSTDTC": ["2003", "2003", "2003", "2003", "2003", "2003", "2003", "2003", "2014-01-03", "2014-01-03", "2014-01-03", "2014-01-03"],
+        "CMENDTC": ["", "", "", "", "", "", "", "", "", "", "", ""]
+      }
+    }
+  ]
+}

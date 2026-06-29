@@ -1,0 +1,33 @@
+{
+  "Core": {
+    "Id": "CORE-RANDOM-CDISC-ADAM-0001",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {
+      "Include": ["ADSL"]
+    },
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "SAFFL",
+    "operator": "is_not_contained_by",
+    "value": ["Y", "N"]
+  },
+  "Outcome": {
+    "Message": "ADSL SAFFL must use expected random.cdisc.data values"
+  }
+}

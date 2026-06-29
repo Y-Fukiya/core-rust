@@ -112,6 +112,20 @@
       ]
     },
     {
+      "name": "clinical_fd_sdtm_fixture",
+      "evidence": [
+        "datasets/clinical_fd_sdtm/study_package.json",
+        "rules/clinical_fd_sdtm"
+      ]
+    },
+    {
+      "name": "random_cdisc_adam_fixture",
+      "evidence": [
+        "datasets/random_cdisc_adam/study_package.json",
+        "rules/random_cdisc_adam"
+      ]
+    },
+    {
       "name": "define_xml",
       "evidence": [
         "cdisc/sdtm_adam_define.xml",

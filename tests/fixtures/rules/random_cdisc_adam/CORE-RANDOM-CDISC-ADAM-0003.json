@@ -1,0 +1,33 @@
+{
+  "Core": {
+    "Id": "CORE-RANDOM-CDISC-ADAM-0003",
+    "Status": "Published"
+  },
+  "Authorities": [
+    {
+      "Standards": [
+        {
+          "Name": "ADaMIG",
+          "Version": "1.3"
+        }
+      ]
+    }
+  ],
+  "Scope": {
+    "Domains": {
+      "Include": ["ADLB"]
+    },
+    "Classes": {},
+    "Use Case": "Validation"
+  },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "ANRIND",
+    "operator": "equal_to",
+    "value": "LOW"
+  },
+  "Outcome": {
+    "Message": "ADLB low reference-range rows are fixed failing fixture evidence"
+  }
+}

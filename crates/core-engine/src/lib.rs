@@ -56,6 +56,7 @@ pub enum SkippedReason {
     UnsupportedRuleType,
     UnsupportedOperator,
     OperationsNotSupported,
+    OracleSemanticsGap,
     JsonataNotSupported,
     DatasetJoinNotSupported,
     EvaluationError,
@@ -109,8 +110,12 @@ pub fn validate_rule(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Result<RuleValidationResult> {
-    let dataset_presence_exists = matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
-        && rule.rule_type == RuleType::RecordData;
+    let dataset_presence_exists = (matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
+        && matches!(
+            rule.rule_type,
+            RuleType::RecordData | RuleType::DomainPresence
+        ))
+        || contains_relationship_operator(&rule.conditions);
     let mask =
         evaluate_condition_group_with_options(&rule.conditions, dataset, dataset_presence_exists)?;
     let message =
@@ -123,7 +128,13 @@ pub fn validate_rule(
         .ok_or(EngineError::MissingSensitivity)?
     {
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
-        Sensitivity::Dataset if rule.rule_type == RuleType::RecordData => {
+        Sensitivity::Group => group_level_issues(rule, dataset, &mask, &variables, &message)?,
+        Sensitivity::Dataset
+            if matches!(
+                rule.rule_type,
+                RuleType::RecordData | RuleType::DomainPresence
+            ) =>
+        {
             record_level_issues(rule, dataset, &mask, &variables, &message)?
         }
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),
@@ -229,7 +240,16 @@ pub fn extract_target_variables(group: &ConditionGroup) -> Vec<String> {
 
 fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String> {
     let mut expanded = Vec::new();
-    if rule.output_variables.is_empty() {
+    if contains_empty_within_except_last_row_operator(&rule.conditions) {
+        for variable in extract_target_variables(&rule.conditions) {
+            push_unique(
+                &mut expanded,
+                &expand_domain_placeholder(dataset, &variable),
+            );
+        }
+    } else if contains_not_present_on_multiple_rows_within_operator(&rule.conditions) {
+        collect_not_present_on_multiple_rows_variables(&rule.conditions, dataset, &mut expanded);
+    } else if rule.output_variables.is_empty() {
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
     } else {
         for variable in &rule.output_variables {
@@ -256,6 +276,57 @@ fn collect_issue_variables(
                 push_unique(variables, &expand_domain_placeholder(dataset, target));
             }
             collect_comparator_issue_variables(&condition.comparator, dataset, variables);
+        }
+    }
+}
+
+fn contains_empty_within_except_last_row_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(contains_empty_within_except_last_row_operator),
+        ConditionGroup::Not(group) => contains_empty_within_except_last_row_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::EmptyWithinExceptLastRow)
+        }
+    }
+}
+
+fn contains_not_present_on_multiple_rows_within_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(contains_not_present_on_multiple_rows_within_operator),
+        ConditionGroup::Not(group) => contains_not_present_on_multiple_rows_within_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::NotPresentOnMultipleRowsWithin)
+        }
+    }
+}
+
+fn collect_not_present_on_multiple_rows_variables(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    variables: &mut Vec<String>,
+) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                collect_not_present_on_multiple_rows_variables(group, dataset, variables);
+            }
+        }
+        ConditionGroup::Not(group) => {
+            collect_not_present_on_multiple_rows_variables(group, dataset, variables)
+        }
+        ConditionGroup::Leaf(condition) => {
+            if matches!(condition.operator, Operator::NotPresentOnMultipleRowsWithin) {
+                if let Some(within) = option_string(&condition.options.extra, "within") {
+                    push_unique(variables, &expand_domain_placeholder(dataset, &within));
+                }
+                if let Some(target) = &condition.target {
+                    push_unique(variables, &expand_domain_placeholder(dataset, target));
+                }
+            }
         }
     }
 }
@@ -310,12 +381,19 @@ fn evaluate_condition_with_options(
             }
             return evaluate_column(column, row_count, |value, _row| Ok(value.is_null()));
         }
+        Operator::IsEmpty | Operator::IsNotEmpty => {
+            let Some(column) = optional_column(frame, &target)? else {
+                return Ok(vec![false; row_count]);
+            };
+            return evaluate_column(column, row_count, |value, _row| {
+                let empty = ScalarValue::from_any_value(value).is_empty();
+                Ok(matches!(operator, Operator::IsEmpty) == empty)
+            });
+        }
         _ => {}
     }
 
-    let column = frame
-        .column(&target)
-        .map_err(|_| EngineError::MissingColumn(target.clone()))?;
+    let column = required_column(frame, &target)?;
 
     match operator {
         Operator::EqualTo
@@ -353,11 +431,11 @@ fn evaluate_condition_with_options(
                 let contains = ScalarValue::from_any_value(value)
                     .into_string()
                     .map(|haystack| {
-                        if is_case_insensitive_operator(operator) {
-                            haystack.to_ascii_lowercase().contains(&needle)
-                        } else {
-                            haystack.contains(&needle)
-                        }
+                        string_contains_value(
+                            &haystack,
+                            &needle,
+                            is_case_insensitive_operator(operator),
+                        )
                     })
                     .unwrap_or(false);
                 Ok(matches!(
@@ -387,6 +465,31 @@ fn evaluate_condition_with_options(
                 ) == contained)
             })
         }
+        Operator::ContainsAll | Operator::NotContainsAll => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                let contains_all = scalar_contains_all(&left, &right, false);
+                Ok(matches!(operator, Operator::ContainsAll) == contains_all)
+            })
+        }
+        Operator::SharesNoElementsWith => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                Ok(scalar_shares_no_elements_with(&left, &right))
+            })
+        }
+        Operator::IsNotOrderedSubsetOf => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_list_comparator(comparator, dataset, frame, row)?;
+                Ok(!scalar_is_ordered_subset_of(&left, &right))
+            })
+        }
         Operator::LessThan
         | Operator::LessThanOrEqualTo
         | Operator::GreaterThan
@@ -410,6 +513,115 @@ fn evaluate_condition_with_options(
                     .unwrap_or(false))
             })
         }
+        Operator::DateEqualTo
+        | Operator::DateNotEqualTo
+        | Operator::DateLessThan
+        | Operator::DateLessThanOrEqualTo
+        | Operator::DateGreaterThan
+        | Operator::DateGreaterThanOrEqualTo => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let left = ScalarValue::from_any_value(value);
+                let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
+                Ok(compare_complete_dates(&left, &right)
+                    .map(|ordering| match operator {
+                        Operator::DateEqualTo => ordering == Ordering::Equal,
+                        Operator::DateNotEqualTo => ordering != Ordering::Equal,
+                        Operator::DateLessThan => ordering == Ordering::Less,
+                        Operator::DateLessThanOrEqualTo => {
+                            matches!(ordering, Ordering::Less | Ordering::Equal)
+                        }
+                        Operator::DateGreaterThan => ordering == Ordering::Greater,
+                        Operator::DateGreaterThanOrEqualTo => {
+                            matches!(ordering, Ordering::Greater | Ordering::Equal)
+                        }
+                        _ => false,
+                    })
+                    .unwrap_or(false))
+            })
+        }
+        Operator::IsCompleteDate | Operator::IsIncompleteDate | Operator::InvalidDate => {
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let Some(state) = classify_date_value(&value) else {
+                    return Ok(false);
+                };
+                Ok(match operator {
+                    Operator::IsCompleteDate => matches!(state, DateValueState::Complete),
+                    Operator::IsIncompleteDate => matches!(state, DateValueState::Incomplete),
+                    Operator::InvalidDate => matches!(state, DateValueState::Invalid),
+                    _ => false,
+                })
+            })
+        }
+        Operator::InvalidDuration => evaluate_column(column, row_count, |value, _row| {
+            let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                return Ok(false);
+            };
+            let value = value.trim();
+            Ok(!value.is_empty() && !is_valid_iso_duration(value))
+        }),
+        Operator::TargetIsNotSortedBy => evaluate_target_is_not_sorted_by(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
+        Operator::EmptyWithinExceptLastRow => evaluate_empty_within_except_last_row(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
+        Operator::DoesNotHaveNextCorrespondingRecord => {
+            evaluate_does_not_have_next_corresponding_record(
+                dataset,
+                frame,
+                row_count,
+                column,
+                &condition.comparator,
+                &condition.options,
+            )
+        }
+        Operator::NotPresentOnMultipleRowsWithin => evaluate_not_present_on_multiple_rows_within(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.options,
+        ),
+        Operator::IsNotUniqueSet | Operator::IsUniqueSet => evaluate_unique_set(
+            operator,
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+        ),
+        Operator::IsNotUniqueRelationship => evaluate_not_unique_relationship(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
+        Operator::IsInconsistentAcrossDataset => evaluate_inconsistent_across_dataset(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+        ),
+        Operator::InconsistentEnumeratedColumns => {
+            evaluate_inconsistent_enumerated_columns(frame, row_count, &target)
+        }
         Operator::MatchesRegex | Operator::DoesNotMatchRegex => {
             let pattern = string_comparator(operator, &condition.comparator)?;
             let regex = Regex::new(&pattern)?;
@@ -421,12 +633,196 @@ fn evaluate_condition_with_options(
                 Ok(matches!(operator, Operator::MatchesRegex) == matches)
             })
         }
-        Operator::IsEmpty | Operator::IsNotEmpty => {
+        Operator::DoesNotMatchRegexFullString => {
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&format!("^(?:{pattern})$")).ok();
+            if regex.is_none() && !is_usdm_ref_lookahead_pattern(&pattern) {
+                Regex::new(&format!("^(?:{pattern})$"))?;
+            }
             evaluate_column(column, row_count, |value, _row| {
-                let empty = ScalarValue::from_any_value(value).is_empty();
-                Ok(matches!(operator, Operator::IsEmpty) == empty)
+                let Some(haystack) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if haystack.is_empty() {
+                    return Ok(false);
+                }
+                let matches = if let Some(regex) = &regex {
+                    regex.is_match(&haystack)
+                } else {
+                    usdm_ref_pattern_matches(&haystack)
+                };
+                Ok(!matches)
             })
         }
+        Operator::DoesNotEqualStringPart => {
+            let pattern = option_string(&condition.options.extra, "regex").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(left) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let right = resolve_scalar_comparator(&condition.comparator, dataset, frame, row)?
+                    .into_string();
+                let Some(right) = right else {
+                    return Ok(false);
+                };
+                let Some(captures) = regex.captures(&right) else {
+                    return Ok(false);
+                };
+                let Some(part) = captures.get(1).map(|part| part.as_str()) else {
+                    return Ok(false);
+                };
+                Ok(left != part)
+            })
+        }
+        Operator::LongerThan => {
+            let max_len = length_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(value.chars().count() > max_len)
+            })
+        }
+        Operator::StartsWith | Operator::PrefixNotEqualTo => {
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let Some(prefix) =
+                    resolve_scalar_comparator(comparator, dataset, frame, row)?.into_string()
+                else {
+                    return Ok(false);
+                };
+                let starts_with = value.starts_with(&prefix);
+                Ok(matches!(operator, Operator::StartsWith) == starts_with)
+            })
+        }
+        Operator::PrefixEqualTo => {
+            let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                let prefix = string_prefix(&value, prefix_len);
+                let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
+                Ok(scalar_equal_with_mode(
+                    &ScalarValue::String(prefix),
+                    &right,
+                    false,
+                ))
+            })
+        }
+        Operator::NotPrefixMatchesRegex => {
+            let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(!regex.is_match(&string_prefix(&value, prefix_len)))
+            })
+        }
+        Operator::PrefixIsNotContainedBy | Operator::SuffixIsNotContainedBy => {
+            let part_len = option_usize(
+                &condition.options.extra,
+                if matches!(operator, Operator::PrefixIsNotContainedBy) {
+                    "prefix"
+                } else {
+                    "suffix"
+                },
+            )
+            .ok_or_else(|| EngineError::MissingComparator {
+                operator: operator.as_name().to_owned(),
+            })?;
+            let comparator = required_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let part = if matches!(operator, Operator::PrefixIsNotContainedBy) {
+                    string_prefix(&value, part_len)
+                } else {
+                    string_suffix(&value, part_len)
+                };
+                let contained = scalar_matches_comparator(
+                    &ScalarValue::String(part),
+                    comparator,
+                    dataset,
+                    frame,
+                    row,
+                    false,
+                )?;
+                Ok(!contained)
+            })
+        }
+        Operator::EndsWith => {
+            let suffix = string_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                Ok(value.ends_with(&suffix))
+            })
+        }
+        Operator::SuffixMatchesRegex | Operator::NotSuffixMatchesRegex => {
+            let suffix_len = option_usize(&condition.options.extra, "suffix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                if value.is_empty() {
+                    return Ok(false);
+                }
+                let suffix = value
+                    .chars()
+                    .rev()
+                    .take(suffix_len)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<String>();
+                let matches = regex.is_match(&suffix);
+                Ok(matches!(operator, Operator::SuffixMatchesRegex) == matches)
+            })
+        }
+        Operator::IsEmpty | Operator::IsNotEmpty => unreachable!("handled before target lookup"),
         Operator::Unsupported(name) => Err(EngineError::UnsupportedOperator(name.clone())),
         other => Err(EngineError::UnsupportedOperator(other.as_name().to_owned())),
     }
@@ -440,6 +836,591 @@ fn evaluate_column(
     (0..row_count)
         .map(|row| predicate(column.get(row)?, row))
         .collect()
+}
+
+fn evaluate_target_is_not_sorted_by(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let sort_specs = sort_specs(comparator)?;
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let mut groups: std::collections::BTreeMap<String, Vec<SortRow>> =
+        std::collections::BTreeMap::new();
+
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        let sort_values = sort_specs
+            .iter()
+            .map(|spec| {
+                let column_name = expand_domain_placeholder(dataset, &spec.column);
+                let Some(column) = optional_column(frame, &column_name)? else {
+                    return Ok(None);
+                };
+                Ok(Some(ScalarValue::from_any_value(column.get(row)?)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        groups.entry(group_key).or_default().push(SortRow {
+            row,
+            target,
+            sort_values,
+        });
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut group_has_inversion = false;
+        let group_has_uncertain_sort = rows
+            .iter()
+            .any(|row| row.sort_values.iter().any(is_uncertain_sort_value));
+
+        for left_index in 0..rows.len() {
+            for right_index in (left_index + 1)..rows.len() {
+                let left = &rows[left_index];
+                let right = &rows[right_index];
+                let Some(sort_ordering) =
+                    compare_sort_values(&left.sort_values, &right.sort_values, &sort_specs)
+                else {
+                    continue;
+                };
+                let Some(target_ordering) = compare_scalars(&left.target, &right.target) else {
+                    continue;
+                };
+                if sort_ordering != Ordering::Equal
+                    && target_ordering != Ordering::Equal
+                    && sort_ordering != target_ordering
+                {
+                    mask[left.row] = true;
+                    mask[right.row] = true;
+                    group_has_inversion = true;
+                }
+            }
+        }
+
+        if group_has_inversion && group_has_uncertain_sort {
+            for row in rows {
+                if !matches!(row.target, ScalarValue::Null) {
+                    mask[row.row] = true;
+                }
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
+fn evaluate_empty_within_except_last_row(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let group_column = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::EmptyWithinExceptLastRow, comparator)?,
+    );
+    let ordering_column_name = option_string(&options.extra, "ordering").ok_or_else(|| {
+        EngineError::MissingComparator {
+            operator: Operator::EmptyWithinExceptLastRow.as_name().to_owned(),
+        }
+    })?;
+    let ordering_column_name = expand_domain_placeholder(dataset, &ordering_column_name);
+    let ordering_column = frame
+        .column(&ordering_column_name)
+        .map_err(|_| EngineError::MissingColumn(ordering_column_name.clone()))?;
+    let sort_spec = SortSpec {
+        column: ordering_column_name,
+        descending: false,
+        nulls_first: false,
+    };
+
+    let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for row in 0..row_count {
+        groups
+            .entry(cell_string(frame, &group_column, row)?.unwrap_or_default())
+            .or_default()
+            .push(row);
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut sorted_rows = rows.clone();
+        sorted_rows.sort_by(|left, right| {
+            let left_value =
+                ScalarValue::from_any_value(ordering_column.get(*left).unwrap_or(AnyValue::Null));
+            let right_value =
+                ScalarValue::from_any_value(ordering_column.get(*right).unwrap_or(AnyValue::Null));
+            compare_optional_sort_value(Some(&left_value), Some(&right_value), &sort_spec)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.cmp(right))
+        });
+        let Some(last_row) = sorted_rows.last().copied() else {
+            continue;
+        };
+        for row in rows.iter().copied().filter(|row| *row != last_row) {
+            let value = ScalarValue::from_any_value(target_column.get(row)?);
+            if value.is_empty() {
+                mask[row] = true;
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
+fn evaluate_does_not_have_next_corresponding_record(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let comparator_column_name = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::DoesNotHaveNextCorrespondingRecord, comparator)?,
+    );
+    let comparator_column = frame
+        .column(&comparator_column_name)
+        .map_err(|_| EngineError::MissingColumn(comparator_column_name.clone()))?;
+    let ordering_column_name = option_string(&options.extra, "ordering").ok_or_else(|| {
+        EngineError::MissingComparator {
+            operator: Operator::DoesNotHaveNextCorrespondingRecord
+                .as_name()
+                .to_owned(),
+        }
+    })?;
+    let ordering_column_name = expand_domain_placeholder(dataset, &ordering_column_name);
+    let ordering_column = frame
+        .column(&ordering_column_name)
+        .map_err(|_| EngineError::MissingColumn(ordering_column_name.clone()))?;
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let sort_spec = SortSpec {
+        column: ordering_column_name,
+        descending: false,
+        nulls_first: false,
+    };
+
+    let ordering_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(ordering_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+    let comparator_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(comparator_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+    let target_values = (0..row_count)
+        .map(|row| Ok(ScalarValue::from_any_value(target_column.get(row)?)))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        groups.entry(group_key).or_default().push(row);
+    }
+
+    let mut mask = vec![false; row_count];
+    for rows in groups.values() {
+        let mut sorted_rows = rows.clone();
+        sorted_rows.sort_by(|left, right| {
+            compare_optional_sort_value(
+                Some(&ordering_values[*left]),
+                Some(&ordering_values[*right]),
+                &sort_spec,
+            )
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.cmp(right))
+        });
+        for pair in sorted_rows.windows(2) {
+            let current = pair[0];
+            let next = pair[1];
+            if !scalar_equal_with_mode(&target_values[current], &comparator_values[next], false) {
+                mask[current] = true;
+            }
+        }
+    }
+
+    Ok(mask)
+}
+
+fn evaluate_not_present_on_multiple_rows_within(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let within = option_string(&options.extra, "within")
+        .map(|value| expand_domain_placeholder(dataset, &value));
+    let mut counts = std::collections::BTreeMap::<(String, String), usize>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let group_key = match within.as_deref() {
+            Some(column_name) => cell_string(frame, column_name, row)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+        let key = (group_key, target.to_string());
+        *counts.entry(key.clone()).or_default() += 1;
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() == 1))
+        .collect())
+}
+
+fn evaluate_unique_set(
+    operator: &Operator,
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+) -> Result<BooleanMask> {
+    let group_columns = column_name_comparators(operator, comparator)?
+        .into_iter()
+        .map(|column| expand_domain_placeholder(dataset, &column))
+        .collect::<Vec<_>>();
+    for column in &group_columns {
+        if optional_column(frame, column)?.is_none() {
+            return Err(EngineError::MissingColumn(column.clone()));
+        }
+    }
+
+    let mut counts = std::collections::BTreeMap::<Vec<String>, usize>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+
+        let mut key = Vec::with_capacity(group_columns.len() + 1);
+        for column in &group_columns {
+            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        }
+        key.push(target.to_string());
+        *counts.entry(key.clone()).or_default() += 1;
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| {
+            let duplicate =
+                key.is_some_and(|key| counts.get(&key).copied().unwrap_or_default() > 1);
+            matches!(operator, Operator::IsNotUniqueSet) == duplicate
+        })
+        .collect())
+}
+
+fn evaluate_not_unique_relationship(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let related_column_name = expand_domain_placeholder(
+        dataset,
+        &column_name_comparator(&Operator::IsNotUniqueRelationship, comparator)?,
+    );
+    let related_column = frame
+        .column(&related_column_name)
+        .map_err(|_| EngineError::MissingColumn(related_column_name.clone()))?;
+
+    let mut related_by_target =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    let mut target_by_related =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    let mut row_values = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        let related = ScalarValue::from_any_value(related_column.get(row)?);
+
+        let target = relationship_key(&target);
+        let related = relationship_key(&related);
+        related_by_target
+            .entry(target.clone())
+            .or_default()
+            .insert(related.clone());
+        target_by_related
+            .entry(related.clone())
+            .or_default()
+            .insert(target.clone());
+        row_values.push(Some((target, related)));
+    }
+
+    let target_to_comparator_only =
+        option_string(&options.extra, "direction").as_deref() == Some("target_to_comparator");
+
+    Ok(row_values
+        .into_iter()
+        .map(|values| {
+            let Some((target, related)) = values else {
+                return false;
+            };
+            related_by_target
+                .get(&target)
+                .is_some_and(|values| values.len() > 1)
+                || (!target_to_comparator_only
+                    && target_by_related
+                        .get(&related)
+                        .is_some_and(|values| values.len() > 1))
+        })
+        .collect())
+}
+
+fn relationship_key(value: &ScalarValue) -> String {
+    match value {
+        ScalarValue::Null => String::new(),
+        ScalarValue::String(value) if value.is_empty() => String::new(),
+        value => value.to_string(),
+    }
+}
+
+fn evaluate_inconsistent_across_dataset(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+) -> Result<BooleanMask> {
+    let group_columns =
+        column_name_comparators(&Operator::IsInconsistentAcrossDataset, comparator)?
+            .into_iter()
+            .map(|column| expand_domain_placeholder(dataset, &column))
+            .collect::<Vec<_>>();
+    for column in &group_columns {
+        if optional_column(frame, column)?.is_none() {
+            return Err(EngineError::MissingColumn(column.clone()));
+        }
+    }
+
+    let mut target_values_by_key =
+        std::collections::BTreeMap::<Vec<String>, std::collections::BTreeSet<String>>::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+
+    for row in 0..row_count {
+        let target = ScalarValue::from_any_value(target_column.get(row)?);
+        if target.is_empty() {
+            row_keys.push(None);
+            continue;
+        }
+
+        let mut key = Vec::with_capacity(group_columns.len());
+        for column in &group_columns {
+            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        }
+        target_values_by_key
+            .entry(key.clone())
+            .or_default()
+            .insert(target.to_string());
+        row_keys.push(Some(key));
+    }
+
+    Ok(row_keys
+        .into_iter()
+        .map(|key| {
+            key.is_some_and(|key| {
+                target_values_by_key
+                    .get(&key)
+                    .map(|values| values.len() > 1)
+                    .unwrap_or(false)
+            })
+        })
+        .collect())
+}
+
+fn evaluate_inconsistent_enumerated_columns(
+    frame: &DataFrame,
+    row_count: usize,
+    target: &str,
+) -> Result<BooleanMask> {
+    let columns = enumerated_columns(frame, target)?;
+    (0..row_count)
+        .map(|row| {
+            let mut saw_empty = false;
+            for column in &columns {
+                let value = ScalarValue::from_any_value(column.get(row)?);
+                if value.is_empty() {
+                    saw_empty = true;
+                } else if saw_empty {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .collect()
+}
+
+fn enumerated_columns<'a>(frame: &'a DataFrame, target: &str) -> Result<Vec<&'a Column>> {
+    let mut columns = Vec::new();
+    columns.push(
+        frame
+            .column(target)
+            .map_err(|_| EngineError::MissingColumn(target.to_owned()))?,
+    );
+    for index in 1.. {
+        let name = format!("{target}{index}");
+        let Some(column) = optional_column(frame, &name)? else {
+            break;
+        };
+        columns.push(column);
+    }
+    Ok(columns)
+}
+
+#[derive(Debug)]
+struct SortSpec {
+    column: String,
+    descending: bool,
+    nulls_first: bool,
+}
+
+#[derive(Debug)]
+struct SortRow {
+    row: usize,
+    target: ScalarValue,
+    sort_values: Vec<Option<ScalarValue>>,
+}
+
+fn sort_specs(comparator: &ValueExpr) -> Result<Vec<SortSpec>> {
+    let ValueExpr::List(values) = comparator else {
+        return Err(EngineError::InvalidComparator {
+            operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+            comparator: comparator.clone(),
+        });
+    };
+
+    let specs = values
+        .iter()
+        .map(|value| {
+            let Value::Object(object) = value else {
+                return Err(EngineError::InvalidComparator {
+                    operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                });
+            };
+            let Some(column) = object.get("name").and_then(Value::as_str) else {
+                return Err(EngineError::InvalidComparator {
+                    operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                });
+            };
+            let descending = object
+                .get("sort_order")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case("desc"));
+            let nulls_first = object
+                .get("null_position")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case("first"));
+            Ok(SortSpec {
+                column: column.to_owned(),
+                descending,
+                nulls_first,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if specs.is_empty() {
+        return Err(EngineError::InvalidComparator {
+            operator: Operator::TargetIsNotSortedBy.as_name().to_owned(),
+            comparator: comparator.clone(),
+        });
+    }
+    Ok(specs)
+}
+
+fn column_name_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<String> {
+    match comparator {
+        ValueExpr::ColumnRef(value) => Ok(value.clone()),
+        ValueExpr::Literal(Value::String(value)) => Ok(value.clone()),
+        _ => Err(EngineError::InvalidComparator {
+            operator: operator.as_name().to_owned(),
+            comparator: comparator.clone(),
+        }),
+    }
+}
+
+fn compare_sort_values(
+    left: &[Option<ScalarValue>],
+    right: &[Option<ScalarValue>],
+    specs: &[SortSpec],
+) -> Option<Ordering> {
+    for ((left, right), spec) in left.iter().zip(right).zip(specs) {
+        let ordering = compare_optional_sort_value(left.as_ref(), right.as_ref(), spec)?;
+        if ordering != Ordering::Equal {
+            return Some(ordering);
+        }
+    }
+    Some(Ordering::Equal)
+}
+
+fn compare_optional_sort_value(
+    left: Option<&ScalarValue>,
+    right: Option<&ScalarValue>,
+    spec: &SortSpec,
+) -> Option<Ordering> {
+    let ordering = match (left, right) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => {
+            if spec.nulls_first {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }
+        (Some(_), None) => {
+            if spec.nulls_first {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        }
+        (Some(left), Some(right)) => compare_scalars(left, right)?,
+    };
+
+    Some(if spec.descending {
+        ordering.reverse()
+    } else {
+        ordering
+    })
+}
+
+fn is_uncertain_sort_value(value: &Option<ScalarValue>) -> bool {
+    let Some(ScalarValue::String(value)) = value else {
+        return false;
+    };
+    let value = value.trim();
+    !value.is_empty() && parse_complete_date(value).is_none() && is_incomplete_date(value)
 }
 
 fn record_level_issues(
@@ -462,6 +1443,53 @@ fn record_level_issues(
                 message: message.to_owned(),
                 usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
                 seq: sequence_value(dataset, row)?,
+            })
+        })
+        .collect()
+}
+
+fn group_level_issues(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    mask: &[bool],
+    variables: &[String],
+    message: &str,
+) -> Result<Vec<ValidationIssue>> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut issues = Vec::new();
+    for (row, _failed) in mask.iter().enumerate().filter(|(_row, failed)| **failed) {
+        let signature = group_issue_signature(dataset, variables, row)?;
+        if !seen.insert(signature) {
+            continue;
+        }
+        issues.push(ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: dataset.metadata().name.clone(),
+            domain: dataset.metadata().domain.clone(),
+            row: Some(row + 1),
+            variables: variables.to_vec(),
+            message: message.to_owned(),
+            usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
+            seq: sequence_value(dataset, row)?,
+        });
+    }
+    Ok(issues)
+}
+
+fn group_issue_signature(
+    dataset: &LoadedDataset,
+    variables: &[String],
+    row: usize,
+) -> Result<Vec<String>> {
+    variables
+        .iter()
+        .map(|variable| {
+            cell_string(dataset.frame(), variable, row).map(|value| {
+                format!(
+                    "{}={}",
+                    variable.to_ascii_uppercase(),
+                    value.unwrap_or_default()
+                )
             })
         })
         .collect()
@@ -500,6 +1528,18 @@ fn outcome_message(actions: &[ActionSpec]) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn contains_relationship_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_relationship_operator)
+        }
+        ConditionGroup::Not(group) => contains_relationship_operator(group),
+        ConditionGroup::Leaf(condition) => {
+            matches!(condition.operator, Operator::IsNotUniqueRelationship)
+        }
+    }
+}
+
 fn collect_target_variables(group: &ConditionGroup, variables: &mut Vec<String>) {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
@@ -527,6 +1567,97 @@ fn push_unique(values: &mut Vec<String>, value: &str) {
     if !values.iter().any(|existing| existing == value) {
         values.push(value.to_owned());
     }
+}
+
+fn is_usdm_ref_lookahead_pattern(pattern: &str) -> bool {
+    pattern.contains("<usdm:ref")
+        && pattern.contains("(?=")
+        && pattern.contains("klass=")
+        && pattern.contains("id=")
+        && pattern.contains("attribute=")
+        && (pattern.contains("</usdm:ref>") || pattern.contains("<\\/usdm:ref>"))
+}
+
+fn usdm_ref_pattern_matches(value: &str) -> bool {
+    let value = value.trim();
+    let Some(remainder) = value.strip_prefix("<usdm:ref") else {
+        return false;
+    };
+    let Some(attributes) = remainder
+        .strip_suffix("/>")
+        .or_else(|| remainder.strip_suffix("></usdm:ref>"))
+    else {
+        return false;
+    };
+
+    let Some(klass) = quoted_attribute(attributes, "klass") else {
+        return false;
+    };
+    let Some(id) = quoted_attribute(attributes, "id") else {
+        return false;
+    };
+    let Some(attribute) = quoted_attribute(attributes, "attribute") else {
+        return false;
+    };
+
+    !id.is_empty()
+        && !klass.is_empty()
+        && klass.chars().all(|value| value.is_ascii_alphabetic())
+        && !attribute.is_empty()
+        && attribute.chars().all(|value| value.is_ascii_alphabetic())
+}
+
+fn quoted_attribute<'a>(attributes: &'a str, name: &str) -> Option<&'a str> {
+    let bytes = attributes.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        let key_start = index;
+        while index < bytes.len() && !bytes[index].is_ascii_whitespace() && bytes[index] != b'=' {
+            index += 1;
+        }
+        let key = &attributes[key_start..index];
+
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'=' {
+            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                index += 1;
+            }
+            continue;
+        }
+        index += 1;
+
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'"' {
+            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                index += 1;
+            }
+            continue;
+        }
+        index += 1;
+        let value_start = index;
+        while index < bytes.len() && bytes[index] != b'"' {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            return None;
+        }
+        let value = &attributes[value_start..index];
+        index += 1;
+
+        if key == name {
+            return Some(value);
+        }
+    }
+
+    None
 }
 
 fn sequence_value(dataset: &LoadedDataset, row: usize) -> Result<Option<String>> {
@@ -565,9 +1696,25 @@ fn cell_string(frame: &DataFrame, column_name: &str, row: usize) -> Result<Optio
 fn optional_column<'a>(frame: &'a DataFrame, name: &str) -> Result<Option<&'a Column>> {
     match frame.column(name) {
         Ok(column) => Ok(Some(column)),
-        Err(PolarsError::ColumnNotFound(_)) => Ok(None),
+        Err(PolarsError::ColumnNotFound(_)) => {
+            let Some(actual_name) = frame
+                .get_column_names()
+                .into_iter()
+                .find(|column| column.as_str().eq_ignore_ascii_case(name))
+            else {
+                return Ok(None);
+            };
+            frame
+                .column(actual_name.as_str())
+                .map(Some)
+                .map_err(Into::into)
+        }
         Err(source) => Err(source.into()),
     }
+}
+
+fn required_column<'a>(frame: &'a DataFrame, name: &str) -> Result<&'a Column> {
+    optional_column(frame, name)?.ok_or_else(|| EngineError::MissingColumn(name.to_owned()))
 }
 
 fn required_comparator<'a>(
@@ -602,6 +1749,78 @@ fn string_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<Stri
     }
 }
 
+fn length_comparator(operator: &Operator, comparator: &ValueExpr) -> Result<usize> {
+    let value = match comparator {
+        ValueExpr::Literal(Value::Number(value)) => value
+            .as_u64()
+            .or_else(|| {
+                value.as_f64().and_then(|value| {
+                    (value.is_finite() && value >= 0.0 && value.fract() == 0.0)
+                        .then_some(value as u64)
+                })
+            })
+            .and_then(|value| usize::try_from(value).ok()),
+        ValueExpr::Literal(Value::String(value)) => value.trim().parse::<usize>().ok(),
+        _ => None,
+    };
+    value.ok_or_else(|| EngineError::InvalidComparator {
+        operator: operator.as_name().to_owned(),
+        comparator: comparator.clone(),
+    })
+}
+
+fn column_name_comparators(operator: &Operator, comparator: &ValueExpr) -> Result<Vec<String>> {
+    match comparator {
+        ValueExpr::Literal(Value::String(value)) => Ok(vec![value.clone()]),
+        ValueExpr::ColumnRef(value) => Ok(vec![value.clone()]),
+        ValueExpr::List(values) => {
+            let columns = values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            if columns.len() == values.len() && !columns.is_empty() {
+                Ok(columns)
+            } else {
+                Err(EngineError::InvalidComparator {
+                    operator: operator.as_name().to_owned(),
+                    comparator: comparator.clone(),
+                })
+            }
+        }
+        _ => Err(EngineError::InvalidComparator {
+            operator: operator.as_name().to_owned(),
+            comparator: comparator.clone(),
+        }),
+    }
+}
+
+fn option_usize(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<usize> {
+    let value = map.get(key).or_else(|| {
+        map.iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    })?;
+    match value {
+        Value::Number(value) => value.as_u64().and_then(|value| usize::try_from(value).ok()),
+        Value::String(value) => value.trim().parse::<usize>().ok(),
+        _ => None,
+    }
+}
+
+fn option_string(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<String> {
+    let value = map.get(key).or_else(|| {
+        map.iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    })?;
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn scalar_matches_comparator(
     left: &ScalarValue,
     comparator: &ValueExpr,
@@ -614,12 +1833,27 @@ fn scalar_matches_comparator(
         ValueExpr::List(values) => Ok(values
             .iter()
             .map(json_value_to_scalar)
-            .any(|right| scalar_equal_with_mode(left, &right, case_insensitive))),
+            .any(|right| scalar_contained_by_value(left, &right, case_insensitive))),
         _ => {
             let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
-            Ok(scalar_equal_with_mode(left, &right, case_insensitive))
+            Ok(scalar_contained_by_value(left, &right, case_insensitive))
         }
     }
+}
+
+fn string_prefix(value: &str, len: usize) -> String {
+    value.chars().take(len).collect()
+}
+
+fn string_suffix(value: &str, len: usize) -> String {
+    value
+        .chars()
+        .rev()
+        .take(len)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
 
 fn resolve_scalar_comparator(
@@ -643,6 +1877,60 @@ fn resolve_scalar_comparator(
             comparator: comparator.clone(),
         }),
     }
+}
+
+fn resolve_scalar_list_comparator(
+    comparator: &ValueExpr,
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row: usize,
+) -> Result<ScalarValue> {
+    let ValueExpr::List(values) = comparator else {
+        return resolve_scalar_comparator(comparator, dataset, frame, row);
+    };
+
+    let mut resolved = Vec::new();
+    for value in values {
+        if let Some(reference) = value.as_str() {
+            if let Some(column) = reference_column(frame, dataset, reference)? {
+                let scalar = ScalarValue::from_any_value(column.get(row)?);
+                resolved.extend(scalar_list_values(&scalar).map(|value| value.to_string()));
+                continue;
+            }
+        }
+        let scalar = json_value_to_scalar(value);
+        resolved.extend(scalar_list_values(&scalar).map(|value| value.to_string()));
+    }
+
+    Ok(ScalarValue::String(resolved.join("|")))
+}
+
+fn reference_column<'a>(
+    frame: &'a DataFrame,
+    dataset: &LoadedDataset,
+    value: &str,
+) -> Result<Option<&'a Column>> {
+    let raw = value.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+
+    let mut candidates = vec![raw.to_owned()];
+    if let Some(clean) = raw
+        .strip_prefix('$')
+        .filter(|reference| !reference.is_empty())
+    {
+        candidates.push(clean.to_owned());
+    }
+
+    for candidate in candidates {
+        let column_name = expand_domain_placeholder(dataset, &candidate);
+        if let Some(column) = optional_column(frame, &column_name)? {
+            return Ok(Some(column));
+        }
+    }
+
+    Ok(None)
 }
 
 fn expand_domain_placeholder(dataset: &LoadedDataset, name: &str) -> String {
@@ -757,12 +2045,127 @@ fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensit
         (ScalarValue::Null, ScalarValue::Null) => true,
         (ScalarValue::Null, _) | (_, ScalarValue::Null) => false,
         (ScalarValue::Bool(left), ScalarValue::Bool(right)) => left == right,
+        (ScalarValue::Bool(left), ScalarValue::String(right))
+        | (ScalarValue::String(right), ScalarValue::Bool(left)) => {
+            match right.trim().to_ascii_lowercase().as_str() {
+                "true" => *left,
+                "false" => !*left,
+                _ => false,
+            }
+        }
         (ScalarValue::String(left), ScalarValue::String(right)) if case_insensitive => {
             left.eq_ignore_ascii_case(right)
         }
         (ScalarValue::String(left), ScalarValue::String(right)) => left == right,
         (ScalarValue::Number(left), ScalarValue::Number(right)) => left == right,
         _ => false,
+    }
+}
+
+fn scalar_contained_by_value(
+    left: &ScalarValue,
+    right: &ScalarValue,
+    case_insensitive: bool,
+) -> bool {
+    if scalar_equal_with_mode(left, right, case_insensitive) {
+        return true;
+    }
+
+    let ScalarValue::String(right) = right else {
+        return false;
+    };
+    if !right.contains('|') {
+        return false;
+    }
+
+    right.split('|').any(|part| {
+        let part = part.trim();
+        scalar_equal_with_mode(
+            left,
+            &ScalarValue::String(part.to_owned()),
+            case_insensitive,
+        ) || scalar_string_equal_with_mode(left, part, case_insensitive)
+    })
+}
+
+fn scalar_contains_all(left: &ScalarValue, right: &ScalarValue, case_insensitive: bool) -> bool {
+    scalar_list_values(right).all(|value| {
+        scalar_contained_by_value(&value, left, case_insensitive)
+            || scalar_string_equal_with_mode(left, &value.to_string(), case_insensitive)
+    })
+}
+
+fn scalar_shares_no_elements_with(left: &ScalarValue, right: &ScalarValue) -> bool {
+    !scalar_list_values(left).any(|left_value| {
+        scalar_list_values(right)
+            .any(|right_value| scalar_equal_with_mode(&left_value, &right_value, false))
+    })
+}
+
+fn scalar_is_ordered_subset_of(left: &ScalarValue, right: &ScalarValue) -> bool {
+    let left_values = scalar_list_values(left)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    let right_values = scalar_list_values(right)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    if left_values.is_empty() {
+        return true;
+    }
+
+    let mut right_index = 0;
+    for left_value in left_values {
+        let Some(next_index) = right_values[right_index..]
+            .iter()
+            .position(|right_value| right_value == &left_value)
+        else {
+            return false;
+        };
+        right_index += next_index + 1;
+    }
+    true
+}
+
+fn scalar_list_values(value: &ScalarValue) -> Box<dyn Iterator<Item = ScalarValue> + '_> {
+    match value {
+        ScalarValue::String(value) if value.contains('|') => Box::new(
+            value
+                .split('|')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(|part| ScalarValue::String(part.to_owned())),
+        ),
+        ScalarValue::String(value) if value.trim().is_empty() => Box::new(std::iter::empty()),
+        other => Box::new(std::iter::once(other.clone())),
+    }
+}
+
+fn string_contains_value(haystack: &str, needle: &str, case_insensitive: bool) -> bool {
+    if haystack.contains('|') {
+        return haystack
+            .split('|')
+            .map(str::trim)
+            .any(|part| string_equal_with_mode(part, needle, case_insensitive));
+    }
+
+    if case_insensitive {
+        haystack
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+    } else {
+        haystack.contains(needle)
+    }
+}
+
+fn scalar_string_equal_with_mode(left: &ScalarValue, right: &str, case_insensitive: bool) -> bool {
+    string_equal_with_mode(&left.to_string(), right, case_insensitive)
+}
+
+fn string_equal_with_mode(left: &str, right: &str, case_insensitive: bool) -> bool {
+    if case_insensitive {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
     }
 }
 
@@ -790,6 +2193,280 @@ fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> 
             _ => None,
         },
     }
+}
+
+fn compare_complete_dates(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> {
+    Some(
+        parse_orderable_date_for_comparison(left.as_string()?)?
+            .cmp(&parse_orderable_date_for_comparison(right.as_string()?)?),
+    )
+}
+
+fn parse_orderable_date_for_comparison(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    parse_orderable_complete_date(value).or_else(|| parse_orderable_incomplete_date(value))
+}
+
+fn parse_orderable_incomplete_date(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    if value.len() == 4 && value.chars().all(|character| character.is_ascii_digit()) {
+        return Some((parse_fixed_digits(value)?, 1, 1, 0, 0, 0));
+    }
+
+    if value.len() == 7 && value.as_bytes().get(4) == Some(&b'-') {
+        let year = parse_fixed_digits(value.get(0..4)?)?;
+        let month = parse_fixed_digits(value.get(5..7)?)? as u8;
+        if (1..=12).contains(&month) {
+            return Some((year, month, 1, 0, 0, 0));
+        }
+    }
+
+    None
+}
+
+fn parse_orderable_complete_date(value: &str) -> Option<(u16, u8, u8, u8, u8, u8)> {
+    let (year, month, day) = parse_complete_date(value)?;
+    let remainder = value.get(10..).unwrap_or_default();
+    if remainder.is_empty() {
+        return Some((year, month, day, 0, 0, 0));
+    }
+    let time = remainder
+        .strip_prefix('T')
+        .or_else(|| remainder.strip_prefix(' '))?;
+    if time.len() < 5 || time.as_bytes().get(2) != Some(&b':') {
+        return None;
+    }
+    let hour = parse_fixed_digits(time.get(0..2)?)? as u8;
+    let minute = parse_fixed_digits(time.get(3..5)?)? as u8;
+    let second = if time.as_bytes().get(5) == Some(&b':') {
+        parse_fixed_digits(time.get(6..8)?)? as u8
+    } else {
+        0
+    };
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    Some((year, month, day, hour, minute, second))
+}
+
+fn parse_complete_date(value: &str) -> Option<(u16, u8, u8)> {
+    let date = value.get(..10)?;
+    let remainder = value.get(10..).unwrap_or_default();
+    if !remainder.is_empty() && !remainder.starts_with('T') {
+        return None;
+    }
+
+    let bytes = date.as_bytes();
+    if bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
+        return None;
+    }
+
+    let year = parse_fixed_digits(date.get(0..4)?)?;
+    let month = parse_fixed_digits(date.get(5..7)?)? as u8;
+    let day = parse_fixed_digits(date.get(8..10)?)? as u8;
+    if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
+        return None;
+    }
+
+    Some((year, month, day))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DateValueState {
+    Complete,
+    Incomplete,
+    Invalid,
+}
+
+fn classify_date_value(value: &str) -> Option<DateValueState> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if parse_orderable_complete_date(value).is_some() {
+        return Some(DateValueState::Complete);
+    }
+    if parse_complete_date(value).is_some()
+        && value
+            .get(10..)
+            .and_then(|remainder| remainder.strip_prefix('T'))
+            .is_some_and(is_incomplete_iso_datetime_time)
+    {
+        return Some(DateValueState::Incomplete);
+    }
+    if is_incomplete_date(value) {
+        return Some(DateValueState::Incomplete);
+    }
+    Some(DateValueState::Invalid)
+}
+
+fn is_incomplete_date(value: &str) -> bool {
+    if value.len() == 4 {
+        return value.chars().all(|character| character.is_ascii_digit());
+    }
+
+    if value.len() == 7 {
+        let year = value.get(0..4);
+        let separator = value.get(4..5);
+        let month = value.get(5..7);
+        if matches!(separator, Some("-"))
+            && year.is_some_and(|year| year.chars().all(|character| character.is_ascii_digit()))
+            && month
+                .and_then(parse_fixed_digits)
+                .is_some_and(|month| (1..=12).contains(&month))
+        {
+            return true;
+        }
+    }
+
+    if let Some(month_day) = value.strip_prefix("--") {
+        if month_day.len() == 5
+            && month_day.as_bytes().get(2) == Some(&b'-')
+            && parse_fixed_digits(&month_day[0..2]).is_some_and(|month| (1..=12).contains(&month))
+            && parse_fixed_digits(&month_day[3..5]).is_some_and(|day| (1..=31).contains(&day))
+        {
+            return true;
+        }
+    }
+
+    if value.len() == 9 && value.as_bytes().get(4..7) == Some(&b"---"[..]) {
+        return value[0..4]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+            && parse_fixed_digits(&value[7..9]).is_some_and(|day| (1..=31).contains(&day));
+    }
+
+    if value.len() == 10 && value.as_bytes().get(4..8) == Some(&b"----"[..]) {
+        return value[0..4]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+            && parse_fixed_digits(&value[8..10]).is_some_and(|day| (1..=31).contains(&day));
+    }
+
+    if value
+        .strip_prefix("-----T")
+        .is_some_and(is_incomplete_iso_time)
+    {
+        return true;
+    }
+
+    false
+}
+
+fn is_incomplete_iso_time(value: &str) -> bool {
+    if value.len() < 2 {
+        return false;
+    }
+    parse_fixed_digits(&value[0..2]).is_some_and(|hour| hour <= 23)
+}
+
+fn is_incomplete_iso_datetime_time(value: &str) -> bool {
+    if value.len() == 2 {
+        return parse_fixed_digits(value).is_some_and(|hour| hour <= 23);
+    }
+
+    value.contains('-') && value.contains(':')
+}
+
+fn parse_fixed_digits(value: &str) -> Option<u16> {
+    value
+        .chars()
+        .all(|character| character.is_ascii_digit())
+        .then(|| value.parse::<u16>().ok())
+        .flatten()
+}
+
+fn days_in_month(year: u16, month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: u16) -> bool {
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+}
+
+fn is_valid_iso_duration(value: &str) -> bool {
+    let Some(mut rest) = value.strip_prefix('P') else {
+        return false;
+    };
+    if rest.is_empty() || rest.contains('-') {
+        return false;
+    }
+
+    if let Some(week) = rest.strip_suffix('W') {
+        return !week.is_empty() && week.chars().all(|character| character.is_ascii_digit());
+    }
+
+    let mut in_time = false;
+    let mut number = String::new();
+    let mut saw_component = false;
+    let mut last_date_order = 0;
+    let mut last_time_order = 0;
+    while let Some(character) = rest.chars().next() {
+        rest = &rest[character.len_utf8()..];
+        if character == 'T' {
+            if in_time || !number.is_empty() {
+                return false;
+            }
+            in_time = true;
+            continue;
+        }
+        if character.is_ascii_digit() || character == '.' || character == ',' {
+            number.push(character);
+            continue;
+        }
+        if !is_valid_duration_number(&number) {
+            return false;
+        }
+
+        if in_time {
+            let order = match character {
+                'H' => 1,
+                'M' => 2,
+                'S' => 3,
+                _ => return false,
+            };
+            if order <= last_time_order {
+                return false;
+            }
+            last_time_order = order;
+        } else {
+            let order = match character {
+                'Y' => 1,
+                'M' => 2,
+                'D' => 4,
+                _ => return false,
+            };
+            if order <= last_date_order {
+                return false;
+            }
+            last_date_order = order;
+        }
+
+        number.clear();
+        saw_component = true;
+    }
+
+    saw_component && number.is_empty()
+}
+
+fn is_valid_duration_number(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let separator_count = value
+        .chars()
+        .filter(|character| *character == '.' || *character == ',')
+        .count();
+    separator_count <= 1
+        && !value.starts_with(['.', ','])
+        && !value.ends_with(['.', ','])
+        && value
+            .chars()
+            .all(|character| character.is_ascii_digit() || character == '.' || character == ',')
 }
 
 fn and_assign(mask: &mut [bool], other: &[bool]) {
@@ -835,7 +2512,127 @@ mod tests {
         "AESEQ_COPY": [1, 20, 3, null],
         "DOMAIN": ["AE", "CM", "", null],
         "TERM": ["Headache", "nausea", "", null],
+        "STARTDTC": ["2024-01-02", "2024-01-03T12:30:00", "2024-01", "2024-13-01"],
+        "DUR": ["P1D", "PT2H", "P1Y2M", "P-1D"],
         "FLAG": [true, false, null, true]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
+    fn sort_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2", "SUBJ2"],
+        "AESEQ": [1, 3, 2, 1, 2],
+        "AESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-01", "2024-01-02"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
+    fn end_date_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "se.xpt",
+      "domain": "SE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
+        "SESEQ": [1, 2, 3, 1],
+        "SESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-02-01"],
+        "SEENDTC": ["2024-01-02", "", "", ""]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
+    fn relationship_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
+        "VISITNUM": [1, 2, null, null],
+        "RELID": ["R1", "R1", "R2", "R3"],
+        "LEFT": ["A", "A", "C", "D"],
+        "RIGHT": ["1", "2", "3", "3"],
+        "LEFT_EMPTY": ["A", "A", "", "C"],
+        "RIGHT_EMPTY": ["1", "", "1", "2"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset")
+    }
+
+    fn enumerated_dataset() -> LoadedDataset {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "co.xpt",
+      "domain": "CO",
+      "records": {
+        "COSEQ": [1, 2, 3],
+        "COVAL": ["primary", "", "primary"],
+        "COVAL1": ["", "", "secondary"],
+        "COVAL2": ["", "later", ""]
       }
     }
   ]
@@ -856,6 +2653,22 @@ mod tests {
             operator,
             comparator,
             options: OperatorOptions::default(),
+        }
+    }
+
+    fn condition_with_options(
+        target: &str,
+        operator: Operator,
+        comparator: ValueExpr,
+        options: serde_json::Map<String, Value>,
+    ) -> Condition {
+        Condition {
+            target: Some(target.to_owned()),
+            operator,
+            comparator,
+            options: OperatorOptions {
+                extra: options.into_iter().collect(),
+            },
         }
     }
 
@@ -1008,6 +2821,24 @@ mod tests {
     }
 
     #[test]
+    fn condition_targets_match_columns_case_insensitively() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "domain",
+                    Operator::EqualTo,
+                    ValueExpr::ColumnRef("AE".to_owned())
+                ),
+                &dataset
+            )
+            .expect("case-insensitive target"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
     fn validation_issues_ignore_missing_column_ref_literal_fallback_variables() {
         let dataset = test_dataset();
         let rule = rule(
@@ -1083,7 +2914,12 @@ mod tests {
             &ScalarValue::Number(1.0),
             false
         ));
-        assert!(!scalar_equal_with_mode(
+        assert!(scalar_equal_with_mode(
+            &ScalarValue::Bool(true),
+            &ScalarValue::String("True".to_owned()),
+            false
+        ));
+        assert!(scalar_equal_with_mode(
             &ScalarValue::Bool(false),
             &ScalarValue::String("false".to_owned()),
             false
@@ -1164,6 +3000,10 @@ mod tests {
             .expect("does not contain"),
             vec![false, true, true, true]
         );
+        assert!(string_contains_value("Headache", "ache", false));
+        assert!(string_contains_value("ARMCD|SPECIES", "ARMCD", false));
+        assert!(!string_contains_value("ARMCDxxx|SPECIES", "ARMCD", false));
+        assert!(string_contains_value("armcd|species", "ARMCD", true));
         assert_eq!(
             evaluate_condition(
                 &condition("TERM", Operator::ContainsCaseInsensitive, literal("ACHE")),
@@ -1203,6 +3043,133 @@ mod tests {
             )
             .expect("does not match regex"),
             vec![false, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_open_rules_not_matches_regex_as_full_non_empty_string() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::DoesNotMatchRegexFullString,
+                    literal("[a-z]+$")
+                ),
+                &dataset
+            )
+            .expect("open rules not_matches_regex"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_usdm_ref_lookahead_regex_fallback() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ParameterMap.csv",
+      "domain": "ParameterMap",
+      "records": {
+        "reference": [
+          "<usdm:ref klass=\"Activity\" id=\"Activity_1\" attribute=\"label\"></usdm:ref>",
+          "<usdm:ref attribute=\"label\" id=\"Activity_1\" klass=\"Activity\"/>",
+          "<usdm:ref attribute=\"maxValue\" id=\"Range 1\" klass=\"Range\"/>",
+          "<usdm:ref klass=\"Range1\" id=\"Range_3\" attribute=\"maxValue\"></usdm:ref>",
+          "<usdm:ref id=\"Activity_6\" attribute=\"label\" class=\"Activity\"></usdm:ref>",
+          "a piece of text that includes usdm:ref"
+        ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+        let pattern = r#"^<usdm:ref((?=[^>]* klass=\"[a-zA-Z]+\")(?=[^>]* id=\"([^\"]+)\")(?=[^>]* attribute=\"[a-zA-Z]+\")[^>]*)(\/>|><\/usdm:ref>)$"#;
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "reference",
+                    Operator::DoesNotMatchRegexFullString,
+                    literal(pattern)
+                ),
+                &dataset
+            )
+            .expect("USDM ref lookahead fallback"),
+            vec![false, false, false, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_longer_than_against_character_count() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::LongerThan, literal(6)),
+                &dataset
+            )
+            .expect("longer than"),
+            vec![true, false, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_prefix_and_suffix_regex_operators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::StartsWith, literal("Head")),
+                &dataset
+            )
+            .expect("starts with"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("TERM", Operator::EndsWith, literal("ache")),
+                &dataset
+            )
+            .expect("ends with"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "TERM",
+                    Operator::SuffixMatchesRegex,
+                    literal("ache"),
+                    serde_json::Map::from_iter([("suffix".to_owned(), json!(4))])
+                ),
+                &dataset
+            )
+            .expect("suffix matches regex"),
+            vec![true, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "TERM",
+                    Operator::NotSuffixMatchesRegex,
+                    literal("ache"),
+                    serde_json::Map::from_iter([("suffix".to_owned(), json!(4))])
+                ),
+                &dataset
+            )
+            .expect("not suffix matches regex"),
+            vec![false, true, false, false]
         );
     }
 
@@ -1258,6 +3225,72 @@ mod tests {
             .expect("case-insensitive is not contained by"),
             vec![false, false, true, true]
         );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::IsContainedBy, literal("1|3")),
+                &dataset
+            )
+            .expect("numeric is contained by pipe-delimited set"),
+            vec![true, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("AESEQ", Operator::IsNotContainedBy, literal("1|3")),
+                &dataset
+            )
+            .expect("numeric is not contained by pipe-delimited set"),
+            vec![false, true, false, true]
+        );
+        assert!(scalar_contains_all(
+            &ScalarValue::String("AE|CM|DS".to_owned()),
+            &ScalarValue::String("AE|CM".to_owned()),
+            false
+        ));
+        assert!(!scalar_contains_all(
+            &ScalarValue::String("AE|CM|DS".to_owned()),
+            &ScalarValue::String("AE|LB".to_owned()),
+            false
+        ));
+    }
+
+    #[test]
+    fn evaluates_is_not_ordered_subset_of_operator() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "meta.xpt",
+      "domain": "META",
+      "records": {
+        "ORDER": ["STUDYID|DOMAIN|AETERM", "DOMAIN|STUDYID"],
+        "MODEL": ["STUDYID|DOMAIN|AETERM|AESEQ", "STUDYID|DOMAIN"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "ORDER",
+                    Operator::IsNotOrderedSubsetOf,
+                    ValueExpr::ColumnRef("MODEL".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not ordered subset of"),
+            vec![false, true]
+        );
     }
 
     #[test]
@@ -1295,6 +3328,437 @@ mod tests {
             )
             .expect("greater than or equal"),
             vec![false, true, true, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_open_rules_date_comparisons_against_complete_dates() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateEqualTo, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date equal"),
+            vec![false, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateNotEqualTo, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date not equal"),
+            vec![true, true, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::DateLessThan, literal("2024-01-03")),
+                &dataset
+            )
+            .expect("date less than"),
+            vec![true, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "STARTDTC",
+                    Operator::DateGreaterThanOrEqualTo,
+                    literal("2024-01-03")
+                ),
+                &dataset
+            )
+            .expect("date greater than or equal"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_open_rules_date_and_duration_validity_operators() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::IsCompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("complete date"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::IsIncompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("incomplete date"),
+            vec![false, false, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("STARTDTC", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![false, false, false, true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("DUR", Operator::InvalidDuration, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid duration"),
+            vec![false, false, false, true]
+        );
+    }
+
+    #[test]
+    fn incomplete_iso8601_dates_are_not_invalid_dates() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "ts.xpt",
+      "domain": "TS",
+      "records": {
+        "TSSEQ": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "TSVAL": [
+          "2003-12",
+          "2003",
+          "2003-12-15T13",
+          "2003-12-15T-:15",
+                "2003-12-15T13:-:17",
+                "2003---15",
+                "2013----14",
+                "--12-15",
+                "-----T07:15"
+            ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TSVAL", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![false; 9]
+        );
+    }
+
+    #[test]
+    fn malformed_iso8601_datetime_suffix_is_invalid_date() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "tx.xpt",
+      "domain": "TX",
+      "records": {
+        "TXSEQ": [1, 2],
+        "TXVAL": ["2022-03-22T05-x", "2022-03-22T05:30"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("TXVAL", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![true, false]
+        );
+    }
+
+    #[test]
+    fn date_comparisons_order_incomplete_dates_by_known_prefix() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "RFSTDTC": ["2006-03", "2018-04-17", "2018-11"],
+        "RFENDTC": ["2006-01-16", "2018-04", "2018"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RFSTDTC",
+                    Operator::DateGreaterThan,
+                    ValueExpr::ColumnRef("RFENDTC".to_owned())
+                ),
+                &dataset
+            )
+            .expect("date greater than"),
+            vec![true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_target_is_not_sorted_by_within_groups() {
+        let dataset = sort_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "AESEQ",
+                    Operator::TargetIsNotSortedBy,
+                    ValueExpr::List(vec![json!({
+                        "name": "AESTDTC",
+                        "sort_order": "asc",
+                        "null_position": "last"
+                    })]),
+                    serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))])
+                ),
+                &dataset
+            )
+            .expect("target is not sorted by"),
+            vec![false, true, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_empty_within_except_last_row() {
+        let dataset = end_date_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "SEENDTC",
+                    Operator::EmptyWithinExceptLastRow,
+                    literal("USUBJID"),
+                    serde_json::Map::from_iter([("ordering".to_owned(), json!("SESTDTC"))])
+                ),
+                &dataset
+            )
+            .expect("empty within except last row"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_does_not_have_next_corresponding_record() {
+        let dataset = end_date_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "SEENDTC",
+                    Operator::DoesNotHaveNextCorrespondingRecord,
+                    literal("SESTDTC"),
+                    serde_json::Map::from_iter([
+                        ("ordering".to_owned(), json!("SESEQ")),
+                        ("within".to_owned(), json!("USUBJID"))
+                    ])
+                ),
+                &dataset
+            )
+            .expect("does not have next corresponding record"),
+            vec![false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_not_present_on_multiple_rows_within() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "RELID",
+                    Operator::NotPresentOnMultipleRowsWithin,
+                    ValueExpr::Null,
+                    serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))])
+                ),
+                &dataset
+            )
+            .expect("not present on multiple rows within"),
+            vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_set_within_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is unique set"),
+            vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_between_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, true, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_target_to_comparator_only() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned()),
+                    serde_json::Map::from_iter([(
+                        "direction".to_owned(),
+                        json!("target_to_comparator")
+                    )])
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_with_empty_values() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "LEFT_EMPTY",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT_EMPTY".to_owned())
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![true, true, true, false]
+        );
+    }
+
+    #[test]
+    fn relationship_rule_uses_dataset_presence_preconditions() {
+        let dataset = relationship_dataset();
+        let rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::All(vec![
+                ConditionGroup::Leaf(condition("VISITNUM", Operator::NotExists, ValueExpr::Null)),
+                ConditionGroup::Leaf(condition(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned()),
+                )),
+            ]),
+            "relationship failure",
+        );
+
+        assert!(validate_rule(&rule, &dataset)
+            .expect("validate rule")
+            .errors
+            .is_empty());
+    }
+
+    #[test]
+    fn evaluates_is_inconsistent_across_dataset_within_columns() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsInconsistentAcrossDataset,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is inconsistent across dataset"),
+            vec![true, true, true, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_inconsistent_enumerated_columns() {
+        let dataset = enumerated_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "COVAL",
+                    Operator::InconsistentEnumeratedColumns,
+                    ValueExpr::Null
+                ),
+                &dataset
+            )
+            .expect("inconsistent enumerated columns"),
+            vec![false, true, false]
         );
     }
 
@@ -1355,6 +3819,22 @@ mod tests {
             )
             .expect("is not empty"),
             vec![true, true, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("MISSING", Operator::IsEmpty, ValueExpr::Null),
+                &dataset
+            )
+            .expect("missing column is not empty"),
+            vec![false, false, false, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("MISSING", Operator::IsNotEmpty, ValueExpr::Null),
+                &dataset
+            )
+            .expect("missing column is not not-empty"),
+            vec![false, false, false, false]
         );
     }
 
@@ -1600,6 +4080,48 @@ mod tests {
 
         assert_eq!(result.execution_status, ExecutionStatus::Failed);
         assert_eq!(result.errors[0].variables, vec!["TERM", "AESEQ", "DOMAIN"]);
+    }
+
+    #[test]
+    fn empty_within_except_last_row_reports_only_target_variable() {
+        let dataset = end_date_dataset();
+        let mut rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition_with_options(
+                "SEENDTC",
+                Operator::EmptyWithinExceptLastRow,
+                literal("USUBJID"),
+                serde_json::Map::from_iter([("ordering".to_owned(), json!("SESTDTC"))]),
+            )),
+            "SEENDTC is empty before the last row",
+        );
+        rule.output_variables = vec!["SESTDTC".to_owned(), "SEENDTC".to_owned()];
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["SEENDTC"]);
+    }
+
+    #[test]
+    fn not_present_on_multiple_rows_reports_within_and_target_variables() {
+        let dataset = relationship_dataset();
+        let mut rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::Leaf(condition_with_options(
+                "RELID",
+                Operator::NotPresentOnMultipleRowsWithin,
+                ValueExpr::Null,
+                serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))]),
+            )),
+            "RELID must appear on multiple rows",
+        );
+        rule.output_variables = vec!["RELID".to_owned()];
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors[0].variables, vec!["USUBJID", "RELID"]);
     }
 
     #[test]

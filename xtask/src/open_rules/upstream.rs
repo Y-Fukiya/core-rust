@@ -109,6 +109,10 @@ pub fn read_upstream_lock(path: &Path) -> Result<UpstreamLock> {
 }
 
 fn observed_checkout_sha(open_rules_root: &Path) -> Result<String> {
+    if !open_rules_root.join(".git").exists() {
+        anyhow::bail!("not a git checkout");
+    }
+
     let output = Command::new("git")
         .arg("-C")
         .arg(open_rules_root)

@@ -117,6 +117,210 @@ Show CLI help:
 cargo run -p core-cli -- validate --help
 ```
 
+## CDISC Rulekit Pilot
+
+The Python `cdisc_rulekit` package provides a Phase 1 read-only pipeline for
+normalizing P21 rule exports and CDISC Open Rules into catalogs, candidate
+mappings, conversion classifications, and reports. It does not generate or copy
+rules in this phase.
+
+The Open Rules input may be either an extracted repository directory or a zip
+archive such as `cdisc-open-rules-main.zip`. Zip archives are extracted under
+`output/_work/` during read-only commands.
+
+```sh
+python -m cdisc_rulekit.cli pilot-preflight \
+  --p21-rules input/p21/cdisc_rule_definitions_latest_2204.csv \
+  --p21-domain-map input/p21/cdisc_rule_domain_map.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output/reports \
+  --standard SDTM-IG \
+  --limit 20
+
+python -m cdisc_rulekit.cli build-readonly \
+  --p21-rules input/p21/cdisc_rule_definitions_latest_2204.csv \
+  --p21-domain-map input/p21/cdisc_rule_domain_map.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output \
+  --standard SDTM-IG \
+  --limit 20
+```
+
+Phase 1 reports include:
+
+- `classification_quality.md`
+- `macro_inventory.csv`
+- `macro_inventory_summary.md`
+- `fuzzy_mapping_review.csv`
+- `reason_examples.csv`
+- `version_agency_summary.csv`
+- `raw_rule_id_summary.csv`
+- `source_rule_tracking.csv`
+
+Phase 2 minimal generation uses the read-only outputs and conservatively creates
+Draft rules only for `AUTO_CONVERTIBLE` rows that are not fuzzy CORE candidates.
+Generated rules are written under `generated_rules/`; existing Open Rules
+`Published/` content is not modified.
+
+```sh
+python -m cdisc_rulekit.cli generate \
+  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
+  --conversion-status output/catalog/conversion_status.csv \
+  --operator-inventory output/catalog/core_operator_inventory.csv \
+  --out output
+
+# Expanded draft generation. This keeps fuzzy CORE candidates as draft P21PORT
+# rules and records FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW in manifest.json.
+python -m cdisc_rulekit.cli generate \
+  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
+  --conversion-status output/catalog/conversion_status.csv \
+  --operator-inventory output/catalog/core_operator_inventory.csv \
+  --out output-expanded \
+  --include-fuzzy-candidates
+
+python -m cdisc_rulekit.cli validate-structure \
+  --generated-rules output/generated_rules \
+  --out output/reports
+
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules output/generated_rules \
+  --out output \
+  --dry-run
+
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules output/generated_rules \
+  --out output
+
+# Official Python CORE source checkout. Use absolute paths when --engine-cwd is
+# set because CORE reads resources relative to its repository root.
+python -m cdisc_rulekit.cli run-core \
+  --generated-rules /Users/yfukiya/Documents/core-rust/output/generated_rules \
+  --out /Users/yfukiya/Documents/core-rust/output/core_cli_run \
+  --engine-command "/Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/.venv/bin/python /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
+  --output-mode file-base \
+  --data-mode data-dir \
+  --engine-cwd /Users/yfukiya/Documents/core-rust/input/cdisc-rules-engine \
+  --workers 6
+
+python -m cdisc_rulekit.cli compare-results \
+  --generated-rules output/generated_rules \
+  --actual-root output/core_runs \
+  --out output/reports
+
+python -m cdisc_rulekit.cli export-rules \
+  --generated-rules output/generated_rules \
+  --open-rules-repo input/cdisc-open-rules
+
+# Export only comparison-passed rules to a dedicated target subtree (recommended for PR-ready candidates)
+python -m cdisc_rulekit.cli export-rules \
+  --generated-rules output/generated_rules \
+  --open-rules-repo input/cdisc-open-rules \
+  --comparison-summary output/reports/comparison_summary.csv \
+  --only-passed \
+  --target-subdir Unpublished/NEW-RULE/FINAL-PASS
+```
+
+`run-core --dry-run` writes the planned engine commands without executing them.
+By default, non-dry-run execution passes only dataset CSV files from each
+generated `positive/01/data` and `negative/01/data` directory to `core-cli`;
+Open Rules auxiliary files such as `.env`, `_datasets.csv`, and
+`_variables.csv` are not passed as datasets. For the official Python CORE CLI,
+use `--data-mode data-dir` so the full Open Rules test data directory is passed
+with `_datasets.csv` / `_variables.csv`, and `--output-mode file-base` so
+`report.json` / `report.csv` lands under the case output directory. `--workers`
+runs case-level CORE invocations in parallel; keep this moderate because the
+official CORE CLI also initializes its own validation machinery per process.
+`compare-results` compares structural fields such as rule id, dataset/domain,
+row, variables, USUBJID, and sequence values. It supports both the Rust harness
+`results/errors` JSON shape and official Python CORE `Issue_Details` JSON
+shape. Diagnostic message wording is not a primary comparison key. Actual
+skipped CORE cases are reported as `ACTUAL_SKIPPED`, separate from structural
+mismatches.
+
+`export-rules` copies generated draft rules into
+`Unpublished/NEW-RULE/<draft-rule-id>/` by default and writes
+`export_manifest.json` / `export_manifest.csv`. Existing target directories are
+not overwritten unless `--overwrite` is supplied.
+
+Latest SDTM-IG pilot result:
+
+- Successful run directory: `output/sdtmig_phase2_rerun5`
+- Generated high-confidence draft rules: 17
+- CORE execution comparison: 34 passed, 0 failed
+- Remaining skipped rows are generation-scope coverage gaps, not supported CORE
+  mismatches. Keep them separate from wrong results when expanding generation.
+
+- Latest full SDTM-IG rerun: `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard`
+- Final official-core rerun (version-template):
+  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template`
+- Generated draft rules: 552
+- Structural comparison result: 1094 passed, 10 non-pass / 1104 total
+- PASS rules by rule-id: 547
+- CORE skipped coverage gaps: 5 rules (e.g., `SD1234`, `SD1326`)
+- PASS-only export manifest example:
+  `output/sdtmig_full_rerun_20260621_expanded_v3_unique_guard_official_core_final_version_template/reports/comparison_summary.csv`
+
+Latest expanded SDTM-IG draft export:
+
+- Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
+- Generated draft rules: 395
+- Structure validation: 395 rules checked, ok
+- Export target:
+  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-CONDITION-TARGET`
+- Export result: 395 exported, 0 skipped
+- `Published/` was not modified. Fuzzy-derived rules remain draft/review items
+  through the `FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW` manifest warning.
+
+Official Python CORE smoke:
+
+- CORE source checkout: `input/cdisc-rules-engine` at commit `b8202fe`
+- Installed into `input/cdisc-rules-engine/.venv` with Python 3.12
+- `core.py test-validate json`: passed when run from the CORE repository root
+- `run-core` against one generated rule with official CORE options: 2 passed,
+  0 failed
+- `compare-results` against that official CORE output: 2 passed, 0 failed
+
+Official Python CORE full run:
+
+- Run directory: `output/sdtmig_official_core_fix_find_regex_numeric`
+- Generated rules directory: `output/sdtmig_phase2_fix_find_regex_numeric`
+- Generated rules executed: 395
+- Case executions: 790
+- CORE CLI execution summary: 790 passed, 0 failed
+- Structural comparison summary: 778 passed, 12 non-pass
+- Supported mismatch rows: 0
+- Skipped coverage-gap rows: 12
+- Supported-mismatch gate:
+  `compare-results --allow-actual-skipped` returns ok because the remaining
+  non-pass rows are official CORE skipped coverage gaps.
+- Non-pass classification:
+  - `ACTUAL_SKIPPED_BY_CORE`: 12 rows / 6 rules
+  - `PASS`: 778 rows / 389 rules
+- Classification artifacts:
+  `reports/official_core_failure_classification.{csv,json,md}`
+- Accepted export target:
+  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-OFFICIAL-CORE-PASS`
+- Accepted export result: 389 exported, 6 skipped by comparison status
+
+Minimal generated outputs include:
+
+- `generated_rules/<draft-rule-id>/rule.yml`
+- `generated_rules/<draft-rule-id>/manifest.json`
+- `generated_rules/<draft-rule-id>/expected_results.csv`
+- `generated_rules/<draft-rule-id>/positive/01/data/*`
+- `generated_rules/<draft-rule-id>/negative/01/data/*`
+- `reports/generation_summary.csv`
+- `reports/generation_summary.json`
+- `reports/structure_validation.md`
+- `reports/core_run_plan.json`
+- `reports/core_run_plan.md`
+- `reports/core_run_execution_summary.csv`
+- `reports/core_run_execution_summary.json`
+- `reports/core_run_execution_summary.md`
+- `reports/comparison_summary.csv`
+- `reports/comparison_summary.json`
+- `reports/comparison_summary.md`
+
 ## Workspace Layout
 
 - `apps/cli`: command-line interface.

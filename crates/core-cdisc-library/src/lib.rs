@@ -57,6 +57,8 @@ pub struct DefineVariable {
 pub struct ControlledTerm {
     pub codelist: String,
     pub value: String,
+    #[serde(default)]
+    pub code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,6 +78,7 @@ pub struct DefineItemRef {
     pub item_oid: Option<String>,
     pub order_number: Option<String>,
     pub mandatory: Option<String>,
+    pub role: Option<String>,
     pub method_oid: Option<String>,
     pub where_clause_oid: Option<String>,
     pub value_list_oid: Option<String>,
@@ -222,6 +225,7 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
                         codelist: codelist_id.clone(),
                         value: attr(item, "CodedValue")
                             .or_else(|| attr(item, "SubmissionValue"))?,
+                        code: term_code_alias(item),
                     })
                 }),
         );
@@ -308,6 +312,16 @@ pub fn parse_define_xml(source: &str) -> Result<DefineXmlMetadata> {
     })
 }
 
+fn term_code_alias(node: Node<'_, '_>) -> Option<String> {
+    node.children()
+        .filter(|child| has_local_name(*child, "Alias"))
+        .find_map(|alias| {
+            attr(alias, "Context")
+                .filter(|context| context.eq_ignore_ascii_case("nci:ExtCodeID"))
+                .and_then(|_| attr(alias, "Name"))
+        })
+}
+
 fn define_variable_from_item(node: Node<'_, '_>) -> DefineVariable {
     let codelist_oid = attr(node, "CodeListOID").or_else(|| {
         node.descendants()
@@ -331,6 +345,7 @@ fn parse_item_refs(node: Node<'_, '_>) -> Vec<DefineItemRef> {
             item_oid: attr(child, "ItemOID"),
             order_number: attr(child, "OrderNumber"),
             mandatory: attr(child, "Mandatory"),
+            role: attr(child, "Role"),
             method_oid: attr(child, "MethodOID"),
             where_clause_oid: attr(child, "WhereClauseOID"),
             value_list_oid: attr(child, "ValueListOID"),
@@ -381,6 +396,11 @@ fn codelist_aliases_from_node(node: Node<'_, '_>, canonical: &str) -> BTreeSet<S
             aliases.insert(value);
         }
     }
+    aliases.extend(
+        node.children()
+            .filter(|child| has_local_name(*child, "Alias"))
+            .filter_map(|alias| attr(alias, "Name")),
+    );
     if let Some(last) = canonical.rsplit(['.', '-']).next() {
         if !last.is_empty() {
             aliases.insert(last.to_owned());
@@ -825,7 +845,7 @@ mod tests {
 <ODM xmlns:def="http://www.cdisc.org/ns/def/v2.1">
   <ItemGroupDef OID="IG.AE" Name="AE" Domain="AE" Purpose="Tabulation" Repeating="Yes">
     <ItemRef ItemOID="IT.AE.USUBJID" OrderNumber="1" Mandatory="Yes"/>
-    <ItemRef ItemOID="IT.AE.AEDECOD" OrderNumber="2" Mandatory="No" MethodOID="MT.AEDECOD" WhereClauseOID="WC.AESER"/>
+    <ItemRef ItemOID="IT.AE.AEDECOD" OrderNumber="2" Mandatory="No" MethodOID="MT.AEDECOD" WhereClauseOID="WC.AESER" Role="Identifier"/>
   </ItemGroupDef>
   <ValueListDef OID="VL.AE.AEDECOD">
     <ItemRef ItemOID="IT.AE.AEDECOD" OrderNumber="1" Mandatory="No" WhereClauseOID="WC.AESER"/>
@@ -849,6 +869,10 @@ mod tests {
         assert_eq!(
             metadata.datasets[0].item_refs[1].method_oid.as_deref(),
             Some("MT.AEDECOD")
+        );
+        assert_eq!(
+            metadata.datasets[0].item_refs[1].role.as_deref(),
+            Some("Identifier")
         );
         assert_eq!(metadata.value_lists.len(), 1);
         assert_eq!(
