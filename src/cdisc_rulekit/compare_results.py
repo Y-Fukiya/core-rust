@@ -206,6 +206,13 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
     if expected_count == 0:
         return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
     if any(_matches_expected(issue, expected) for issue in issues):
+        if expected_count > 1:
+            return {
+                **base,
+                "actual_issue_count": actual_count,
+                "status": "PARTIAL_STRUCTURAL_CHECK",
+                "notes": "expected_results.csv only describes one representative issue for a multi-issue case",
+            }
         return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
     return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "structural issue fields did not match"}
 
@@ -228,6 +235,8 @@ def _failure_classification(row: dict[str, object]) -> str:
         return "ACTUAL_SKIPPED_BY_CORE"
     if status == "ACTUAL_MISSING":
         return "ACTUAL_OUTPUT_MISSING"
+    if status == "PARTIAL_STRUCTURAL_CHECK":
+        return "PARTIAL_STRUCTURAL_CHECK"
     if status == "EXPECTED_MISSING":
         return "EXPECTED_OUTPUT_MISSING"
     if status != "FAIL":
@@ -259,6 +268,9 @@ def _classification_description(classification: str) -> str:
         "POSITIVE_TRIGGERED_UNEXPECTEDLY": "Positive generated data expected no issue but official CORE reported one.",
         "ISSUE_COUNT_MISMATCH": "Expected and actual issue counts differ.",
         "STRUCTURAL_MISMATCH": "Issue count matched but structural fields did not match.",
+        "PARTIAL_STRUCTURAL_CHECK": (
+            "Issue count matched, but expected_results.csv only described one representative issue."
+        ),
         "SUPPORTED_MISMATCH": "Supported execution produced an unmatched result.",
     }
     return descriptions.get(classification, "Non-pass result requiring review.")

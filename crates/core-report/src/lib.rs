@@ -268,38 +268,51 @@ pub fn write_log_report(
         source,
     })?;
 
-    writeln!(file, "schema_version={}", metadata.schema_version).map_err(|source| {
+    writeln!(
+        file,
+        "schema_version={}",
+        escape_log_field(&metadata.schema_version)
+    )
+    .map_err(|source| ReportError::WriteFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    writeln!(file, "engine={}", escape_log_field(&metadata.engine)).map_err(|source| {
         ReportError::WriteFile {
             path: path.to_path_buf(),
             source,
         }
     })?;
-    writeln!(file, "engine={}", metadata.engine).map_err(|source| ReportError::WriteFile {
-        path: path.to_path_buf(),
-        source,
-    })?;
     if let Some(version) = &metadata.engine_version {
-        writeln!(file, "engine_version={version}").map_err(|source| ReportError::WriteFile {
-            path: path.to_path_buf(),
-            source,
+        writeln!(file, "engine_version={}", escape_log_field(version)).map_err(|source| {
+            ReportError::WriteFile {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
     }
     if let Some(level) = &metadata.log_level {
-        writeln!(file, "log_level={level}").map_err(|source| ReportError::WriteFile {
-            path: path.to_path_buf(),
-            source,
+        writeln!(file, "log_level={}", escape_log_field(level)).map_err(|source| {
+            ReportError::WriteFile {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
     }
     if let Some(standard) = &metadata.standard {
-        writeln!(file, "standard={standard}").map_err(|source| ReportError::WriteFile {
-            path: path.to_path_buf(),
-            source,
+        writeln!(file, "standard={}", escape_log_field(standard)).map_err(|source| {
+            ReportError::WriteFile {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
     }
     if let Some(version) = &metadata.standard_version {
-        writeln!(file, "standard_version={version}").map_err(|source| ReportError::WriteFile {
-            path: path.to_path_buf(),
-            source,
+        writeln!(file, "standard_version={}", escape_log_field(version)).map_err(|source| {
+            ReportError::WriteFile {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
     }
     for (name, value) in [
@@ -332,10 +345,10 @@ pub fn write_log_report(
         writeln!(
             file,
             "result rule_id={} status={} dataset={} domain={} errors={} skipped_reason={}",
-            result.rule_id,
+            escape_log_field(&result.rule_id),
             execution_status_name(&result.execution_status),
-            result.dataset,
-            result.domain.clone().unwrap_or_default(),
+            escape_log_field(&result.dataset),
+            escape_log_field(&result.domain.clone().unwrap_or_default()),
             result.error_count,
             skipped_reason_name(result),
         )
@@ -480,11 +493,32 @@ fn write_csv_line(mut writer: impl Write, fields: &[impl AsRef<str>]) -> std::io
 }
 
 fn escape_csv_field(field: &str) -> String {
+    let field = if field.starts_with(['=', '+', '-', '@']) {
+        format!("'{field}")
+    } else {
+        field.to_owned()
+    };
     if field.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", field.replace('"', "\"\""))
     } else {
-        field.to_owned()
+        field
     }
+}
+
+fn escape_log_field(field: &str) -> String {
+    field
+        .chars()
+        .flat_map(|character| match character {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect(),
+            '\r' => "\\r".chars().collect(),
+            '\t' => "\\t".chars().collect(),
+            _ if character.is_control() => {
+                format!("\\u{{{:x}}}", character as u32).chars().collect()
+            }
+            _ => vec![character],
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -575,6 +609,71 @@ CORE-TEST-0001,failed,AE,AE,2,DOMAIN,DOMAIN must be AE,2,,SUBJ2,2\n\
 CORE-TEST-0001,failed,AE,AE,3,DOMAIN|AESEQ,\"DOMAIN, AESEQ need review\",2,,SUBJ3,3\n\
 CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
         );
+    }
+
+    #[test]
+    fn write_csv_report_escapes_spreadsheet_formula_prefixes() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("report.csv");
+        let results = vec![RuleValidationResult {
+            rule_id: "=CORE-TEST-0001".to_owned(),
+            execution_status: ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset: "+AE".to_owned(),
+            domain: Some("-AE".to_owned()),
+            message: "@message".to_owned(),
+            error_count: 1,
+            errors: vec![ValidationIssue {
+                rule_id: "=CORE-TEST-0001".to_owned(),
+                dataset: "+AE".to_owned(),
+                domain: Some("-AE".to_owned()),
+                row: Some(1),
+                variables: vec!["@DOMAIN".to_owned()],
+                message: "@message".to_owned(),
+                usubjid: Some("=SUBJ".to_owned()),
+                seq: Some("+1".to_owned()),
+            }],
+        }];
+
+        write_csv_report(&path, &results).expect("write csv");
+        let source = fs::read_to_string(path).expect("read csv");
+
+        assert!(
+            source.contains("'=CORE-TEST-0001,failed,'+AE,'-AE,1,'@DOMAIN,'@message,1,,'=SUBJ,'+1")
+        );
+    }
+
+    #[test]
+    fn write_log_report_escapes_control_characters() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("validation.log");
+        let results = vec![RuleValidationResult {
+            rule_id: "CORE\nINJECT".to_owned(),
+            execution_status: ExecutionStatus::Passed,
+            skipped_reason: None,
+            dataset: "AE\tTAB".to_owned(),
+            domain: Some("DM\rCR".to_owned()),
+            message: String::new(),
+            error_count: 0,
+            errors: Vec::new(),
+        }];
+
+        write_log_report(
+            &path,
+            &results,
+            &ReportMetadata {
+                engine_version: Some("0.1\nbad=true".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("write log");
+        let source = fs::read_to_string(path).expect("read log");
+
+        assert!(source.contains("engine_version=0.1\\nbad=true"));
+        assert!(source.contains("rule_id=CORE\\nINJECT"));
+        assert!(source.contains("dataset=AE\\tTAB"));
+        assert!(source.contains("domain=DM\\rCR"));
+        assert!(!source.lines().any(|line| line == "bad=true"));
     }
 
     #[test]

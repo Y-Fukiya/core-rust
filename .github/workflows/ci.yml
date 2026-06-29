@@ -8,6 +8,27 @@ on:
       - "codex/**"
 
 jobs:
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install package
+        run: python -m pip install -e ".[test]"
+
+      - name: Compile Python
+        run: PYTHONDONTWRITEBYTECODE=1 python -B -m compileall -q src tests
+
+      - name: Test Python
+        run: PYTHONDONTWRITEBYTECODE=1 python -B -m pytest -p no:cacheprovider -q
+
   rust:
     name: Rust
     runs-on: ubuntu-latest

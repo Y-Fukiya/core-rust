@@ -726,6 +726,8 @@ def generate_rules(
     limit: int | None = None,
     include_fuzzy_candidates: bool = False,
 ) -> GenerationSummary:
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be zero or greater")
     selected = rules[:limit] if limit is not None else rules
     root = Path(out_dir)
     ensure_dir(root / "reports")

@@ -53,6 +53,8 @@ pub enum ApiError {
     Engine(#[from] EngineError),
     #[error("failed to write reports: {0}")]
     Report(#[from] ReportError),
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -140,9 +142,9 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     };
 
     for rule in &executable_rules {
-        let Some(cdisc_context) = cdisc_context.as_ref() else {
-            continue;
-        };
+        let cdisc_context = cdisc_context
+            .as_ref()
+            .ok_or_else(|| ApiError::Internal("missing CDISC context".to_owned()))?;
         let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
         if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
             results.push(result);
@@ -244,8 +246,6 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         {
             results.push(result);
         }
-
-        if results[rule_result_start..].is_empty() {}
     }
 
     let reports = request
@@ -387,7 +387,6 @@ fn normalize_validation_result(
     result
 }
 
-#[allow(clippy::if_same_then_else)]
 fn oracle_gap_result_after_execution(
     rule: &ExecutableRule,
     result: &RuleValidationResult,
@@ -396,80 +395,7 @@ fn oracle_gap_result_after_execution(
     // Open Rules oracle gaps are coverage decisions, not a reason to rewrite an
     // executed engine failure. Keeping failures as failures preserves the
     // independence of score reports and prevents false-positive conformance.
-    return None;
-
-    #[allow(unreachable_code)]
-    let should_skip = if should_defer_empty_non_empty_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_etcd_length_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_unique_set_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_sort_operator_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_not_unique_relationship_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_inconsistent_across_dataset_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_relrec_or_supp_match_dataset_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_multi_base_match_dataset_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_duplicate_match_dataset_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_entity_column_ref_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_domain_placeholder_column_ref_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_domain_presence_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_variable_metadata_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_distinct_operation_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_positive_zero_oracle_gap_probe(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else if should_defer_date_operator_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-            && !is_supported_date_oracle_gap_failure(rule, result)
-    } else if should_defer_dy_operation_oracle_gap(rule) {
-        result.execution_status == core_engine::ExecutionStatus::Failed
-    } else {
-        false
-    };
-
-    should_skip.then(|| RuleValidationResult {
-        rule_id: rule.core_id.clone(),
-        execution_status: core_engine::ExecutionStatus::Skipped,
-        skipped_reason: Some(SkippedReason::OracleSemanticsGap),
-        dataset: result.dataset.clone(),
-        domain: result.domain.clone(),
-        message: format!(
-            "Rule {} uses oracle semantics that are not supported for this result",
-            rule.core_id
-        ),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn is_supported_date_oracle_gap_failure(
-    rule: &ExecutableRule,
-    result: &RuleValidationResult,
-) -> bool {
-    matches!(
-        (rule.core_id.as_str(), result.error_count),
-        ("CORE-000138", _)
-            | ("CORE-000139", _)
-            | ("CORE-000324", _)
-            | ("CORE-000460", _)
-            | ("CORE-000505", _)
-            | ("CORE-000572", _)
-            | ("CORE-000653", _)
-            | ("CORE-000711", _)
-            | ("CORE-000714", _)
-            | ("CORE-000866", _)
-    )
+    None
 }
 
 fn is_core_000595_missing_casno_oracle_issue(
@@ -8827,6 +8753,7 @@ fn json_scalar_string(value: &Value) -> Option<String> {
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
+}
 
 fn operation_input_datasets(
     rule: &ExecutableRule,
