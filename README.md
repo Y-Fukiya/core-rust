@@ -131,6 +131,13 @@ cargo run -p core-cli -- validate \
 written. For finer control, use `--fail-on failed`, `--fail-on skipped`, or
 `--fail-on failed,skipped`.
 
+| Mode | Exit behavior |
+| --- | --- |
+| default | Exits 0 if execution completes, even when reports contain failed or skipped results. |
+| `--fail-on failed` | Exits non-zero when failed validation results are present. |
+| `--fail-on skipped` | Exits non-zero when skipped validation results are present. |
+| `--strict` | Equivalent to `--fail-on failed,skipped`. |
+
 Show CLI help:
 
 ```sh

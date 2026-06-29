@@ -35,8 +35,13 @@ jobs:
             --out target/open-rules-scoreboard-upstream \
             --strict-lock
           score_status=$?
+          set -e
           echo "open-rules upstream observe exit code: ${score_status}"
-          echo "The scheduled full upstream job uploads scoreboard artifacts for review."
+          if [ ! -f target/open-rules-scoreboard-upstream/scoreboard.json ]; then
+            echo "scoreboard.json was not generated; this is an infrastructure or harness failure."
+            exit 1
+          fi
+          echo "Scoreboard generated; compatibility gaps are tracked in uploaded artifacts."
           echo "Repository-local Open Rules fixtures remain the enforced PR gate."
           exit 0
 
