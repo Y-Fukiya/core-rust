@@ -44,6 +44,17 @@ def _copy_rule_dir(source: Path, target: Path, overwrite: bool) -> dict[str, obj
     return {**row, "export_status": "EXPORTED", "skip_reason": ""}
 
 
+def _resolve_target_root(open_rules_repo: str | Path, target_subdir: str | Path) -> Path:
+    repo_root = Path(open_rules_repo).resolve()
+    subdir = Path(target_subdir)
+    if subdir.is_absolute() or ".." in subdir.parts:
+        raise ValueError("target_subdir must be a relative path inside open_rules_repo")
+    target_root = (repo_root / subdir).resolve()
+    if not target_root.is_relative_to(repo_root):
+        raise ValueError("target_subdir must resolve inside open_rules_repo")
+    return target_root
+
+
 def _skip_rule_dir(source: Path, target: Path, reason: str) -> dict[str, object]:
     return {
         "generated_rule_id": source.name,
@@ -78,7 +89,7 @@ def export_generated_rules(
     only_passed: bool = False,
 ) -> ExportSummary:
     generated_root = Path(generated_rules_dir)
-    target_root = Path(open_rules_repo) / Path(target_subdir)
+    target_root = _resolve_target_root(open_rules_repo, target_subdir)
     ensure_dir(target_root)
     rule_dirs = sorted(path for path in generated_root.iterdir() if path.is_dir()) if generated_root.exists() else []
     if only_passed and comparison_summary is None:

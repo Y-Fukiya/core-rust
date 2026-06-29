@@ -98,6 +98,25 @@ def test_build_core_run_plan_substitutes_env_placeholders_in_engine_command(tmp_
     assert "{version}" not in first.command
 
 
+def test_build_core_run_plan_preserves_env_placeholder_as_single_argument(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_dir = _generated_rule(generated_root)
+    for env_path in rule_dir.glob("*/01/data/.env"):
+        env_path.write_text("PRODUCT=SDTMIG --unexpected-flag\nVERSION=3-3\n", encoding="utf-8")
+
+    plan = build_core_run_plan(
+        generated_root,
+        run_root=tmp_path / "core_runs",
+        engine_command="python core.py validate -s {product} -v {version}",
+        output_mode="file-base",
+        data_mode="data-dir",
+    )
+
+    first = plan.items[0]
+    assert first.command[first.command.index("-s") + 1] == "SDTMIG --unexpected-flag"
+    assert "--unexpected-flag" not in first.command
+
+
 def test_execute_core_run_plan_can_run_from_engine_cwd(tmp_path):
     generated_root = tmp_path / "generated_rules"
     _generated_rule(generated_root)

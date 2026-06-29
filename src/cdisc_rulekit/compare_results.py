@@ -45,7 +45,7 @@ class ComparisonResult:
 
     @property
     def ok(self) -> bool:
-        return self.fail_count == 0
+        return bool(self.rows) and self.fail_count == 0
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -186,6 +186,13 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
     }
     if issues is None:
         return {**base, "actual_issue_count": "", "status": "ACTUAL_MISSING", "notes": missing_note}
+    if skipped_count and issues:
+        return {
+            **base,
+            "actual_issue_count": len(issues),
+            "status": "ACTUAL_MIXED_SKIPPED_AND_ISSUES",
+            "notes": "actual CORE output contains skipped result(s) and issue(s)",
+        }
     if skipped_count:
         return {
             **base,
@@ -215,6 +222,8 @@ def _failure_classification(row: dict[str, object]) -> str:
     notes = str(row.get("notes") or "")
     if status == "PASS":
         return "PASS"
+    if status == "ACTUAL_MIXED_SKIPPED_AND_ISSUES":
+        return "ACTUAL_MIXED_SKIPPED_AND_ISSUES"
     if status == "ACTUAL_SKIPPED":
         return "ACTUAL_SKIPPED_BY_CORE"
     if status == "ACTUAL_MISSING":
@@ -240,6 +249,9 @@ def _failure_classification(row: dict[str, object]) -> str:
 def _classification_description(classification: str) -> str:
     descriptions = {
         "PASS": "Expected and actual structural fields matched.",
+        "ACTUAL_MIXED_SKIPPED_AND_ISSUES": (
+            "Actual CORE output mixed skipped execution with issue rows; this is a correctness failure."
+        ),
         "ACTUAL_SKIPPED_BY_CORE": "Official CORE skipped execution; coverage gap, not a correctness mismatch.",
         "ACTUAL_OUTPUT_MISSING": "No actual CORE report was found for the generated case.",
         "EXPECTED_OUTPUT_MISSING": "The generated rule is missing expected_results.csv.",
@@ -276,6 +288,8 @@ def classification_counts(result: ComparisonResult) -> dict[str, int]:
 def comparison_gate_ok(result: ComparisonResult, *, allow_actual_skipped: bool = False) -> bool:
     if result.ok:
         return True
+    if not result.rows:
+        return False
     if not allow_actual_skipped:
         return False
     return all(_failure_classification(row) in {"PASS", "ACTUAL_SKIPPED_BY_CORE"} for row in result.rows)

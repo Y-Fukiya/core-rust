@@ -1,6 +1,6 @@
 import json
 
-from cdisc_rulekit.compare_results import compare_generated_results, write_comparison_report
+from cdisc_rulekit.compare_results import compare_generated_results, comparison_gate_ok, write_comparison_report
 
 
 def _expected_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
@@ -233,6 +233,49 @@ def test_compare_generated_results_reports_actual_skipped_separately_from_failur
     negative = next(row for row in result.rows if row["case_type"] == "negative")
     assert negative["status"] == "ACTUAL_SKIPPED"
     assert negative["notes"] == "actual CORE output contains skipped result(s)"
+
+
+def test_compare_generated_results_fails_mixed_skipped_and_issues_even_when_skips_are_allowed(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"
+    _expected_rule(generated_root, rule_id)
+    actual_dir = tmp_path / "core_runs" / rule_id / "negative" / "01"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "Issue_Details": [
+                    {
+                        "core_id": rule_id,
+                        "dataset": "DM",
+                        "row": 1,
+                        "variables": ["RFICDTC"],
+                    },
+                ],
+                "Rules_Report": [
+                    {"core_id": rule_id, "status": "SKIPPED"},
+                    {"core_id": rule_id, "status": "ISSUE REPORTED"},
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+    positive_dir = tmp_path / "core_runs" / rule_id / "positive" / "01"
+    positive_dir.mkdir(parents=True)
+    (positive_dir / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+
+    result = compare_generated_results(generated_root, tmp_path / "core_runs")
+
+    negative = next(row for row in result.rows if row["case_type"] == "negative")
+    assert negative["status"] == "ACTUAL_MIXED_SKIPPED_AND_ISSUES"
+    assert not comparison_gate_ok(result, allow_actual_skipped=True)
+
+
+def test_compare_generated_results_empty_input_is_not_ok(tmp_path):
+    result = compare_generated_results(tmp_path / "generated_rules", tmp_path / "core_runs")
+
+    assert not result.ok
+    assert not comparison_gate_ok(result, allow_actual_skipped=True)
 
 
 def test_compare_generated_results_reports_missing_actual_output(tmp_path):

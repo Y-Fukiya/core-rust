@@ -9,6 +9,7 @@ from .classify import classify_rules
 from .compare_results import classification_counts, compare_generated_results, comparison_gate_ok, write_comparison_report
 from .core_runner import (
     DEFAULT_ENGINE_COMMAND,
+    DEFAULT_TIMEOUT_SECONDS,
     build_core_run_plan,
     execute_core_run_plan,
     write_core_run_execution_report,
@@ -407,7 +408,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_core.add_argument("--data-mode", choices=["dataset-paths", "data-dir"], default="dataset-paths")
     run_core.add_argument("--engine-cwd", type=Path, default=None)
     run_core.add_argument("--workers", type=int, default=1)
-    run_core.add_argument("--timeout-seconds", type=float, default=None)
+    run_core.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Per-case timeout in seconds; use 0 to disable.",
+    )
     run_core.add_argument("--dry-run", action="store_true")
     run_core.set_defaults(func=cmd_run_core)
 
