@@ -354,7 +354,7 @@ impl ScoreSummary {
     }
 
     pub fn should_fail(&self) -> bool {
-        self.supported_mismatch > 0 || self.harness_error > 0
+        self.supported_mismatch > 0 || self.harness_error > 0 || self.no_official_oracle > 0
     }
 }
 
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(summary.synthetic_oracle_match, 0);
         assert_eq!(summary.unverified_synthetic_oracle_match, 0);
         assert_eq!(summary.harness_error, 0);
-        assert!(!summary.should_fail());
+        assert!(summary.should_fail());
     }
 
     #[test]

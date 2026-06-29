@@ -55,9 +55,15 @@ pub fn discover_cases(open_rules_root: &Path, scopes: &[String]) -> Result<Vec<O
     for scope in scopes {
         let scope_dir = open_rules_root.join(&scope);
         if !scope_dir.exists() {
-            continue;
+            anyhow::bail!("Open Rules scope does not exist: {}", scope_dir.display());
         }
         discover_scope(&scope, &scope_dir, &mut cases)?;
+    }
+    if cases.is_empty() {
+        anyhow::bail!(
+            "no Open Rules cases discovered under {}",
+            open_rules_root.display()
+        );
     }
     cases.sort_by(|left, right| {
         (&left.scope, &left.rule_id, left.case_kind, &left.case_id).cmp(&(

@@ -75,12 +75,18 @@ pub fn load_upstream_info_from_paths(
 }
 
 pub fn ensure_strict_lock_matches(info: &UpstreamInfo) -> Result<()> {
-    if let (Some(expected), Some(observed)) = (&info.expected_sha, &info.observed_sha) {
-        if expected != observed {
+    match (&info.expected_sha, &info.observed_sha) {
+        (Some(expected), Some(observed)) if expected == observed => Ok(()),
+        (Some(expected), Some(observed)) => {
             anyhow::bail!("upstream lock SHA {expected} does not match checkout SHA {observed}");
         }
+        (Some(_), None) => {
+            anyhow::bail!("strict lock requested but observed upstream SHA is unavailable");
+        }
+        (None, _) => {
+            anyhow::bail!("strict lock requested but expected upstream SHA is unavailable");
+        }
     }
-    Ok(())
 }
 
 pub fn read_upstream_lock(path: &Path) -> Result<UpstreamLock> {
@@ -190,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_lock_allows_missing_observed_sha() {
+    fn strict_lock_rejects_missing_observed_sha() {
         let info = UpstreamInfo {
             repo: "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned(),
             expected_sha: Some("expected".to_owned()),
@@ -199,6 +205,10 @@ mod tests {
             warnings: Vec::new(),
         };
 
-        ensure_strict_lock_matches(&info).expect("missing observed sha is warning-only");
+        let error =
+            ensure_strict_lock_matches(&info).expect_err("missing observed sha fails strict lock");
+        assert!(error
+            .to_string()
+            .contains("observed upstream SHA is unavailable"));
     }
 }

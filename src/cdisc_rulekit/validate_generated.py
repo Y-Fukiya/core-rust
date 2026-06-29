@@ -67,6 +67,8 @@ def validate_generated_rules(generated_rules_dir: str | Path) -> StructureValida
     rule_dirs = sorted(path for path in root.iterdir() if path.is_dir()) if root.exists() else []
     if not root.exists():
         issues.append(f"{root}: generated rules directory does not exist")
+    elif not rule_dirs:
+        issues.append(f"{root}: no generated rule directories found")
 
     for rule_dir in rule_dirs:
         for required in ["rule.yml", "manifest.json", "expected_results.csv"]:

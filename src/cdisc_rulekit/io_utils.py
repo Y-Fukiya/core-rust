@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 
 NULL_STRINGS = {"", "nan", "none", "null", "na", "n/a"}
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 
 def normalize_blank(value: object) -> str | None:
@@ -51,8 +52,12 @@ def csv_cell(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, (list, dict)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    return str(value)
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    else:
+        text = str(value)
+    if text.startswith(CSV_FORMULA_PREFIXES):
+        return f"'{text}"
+    return text
 
 
 def write_csv(path: Path, rows: Iterable[dict[str, Any]], fieldnames: list[str]) -> None:

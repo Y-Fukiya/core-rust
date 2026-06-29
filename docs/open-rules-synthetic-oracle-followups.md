@@ -1,5 +1,10 @@
 # Open Rules Synthetic Oracle Follow-Ups
 
+> Historical note: this document describes the previous synthetic-oracle
+> accounting plan. The current harness treats missing official `results.csv`
+> files as `no_official_oracle` rather than self-scoring candidate output as
+> conformance evidence.
+
 The full upstream score can reach `no_official_oracle = 0` by classifying
 missing-official cases with synthetic oracle policy. This is useful for stable
 scoreboard accounting, but it is not the same as official oracle conformance.

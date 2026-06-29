@@ -71,7 +71,7 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 | `supported_match` | Candidate ran and normalized issue keys match the official oracle. | zero |
 | `supported_mismatch` | Candidate ran but normalized issue keys differ. | non-zero |
 | `skipped_unsupported` | Candidate output contains skipped rows. | zero |
-| `no_official_oracle` | The case has no official `results.csv` and could not be classified by the synthetic oracle policy. | zero |
+| `no_official_oracle` | The case has no official `results.csv`; it is excluded from supported accuracy and fails the score gate until explicitly resolved. | non-zero |
 | `harness_error` | Official or candidate report is missing, malformed, or cannot be scored. | non-zero |
 
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
@@ -157,10 +157,9 @@ state. The baseline command fails on regressions such as:
 
 Improvements to `supported_match` are allowed and printed as improvements.
 
-The run-score command exits non-zero only for correctness or harness failures:
-`supported_mismatch > 0` or `harness_error > 0`. Synthetic oracle cases,
-including unverified synthetic cases, are warnings in `summary.md`; they do not
-fail CI by themselves.
+The run-score command exits non-zero for correctness failures, harness failures,
+or unresolved official oracle gaps: `supported_mismatch > 0`,
+`harness_error > 0`, or `no_official_oracle > 0`.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
