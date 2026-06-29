@@ -114,23 +114,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     let selected_rule_count = selection.selected.len();
     let skipped_selection_count = selection.skipped.len();
 
-    let mut results = selection
-        .skipped
-        .into_iter()
-        .map(|skipped| open_rules_replace_selection_skipped_result(&request, skipped))
-        .collect::<Vec<_>>();
+    let mut results = selection.skipped.into_iter().collect::<Vec<_>>();
     let mut executable_rules = Vec::new();
     for rule in selection.selected {
         if let Some(skipped) = skipped_unsupported_rule(&rule) {
-            if let Some(result) = open_rules_official_oracle_result(&request, &rule) {
-                results.push(result);
-            } else if let Some(result) =
-                open_rules_official_zero_pass_result_without_dataset(&request, &rule)
-            {
-                results.push(result);
-            } else {
-                results.push(skipped);
-            }
+            results.push(skipped);
         } else {
             executable_rules.push(rule);
         }
@@ -156,36 +144,18 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             continue;
         };
         let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
-        if let Some(result) =
-            open_rules_positive_zero_oracle_pass_result(&request, &rule, &datasets)
-        {
+        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
             results.push(result);
             continue;
         }
-        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
-            results.push(open_rules_replace_single_skipped_oracle_result(
-                &request, &rule, &datasets, result,
-            ));
-            continue;
-        }
         if let Some(result) = core_000744_relrec_faobj_result(&rule, &datasets) {
-            results.push(open_rules_replace_single_skipped_oracle_result(
-                &request, &rule, &datasets, result,
-            ));
+            results.push(result);
             continue;
         }
         let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
             Err(skipped) => {
-                if let Some(result) = open_rules_official_oracle_result(&request, &rule) {
-                    results.push(result);
-                } else if let Some(result) =
-                    open_rules_official_zero_pass_result(&request, &rule, &datasets)
-                {
-                    results.push(result);
-                } else {
-                    results.push(skipped);
-                }
+                results.push(skipped);
                 continue;
             }
         };
@@ -228,28 +198,13 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             match validate_rule(&rule, &validation_dataset) {
                 Ok(result) => {
                     let result = normalize_validation_result(&rule, &validation_dataset, result);
-                    if result.execution_status == core_engine::ExecutionStatus::Failed {
-                        if let Some(official) = open_rules_official_oracle_result(&request, &rule) {
-                            results.push(official);
-                            continue;
-                        }
-                    }
-                    if let Some(skipped) =
-                        open_rules_known_issue_oracle_gap_result(&request, &rule, &result)
-                    {
-                        results.push(skipped);
-                    } else if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result)
-                    {
+                    if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result) {
                         results.push(skipped);
                     } else {
                         results.push(result);
                     }
                 }
                 Err(source) => {
-                    if let Some(result) = open_rules_official_oracle_result(&request, &rule) {
-                        results.push(result);
-                        continue;
-                    }
                     if should_ignore_evaluation_error(&rule, &source, execution_datasets.len()) {
                         continue;
                     }
@@ -290,25 +245,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             results.push(result);
         }
 
-        if results[rule_result_start..].is_empty() {
-            if let Some(result) = open_rules_official_oracle_result(&request, &rule) {
-                results.push(result);
-            } else if let Some(result) =
-                open_rules_empty_known_issue_oracle_gap_result(&request, &rule)
-            {
-                results.push(result);
-            }
-        }
-
-        if let Some(replacement) = open_rules_replace_skipped_oracle_result(
-            &request,
-            &rule,
-            &datasets,
-            &results[rule_result_start..],
-        ) {
-            results.truncate(rule_result_start);
-            results.push(replacement);
-        }
+        if results[rule_result_start..].is_empty() {}
     }
 
     let reports = request
@@ -709,514 +646,6 @@ fn core_000744_relrec_faobj_result(
         error_count: 0,
         errors: Vec::new(),
     })
-}
-
-fn open_rules_positive_zero_oracle_pass_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-) -> Option<RuleValidationResult> {
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir {
-        return None;
-    }
-    let case_id = open_rules_positive_case_id(&request.dataset_paths)?;
-    if is_open_rules_positive_issue_case(rule, &case_id) {
-        return None;
-    }
-    if !should_short_circuit_open_rules_positive_zero_case(rule) {
-        return None;
-    }
-
-    let dataset = filter_datasets_by_rule_scope(rule, datasets)
-        .into_iter()
-        .next()
-        .or_else(|| datasets.first().cloned())?;
-
-    Some(RuleValidationResult {
-        rule_id: rule.core_id.clone(),
-        execution_status: core_engine::ExecutionStatus::Passed,
-        skipped_reason: None,
-        dataset: dataset.metadata.name.clone(),
-        domain: dataset.metadata.domain.clone(),
-        message: outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id)),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn open_rules_positive_case_id(paths: &[PathBuf]) -> Option<String> {
-    paths.iter().find_map(|path| {
-        let components = path
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>();
-        components.windows(3).find_map(|window| {
-            (window[0] == "positive" && window[2] == "data").then(|| window[1].to_string())
-        })
-    })
-}
-
-fn is_open_rules_positive_issue_case(rule: &ExecutableRule, case_id: &str) -> bool {
-    const CASES: &[(&str, &str)] = &[
-        ("CORE-000014", "02"),
-        ("CORE-000016", "03"),
-        ("CORE-000017", "02"),
-        ("CORE-000093", "01"),
-        ("CORE-000095", "01"),
-        ("CORE-000116", "02"),
-        ("CORE-000138", "01"),
-        ("CORE-000172", "05"),
-        ("CORE-000201", "04"),
-        ("CORE-000237", "03"),
-        ("CORE-000355", "01"),
-        ("CORE-000438", "01"),
-        ("CORE-000466", "01"),
-        ("CORE-000478", "01"),
-        ("CORE-000524", "01"),
-        ("CORE-000545", "01"),
-        ("CORE-000546", "01"),
-        ("CORE-000572", "01"),
-        ("CORE-000595", "02"),
-        ("CORE-000616", "01"),
-        ("CORE-000642", "01"),
-        ("CORE-000651", "01"),
-        ("CORE-000654", "01"),
-        ("CORE-000660", "02"),
-        ("CORE-000660", "03"),
-        ("CORE-000674", "02"),
-        ("CORE-000674", "03"),
-        ("CORE-000676", "02"),
-        ("CORE-000676", "03"),
-        ("CORE-000698", "02"),
-        ("CORE-000698", "03"),
-        ("CORE-000704", "02"),
-        ("CORE-000704", "03"),
-        ("CORE-000712", "02"),
-        ("CORE-000718", "01"),
-        ("CORE-000757", "03"),
-        ("CORE-000865", "01"),
-        ("CORE-000916", "02"),
-        ("CORE-000929", "01"),
-        ("CORE-000953", "02"),
-    ];
-
-    CASES
-        .iter()
-        .any(|(rule_id, id)| *rule_id == rule.core_id && *id == case_id)
-}
-
-fn open_rules_known_issue_oracle_gap_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-    result: &RuleValidationResult,
-) -> Option<RuleValidationResult> {
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir
-        || result.execution_status != core_engine::ExecutionStatus::Passed
-    {
-        return None;
-    }
-    let (case_kind, case_id) = open_rules_case_kind_id(&request.dataset_paths)?;
-    if !is_open_rules_known_issue_case(rule, &case_kind, &case_id) {
-        return None;
-    }
-
-    Some(RuleValidationResult {
-        rule_id: rule.core_id.clone(),
-        execution_status: core_engine::ExecutionStatus::Skipped,
-        skipped_reason: Some(SkippedReason::OracleSemanticsGap),
-        dataset: result.dataset.clone(),
-        domain: result.domain.clone(),
-        message: format!(
-            "Rule {} uses Open Rules oracle issue semantics that are not supported for this fixture",
-            rule.core_id
-        ),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn open_rules_empty_known_issue_oracle_gap_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-) -> Option<RuleValidationResult> {
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir {
-        return None;
-    }
-    let (case_kind, case_id) = open_rules_case_kind_id(&request.dataset_paths)?;
-    if !is_open_rules_known_issue_case(rule, &case_kind, &case_id) {
-        return None;
-    }
-
-    Some(RuleValidationResult::skipped_rule(
-        rule.core_id.clone(),
-        SkippedReason::OracleSemanticsGap,
-        format!(
-            "Rule {} uses Open Rules oracle issue semantics that are not supported for this fixture",
-            rule.core_id
-        ),
-    ))
-}
-
-fn open_rules_official_oracle_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-) -> Option<RuleValidationResult> {
-    open_rules_official_oracle_result_for_rule_id(
-        request,
-        &rule.core_id,
-        &outcome_message(rule).unwrap_or_else(|| {
-            format!(
-                "Rule {} failed according to Open Rules oracle",
-                rule.core_id
-            )
-        }),
-    )
-}
-
-fn open_rules_official_oracle_result_for_rule_id(
-    request: &ValidateRequest,
-    rule_id: &str,
-    message: &str,
-) -> Option<RuleValidationResult> {
-    let _ = (request, rule_id, message);
-    // Official Open Rules results are the oracle used by xtask scoring. The API
-    // must not read them to synthesize engine output.
-    return None;
-
-    #[allow(unreachable_code)]
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir {
-        return None;
-    }
-    let path = open_rules_official_results_path(&request.dataset_paths)?;
-    let content = fs::read_to_string(path).ok()?;
-    let content = open_rules_resolve_results_conflicts(&content);
-    let mut reader = csv::Reader::from_reader(content.as_bytes());
-    let headers = reader.headers().ok()?.clone();
-    let dataset_idx = csv_header_index(&headers, &["dataset", "dataset_name", "domain"]);
-    let record_idx = csv_header_index(&headers, &["record", "row", "row_number"]);
-    let variable_idx = csv_header_index(&headers, &["variable", "variables", "variable_name"]);
-    let usubjid_idx = csv_header_index(&headers, &["usubjid", "subject", "subject_id"]);
-    let seq_idx = csv_header_index(&headers, &["seq", "sequence", "sequence_number"]);
-
-    let mut issues = Vec::new();
-    for record in reader.records().flatten() {
-        let dataset = dataset_idx
-            .and_then(|idx| record.get(idx))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or_default();
-        let variable = variable_idx
-            .and_then(|idx| record.get(idx))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or_default();
-        if dataset.is_empty()
-            && variable.is_empty()
-            && (dataset_idx.is_some() || variable_idx.is_some())
-        {
-            continue;
-        }
-        let row = record_idx
-            .and_then(|idx| record.get(idx))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(|value| value.parse::<usize>().ok());
-        let usubjid = usubjid_idx
-            .and_then(|idx| record.get(idx))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned);
-        let seq = seq_idx
-            .and_then(|idx| record.get(idx))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned);
-        issues.push(ValidationIssue {
-            rule_id: rule_id.to_owned(),
-            dataset: dataset.to_owned(),
-            domain: (!dataset.is_empty()).then(|| dataset.to_owned()),
-            row,
-            variables: (!variable.is_empty())
-                .then(|| variable.to_owned())
-                .into_iter()
-                .collect(),
-            message: message.to_owned(),
-            usubjid,
-            seq,
-        });
-    }
-
-    if issues.is_empty() {
-        return None;
-    }
-
-    let dataset = issues[0].dataset.clone();
-    let domain = issues[0].domain.clone();
-    Some(RuleValidationResult {
-        rule_id: rule_id.to_owned(),
-        execution_status: core_engine::ExecutionStatus::Failed,
-        skipped_reason: None,
-        dataset,
-        domain,
-        message: message.to_owned(),
-        error_count: issues.len(),
-        errors: issues,
-    })
-}
-
-fn open_rules_replace_skipped_oracle_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-    rule_results: &[RuleValidationResult],
-) -> Option<RuleValidationResult> {
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir
-        || rule_results.is_empty()
-        || !rule_results.iter().any(|result| {
-            result.execution_status == core_engine::ExecutionStatus::Skipped
-                && result.skipped_reason == Some(SkippedReason::OracleSemanticsGap)
-        })
-    {
-        return None;
-    }
-
-    open_rules_official_oracle_result(request, rule)
-        .or_else(|| open_rules_official_zero_pass_result(request, rule, datasets))
-}
-
-fn open_rules_replace_single_skipped_oracle_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-    result: RuleValidationResult,
-) -> RuleValidationResult {
-    if result.execution_status == core_engine::ExecutionStatus::Skipped
-        && result.skipped_reason == Some(SkippedReason::OracleSemanticsGap)
-    {
-        open_rules_official_oracle_result(request, rule)
-            .or_else(|| open_rules_official_zero_pass_result(request, rule, datasets))
-            .unwrap_or(result)
-    } else {
-        result
-    }
-}
-
-fn open_rules_replace_selection_skipped_result(
-    request: &ValidateRequest,
-    result: RuleValidationResult,
-) -> RuleValidationResult {
-    if result.execution_status != core_engine::ExecutionStatus::Skipped
-        || result.skipped_reason != Some(SkippedReason::OracleSemanticsGap)
-    {
-        return result;
-    }
-
-    open_rules_official_oracle_result_for_rule_id(request, &result.rule_id, &result.message)
-        .or_else(|| open_rules_official_zero_pass_result_for_rule_id(request, &result.rule_id))
-        .unwrap_or(result)
-}
-
-fn open_rules_official_zero_pass_result(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-) -> Option<RuleValidationResult> {
-    let _ = (request, rule, datasets);
-    // Empty official results.csv files are an oracle signal for the scorer, not
-    // a substitute for executing the engine.
-    return None;
-
-    #[allow(unreachable_code)]
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir
-        || open_rules_official_results_has_issues(&request.dataset_paths)?
-    {
-        return None;
-    }
-
-    let dataset = filter_datasets_by_rule_scope(rule, datasets)
-        .into_iter()
-        .next()
-        .or_else(|| datasets.first().cloned())?;
-
-    Some(RuleValidationResult {
-        rule_id: rule.core_id.clone(),
-        execution_status: core_engine::ExecutionStatus::Passed,
-        skipped_reason: None,
-        dataset: dataset.metadata.name.clone(),
-        domain: dataset.metadata.domain.clone(),
-        message: outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id)),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn open_rules_official_zero_pass_result_for_rule_id(
-    request: &ValidateRequest,
-    rule_id: &str,
-) -> Option<RuleValidationResult> {
-    let _ = (request, rule_id);
-    // Empty official results.csv files are an oracle signal for the scorer, not
-    // a substitute for executing the engine.
-    return None;
-
-    #[allow(unreachable_code)]
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir
-        || open_rules_official_results_has_issues(&request.dataset_paths)?
-    {
-        return None;
-    }
-
-    Some(RuleValidationResult {
-        rule_id: rule_id.to_owned(),
-        execution_status: core_engine::ExecutionStatus::Passed,
-        skipped_reason: None,
-        dataset: String::new(),
-        domain: None,
-        message: format!("Rule {rule_id} passed"),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn open_rules_official_zero_pass_result_without_dataset(
-    request: &ValidateRequest,
-    rule: &ExecutableRule,
-) -> Option<RuleValidationResult> {
-    let _ = (request, rule);
-    // Empty official results.csv files are an oracle signal for the scorer, not
-    // a substitute for executing the engine.
-    return None;
-
-    #[allow(unreachable_code)]
-    if request.dataset_loader != DatasetLoader::OpenRulesDataDir
-        || open_rules_official_results_has_issues(&request.dataset_paths)?
-    {
-        return None;
-    }
-
-    Some(RuleValidationResult {
-        rule_id: rule.core_id.clone(),
-        execution_status: core_engine::ExecutionStatus::Passed,
-        skipped_reason: None,
-        dataset: String::new(),
-        domain: None,
-        message: outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id)),
-        error_count: 0,
-        errors: Vec::new(),
-    })
-}
-
-fn open_rules_official_results_has_issues(paths: &[PathBuf]) -> Option<bool> {
-    let path = open_rules_official_results_path(paths)?;
-    let content = fs::read_to_string(path).ok()?;
-    let content = open_rules_resolve_results_conflicts(&content);
-    let mut reader = csv::Reader::from_reader(content.as_bytes());
-    let headers = reader.headers().ok()?.clone();
-    let dataset_idx = csv_header_index(&headers, &["dataset", "dataset_name", "domain"])?;
-    let variable_idx = csv_header_index(&headers, &["variable", "variables", "variable_name"])?;
-    for record in reader.records().flatten() {
-        let dataset = record.get(dataset_idx).map(str::trim).unwrap_or_default();
-        let variable = record.get(variable_idx).map(str::trim).unwrap_or_default();
-        if !dataset.is_empty() || !variable.is_empty() {
-            return Some(true);
-        }
-    }
-    Some(false)
-}
-
-fn csv_header_index(headers: &csv::StringRecord, names: &[&str]) -> Option<usize> {
-    headers.iter().position(|header| {
-        names
-            .iter()
-            .any(|name| header.trim().eq_ignore_ascii_case(name))
-    })
-}
-
-fn open_rules_resolve_results_conflicts(content: &str) -> String {
-    let mut output = Vec::new();
-    let mut in_conflict = false;
-    let mut use_conflict_side = true;
-    for line in content.lines() {
-        if line.starts_with("<<<<<<<") {
-            in_conflict = true;
-            use_conflict_side = true;
-            continue;
-        }
-        if in_conflict && line.starts_with("=======") {
-            use_conflict_side = false;
-            continue;
-        }
-        if in_conflict && line.starts_with(">>>>>>>") {
-            in_conflict = false;
-            use_conflict_side = true;
-            continue;
-        }
-        if !in_conflict || use_conflict_side {
-            output.push(line);
-        }
-    }
-    output.join("\n")
-}
-
-fn open_rules_official_results_path(paths: &[PathBuf]) -> Option<PathBuf> {
-    paths.iter().find_map(|path| {
-        let mut results = path.to_path_buf();
-        if results.file_name().is_some_and(|name| name == "data") {
-            results.pop();
-        }
-        results.push("results");
-        results.push("results.csv");
-        results.is_file().then_some(results)
-    })
-}
-
-fn open_rules_case_kind_id(paths: &[PathBuf]) -> Option<(String, String)> {
-    paths.iter().find_map(|path| {
-        let components = path
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>();
-        components.windows(3).find_map(|window| {
-            (matches!(window[0].as_ref(), "positive" | "negative") && window[2] == "data")
-                .then(|| (window[0].to_string(), window[1].to_string()))
-        })
-    })
-}
-
-fn is_open_rules_known_issue_case(rule: &ExecutableRule, case_kind: &str, case_id: &str) -> bool {
-    const CASES: &[(&str, &str, &str)] = &[
-        ("CORE-000014", "positive", "02"),
-        ("CORE-000116", "positive", "02"),
-        ("CORE-000224", "negative", "02"),
-        ("CORE-000237", "positive", "03"),
-        ("CORE-000289", "negative", "01"),
-        ("CORE-000325", "negative", "01"),
-        ("CORE-000438", "positive", "01"),
-        ("CORE-000524", "positive", "01"),
-        ("CORE-000554", "negative", "01"),
-        ("CORE-000570", "negative", "01"),
-        ("CORE-000616", "positive", "01"),
-        ("CORE-000660", "negative", "01"),
-        ("CORE-000660", "positive", "02"),
-        ("CORE-000786", "negative", "01"),
-        ("CORE-000794", "negative", "01"),
-        ("CORE-000847", "negative", "01"),
-        ("CORE-000848", "negative", "01"),
-    ];
-
-    CASES
-        .iter()
-        .any(|(rule_id, kind, id)| *rule_id == rule.core_id && *kind == case_kind && *id == case_id)
-}
-
-fn should_short_circuit_open_rules_positive_zero_case(rule: &ExecutableRule) -> bool {
-    should_defer_positive_zero_oracle_gap_probe(rule)
-        || is_known_unsafe_positive_zero_probe_rule(rule)
-        || should_defer_empty_non_empty_oracle_gap(rule)
-        || should_defer_date_operator_oracle_gap(rule)
-        || should_defer_entity_column_ref_oracle_gap(rule)
-        || is_operation_oracle_gap_rule(rule)
-        || is_distinct_operation_oracle_gap_rule(rule)
 }
 
 fn collect_core_000744_parent_values(
@@ -9398,6 +8827,7 @@ fn json_scalar_string(value: &Value) -> Option<String> {
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
+}
 
 fn operation_input_datasets(
     rule: &ExecutableRule,

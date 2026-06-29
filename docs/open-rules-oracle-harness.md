@@ -77,35 +77,25 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
 mismatches are correctness problems.
 
-## Synthetic Oracle Policy
+## Missing Official Oracle Policy
 
 Some upstream cases do not include official `results/results.csv`. The harness
-keeps these cases out of `no_official_oracle` when a deterministic synthetic
-classification can be recorded from the candidate result:
+classifies these cases as `no_official_oracle`, even when a candidate report
+exists and appears plausible. Candidate output must not become its own oracle,
+so missing-official cases are excluded from `supported_match`,
+`supported_mismatch`, `supported_accuracy`, and `coverage`.
 
-- `synthetic empty positive oracle`: missing official results for a positive
-  case where the candidate report has no issues and no skipped rows.
-- `synthetic candidate issue oracle`: missing official results for a negative
-  case where the candidate report has one or more issues and no skipped rows.
-- `unverified synthetic candidate oracle`: missing official results where a
-  candidate report exists but the case cannot be treated as one of the verified
-  synthetic shapes above.
-- `unverified synthetic absent-candidate oracle`: missing official results and
-  no candidate report. This is reserved for malformed upstream discovery cases
-  that are retained for accounting.
-
-`summary.supported_match` includes official and synthetic matches. To avoid
-overstating conformance, read these fields together:
+Read these fields together:
 
 - `official_oracle_match`: supported matches backed by committed official
   `results.csv`.
-- `synthetic_oracle_match`: supported matches classified by the missing-official
-  synthetic policy.
-- `unverified_synthetic_oracle_match`: synthetic matches that are present for
-  accounting only and are not proof of official oracle conformance.
+- `supported_mismatch`: official-oracle-backed cases where structural issue keys
+  differ.
+- `no_official_oracle`: cases retained for accounting but excluded from
+  supported accuracy.
 
-Unverified synthetic cases are reportable warnings. They keep the scoreboard
-bucket count stable, but they should not be cited as official oracle evidence.
+The synthetic oracle counters remain in the JSON schema for older scoreboard
+compatibility, but current scoring should leave them at zero.
 
 `summary.md` also includes a `Skipped Unsupported Reasons` section when skipped
 cases have `skipped_reason` values. Use that section as the first coverage
@@ -122,9 +112,8 @@ official_coverage = official_oracle_match / total_cases
 Coverage can be low while supported accuracy is high. That means the roadmap is
 large, not that supported behavior is wrong.
 
-When synthetic matches are present, full `coverage` can be higher than
-official-oracle-backed coverage. Use `official_oracle_match` and
-`unverified_synthetic_oracle_match` to interpret the result.
+`coverage` is now official-oracle-backed coverage because missing-official cases
+are excluded from the supported numerator.
 
 ## Normalization
 
