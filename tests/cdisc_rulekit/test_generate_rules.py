@@ -456,6 +456,33 @@ def test_generate_rules_wraps_regex_patterns_for_official_core_full_match(tmp_pa
     assert regex_check["value"] == r"^(?:([0-9]*))$"
 
 
+def test_generate_rules_skips_regex_with_unsupported_rust_syntax(tmp_path):
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDREGEX-LOOKBEHIND",
+        source_rule_key="regex-lookbehind-key",
+        p21_rule_id="SDREGEX-LOOKBEHIND",
+        standard_name="SDTM-IG",
+        standard_version="3.3",
+        p21_rule_type="Regex",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+        raw_condition={"test": r"(?<=SUBJ)\d+"},
+        conversion_status="AUTO_CONVERTIBLE",
+        conversion_reasons=["NO_CORE_MAPPING", "SIMPLE_REGEX"],
+    )
+
+    summary = generate_rules(
+        [rule],
+        out_dir=tmp_path,
+        allowed_operators={"all", "equal_to", "does_not_match_regex"},
+    )
+
+    assert summary.generated_count == 0
+    assert summary.rows[0]["skip_reason"] == "UNSUPPORTED_RUST_REGEX_SYNTAX"
+
+
 def test_generate_rules_preserves_numeric_literals_for_official_core_comparison(tmp_path):
     rule = CanonicalRule(
         source="P21",

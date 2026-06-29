@@ -32,6 +32,25 @@ def test_simple_regex_classifies_as_auto_convertible(p21_rules_path, p21_domain_
     assert "SIMPLE_REGEX" in regex_rule.conversion_reasons
 
 
+def test_regex_with_unsupported_rust_syntax_requires_manual_review():
+    rule = CanonicalRule(
+        source="P21",
+        source_rule_id="SDREGEX-LOOKAHEAD",
+        p21_rule_id="SDREGEX-LOOKAHEAD",
+        standard_name="SDTM-IG",
+        p21_rule_type="Regex",
+        domains=["DM"],
+        variables=["USUBJID"],
+        target="USUBJID",
+        raw_condition={"test": r"^(?=.*SUBJ)\w+$"},
+    )
+
+    classified = classify_rules([rule], [])
+
+    assert classified[0].conversion_status == "MANUAL_REQUIRED"
+    assert "UNSUPPORTED_RUST_REGEX_SYNTAX" in classified[0].conversion_reasons
+
+
 def test_simple_required_classifies_with_required_reason():
     rule = CanonicalRule(
         source="P21",

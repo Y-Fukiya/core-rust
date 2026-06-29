@@ -9,6 +9,11 @@ from .p21_condition import infer_condition_target, infer_condition_variables
 
 AUTO_RULE_TYPES = {"MATCH", "REGEX", "CONDITION", "REQUIRED", "FIND", "UNIQUE"}
 SUPPORTED_STANDARDS = {"SDTMIG", "ADAMIG", "SENDIG"}
+UNSUPPORTED_RUST_REGEX_PATTERNS = [
+    re.compile(r"(?<!\\)\(\?([=!]|<[=!])"),
+    re.compile(r"(?<!\\)\\[1-9]"),
+    re.compile(r"(?<!\\)\\k<"),
+]
 
 
 def _text_contains(rule: CanonicalRule, *needles: str) -> bool:
@@ -85,6 +90,21 @@ def _simple_reason(rule_type: str) -> str:
     if rule_type == "UNIQUE":
         return "SIMPLE_UNIQUE_SET"
     return "NO_CORE_MAPPING"
+
+
+def _has_unsupported_rust_regex(rule: CanonicalRule) -> bool:
+    values = [
+        rule.raw_condition.get("test"),
+        rule.raw_condition.get("when"),
+        rule.raw_condition.get("if"),
+    ]
+    if (rule.p21_rule_type or "").upper() == "REGEX":
+        values.extend([rule.target, *rule.variables])
+    for value in values:
+        text = str(value or "")
+        if any(pattern.search(text) for pattern in UNSUPPORTED_RUST_REGEX_PATTERNS):
+            return True
+    return False
 
 
 def _mapping_by_rule_key(mappings: list[RuleMapping]) -> dict[str, RuleMapping]:
@@ -176,6 +196,14 @@ def _classify(rule: CanonicalRule, mapping: RuleMapping | None) -> CanonicalRule
     rule_type = (rule.p21_rule_type or "").upper()
     standard = standard_key(rule.standard_name)
     if rule_type in AUTO_RULE_TYPES and standard in SUPPORTED_STANDARDS:
+        if rule_type in {"REGEX", "CONDITION"} and _has_unsupported_rust_regex(rule):
+            reasons.append("UNSUPPORTED_RUST_REGEX_SYNTAX")
+            return rule.with_updates(
+                core_rule_id=core_rule_id,
+                conversion_status="MANUAL_REQUIRED",
+                conversion_reasons=reasons,
+                conversion_confidence=confidence,
+            )
         if not _has_concrete_domain(rule):
             reasons.append("NO_CONCRETE_DOMAIN")
             return rule.with_updates(

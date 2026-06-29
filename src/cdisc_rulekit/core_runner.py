@@ -10,6 +10,7 @@ from pathlib import Path
 from .io_utils import ensure_dir, write_csv
 
 DEFAULT_ENGINE_COMMAND = "cargo run -p core-cli -- validate"
+DEFAULT_TIMEOUT_SECONDS = 300.0
 EXECUTION_FIELDS = [
     "generated_rule_id",
     "case_type",
@@ -111,8 +112,9 @@ def _render_engine_command(engine_command: str, data_dir: Path) -> str:
     if "{" not in engine_command:
         return engine_command
     values = _read_case_env(data_dir)
+    quoted_values = {key: shlex.quote(value) for key, value in values.items()}
     try:
-        return engine_command.format(**values)
+        return engine_command.format(**quoted_values)
     except KeyError as error:
         placeholder = str(error).strip("'")
         raise ValueError(f"Unsupported engine-command placeholder: {placeholder}") from error
@@ -263,15 +265,16 @@ def execute_core_run_plan(
     plan: CoreRunPlan,
     engine_cwd: str | Path | None = None,
     workers: int = 1,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
 ) -> CoreRunExecutionResult:
     cwd = str(engine_cwd) if engine_cwd else None
+    effective_timeout = None if timeout_seconds == 0 else timeout_seconds
     if workers <= 1:
-        rows = [_execute_core_run_item_with_timeout(item, cwd, timeout_seconds) for item in plan.items]
+        rows = [_execute_core_run_item_with_timeout(item, cwd, effective_timeout) for item in plan.items]
         return CoreRunExecutionResult(rows)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        rows = list(executor.map(lambda item: _execute_core_run_item_with_timeout(item, cwd, timeout_seconds), plan.items))
+        rows = list(executor.map(lambda item: _execute_core_run_item_with_timeout(item, cwd, effective_timeout), plan.items))
     return CoreRunExecutionResult(rows)
 
 

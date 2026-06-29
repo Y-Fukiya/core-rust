@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import pytest
 
 from cdisc_rulekit.export_rules import export_generated_rules
 
@@ -107,6 +108,26 @@ def test_export_generated_rules_does_not_filter_without_only_passed(tmp_path):
 
     assert summary.exported_count == 2
     assert summary.skipped_count == 0
+
+
+def test_export_generated_rules_rejects_target_subdir_outside_open_rules_repo(tmp_path):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    protected = outside / "P21PORT-SDTMIG-SD1210-ABCDEF01"
+    protected.mkdir()
+    (protected / "keep.txt").write_text("do not delete", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside open_rules_repo"):
+        export_generated_rules(
+            generated_root,
+            tmp_path / "cdisc-open-rules",
+            target_subdir="../outside",
+            overwrite=True,
+        )
+
+    assert (protected / "keep.txt").exists()
 
 
 def test_export_rules_cli_supports_overwrite(tmp_path):

@@ -152,9 +152,9 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     };
 
     for rule in &executable_rules {
-        let cdisc_context = cdisc_context
-            .as_ref()
-            .expect("CDISC context is loaded when executable rules exist");
+        let Some(cdisc_context) = cdisc_context.as_ref() else {
+            continue;
+        };
         let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
         if let Some(result) =
             open_rules_positive_zero_oracle_pass_result(&request, &rule, &datasets)
@@ -455,6 +455,13 @@ fn oracle_gap_result_after_execution(
     rule: &ExecutableRule,
     result: &RuleValidationResult,
 ) -> Option<RuleValidationResult> {
+    let _ = (rule, result);
+    // Open Rules oracle gaps are coverage decisions, not a reason to rewrite an
+    // executed engine failure. Keeping failures as failures preserves the
+    // independence of score reports and prevents false-positive conformance.
+    return None;
+
+    #[allow(unreachable_code)]
     let should_skip = if should_defer_empty_non_empty_oracle_gap(rule) {
         result.execution_status == core_engine::ExecutionStatus::Failed
     } else if should_defer_etcd_length_oracle_gap(rule) {
@@ -871,6 +878,12 @@ fn open_rules_official_oracle_result_for_rule_id(
     rule_id: &str,
     message: &str,
 ) -> Option<RuleValidationResult> {
+    let _ = (request, rule_id, message);
+    // Official Open Rules results are the oracle used by xtask scoring. The API
+    // must not read them to synthesize engine output.
+    return None;
+
+    #[allow(unreachable_code)]
     if request.dataset_loader != DatasetLoader::OpenRulesDataDir {
         return None;
     }
@@ -1008,6 +1021,12 @@ fn open_rules_official_zero_pass_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<RuleValidationResult> {
+    let _ = (request, rule, datasets);
+    // Empty official results.csv files are an oracle signal for the scorer, not
+    // a substitute for executing the engine.
+    return None;
+
+    #[allow(unreachable_code)]
     if request.dataset_loader != DatasetLoader::OpenRulesDataDir
         || open_rules_official_results_has_issues(&request.dataset_paths)?
     {
@@ -1035,6 +1054,12 @@ fn open_rules_official_zero_pass_result_for_rule_id(
     request: &ValidateRequest,
     rule_id: &str,
 ) -> Option<RuleValidationResult> {
+    let _ = (request, rule_id);
+    // Empty official results.csv files are an oracle signal for the scorer, not
+    // a substitute for executing the engine.
+    return None;
+
+    #[allow(unreachable_code)]
     if request.dataset_loader != DatasetLoader::OpenRulesDataDir
         || open_rules_official_results_has_issues(&request.dataset_paths)?
     {
@@ -1057,6 +1082,12 @@ fn open_rules_official_zero_pass_result_without_dataset(
     request: &ValidateRequest,
     rule: &ExecutableRule,
 ) -> Option<RuleValidationResult> {
+    let _ = (request, rule);
+    // Empty official results.csv files are an oracle signal for the scorer, not
+    // a substitute for executing the engine.
+    return None;
+
+    #[allow(unreachable_code)]
     if request.dataset_loader != DatasetLoader::OpenRulesDataDir
         || open_rules_official_results_has_issues(&request.dataset_paths)?
     {
@@ -4337,7 +4368,9 @@ fn define_codelist_for_condition(condition: &Condition, context: &CdiscContext) 
 
 fn unique_codelist(codelists: Vec<String>) -> Option<String> {
     let unique = codelists.into_iter().collect::<BTreeSet<_>>();
-    (unique.len() == 1).then(|| unique.into_iter().next().expect("one codelist"))
+    (unique.len() == 1)
+        .then(|| unique.into_iter().next())
+        .flatten()
 }
 
 fn target_name_candidates(target: &str) -> Vec<&str> {
@@ -12751,7 +12784,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_inconsistent_across_dataset_oracle_gap_rules() {
+    fn run_validation_reports_inconsistent_across_dataset_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -12803,18 +12836,12 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
-    fn run_validation_skips_unique_set_oracle_gap_rules() {
+    fn run_validation_reports_unique_set_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -12863,18 +12890,12 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
-    fn run_validation_skips_not_unique_relationship_oracle_gap_rules() {
+    fn run_validation_reports_not_unique_relationship_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -12923,14 +12944,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -14752,7 +14767,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_empty_non_empty_oracle_gap_rules() {
+    fn run_validation_reports_empty_non_empty_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -14804,14 +14819,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
 
         let pass_path = data_dir.join("dm-pass.json");
         fs::write(
@@ -15101,7 +15110,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_date_operator_oracle_gap_rules() {
+    fn run_validation_reports_date_operator_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -15148,14 +15157,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -15220,7 +15223,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_sort_operator_oracle_gap_rules() {
+    fn run_validation_reports_sort_operator_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -15273,14 +15276,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -15789,7 +15786,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_entity_literal_oracle_gap_rules() {
+    fn run_validation_reports_entity_literal_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -15839,14 +15836,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -18325,7 +18316,7 @@ Sensitivity: Record
     }
 
     #[test]
-    fn run_validation_skips_multi_base_match_dataset_oracle_gap_rules() {
+    fn run_validation_reports_multi_base_match_dataset_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -18388,11 +18379,11 @@ Sensitivity: Record
         assert!(outcome
             .results
             .iter()
-            .all(|result| result.execution_status == ExecutionStatus::Skipped));
+            .all(|result| result.execution_status == ExecutionStatus::Failed));
         assert!(outcome
             .results
             .iter()
-            .all(|result| result.skipped_reason == Some(SkippedReason::OracleSemanticsGap)));
+            .all(|result| result.skipped_reason.is_none()));
     }
 
     #[test]
@@ -18532,7 +18523,7 @@ Sensitivity: Record
     }
 
     #[test]
-    fn run_validation_skips_duplicate_match_dataset_oracle_gap_rules() {
+    fn run_validation_reports_duplicate_match_dataset_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -18592,14 +18583,8 @@ Sensitivity: Record
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -19497,7 +19482,7 @@ Sensitivity: Record
     }
 
     #[test]
-    fn run_validation_skips_core_000773_date_operation_gap() {
+    fn run_validation_reports_core_000773_date_operation_gap_failure() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -19569,14 +19554,11 @@ Sensitivity: Record
         assert_eq!(outcome.results.len(), 1);
         assert_eq!(
             outcome.results[0].execution_status,
-            ExecutionStatus::Skipped,
+            ExecutionStatus::Failed,
             "{:?}",
             outcome.results[0]
         );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -20769,7 +20751,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_dy_operation_oracle_gap_rules() {
+    fn run_validation_reports_dy_operation_oracle_gap_failures() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -20842,14 +20824,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
@@ -20920,7 +20896,7 @@ Outcome:
     }
 
     #[test]
-    fn run_validation_skips_domain_placeholder_column_ref_oracle_gap_rule() {
+    fn run_validation_reports_domain_placeholder_column_ref_oracle_gap_failure() {
         let dir = tempdir().expect("tempdir");
         let rules_dir = dir.path().join("rules");
         let data_dir = dir.path().join("data");
@@ -20970,14 +20946,8 @@ Outcome:
         .expect("run validation");
 
         assert_eq!(outcome.results.len(), 1);
-        assert_eq!(
-            outcome.results[0].execution_status,
-            ExecutionStatus::Skipped
-        );
-        assert_eq!(
-            outcome.results[0].skipped_reason,
-            Some(SkippedReason::OracleSemanticsGap)
-        );
+        assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+        assert_eq!(outcome.results[0].skipped_reason, None);
     }
 
     #[test]
