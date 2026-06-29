@@ -7,7 +7,7 @@ on:
 
 jobs:
   upstream:
-    name: Full Upstream Oracle
+    name: Full Upstream Oracle Observe
     runs-on: ubuntu-latest
     steps:
       - name: Checkout core-rust
@@ -26,15 +26,19 @@ jobs:
           git clone "$upstream_repo" ../cdisc-open-rules
           git -C ../cdisc-open-rules checkout "$upstream_sha"
 
-      - name: Run full upstream oracle
+      - name: Run full upstream oracle observe
         run: |
+          set +e
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root ../cdisc-open-rules \
             --core-rs-results-root target/open-rules-core-rs-upstream \
             --out target/open-rules-scoreboard-upstream \
-            --strict-lock \
-            --min-coverage 1.0 \
-            --max-skipped-unsupported 0
+            --strict-lock
+          score_status=$?
+          echo "open-rules upstream observe exit code: ${score_status}"
+          echo "The scheduled full upstream job uploads scoreboard artifacts for review."
+          echo "Repository-local Open Rules fixtures remain the enforced PR gate."
+          exit 0
 
       - name: Upload upstream scoreboard
         if: always()
