@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -240,9 +241,9 @@ def _compare_issue_index_group(
             "status": "FAIL",
             "notes": "issue_index rows do not match expected_issue_count",
         }
-    expected_set = {_issue_signature_from_expected(row, rule_id) for row in issue_rows}
-    actual_set = {_issue_signature_from_issue(issue) for issue in issues}
-    if expected_set == actual_set:
+    expected_counts = Counter(_issue_signature_from_expected(row, rule_id) for row in issue_rows)
+    actual_counts = Counter(_issue_signature_from_issue(issue) for issue in issues)
+    if expected_counts == actual_counts:
         return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
     return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "structural issue fields did not match"}
 

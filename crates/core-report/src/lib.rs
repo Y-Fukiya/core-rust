@@ -493,7 +493,10 @@ fn write_csv_line(mut writer: impl Write, fields: &[impl AsRef<str>]) -> std::io
 }
 
 fn escape_csv_field(field: &str) -> String {
-    let field = if field.starts_with(['=', '+', '-', '@']) {
+    let field = if field
+        .trim_start_matches(|character: char| character.is_whitespace())
+        .starts_with(['=', '+', '-', '@'])
+    {
         format!("'{field}")
     } else {
         field.to_owned()
@@ -630,7 +633,7 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
                 row: Some(1),
                 variables: vec!["@DOMAIN".to_owned()],
                 message: "@message".to_owned(),
-                usubjid: Some("=SUBJ".to_owned()),
+                usubjid: Some(" \t=SUBJ".to_owned()),
                 seq: Some("+1".to_owned()),
             }],
         }];
@@ -638,9 +641,8 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
         write_csv_report(&path, &results).expect("write csv");
         let source = fs::read_to_string(path).expect("read csv");
 
-        assert!(
-            source.contains("'=CORE-TEST-0001,failed,'+AE,'-AE,1,'@DOMAIN,'@message,1,,'=SUBJ,'+1")
-        );
+        assert!(source
+            .contains("'=CORE-TEST-0001,failed,'+AE,'-AE,1,'@DOMAIN,'@message,1,,' \t=SUBJ,'+1"));
     }
 
     #[test]

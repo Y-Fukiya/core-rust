@@ -13,6 +13,7 @@ def test_write_csv_escapes_spreadsheet_formula_prefixes(tmp_path):
             {"name": "+SUM(1,1)"},
             {"name": "-1+2"},
             {"name": "@HYPERLINK(\"https://example.test\")"},
+            {"name": " \t=cmd|' /C calc'!A0"},
         ],
         ["name"],
     )
@@ -25,4 +26,5 @@ def test_write_csv_escapes_spreadsheet_formula_prefixes(tmp_path):
         "'+SUM(1,1)",
         "'-1+2",
         "'@HYPERLINK(\"https://example.test\")",
+        "' \t=cmd|' /C calc'!A0",
     ]

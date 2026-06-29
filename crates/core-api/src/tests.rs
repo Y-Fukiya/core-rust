@@ -456,6 +456,7 @@ fn run_validation_records_engine_errors_as_skipped_results() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir.clone()],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -534,6 +535,7 @@ fn run_validation_treats_safe_open_rules_missing_columns_as_null() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir.clone()],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -603,6 +605,7 @@ fn run_validation_treats_safe_usdm_missing_nested_columns_as_null() {
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir.clone()],
         dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");

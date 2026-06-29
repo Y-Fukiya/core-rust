@@ -22,6 +22,12 @@ pub struct ScoreArgs {
 
     #[arg(long, value_name = "SCOPE")]
     pub scope: Vec<String>,
+
+    #[arg(long, value_name = "RATIO", value_parser = parse_coverage_ratio)]
+    pub min_coverage: Option<f64>,
+
+    #[arg(long, value_name = "COUNT")]
+    pub max_skipped_unsupported: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,7 +115,9 @@ pub fn run(args: ScoreArgs) -> anyhow::Result<bool> {
     let upstream = load_upstream_info(&args.open_rules_root)?;
     let scoreboard = Scoreboard::new(upstream, scored);
     write_scoreboard(&args.out, &scoreboard)?;
-    Ok(scoreboard.summary.should_fail())
+    Ok(scoreboard.summary.should_fail()
+        || coverage_threshold_failed(&scoreboard.summary, args.min_coverage)
+        || skipped_unsupported_threshold_failed(&scoreboard.summary, args.max_skipped_unsupported))
 }
 
 pub fn score_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Vec<ScoredCase> {
@@ -220,17 +228,30 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         };
     }
 
-    let candidate_issues = align_candidate_identity_to_official(&official.issues, candidate.issues);
-    let official_set = official.issues.into_iter().collect::<BTreeSet<_>>();
-    let candidate_set = candidate_issues.into_iter().collect::<BTreeSet<_>>();
-    let missing = official_set
-        .difference(&candidate_set)
-        .cloned()
-        .collect::<Vec<_>>();
-    let extra = candidate_set
-        .difference(&official_set)
-        .cloned()
-        .collect::<Vec<_>>();
+    let wildcard_official = official_has_wildcard_issue(&official.issues);
+    let official_issues = if wildcard_official {
+        official
+            .issues
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        official.issues
+    };
+    let candidate_issues = align_candidate_identity_to_official(&official_issues, candidate.issues);
+    let candidate_issues = if wildcard_official {
+        candidate_issues
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        candidate_issues
+    };
+    let official_issue_count = official_issues.len();
+    let candidate_issue_count = candidate_issues.len();
+    let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
     let bucket = if missing.is_empty() && extra.is_empty() {
         ScoreBucket::SupportedMatch
     } else {
@@ -239,12 +260,58 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
 
     ScoredCase {
         bucket,
-        official_issue_count: Some(official_set.len()),
-        candidate_issue_count: Some(candidate_set.len()),
+        official_issue_count: Some(official_issue_count),
+        candidate_issue_count: Some(candidate_issue_count),
         missing,
         extra,
         ..base
     }
+}
+
+fn official_has_wildcard_issue(official: &[IssueKey]) -> bool {
+    official.iter().any(|issue| {
+        issue_is_unlocated(issue)
+            || (issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
+    })
+}
+
+fn issue_multiset_diff(
+    official: Vec<IssueKey>,
+    candidate: Vec<IssueKey>,
+) -> (Vec<IssueKey>, Vec<IssueKey>) {
+    let mut official_counts = issue_counts(official);
+    let mut candidate_counts = issue_counts(candidate);
+    for (issue, official_count) in official_counts.clone() {
+        let shared = official_count.min(*candidate_counts.get(&issue).unwrap_or(&0));
+        if shared == 0 {
+            continue;
+        }
+        if let Some(count) = official_counts.get_mut(&issue) {
+            *count -= shared;
+        }
+        if let Some(count) = candidate_counts.get_mut(&issue) {
+            *count -= shared;
+        }
+    }
+    (
+        expand_issue_counts(official_counts),
+        expand_issue_counts(candidate_counts),
+    )
+}
+
+fn issue_counts(issues: Vec<IssueKey>) -> BTreeMap<IssueKey, usize> {
+    let mut counts = BTreeMap::new();
+    for issue in issues {
+        *counts.entry(issue).or_default() += 1;
+    }
+    counts
+}
+
+fn expand_issue_counts(counts: BTreeMap<IssueKey, usize>) -> Vec<IssueKey> {
+    counts
+        .into_iter()
+        .flat_map(|(issue, count)| std::iter::repeat_n(issue, count))
+        .collect()
 }
 
 fn missing_official_reason(case: &OpenRulesCase, candidate_report_csv: &Path) -> Option<String> {
@@ -267,6 +334,17 @@ fn missing_official_reason(case: &OpenRulesCase, candidate_report_csv: &Path) ->
     Some(format!(
         "missing official results.csv; {candidate_state}; excluded from supported accuracy"
     ))
+}
+
+pub(crate) fn parse_coverage_ratio(value: &str) -> Result<f64, String> {
+    let ratio = value
+        .parse::<f64>()
+        .map_err(|source| format!("invalid coverage ratio: {source}"))?;
+    if ratio.is_finite() && (0.0..=1.0).contains(&ratio) {
+        Ok(ratio)
+    } else {
+        Err("coverage ratio must be finite and between 0.0 and 1.0".to_owned())
+    }
 }
 
 fn align_candidate_identity_to_official(
@@ -379,6 +457,23 @@ impl ScoreSummary {
             || self.no_official_oracle > 0
             || self.mixed_skipped_and_issues > 0
     }
+}
+
+fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {
+    let Some(min_coverage) = min_coverage else {
+        return false;
+    };
+    summary.coverage.unwrap_or(0.0) < min_coverage
+}
+
+fn skipped_unsupported_threshold_failed(
+    summary: &ScoreSummary,
+    max_skipped_unsupported: Option<usize>,
+) -> bool {
+    let Some(max_skipped_unsupported) = max_skipped_unsupported else {
+        return false;
+    };
+    summary.skipped_unsupported > max_skipped_unsupported
 }
 
 fn case_is_synthetic_oracle(case: &ScoredCase) -> bool {
@@ -1016,5 +1111,56 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
         assert_eq!(scored[0].candidate_issue_count, Some(4));
         assert_eq!(scored[0].missing.len(), 2);
         assert_eq!(scored[0].extra.len(), 2);
+    }
+
+    #[test]
+    fn scores_multiset_issue_counts_not_unique_issue_sets() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-DUP/negative/01");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir.path().join("candidate/Published/CORE-DUP/negative/01");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nDM,1,USUBJID,bad\nDM,1,USUBJID,bad\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-DUP,failed,DM,DM,1,USUBJID,text,1,,,\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-DUP".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-DUP"),
+            rule_path: dir.path().join("open/Published/CORE-DUP/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMismatch);
+        assert_eq!(scored[0].official_issue_count, Some(2));
+        assert_eq!(scored[0].candidate_issue_count, Some(1));
+        assert_eq!(scored[0].missing.len(), 1);
+        assert!(scored[0].extra.is_empty());
     }
 }

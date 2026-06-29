@@ -208,8 +208,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             }
 
             let validation_dataset = add_missing_presence_target_columns(&dataset, &rule)?;
-            let validation_dataset =
-                add_open_rules_missing_condition_columns(&validation_dataset, &rule)?;
+            let validation_dataset = if open_rules_compat {
+                add_open_rules_missing_condition_columns(&validation_dataset, &rule)?
+            } else {
+                validation_dataset
+            };
             match validate_rule(&rule, &validation_dataset) {
                 Ok(result) => {
                     let result = normalize_validation_result(&rule, &validation_dataset, result);

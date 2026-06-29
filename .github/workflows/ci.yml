@@ -61,7 +61,9 @@ jobs:
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root tests/fixtures/open_rules_executable \
             --core-rs-results-root target/open-rules-core-rs-fixture \
-            --out target/open-rules-scoreboard-fixture
+            --out target/open-rules-scoreboard-fixture \
+            --min-coverage 1.0 \
+            --max-skipped-unsupported 0
           cargo run -p xtask -- open-rules baseline \
             --scoreboard target/open-rules-scoreboard-fixture/scoreboard.json \
             --baseline tests/open_rules/baseline.json

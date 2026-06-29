@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -615,7 +615,8 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
                     path: path.to_path_buf(),
                     message: source.to_string(),
                 })?;
-            normalize_yaml_condition_value_literals(&mut value);
+            let mut value_literals = yaml_condition_value_literals(&source);
+            normalize_yaml_condition_value_literals(&mut value, &mut value_literals);
             value
         }
         Some(other) => return Err(RuleModelError::UnsupportedExtension(other.to_owned())),
@@ -625,35 +626,106 @@ pub fn load_rule_file(path: impl AsRef<Path>) -> Result<ExecutableRule> {
     normalize_rule(value)
 }
 
-fn normalize_yaml_condition_value_literals(value: &mut Value) {
+fn yaml_condition_value_literals(source: &str) -> VecDeque<String> {
+    let mut values = VecDeque::new();
+    let mut check_indent = None;
+    let mut value_list_indent = None;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+
+        if let Some(indent_start) = check_indent {
+            if !trimmed.is_empty() && indent <= indent_start && !trimmed.starts_with("Check:") {
+                check_indent = None;
+                value_list_indent = None;
+            }
+        }
+        if trimmed.starts_with("Check:") {
+            check_indent = Some(indent);
+            value_list_indent = None;
+            continue;
+        }
+        if check_indent.is_none() {
+            continue;
+        }
+
+        if let Some(list_indent) = value_list_indent {
+            if trimmed.is_empty() {
+                continue;
+            }
+            if indent <= list_indent {
+                value_list_indent = None;
+            } else if let Some(item) = trimmed.strip_prefix("- ") {
+                if let Some(value) = yaml_boolish_scalar(item) {
+                    values.push_back(value.to_owned());
+                }
+                continue;
+            }
+        }
+
+        let Some(rest) = trimmed.strip_prefix("value:") else {
+            continue;
+        };
+        if rest.trim().is_empty() {
+            value_list_indent = Some(indent);
+        } else if let Some(value) = yaml_boolish_scalar(rest) {
+            values.push_back(value.to_owned());
+        }
+    }
+    values
+}
+
+fn yaml_boolish_scalar(value: &str) -> Option<&str> {
+    let scalar = value
+        .split_once('#')
+        .map_or(value, |(value, _comment)| value)
+        .trim();
+    if scalar.starts_with(['"', '\'']) {
+        return None;
+    }
+    matches!(
+        scalar,
+        "Y" | "y" | "N" | "n" | "Yes" | "yes" | "YES" | "No" | "no" | "NO"
+    )
+    .then_some(scalar)
+}
+
+fn normalize_yaml_condition_value_literals(
+    value: &mut Value,
+    value_literals: &mut VecDeque<String>,
+) {
     match value {
         Value::Object(object) => {
             if object.contains_key("operator") && object.contains_key("value") {
                 if let Some(value) = object.get_mut("value") {
-                    normalize_yaml_condition_value(value);
+                    normalize_yaml_condition_value(value, value_literals);
                 }
             }
             for child in object.values_mut() {
-                normalize_yaml_condition_value_literals(child);
+                normalize_yaml_condition_value_literals(child, value_literals);
             }
         }
         Value::Array(values) => {
             for value in values {
-                normalize_yaml_condition_value_literals(value);
+                normalize_yaml_condition_value_literals(value, value_literals);
             }
         }
         _ => {}
     }
 }
 
-fn normalize_yaml_condition_value(value: &mut Value) {
+fn normalize_yaml_condition_value(value: &mut Value, value_literals: &mut VecDeque<String>) {
     match value {
         Value::Bool(bool_value) => {
-            *value = Value::String(if *bool_value { "Y" } else { "N" }.to_owned());
+            *value = Value::String(
+                value_literals
+                    .pop_front()
+                    .unwrap_or_else(|| bool_value.to_string()),
+            );
         }
         Value::Array(values) => {
             for value in values {
-                normalize_yaml_condition_value(value);
+                normalize_yaml_condition_value(value, value_literals);
             }
         }
         _ => {}
@@ -2316,7 +2388,7 @@ Outcome:
     }
 
     #[test]
-    fn yaml_value_comment_preserves_boolish_scalar_as_string() {
+    fn yaml_value_comment_preserves_boolish_scalar_as_original_string() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("CORE-TEST-0001.yml");
         fs::write(
@@ -2341,7 +2413,67 @@ Outcome:
             panic!("expected leaf condition");
         };
 
-        assert_eq!(condition.comparator, ValueExpr::Literal(json!("N")));
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("No")));
+    }
+
+    #[test]
+    fn yaml_value_yes_preserves_original_scalar_string() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope: {}
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: equal_to
+  value: Yes
+  value_is_literal: true
+Outcome:
+  Message: AESER must be Yes
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));
+    }
+
+    #[test]
+    fn yaml_condition_value_literals_ignore_non_condition_values() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("CORE-TEST-0001.yml");
+        fs::write(
+            &path,
+            r#"Core:
+  Id: CORE-TEST-0001
+Scope:
+  Metadata:
+    value: No
+Rule Type: Record Data
+Check:
+  name: AESER
+  operator: equal_to
+  value: Yes
+  value_is_literal: true
+Outcome:
+  Message: AESER must be Yes
+"#,
+        )
+        .expect("write rule");
+
+        let rule = load_rule_file(&path).expect("load YAML rule");
+        let ConditionGroup::Leaf(condition) = rule.conditions else {
+            panic!("expected leaf condition");
+        };
+
+        assert_eq!(condition.comparator, ValueExpr::Literal(json!("Yes")));
     }
 
     #[test]

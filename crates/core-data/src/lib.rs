@@ -8042,18 +8042,18 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
         ));
     }
 
-    let row_chunks = observation_chunks(&bytes[data_start..], observation_len);
-    if row_chunks.len() > XPT_MAX_ROWS {
+    let row_count = observation_row_count(&bytes[data_start..], observation_len);
+    if row_count > XPT_MAX_ROWS {
         return Err(DataError::InvalidDatasetPackage(format!(
             "XPT row count exceeds maximum supported count of {XPT_MAX_ROWS}"
         )));
     }
     let mut records = variables
         .iter()
-        .map(|variable| (variable.name.clone(), Vec::with_capacity(row_chunks.len())))
+        .map(|variable| (variable.name.clone(), Vec::with_capacity(row_count)))
         .collect::<IndexMap<_, _>>();
 
-    for row in row_chunks {
+    for row in observation_chunks(&bytes[data_start..], observation_len, row_count) {
         let mut offset = 0;
         for variable in &variables {
             let field = &row[offset..offset + variable.length];
@@ -8165,15 +8165,25 @@ fn parse_xpt_dataset_name(bytes: &[u8]) -> Option<String> {
     })
 }
 
-fn observation_chunks(data: &[u8], observation_len: usize) -> Vec<&[u8]> {
-    let mut rows = data.chunks_exact(observation_len).collect::<Vec<_>>();
-    while rows
-        .last()
-        .is_some_and(|row| row.iter().all(|byte| matches!(*byte, 0 | b' ')))
-    {
-        rows.pop();
+fn observation_row_count(data: &[u8], observation_len: usize) -> usize {
+    let mut row_count = data.len() / observation_len;
+    while row_count > 0 {
+        let start = (row_count - 1) * observation_len;
+        let row = &data[start..start + observation_len];
+        if !row.iter().all(|byte| matches!(*byte, 0 | b' ')) {
+            break;
+        }
+        row_count -= 1;
     }
-    rows
+    row_count
+}
+
+fn observation_chunks(
+    data: &[u8],
+    observation_len: usize,
+    row_count: usize,
+) -> impl Iterator<Item = &[u8]> {
+    data.chunks_exact(observation_len).take(row_count)
 }
 
 fn decode_xpt_numeric(bytes: &[u8]) -> Value {

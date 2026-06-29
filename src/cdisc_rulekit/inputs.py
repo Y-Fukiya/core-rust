@@ -34,6 +34,15 @@ def _assert_safe_zip_member(member_name: str, target: Path) -> None:
         raise ValueError(f"unsafe zip member path: {member_name}")
 
 
+def _is_cache_zip_member(member_name: str) -> bool:
+    parts = Path(member_name).parts
+    return any(
+        part in {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store"}
+        or part.endswith((".pyc", ".pyo"))
+        for part in parts
+    )
+
+
 def extract_open_rules_zip(archive_path: str | Path, work_root: str | Path) -> Path:
     archive = Path(archive_path)
     target = Path(work_root) / "open_rules_zip"
@@ -44,7 +53,9 @@ def extract_open_rules_zip(archive_path: str | Path, work_root: str | Path) -> P
     with zipfile.ZipFile(archive) as zip_handle:
         for member in zip_handle.infolist():
             _assert_safe_zip_member(member.filename, target)
-        zip_handle.extractall(target)
+            if _is_cache_zip_member(member.filename):
+                continue
+            zip_handle.extract(member, target)
 
     return locate_open_rules_repo(target)
 

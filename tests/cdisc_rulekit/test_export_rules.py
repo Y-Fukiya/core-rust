@@ -43,6 +43,15 @@ def test_export_generated_rules_copies_to_unpublished_new_rule_without_overwrite
     assert second.rows[0]["skip_reason"] == "TARGET_EXISTS"
 
 
+def test_export_generated_rules_does_not_create_target_for_missing_input(tmp_path):
+    open_rules_repo = tmp_path / "cdisc-open-rules"
+
+    with pytest.raises(ValueError, match="does not exist"):
+        export_generated_rules(tmp_path / "missing-generated", open_rules_repo)
+
+    assert not (open_rules_repo / "Unpublished" / "NEW-RULE").exists()
+
+
 def test_export_generated_rules_can_filter_to_comparison_passed_rules(tmp_path):
     generated_root = tmp_path / "generated_rules"
     passed_rule_id = "P21PORT-SDTMIG-SD1210-ABCDEF01"

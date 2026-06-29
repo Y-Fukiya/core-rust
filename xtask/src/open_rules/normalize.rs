@@ -60,8 +60,6 @@ pub fn normalize_csv(
     let issues = issue_rows
         .into_iter()
         .flat_map(|row| expand_issue_key(normalize_row(row, default_rule_id)))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .collect::<Vec<_>>();
 
     Ok(NormalizedCsv {

@@ -55,7 +55,7 @@ def csv_cell(value: Any) -> str:
         text = json.dumps(value, ensure_ascii=False, sort_keys=True)
     else:
         text = str(value)
-    if text.startswith(CSV_FORMULA_PREFIXES):
+    if text.lstrip().startswith(CSV_FORMULA_PREFIXES):
         return f"'{text}"
     return text
 

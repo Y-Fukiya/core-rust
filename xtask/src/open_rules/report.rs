@@ -50,6 +50,10 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         ),
         format!("| Supported mismatch | {} |", summary.supported_mismatch),
         format!("| Skipped unsupported | {} |", summary.skipped_unsupported),
+        format!(
+            "| Mixed skipped and issues | {} |",
+            summary.mixed_skipped_and_issues
+        ),
         format!("| No official oracle | {} |", summary.no_official_oracle),
         format!("| Harness error | {} |", summary.harness_error),
         format!(
@@ -335,6 +339,7 @@ mod tests {
         assert!(markdown.contains("| Official oracle match | 0 |"));
         assert!(markdown.contains("| Synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
+        assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));
