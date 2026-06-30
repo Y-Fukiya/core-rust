@@ -598,7 +598,7 @@ fn read_candidate_execution_provenance(path: &Path) -> Option<ExecutionProvenanc
             _ => ExecutionProvenance::Unknown,
         });
     }
-    Some(ExecutionProvenance::Unknown)
+    None
 }
 
 pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
@@ -910,6 +910,110 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
             ExecutionProvenance::RuleIdHandPort
         );
         assert_eq!(summary.rule_id_hand_port_supported_match, 1);
+        assert_eq!(summary.unknown_provenance_supported_match, 0);
+    }
+
+    #[test]
+    fn empty_candidate_report_with_provenance_header_falls_back_to_hand_port_rule_id() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-000583/positive/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000583/positive/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000583".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000583"),
+            rule_path: dir.path().join("open/Published/CORE-000583/rule.yml"),
+            case_kind: CaseKind::Positive,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-000583/positive/01/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].execution_provenance,
+            ExecutionProvenance::RuleIdHandPort
+        );
+        assert_eq!(summary.rule_id_hand_port_supported_match, 1);
+        assert_eq!(summary.unknown_provenance_supported_match, 0);
+    }
+
+    #[test]
+    fn empty_candidate_report_with_provenance_header_falls_back_to_native_rule_id() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-PROV/positive/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir.path().join("candidate/Published/CORE-PROV/positive/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-PROV".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-PROV"),
+            rule_path: dir.path().join("open/Published/CORE-PROV/rule.yml"),
+            case_kind: CaseKind::Positive,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-PROV/positive/01/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].execution_provenance,
+            ExecutionProvenance::NativeEngine
+        );
+        assert_eq!(summary.native_engine_supported_match, 1);
         assert_eq!(summary.unknown_provenance_supported_match, 0);
     }
 
