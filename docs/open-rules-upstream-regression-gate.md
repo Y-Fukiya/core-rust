@@ -44,6 +44,8 @@ The full upstream baseline should fail when:
 - a new `harness_error` case appears
 - a new `mixed_skipped_and_issues` case appears
 - `coverage` decreases
+- `native_engine_coverage` decreases because supported native cases moved to
+  `rule_id_hand_port` or `unknown` provenance
 - `skipped_unsupported` increases
 - a baseline case disappears from the current scoreboard
 

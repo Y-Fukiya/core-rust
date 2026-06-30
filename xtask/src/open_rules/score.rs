@@ -122,17 +122,23 @@ pub struct ScoreSummary {
     #[serde(default)]
     pub native_engine_supported_accuracy: Option<f64>,
     #[serde(default)]
+    pub native_engine_coverage: Option<f64>,
+    #[serde(default)]
     pub rule_id_hand_port_supported_match: usize,
     #[serde(default)]
     pub rule_id_hand_port_supported_mismatch: usize,
     #[serde(default)]
     pub rule_id_hand_port_supported_accuracy: Option<f64>,
     #[serde(default)]
+    pub rule_id_hand_port_coverage: Option<f64>,
+    #[serde(default)]
     pub unknown_provenance_supported_match: usize,
     #[serde(default)]
     pub unknown_provenance_supported_mismatch: usize,
     #[serde(default)]
     pub unknown_provenance_supported_accuracy: Option<f64>,
+    #[serde(default)]
+    pub unknown_provenance_coverage: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -523,17 +529,29 @@ impl ScoreSummary {
                 native_engine_supported_match,
                 native_engine_supported_mismatch,
             ),
+            native_engine_coverage: coverage_for_counts(
+                native_engine_supported_match + native_engine_supported_mismatch,
+                total_cases,
+            ),
             rule_id_hand_port_supported_match,
             rule_id_hand_port_supported_mismatch,
             rule_id_hand_port_supported_accuracy: supported_accuracy_for_counts(
                 rule_id_hand_port_supported_match,
                 rule_id_hand_port_supported_mismatch,
             ),
+            rule_id_hand_port_coverage: coverage_for_counts(
+                rule_id_hand_port_supported_match + rule_id_hand_port_supported_mismatch,
+                total_cases,
+            ),
             unknown_provenance_supported_match,
             unknown_provenance_supported_mismatch,
             unknown_provenance_supported_accuracy: supported_accuracy_for_counts(
                 unknown_provenance_supported_match,
                 unknown_provenance_supported_mismatch,
+            ),
+            unknown_provenance_coverage: coverage_for_counts(
+                unknown_provenance_supported_match + unknown_provenance_supported_mismatch,
+                total_cases,
             ),
         }
     }
@@ -560,6 +578,10 @@ fn supported_count_by_provenance(
 fn supported_accuracy_for_counts(matches: usize, mismatches: usize) -> Option<f64> {
     let supported = matches + mismatches;
     (supported > 0).then(|| matches as f64 / supported as f64)
+}
+
+fn coverage_for_counts(supported: usize, total_cases: usize) -> Option<f64> {
+    (total_cases > 0).then(|| supported as f64 / total_cases as f64)
 }
 
 fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {

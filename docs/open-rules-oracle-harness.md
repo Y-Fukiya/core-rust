@@ -96,9 +96,13 @@ Read these fields together:
   supported accuracy.
 - `native_engine_supported_accuracy`: accuracy for supported cases evaluated
   without known rule-id-specific execution rewrites.
+- `native_engine_coverage`: share of all discovered cases covered by native
+  engine supported cases.
 - `rule_id_hand_port_supported_accuracy`: accuracy for supported cases whose
   executable semantics are hand-ported or adjusted by CORE rule id before
   engine execution.
+- `rule_id_hand_port_coverage`: share of all discovered cases covered by
+  rule-id hand-port supported cases.
 
 The synthetic oracle counters remain in the JSON schema for older scoreboard
 compatibility, but current scoring should leave them at zero.
@@ -113,6 +117,10 @@ native operator-engine coverage separate from rule-id hand ports. A full
 be presented as pure generic engine capability unless the native-engine
 provenance counters support that claim.
 
+Aggregate `coverage` includes both native engine and rule-id hand-port
+supported cases. Use `native_engine_coverage` when describing generic engine
+support.
+
 ## Metrics
 
 ```text
@@ -122,9 +130,15 @@ official_coverage = official_oracle_match / total_cases
 native_engine_supported_accuracy =
   native_engine_supported_match /
   (native_engine_supported_match + native_engine_supported_mismatch)
+native_engine_coverage =
+  (native_engine_supported_match + native_engine_supported_mismatch) /
+  total_cases
 rule_id_hand_port_supported_accuracy =
   rule_id_hand_port_supported_match /
   (rule_id_hand_port_supported_match + rule_id_hand_port_supported_mismatch)
+rule_id_hand_port_coverage =
+  (rule_id_hand_port_supported_match + rule_id_hand_port_supported_mismatch) /
+  total_cases
 ```
 
 Coverage can be low while supported accuracy is high. That means the roadmap is
@@ -169,11 +183,15 @@ loaded as null rather than panicking.
 state. The baseline command fails on regressions such as:
 
 - `supported_match` becoming any other bucket.
+- `supported_match` staying matched but regressing from `native_engine`
+  provenance to `rule_id_hand_port` or `unknown` provenance.
 - new `supported_mismatch` cases.
 - new `harness_error` cases.
 - baseline cases missing from the current scoreboard.
 
 Improvements to `supported_match` are allowed and printed as improvements.
+Supported matches moving from `rule_id_hand_port` or `unknown` provenance to
+`native_engine` provenance are also reported as improvements.
 
 The run-score command exits non-zero for correctness failures, harness failures,
 or unresolved official oracle gaps: `supported_mismatch > 0`,

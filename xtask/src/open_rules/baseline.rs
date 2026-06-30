@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::open_rules::score::{ScoreBucket, Scoreboard, ScoredCase};
+use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard, ScoredCase};
 
 #[derive(Debug, Clone, Parser)]
 pub struct BaselineArgs {
@@ -100,6 +100,20 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(&baseline_case.bucket),
                         Some(&current_case.bucket),
                         "case bucket regressed",
+                    ));
+                } else if provenance_improved(baseline_case, current_case) {
+                    improvements.push(difference(
+                        key,
+                        Some(&baseline_case.bucket),
+                        Some(&current_case.bucket),
+                        "execution provenance improved",
+                    ));
+                } else if provenance_regressed(baseline_case, current_case) {
+                    regressions.push(difference(
+                        key,
+                        Some(&baseline_case.bucket),
+                        Some(&current_case.bucket),
+                        "execution provenance regressed",
                     ));
                 }
             }
@@ -196,6 +210,27 @@ fn is_failing_new_bucket(bucket: &ScoreBucket) -> bool {
     )
 }
 
+fn provenance_improved(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    supported_match_provenance_changed(baseline, current)
+        && baseline.execution_provenance == ExecutionProvenance::RuleIdHandPort
+        && current.execution_provenance == ExecutionProvenance::NativeEngine
+}
+
+fn provenance_regressed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    supported_match_provenance_changed(baseline, current)
+        && baseline.execution_provenance == ExecutionProvenance::NativeEngine
+        && current.execution_provenance != ExecutionProvenance::NativeEngine
+}
+
+fn supported_match_provenance_changed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    if baseline.bucket != ScoreBucket::SupportedMatch
+        || current.bucket != ScoreBucket::SupportedMatch
+    {
+        return false;
+    }
+    baseline.execution_provenance != current.execution_provenance
+}
+
 fn difference(
     case_key: String,
     baseline_bucket: Option<&ScoreBucket>,
@@ -226,7 +261,6 @@ fn bucket_name(bucket: &Option<ScoreBucket>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard, ScoredCase};
     use crate::open_rules::upstream::UpstreamInfo;
 
     use super::*;
@@ -258,6 +292,16 @@ mod tests {
                 extra: Vec::new(),
             }],
         )
+    }
+
+    fn scoreboard_with_provenance(
+        bucket: ScoreBucket,
+        execution_provenance: ExecutionProvenance,
+    ) -> Scoreboard {
+        let mut scoreboard = scoreboard(bucket);
+        scoreboard.cases[0].execution_provenance = execution_provenance;
+        scoreboard.summary = crate::open_rules::score::ScoreSummary::from_cases(&scoreboard.cases);
+        scoreboard
     }
 
     #[test]
@@ -306,6 +350,61 @@ mod tests {
 
         assert!(!report.should_fail());
         assert_eq!(report.improvements.len(), 1);
+    }
+
+    #[test]
+    fn baseline_fails_when_native_supported_match_becomes_hand_port() {
+        let report = compare_scoreboards(
+            &scoreboard_with_provenance(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenance::NativeEngine,
+            ),
+            &scoreboard_with_provenance(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenance::RuleIdHandPort,
+            ),
+        );
+
+        assert!(report.should_fail());
+        assert!(report
+            .regressions
+            .iter()
+            .any(|regression| { regression.message == "execution provenance regressed" }));
+    }
+
+    #[test]
+    fn baseline_reports_hand_port_to_native_as_improvement() {
+        let report = compare_scoreboards(
+            &scoreboard_with_provenance(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenance::RuleIdHandPort,
+            ),
+            &scoreboard_with_provenance(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenance::NativeEngine,
+            ),
+        );
+
+        assert!(!report.should_fail());
+        assert!(report
+            .improvements
+            .iter()
+            .any(|improvement| improvement.message == "execution provenance improved"));
+    }
+
+    #[test]
+    fn baseline_does_not_report_unknown_to_native_as_improvement() {
+        let report = compare_scoreboards(
+            &scoreboard_with_provenance(ScoreBucket::SupportedMatch, ExecutionProvenance::Unknown),
+            &scoreboard_with_provenance(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenance::NativeEngine,
+            ),
+        );
+
+        assert!(!report.should_fail());
+        assert!(report.improvements.is_empty());
+        assert!(report.regressions.is_empty());
     }
 
     #[test]
