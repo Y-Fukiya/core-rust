@@ -23,6 +23,8 @@ pub struct BaselineArgs {
 pub struct BaselineReport {
     pub regressions: Vec<BaselineDifference>,
     pub improvements: Vec<BaselineDifference>,
+    #[serde(default)]
+    pub review_required: Vec<BaselineDifference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -42,9 +44,10 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
     let current = read_scoreboard(&args.scoreboard)?;
     let report = compare_scoreboards(&baseline, &current);
     println!(
-        "open-rules baseline: {} regression(s), {} improvement(s)",
+        "open-rules baseline: {} regression(s), {} improvement(s), {} review-required",
         report.regressions.len(),
-        report.improvements.len()
+        report.improvements.len(),
+        report.review_required.len()
     );
     for regression in &report.regressions {
         println!(
@@ -75,6 +78,18 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             )
         );
     }
+    for review in &report.review_required {
+        println!(
+            "review-required {}: {} -> {} ({})",
+            review.case_key,
+            bucket_and_provenance(
+                &review.baseline_bucket,
+                &review.baseline_execution_provenance,
+            ),
+            bucket_and_provenance(&review.current_bucket, &review.current_execution_provenance,),
+            review.message
+        );
+    }
     Ok(report.should_fail())
 }
 
@@ -92,6 +107,7 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
 
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
+    let mut review_required = Vec::new();
     let keys = baseline_cases
         .keys()
         .chain(current_cases.keys())
@@ -117,12 +133,12 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(current_case),
                         "case bucket regressed",
                     ));
-                } else if provenance_improved(baseline_case, current_case) {
-                    improvements.push(difference(
+                } else if provenance_requires_review(baseline_case, current_case) {
+                    review_required.push(difference(
                         key,
                         Some(baseline_case),
                         Some(current_case),
-                        "execution provenance improved",
+                        "execution provenance requires review",
                     ));
                 } else if provenance_regressed(baseline_case, current_case) {
                     regressions.push(difference(
@@ -181,6 +197,7 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
     BaselineReport {
         regressions,
         improvements,
+        review_required,
     }
 }
 
@@ -245,7 +262,7 @@ fn is_failing_new_bucket(bucket: &ScoreBucket) -> bool {
     )
 }
 
-fn provenance_improved(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+fn provenance_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
     supported_match_provenance_changed(baseline, current)
         && baseline.execution_provenance == ExecutionProvenance::RuleIdHandPort
         && current.execution_provenance == ExecutionProvenance::NativeEngine
@@ -370,6 +387,7 @@ mod tests {
         assert!(!report.should_fail());
         assert!(report.regressions.is_empty());
         assert!(report.improvements.is_empty());
+        assert!(report.review_required.is_empty());
     }
 
     #[test]
@@ -442,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn baseline_reports_hand_port_to_native_as_improvement() {
+    fn baseline_reports_hand_port_to_native_as_review_required() {
         let report = compare_scoreboards(
             &scoreboard_with_provenance(
                 ScoreBucket::SupportedMatch,
@@ -455,21 +473,22 @@ mod tests {
         );
 
         assert!(!report.should_fail());
+        assert!(report.improvements.is_empty());
         assert!(report
-            .improvements
+            .review_required
             .iter()
-            .any(|improvement| improvement.message == "execution provenance improved"));
-        let improvement = report
-            .improvements
+            .any(|review| review.message == "execution provenance requires review"));
+        let review = report
+            .review_required
             .iter()
-            .find(|improvement| improvement.message == "execution provenance improved")
-            .expect("provenance improvement");
+            .find(|review| review.message == "execution provenance requires review")
+            .expect("provenance review");
         assert_eq!(
-            improvement.baseline_execution_provenance,
+            review.baseline_execution_provenance,
             Some(ExecutionProvenance::RuleIdHandPort)
         );
         assert_eq!(
-            improvement.current_execution_provenance,
+            review.current_execution_provenance,
             Some(ExecutionProvenance::NativeEngine)
         );
     }
@@ -487,6 +506,7 @@ mod tests {
         assert!(!report.should_fail());
         assert!(report.improvements.is_empty());
         assert!(report.regressions.is_empty());
+        assert!(report.review_required.is_empty());
     }
 
     #[test]
