@@ -6,6 +6,9 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use super::*;
+use helpers::{write_raw_rule, write_test_xpt_char_dataset};
+
+mod helpers;
 
 fn write_rule(dir: &std::path::Path, id: &str, expected_domain: &str) {
     fs::write(
@@ -2926,6 +2929,104 @@ fn run_validation_executes_domain_presence_variable_exists_operation() {
         outcome.results[0].errors[0].variables,
         vec!["$poolid_exists", "POOLDEF"]
     );
+}
+
+#[test]
+fn run_validation_keeps_record_scoped_dataset_presence_when_oracle_expects_rows() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        data_dir.join("ae.csv"),
+        "STUDYID,DOMAIN,USUBJID,AESEQ,AESTAT\n\
+CDISC-TEST,AE,SUBJ1,1,NOT DONE\n\
+CDISC-TEST,AE,SUBJ2,2,\n",
+    )
+    .expect("write data");
+    fs::write(
+        rules_dir.join("CORE-000013.json"),
+        r#"{
+  "Core": { "Id": "CORE-000013", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": { "name": "AESTAT", "operator": "exists" },
+  "Outcome": {
+    "Message": "AESTAT variable is present in AE dataset.",
+    "Output Variables": ["AESTAT"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir.join("ae.csv")],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    assert_eq!(
+        result
+            .errors
+            .iter()
+            .map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        vec![Some(1), Some(2)]
+    );
+}
+
+#[test]
+fn run_validation_collapses_dataset_level_presence_oracle_family() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        data_dir.join("ae.csv"),
+        "STUDYID,DOMAIN,USUBJID,AESEQ,AEOCCUR\n\
+CDISC-TEST,AE,SUBJ1,1,Y\n\
+CDISC-TEST,AE,SUBJ2,2,Y\n",
+    )
+    .expect("write data");
+    fs::write(
+        rules_dir.join("CORE-000012.json"),
+        r#"{
+  "Core": { "Id": "CORE-000012", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": { "name": "AEOCCUR", "operator": "exists" },
+  "Outcome": {
+    "Message": "AEOCCUR is present in AE dataset.",
+    "Output Variables": ["AEOCCUR"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir.join("ae.csv")],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["AEOCCUR"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]
@@ -10073,6 +10174,98 @@ fn run_validation_executes_tv_visitnum_reference_distinct_operations() {
     assert_eq!(unplanned.error_count, 1);
     assert_eq!(unplanned.errors[0].row, Some(3));
     assert_eq!(unplanned.errors[0].seq.as_deref(), Some("3"));
+}
+
+#[test]
+fn run_validation_joins_single_match_dataset_with_prefixed_condition_column() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000249.json"),
+        r#"{
+  "Core": { "Id": "CORE-000249", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["LB"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "TV", "Keys": ["VISITNUM"] }
+  ],
+  "Operations": [
+    {
+      "domain": "TV",
+      "id": "$tv_visitnum",
+      "name": "VISITNUM",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "VISITDY", "operator": "exists" },
+      { "name": "VISITNUM", "operator": "is_contained_by", "value": "$tv_visitnum" },
+      { "name": "VISITDY", "operator": "not_equal_to", "value": "TV.VISITDY" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Visit Day cannot be found in Trial Visit (TV) domain",
+    "Output Variables": ["VISITDY", "VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write visitdy rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "lb.xpt",
+      "domain": "LB",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "DOMAIN": ["LB", "LB"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "LBSEQ": [1, 2],
+        "VISITNUM": ["100", "200"],
+        "VISITDY": ["-14", "-2"]
+      }
+    },
+    {
+      "filename": "tv.xpt",
+      "domain": "TV",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "DOMAIN": ["TV", "TV"],
+        "VISITNUM": ["100", "200"],
+        "VISITDY": ["-14", "1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write visitdy data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1, "{result:?}");
+    assert_eq!(result.errors[0].row, Some(2));
+    assert_eq!(result.errors[0].seq.as_deref(), Some("2"));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["VISITDY".to_owned(), "VISITNUM".to_owned()]
+    );
 }
 
 #[test]
@@ -17314,135 +17507,4 @@ fn run_validation_skips_operation_oracle_gap_rules() {
         outcome.results[0].skipped_reason,
         Some(SkippedReason::OperationsNotSupported)
     );
-}
-
-fn write_test_xpt_char_dataset(
-    path: &std::path::Path,
-    dataset_name: &str,
-    columns: &[&str],
-    rows: &[Vec<&str>],
-) {
-    const CARD_LEN: usize = 80;
-    const NAMESTR_LEN: usize = 140;
-
-    let mut bytes = Vec::new();
-    push_xpt_card(
-        &mut bytes,
-        "HEADER RECORD*******LIBRARY HEADER RECORD!!!!!!!000000000000000000000000000000",
-    );
-    push_xpt_card(
-        &mut bytes,
-        "SAS     SAS     SASLIB  9.4     X64_10PRO                       18JUN26:00:00:00",
-    );
-    push_xpt_card(&mut bytes, "18JUN26:00:00:00");
-    push_xpt_card(
-        &mut bytes,
-        "HEADER RECORD*******MEMBER  HEADER RECORD!!!!!!!000000000000000001600000000140",
-    );
-    push_xpt_card(
-        &mut bytes,
-        "HEADER RECORD*******DSCRPTR HEADER RECORD!!!!!!!000000000000000000000000000000",
-    );
-    push_xpt_card(
-        &mut bytes,
-        &format!(
-            "SAS     {:<8}SASDATA 9.4     X64_10PRO                       18JUN26:00:00:00",
-            dataset_name
-        ),
-    );
-    push_xpt_card(&mut bytes, "18JUN26:00:00:00");
-    push_xpt_card(
-        &mut bytes,
-        &format!(
-            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!{:030}",
-            columns.len()
-        ),
-    );
-
-    let lengths = columns
-        .iter()
-        .map(|column| match *column {
-            "DOMAIN" => 2,
-            "AESEQ" | "CMSEQ" | "SEQ" => 8,
-            _ => 12,
-        })
-        .collect::<Vec<_>>();
-    let mut offset = 0_u32;
-    let mut namestrs = Vec::new();
-    for (index, (column, length)) in columns.iter().zip(&lengths).enumerate() {
-        let mut namestr = vec![0_u8; NAMESTR_LEN];
-        namestr[0..2].copy_from_slice(&2_u16.to_be_bytes());
-        namestr[4..6].copy_from_slice(&(*length as u16).to_be_bytes());
-        namestr[6..8].copy_from_slice(&((index + 1) as u16).to_be_bytes());
-        write_padded(&mut namestr[8..16], column);
-        write_padded(&mut namestr[16..56], column);
-        namestr[84..88].copy_from_slice(&offset.to_be_bytes());
-        offset += *length as u32;
-        namestrs.extend(namestr);
-    }
-    pad_to_xpt_card(&mut namestrs);
-    bytes.extend(namestrs);
-
-    push_xpt_card(
-        &mut bytes,
-        "HEADER RECORD*******OBS     HEADER RECORD!!!!!!!000000000000000000000000000000",
-    );
-    for row in rows {
-        assert_eq!(row.len(), columns.len());
-        for (value, length) in row.iter().zip(&lengths) {
-            let start = bytes.len();
-            bytes.resize(start + *length, b' ');
-            write_padded(&mut bytes[start..start + *length], value);
-        }
-    }
-    pad_to_xpt_card(&mut bytes);
-
-    fs::write(path, bytes).expect("write xpt");
-
-    fn push_xpt_card(bytes: &mut Vec<u8>, value: &str) {
-        let start = bytes.len();
-        bytes.resize(start + CARD_LEN, b' ');
-        write_padded(&mut bytes[start..start + CARD_LEN], value);
-    }
-
-    fn write_padded(target: &mut [u8], value: &str) {
-        let bytes = value.as_bytes();
-        let len = bytes.len().min(target.len());
-        target[..len].copy_from_slice(&bytes[..len]);
-    }
-
-    fn pad_to_xpt_card(bytes: &mut Vec<u8>) {
-        let remainder = bytes.len() % CARD_LEN;
-        if remainder != 0 {
-            bytes.resize(bytes.len() + CARD_LEN - remainder, b' ');
-        }
-    }
-}
-
-fn write_raw_rule(
-    dir: &std::path::Path,
-    id: &str,
-    rule_type: &str,
-    extra_rule_field: &str,
-    operator: &str,
-) {
-    fs::write(
-        dir.join(format!("{id}.json")),
-        format!(
-            r#"{{
-  "Core": {{ "Id": "{id}", "Status": "Published" }},
-  "Scope": {{ "Domains": {{}}, "Classes": {{}} }},
-  "Sensitivity": "Record",
-  {rule_type},
-  {extra_rule_field}
-  "Check": {{
-    "name": "DOMAIN",
-    {operator},
-    "value": "AE"
-  }},
-  "Outcome": {{ "Message": "DOMAIN must be AE" }}
-}}"#
-        ),
-    )
-    .expect("write raw rule");
 }

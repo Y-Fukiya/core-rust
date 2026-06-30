@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::result_large_err)]
 
+mod engine_semantics;
 mod open_rules_compat;
+mod standard_filter;
+mod usdm_jsonata;
 
 pub use open_rules_compat::rule_id_uses_hand_port;
 
@@ -32,12 +35,16 @@ use core_report::{
 use core_rule_model::{
     load_rules_from_paths, normalize_condition_value, normalize_key, Condition, ConditionGroup,
     ExecutableRule, MatchDataset, OperationSpec, Operator, RuleModelError, RuleType, Sensitivity,
-    StandardRef, ValueExpr,
+    ValueExpr,
 };
 use serde_json::Value;
 use thiserror::Error;
 
-use open_rules_compat::post_execution_oracle_gap_result;
+use open_rules_compat::{oracle_gap_rule_id_matches, post_execution_oracle_gap_result};
+use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
+use usdm_jsonata::{
+    apply_usdm_jsonata_semantics, has_usdm_jsonata_semantics, usdm_jsonata_execution_datasets,
+};
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -189,7 +196,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             if open_rules_compat
                 && is_missing_column_oracle_gap_rule(&rule)
                 && !should_defer_positive_zero_oracle_gap_probe(&rule)
-                && rule.core_id != "CORE-000547"
+                && !engine_semantics::is_missing_column_probe_exception(&rule)
                 && contains_missing_target_column(&rule.conditions, &dataset)
             {
                 results.push(missing_column_skipped_result(&rule, &dataset));
@@ -324,7 +331,7 @@ fn normalize_validation_result(
     open_rules_compat: bool,
 ) -> RuleValidationResult {
     if open_rules_compat
-        && rule.core_id == "CORE-000929"
+        && engine_semantics::is_zb_issue_normalization_rule(rule)
         && dataset_domain_value(dataset).eq_ignore_ascii_case("ZB")
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
@@ -339,18 +346,7 @@ fn normalize_validation_result(
     }
 
     if open_rules_compat
-        && matches!(
-            rule.core_id.as_str(),
-            "CORE-000138"
-                | "CORE-000139"
-                | "CORE-000324"
-                | "CORE-000505"
-                | "CORE-000572"
-                | "CORE-000653"
-                | "CORE-000711"
-                | "CORE-000714"
-                | "CORE-000866"
-        )
+        && engine_semantics::is_date_issue_variable_expansion_rule(rule)
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
     {
@@ -376,7 +372,7 @@ fn normalize_validation_result(
     }
 
     if open_rules_compat
-        && rule.core_id == "CORE-000460"
+        && engine_semantics::is_tx_variable_expansion_rule(rule)
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
     {
@@ -416,6 +412,19 @@ fn normalize_validation_result(
         return result;
     }
 
+    if engine_semantics::is_dataset_level_presence_result_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+    {
+        let mut issue = result.errors[0].clone();
+        issue.row = None;
+        issue.usubjid = None;
+        issue.seq = None;
+        result.errors = vec![issue];
+        result.error_count = 1;
+        return result;
+    }
+
     if !has_variable_count_operation(rule) && !has_dataset_level_record_count_operation(rule)
         || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
         || result.execution_status != core_engine::ExecutionStatus::Failed
@@ -438,7 +447,7 @@ fn is_core_000595_missing_casno_oracle_issue(
     dataset: &LoadedDataset,
     result: &RuleValidationResult,
 ) -> bool {
-    rule.core_id == "CORE-000595"
+    engine_semantics::is_missing_casno_oracle_issue_rule(rule)
         && result.execution_status == core_engine::ExecutionStatus::Passed
         && dataset_has_column(dataset, "UNII")
         && !dataset_has_column(dataset, "CASNO")
@@ -457,7 +466,7 @@ fn core_000677_pooldef_poolid_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000677" {
+    if !engine_semantics::is_pooldef_poolid_oracle_result_rule(rule) {
         return None;
     }
 
@@ -513,7 +522,7 @@ fn core_000744_relrec_faobj_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000744" {
+    if !engine_semantics::is_relrec_faobj_oracle_result_rule(rule) {
         return None;
     }
 
@@ -919,67 +928,7 @@ fn skipped_unsupported_rule(
         }
     }
 
-    if is_usdm_planned_number_jsonata_rule(rule) || is_usdm_study_role_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_study_design_jsonata_rule(rule) || is_usdm_study_version_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_activity_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_duration_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_range_jsonata_rule(rule) || is_usdm_person_name_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_simple_recursive_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_administrable_product_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_administration_jsonata_rule(rule) || is_usdm_strength_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_reference_integrity_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_planned_sex_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_timeline_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_scheduled_instance_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_governance_date_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_document_content_reference_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_identifier_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_object_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_geographic_scope_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_syntax_template_text_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_narrative_content_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_narrative_content_item_jsonata_rule(rule) {
-        return None;
-    }
-    if is_usdm_abbreviation_jsonata_rule(rule) {
+    if has_usdm_jsonata_semantics(rule) {
         return None;
     }
 
@@ -1111,9 +1060,11 @@ fn skipped_open_rules_oracle_gap_after_operator_checks(
 }
 
 fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000773", "CORE-001034"];
+    !rule.operations.is_empty() && has_oracle_gap_rule_id(rule, "operation")
+}
 
-    !rule.operations.is_empty() && RULE_IDS.contains(&rule.core_id.as_str())
+fn has_oracle_gap_rule_id(rule: &ExecutableRule, category: &str) -> bool {
+    oracle_gap_rule_id_matches(&rule.core_id, category)
 }
 
 fn is_distinct_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1121,15 +1072,13 @@ fn is_distinct_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000660", "CORE-000896"];
-
     if has_unsupported_reference_distinct_operation(rule)
         && !is_supported_reference_distinct_rule(rule)
     {
         return true;
     }
 
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "distinct_operation")
         && rule.operations.iter().any(|operation| {
             operation_name(operation).as_deref() == Some("distinct")
                 && !bool_field(operation, &["value_is_reference"]).unwrap_or(false)
@@ -1141,46 +1090,19 @@ fn is_dy_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000436", "CORE-000529"];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && has_dy_operation(rule)
+    has_oracle_gap_rule_id(rule, "dy_operation") && has_dy_operation(rule)
 }
 
 fn is_required_value_metadata_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000356" && rule.rule_type == RuleType::ValueLevelMetadata
+    has_oracle_gap_rule_id(rule, "required_value_metadata")
+        && rule.rule_type == RuleType::ValueLevelMetadata
 }
 
 fn is_dataset_presence_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000015",
-        "CORE-000049",
-        "CORE-000080",
-        "CORE-000081",
-        "CORE-000096",
-        "CORE-000098",
-        "CORE-000015",
-        "CORE-000049",
-        "CORE-000092",
-        "CORE-000096",
-        "CORE-000165",
-        "CORE-000166",
-        "CORE-000167",
-        "CORE-000321",
-        "CORE-000328",
-        "CORE-000700",
-        "CORE-000786",
-        "CORE-000793",
-        "CORE-000794",
-        "CORE-000847",
-        "CORE-000848",
-        "CORE-000862",
-        "CORE-000864",
-    ];
-
     matches!(rule.sensitivity, Some(Sensitivity::Dataset))
         && rule.rule_type == RuleType::RecordData
         && contains_presence_operator(&rule.conditions)
-        && RULE_IDS.contains(&rule.core_id.as_str())
+        && has_oracle_gap_rule_id(rule, "dataset_presence")
 }
 
 fn is_domain_presence_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1188,12 +1110,10 @@ fn is_domain_presence_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000357", "CORE-000539", "CORE-000540", "CORE-000560"];
-
     matches!(
         rule.rule_type,
         RuleType::DatasetMetadata | RuleType::DomainPresence
-    ) && RULE_IDS.contains(&rule.core_id.as_str())
+    ) && has_oracle_gap_rule_id(rule, "domain_presence")
 }
 
 fn is_variable_metadata_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1201,9 +1121,8 @@ fn is_variable_metadata_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000019", "CORE-000355", "CORE-000569", "CORE-000690"];
-
-    rule.rule_type == RuleType::VariableMetadata && RULE_IDS.contains(&rule.core_id.as_str())
+    rule.rule_type == RuleType::VariableMetadata
+        && has_oracle_gap_rule_id(rule, "variable_metadata")
 }
 
 fn is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1211,45 +1130,16 @@ fn is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule: &Executable
         return false;
     }
 
-    const RULE_IDS: &[&str] = &[
-        "CORE-000195",
-        "CORE-000197",
-        "CORE-000198",
-        "CORE-000237",
-        "CORE-000542",
-        "CORE-000545",
-        "CORE-000546",
-        "CORE-000698",
-        "CORE-000704",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "domain_placeholder_column_ref_comparator")
         && contains_domain_placeholder_column_ref_comparator(&rule.conditions)
 }
 
 fn is_entity_literal_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000820"];
-
-    rule.entities.is_some() && RULE_IDS.contains(&rule.core_id.as_str())
+    rule.entities.is_some() && has_oracle_gap_rule_id(rule, "entity_literal")
 }
 
 fn is_supported_entity_match_column_ref_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000427",
-        "CORE-000803",
-        "CORE-000819",
-        "CORE-000828",
-        "CORE-000835",
-        "CORE-000836",
-        "CORE-000837",
-        "CORE-000838",
-        "CORE-000839",
-        "CORE-000857",
-        "CORE-000924",
-        "CORE-000972",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "supported_entity_match_column_ref")
 }
 
 fn is_empty_non_empty_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1265,29 +1155,7 @@ fn is_empty_non_empty_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 }
 
 fn is_empty_non_empty_oracle_gap_rule_id(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000007",
-        "CORE-000027",
-        "CORE-000117",
-        "CORE-000224",
-        "CORE-000225",
-        "CORE-000262",
-        "CORE-000267",
-        "CORE-000341",
-        "CORE-000430",
-        "CORE-000438",
-        "CORE-000524",
-        "CORE-000554",
-        "CORE-000570",
-        "CORE-000616",
-        "CORE-000648",
-        "CORE-000650",
-        "CORE-000670",
-        "CORE-000863",
-        "CORE-000865",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "empty_non_empty")
 }
 
 fn is_date_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1295,67 +1163,20 @@ fn is_date_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &[
-        "CORE-000138",
-        "CORE-000139",
-        "CORE-000324",
-        "CORE-000370",
-        "CORE-000460",
-        "CORE-000505",
-        "CORE-000547",
-        "CORE-000572",
-        "CORE-000653",
-        "CORE-000711",
-        "CORE-000714",
-        "CORE-000718",
-        "CORE-000866",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_date_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "date_operator") && contains_date_operator(&rule.conditions)
 }
 
 fn should_defer_empty_non_empty_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000007",
-        "CORE-000027",
-        "CORE-000117",
-        "CORE-000225",
-        "CORE-000262",
-        "CORE-000267",
-        "CORE-000341",
-        "CORE-000430",
-        "CORE-000648",
-        "CORE-000650",
-        "CORE-000670",
-        "CORE-000863",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_empty_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "defer_empty_non_empty")
+        && contains_empty_operator(&rule.conditions)
 }
 
 fn should_defer_date_operator_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000138",
-        "CORE-000139",
-        "CORE-000324",
-        "CORE-000370",
-        "CORE-000460",
-        "CORE-000505",
-        "CORE-000547",
-        "CORE-000572",
-        "CORE-000653",
-        "CORE-000711",
-        "CORE-000714",
-        "CORE-000866",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_date_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "defer_date_operator") && contains_date_operator(&rule.conditions)
 }
 
 fn should_defer_dy_operation_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000436", "CORE-000529"];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && has_dy_operation(rule)
+    has_oracle_gap_rule_id(rule, "defer_dy_operation") && has_dy_operation(rule)
 }
 
 fn is_sort_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1363,27 +1184,14 @@ fn is_sort_operator_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000535"];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_sort_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "sort_operator") && contains_sort_operator(&rule.conditions)
 }
 
 fn is_unique_set_oracle_gap_rule(rule: &ExecutableRule) -> bool {
     if should_defer_unique_set_oracle_gap(rule) {
         return false;
     }
-
-    const RULE_IDS: &[&str] = &[
-        "CORE-000387",
-        "CORE-000390",
-        "CORE-000396",
-        "CORE-000495",
-        "CORE-000526",
-        "CORE-000551",
-        "CORE-000580",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_unique_set_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "unique_set") && contains_unique_set_operator(&rule.conditions)
 }
 
 fn is_not_unique_relationship_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1391,9 +1199,7 @@ fn is_not_unique_relationship_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000184", "CORE-000268"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "not_unique_relationship")
         && contains_not_unique_relationship_operator(&rule.conditions)
 }
 
@@ -1402,16 +1208,12 @@ fn is_inconsistent_across_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000142"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "inconsistent_across_dataset")
         && contains_inconsistent_across_dataset_operator(&rule.conditions)
 }
 
 fn is_usdm_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "usdm_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1419,23 +1221,7 @@ fn is_usdm_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 }
 
 fn is_missing_column_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000016",
-        "CORE-000017",
-        "CORE-000092",
-        "CORE-000093",
-        "CORE-000458",
-        "CORE-000465",
-        "CORE-000481",
-        "CORE-000482",
-        "CORE-000547",
-        "CORE-000039",
-        "CORE-000674",
-        "CORE-000699",
-        "CORE-000750",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "missing_column")
 }
 
 fn is_multi_base_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1443,9 +1229,7 @@ fn is_multi_base_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000354", "CORE-000853"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "multi_base_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1457,9 +1241,7 @@ fn is_duplicate_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> bool {
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000252", "CORE-000253", "CORE-000597", "CORE-000784"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "duplicate_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1471,9 +1253,7 @@ fn is_relrec_or_supp_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> boo
         return false;
     }
 
-    const RULE_IDS: &[&str] = &["CORE-000206", "CORE-000744", "CORE-000757"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "relrec_or_supp_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1481,42 +1261,32 @@ fn is_relrec_or_supp_match_dataset_oracle_gap_rule(rule: &ExecutableRule) -> boo
 }
 
 fn should_defer_etcd_length_oracle_gap(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000143"
+    has_oracle_gap_rule_id(rule, "defer_etcd_length")
         && contains_longer_than_target(&rule.conditions, "ETCD")
         && scope_matches(&scope_values(rule.domains.as_ref(), "Include"), "SE")
 }
 
 fn should_defer_unique_set_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000387",
-        "CORE-000390",
-        "CORE-000396",
-        "CORE-000495",
-        "CORE-000526",
-        "CORE-000551",
-        "CORE-000580",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && contains_unique_set_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "defer_unique_set")
+        && contains_unique_set_operator(&rule.conditions)
 }
 
 fn should_defer_sort_operator_oracle_gap(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000535" && contains_sort_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "defer_sort_operator") && contains_sort_operator(&rule.conditions)
 }
 
 fn should_defer_not_unique_relationship_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000184", "CORE-000268"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "defer_not_unique_relationship")
         && contains_not_unique_relationship_operator(&rule.conditions)
 }
 
 fn should_defer_inconsistent_across_dataset_oracle_gap(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000142" && contains_inconsistent_across_dataset_operator(&rule.conditions)
+    has_oracle_gap_rule_id(rule, "defer_inconsistent_across_dataset")
+        && contains_inconsistent_across_dataset_operator(&rule.conditions)
 }
 
 fn should_defer_relrec_or_supp_match_dataset_oracle_gap(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000744"
+    has_oracle_gap_rule_id(rule, "defer_relrec_or_supp_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1524,9 +1294,7 @@ fn should_defer_relrec_or_supp_match_dataset_oracle_gap(rule: &ExecutableRule) -
 }
 
 fn should_defer_multi_base_match_dataset_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000354", "CORE-000853"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "defer_multi_base_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1534,9 +1302,7 @@ fn should_defer_multi_base_match_dataset_oracle_gap(rule: &ExecutableRule) -> bo
 }
 
 fn should_defer_duplicate_match_dataset_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000252", "CORE-000253", "CORE-000597", "CORE-000784"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "defer_duplicate_match_dataset")
         && rule
             .datasets
             .as_ref()
@@ -1544,238 +1310,36 @@ fn should_defer_duplicate_match_dataset_oracle_gap(rule: &ExecutableRule) -> boo
 }
 
 fn should_defer_entity_column_ref_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000904",
-        "CORE-000905",
-        "CORE-000906",
-        "CORE-000907",
-        "CORE-000908",
-        "CORE-000909",
-        "CORE-000910",
-        "CORE-000911",
-        "CORE-000912",
-        "CORE-000917",
-        "CORE-000918",
-        "CORE-000919",
-        "CORE-000920",
-        "CORE-000921",
-        "CORE-000922",
-        "CORE-000923",
-        "CORE-000925",
-        "CORE-000930",
-        "CORE-000931",
-        "CORE-000932",
-        "CORE-000933",
-        "CORE-000939",
-        "CORE-000940",
-        "CORE-000941",
-        "CORE-000942",
-        "CORE-000943",
-        "CORE-000951",
-        "CORE-000957",
-        "CORE-000958",
-        "CORE-000959",
-        "CORE-000975",
-        "CORE-000976",
-        "CORE-000977",
-        "CORE-000978",
-        "CORE-000979",
-        "CORE-000987",
-        "CORE-000988",
-        "CORE-000989",
-        "CORE-000990",
-        "CORE-000991",
-        "CORE-000992",
-    ];
-
-    rule.entities.is_some() && RULE_IDS.contains(&rule.core_id.as_str())
+    rule.entities.is_some() && has_oracle_gap_rule_id(rule, "defer_entity_column_ref")
 }
 
 fn should_defer_domain_placeholder_column_ref_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000195", "CORE-000197", "CORE-000198"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "defer_domain_placeholder_column_ref")
         && contains_domain_placeholder_column_ref_comparator(&rule.conditions)
 }
 
 fn should_defer_domain_presence_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000539", "CORE-000540"];
-
     matches!(
         rule.rule_type,
         RuleType::DatasetMetadata | RuleType::DomainPresence
-    ) && RULE_IDS.contains(&rule.core_id.as_str())
+    ) && has_oracle_gap_rule_id(rule, "defer_domain_presence")
 }
 
 fn should_defer_variable_metadata_oracle_gap(rule: &ExecutableRule) -> bool {
-    rule.rule_type == RuleType::VariableMetadata && rule.core_id == "CORE-000019"
+    rule.rule_type == RuleType::VariableMetadata
+        && has_oracle_gap_rule_id(rule, "defer_variable_metadata")
 }
 
 fn should_defer_distinct_operation_oracle_gap(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000454", "CORE-000455"];
-
-    RULE_IDS.contains(&rule.core_id.as_str()) && !rule.operations.is_empty()
+    has_oracle_gap_rule_id(rule, "defer_distinct_operation") && !rule.operations.is_empty()
 }
 
 fn should_defer_positive_zero_oracle_gap_probe(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000098",
-        "CORE-000027",
-        "CORE-000108",
-        "CORE-000014",
-        "CORE-000117",
-        "CORE-000116",
-        "CORE-000142",
-        "CORE-000143",
-        "CORE-000165",
-        "CORE-000166",
-        "CORE-000167",
-        "CORE-000168",
-        "CORE-000184",
-        "CORE-000195",
-        "CORE-000197",
-        "CORE-000198",
-        "CORE-000204",
-        "CORE-000217",
-        "CORE-000224",
-        "CORE-000237",
-        "CORE-000249",
-        "CORE-000262",
-        "CORE-000268",
-        "CORE-000269",
-        "CORE-000270",
-        "CORE-000273",
-        "CORE-000289",
-        "CORE-000321",
-        "CORE-000325",
-        "CORE-000328",
-        "CORE-000355",
-        "CORE-000356",
-        "CORE-000357",
-        "CORE-000478",
-        "CORE-000529",
-        "CORE-000535",
-        "CORE-000390",
-        "CORE-000438",
-        "CORE-000465",
-        "CORE-000481",
-        "CORE-000482",
-        "CORE-000524",
-        "CORE-000542",
-        "CORE-000547",
-        "CORE-000548",
-        "CORE-000551",
-        "CORE-000554",
-        "CORE-000558",
-        "CORE-000560",
-        "CORE-000569",
-        "CORE-000570",
-        "CORE-000597",
-        "CORE-000616",
-        "CORE-000642",
-        "CORE-000648",
-        "CORE-000652",
-        "CORE-000670",
-        "CORE-000676",
-        "CORE-000660",
-        "CORE-000690",
-        "CORE-000698",
-        "CORE-000699",
-        "CORE-000700",
-        "CORE-000704",
-        "CORE-000732",
-        "CORE-000757",
-        "CORE-000750",
-        "CORE-000756",
-        "CORE-000773",
-        "CORE-000784",
-        "CORE-000786",
-        "CORE-000793",
-        "CORE-000794",
-        "CORE-000799",
-        "CORE-000804",
-        "CORE-000807",
-        "CORE-000808",
-        "CORE-000809",
-        "CORE-000820",
-        "CORE-000823",
-        "CORE-000834",
-        "CORE-000840",
-        "CORE-000847",
-        "CORE-000848",
-        "CORE-000854",
-        "CORE-000855",
-        "CORE-000856",
-        "CORE-000858",
-        "CORE-000859",
-        "CORE-000860",
-        "CORE-000861",
-        "CORE-000862",
-        "CORE-000864",
-        "CORE-000868",
-        "CORE-000871",
-        "CORE-000877",
-        "CORE-000879",
-        "CORE-000884",
-        "CORE-000897",
-        "CORE-000904",
-        "CORE-000905",
-        "CORE-000906",
-        "CORE-000907",
-        "CORE-000908",
-        "CORE-000909",
-        "CORE-000910",
-        "CORE-000911",
-        "CORE-000912",
-        "CORE-000917",
-        "CORE-000918",
-        "CORE-000919",
-        "CORE-000920",
-        "CORE-000921",
-        "CORE-000922",
-        "CORE-000923",
-        "CORE-000925",
-        "CORE-000930",
-        "CORE-000931",
-        "CORE-000932",
-        "CORE-000933",
-        "CORE-000939",
-        "CORE-000940",
-        "CORE-000941",
-        "CORE-000942",
-        "CORE-000943",
-        "CORE-000951",
-        "CORE-000957",
-        "CORE-000958",
-        "CORE-000959",
-        "CORE-000975",
-        "CORE-000976",
-        "CORE-000977",
-        "CORE-000978",
-        "CORE-000979",
-        "CORE-000987",
-        "CORE-000988",
-        "CORE-000989",
-        "CORE-000990",
-        "CORE-000991",
-        "CORE-000992",
-        "CORE-001034",
-        "CORE-001056",
-        "CORE-001057",
-        "CORE-001058",
-        "CORE-001059",
-        "CORE-001060",
-        "CORE-001061",
-        "CORE-001063",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "defer_positive_zero_probe")
 }
 
 fn is_known_unsafe_positive_zero_probe_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &["CORE-000545", "CORE-000546"];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "unsafe_positive_zero_probe")
 }
 
 fn contains_empty_operator(group: &ConditionGroup) -> bool {
@@ -1921,7 +1485,7 @@ fn add_core_000324_missing_cm_dtc(
     dataset: &LoadedDataset,
     rule: &ExecutableRule,
 ) -> core_data::Result<LoadedDataset> {
-    if rule.core_id != "CORE-000324"
+    if !engine_semantics::is_missing_cm_dtc_rule(rule)
         || !dataset_domain_value(dataset).eq_ignore_ascii_case("CM")
         || dataset_has_column(dataset, "CMDTC")
         || !dataset_has_column(dataset, "CMENTPT")
@@ -1933,16 +1497,7 @@ fn add_core_000324_missing_cm_dtc(
 }
 
 fn should_treat_missing_condition_columns_as_null(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000200"
-            | "CORE-000217"
-            | "CORE-000466"
-            | "CORE-000547"
-            | "CORE-000580"
-            | "CORE-000680"
-            | "CORE-000806"
-    )
+    has_oracle_gap_rule_id(rule, "missing_condition_columns_as_null")
 }
 
 fn condition_target_columns(group: &ConditionGroup) -> BTreeSet<String> {
@@ -2185,222 +1740,13 @@ fn merge_terminology(target: &mut ControlledTerminology, source: ControlledTermi
     }
 }
 
-fn rule_matches_standard(
-    rule: &ExecutableRule,
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) -> bool {
-    let Some(standard) = standard.as_deref() else {
-        return true;
-    };
-
-    rule.standards.iter().any(|rule_standard| {
-        rule_standard_matches_name(rule_standard, standard, &rule.core_id)
-            && standard_version.as_deref().is_none_or(|version| {
-                rule_standard
-                    .version
-                    .as_deref()
-                    .is_some_and(|rule_version| {
-                        rule_version.eq_ignore_ascii_case(version)
-                            || standard_version_compatible(standard, version, rule_version)
-                    })
-            })
-    })
-}
-
-fn rule_standard_matches_name(rule_standard: &StandardRef, requested: &str, rule_id: &str) -> bool {
-    if matches!(rule_id, "CORE-000478" | "CORE-000642") && requested.eq_ignore_ascii_case("SENDIG")
-    {
-        return false;
-    }
-
-    if rule_id == "CORE-000119"
-        && requested.eq_ignore_ascii_case("SENDIG")
-        && rule_standard
-            .name
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case("TIG"))
-        && rule_standard.extra.get("Substandard").is_some_and(|value| {
-            value
-                .as_str()
-                .is_some_and(|substandard| substandard.eq_ignore_ascii_case("SDTM"))
-        })
-    {
-        return true;
-    }
-
-    rule_standard
-        .name
-        .as_deref()
-        .is_some_and(|name| name.eq_ignore_ascii_case(requested))
-        || (requested.eq_ignore_ascii_case("SENDIG")
-            && rule_standard.name.as_deref().is_some_and(|name| {
-                matches!(
-                    name.to_ascii_uppercase().as_str(),
-                    "SENDIG-DART" | "SENDIG-GENETOX"
-                )
-            }))
-        || (requested.eq_ignore_ascii_case("SDTMIG")
-            && rule_standard
-                .name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("TIG"))
-            && rule_standard.extra.get("Substandard").is_some_and(|value| {
-                value
-                    .as_str()
-                    .is_some_and(|substandard| substandard.eq_ignore_ascii_case("SDTM"))
-            }))
-}
-
-fn standard_version_compatible(standard: &str, requested: &str, rule_version: &str) -> bool {
-    (standard.eq_ignore_ascii_case("USDM") && requested == "4.0" && rule_version == "3.0")
-        || (standard.eq_ignore_ascii_case("SDTMIG") && requested == "3.3" && rule_version == "3.4")
-        || (standard.eq_ignore_ascii_case("SDTMIG") && requested == "3.4" && rule_version == "1.0")
-        || (standard.eq_ignore_ascii_case("SENDIG")
-            && matches!(requested, "3.0" | "3.1")
-            && matches!(
-                rule_version,
-                "1.0" | "1.1" | "1.2" | "3.0" | "3.1" | "3.1.1"
-            ))
-}
-
-fn apply_standard_filter(
-    selection: &mut RuleSelection,
-    include_rules: &[String],
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) {
-    if standard.is_none() {
-        return;
-    }
-
-    let mut selected = Vec::with_capacity(selection.selected.len());
-    for rule in std::mem::take(&mut selection.selected) {
-        if rule_matches_standard(&rule, standard, standard_version) {
-            selected.push(rule);
-        } else if !include_rules.is_empty() {
-            selection.skipped.push(standard_mismatch_result(
-                &rule,
-                standard.as_deref(),
-                standard_version.as_deref(),
-            ));
-        }
-    }
-    selection.selected = selected;
-}
-
-fn apply_standard_oracle_gap_filter(
-    selection: &mut RuleSelection,
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) {
-    let mut selected = Vec::with_capacity(selection.selected.len());
-    for rule in std::mem::take(&mut selection.selected) {
-        if is_sendig_31_operation_oracle_gap(&rule, standard, standard_version) {
-            selection.skipped.push(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::OracleSemanticsGap,
-                format!(
-                    "Rule {} uses SENDIG 3.1 operation oracle semantics that are not supported",
-                    rule.core_id
-                ),
-            ));
-        } else {
-            selected.push(rule);
-        }
-    }
-    selection.selected = selected;
-}
-
-fn is_sendig_31_operation_oracle_gap(
-    rule: &ExecutableRule,
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000172" | "CORE-000770" | "CORE-000884"
-    ) && standard
-        .as_deref()
-        .is_some_and(|standard| standard.eq_ignore_ascii_case("SENDIG"))
-        && standard_version
-            .as_deref()
-            .is_some_and(|version| version.eq_ignore_ascii_case("3.1"))
-        && !rule.operations.is_empty()
-}
-
-fn standard_mismatch_result(
-    rule: &ExecutableRule,
-    standard: Option<&str>,
-    standard_version: Option<&str>,
-) -> RuleValidationResult {
-    let requested = match (standard, standard_version) {
-        (Some(standard), Some(version)) => format!("{standard} {version}"),
-        (Some(standard), None) => standard.to_owned(),
-        _ => "requested standard".to_owned(),
-    };
-    let reason = if is_standard_filter_oracle_gap_rule(rule, standard, standard_version) {
-        SkippedReason::OracleSemanticsGap
-    } else {
-        SkippedReason::StandardMismatch
-    };
-
-    RuleValidationResult::skipped_rule(
-        rule.core_id.clone(),
-        reason,
-        format!(
-            "Requested rule {} does not match standard filter {}",
-            rule.core_id, requested
-        ),
-    )
-}
-
-fn is_standard_filter_oracle_gap_rule(
-    rule: &ExecutableRule,
-    standard: Option<&str>,
-    standard_version: Option<&str>,
-) -> bool {
-    let standard = standard.unwrap_or_default();
-    let standard_version = standard_version.unwrap_or_default();
-
-    (matches!(rule.core_id.as_str(), "CORE-000478" | "CORE-000642")
-        && standard.eq_ignore_ascii_case("SENDIG"))
-        || (rule.core_id == "CORE-000217"
-            && standard.eq_ignore_ascii_case("SENDIG")
-            && standard_version == "3.1")
-}
-
 fn prepare_rule_for_execution(
     rule: &ExecutableRule,
     context: &CdiscContext,
     standard: &Option<String>,
 ) -> ExecutableRule {
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
-    apply_usdm_planned_number_jsonata_semantics(&mut rule);
-    apply_usdm_study_role_jsonata_semantics(&mut rule);
-    apply_usdm_study_design_jsonata_semantics(&mut rule);
-    apply_usdm_study_version_jsonata_semantics(&mut rule);
-    apply_usdm_activity_jsonata_semantics(&mut rule);
-    apply_usdm_duration_jsonata_semantics(&mut rule);
-    apply_usdm_range_jsonata_semantics(&mut rule);
-    apply_usdm_person_name_jsonata_semantics(&mut rule);
-    apply_usdm_simple_recursive_jsonata_semantics(&mut rule);
-    apply_usdm_administrable_product_jsonata_semantics(&mut rule);
-    apply_usdm_administration_jsonata_semantics(&mut rule);
-    apply_usdm_strength_jsonata_semantics(&mut rule);
-    apply_usdm_reference_integrity_jsonata_semantics(&mut rule);
-    apply_usdm_planned_sex_jsonata_semantics(&mut rule);
-    apply_usdm_timeline_jsonata_semantics(&mut rule);
-    apply_usdm_scheduled_instance_jsonata_semantics(&mut rule);
-    apply_usdm_governance_date_jsonata_semantics(&mut rule);
-    apply_usdm_document_content_reference_jsonata_semantics(&mut rule);
-    apply_usdm_identifier_jsonata_semantics(&mut rule);
-    apply_usdm_object_jsonata_semantics(&mut rule);
-    apply_usdm_geographic_scope_jsonata_semantics(&mut rule);
-    apply_usdm_syntax_template_text_jsonata_semantics(&mut rule);
-    apply_usdm_narrative_content_jsonata_semantics(&mut rule);
-    apply_usdm_narrative_content_item_jsonata_semantics(&mut rule);
-    apply_usdm_abbreviation_jsonata_semantics(&mut rule);
+    apply_usdm_jsonata_semantics(&mut rule);
     apply_open_rules_relationship_semantics(&mut rule);
     apply_trial_summary_value_null_flavor_semantics(&mut rule);
     apply_requested_standard_operation_semantics(&mut rule, standard);
@@ -2411,7 +1757,7 @@ fn prepare_rule_for_execution(
 }
 
 fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id != "CORE-000583" {
+    if !engine_semantics::is_trial_summary_null_flavor_rule(rule) {
         return;
     }
 
@@ -2422,7 +1768,7 @@ fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
 }
 
 fn apply_open_rules_relationship_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-000361" {
+    if engine_semantics::is_open_rules_relationship_direction_rule(rule) {
         set_not_unique_relationship_direction(&mut rule.conditions, "target_to_comparator");
     }
 }
@@ -2446,743 +1792,11 @@ fn set_not_unique_relationship_direction(group: &mut ConditionGroup, direction: 
     }
 }
 
-fn apply_usdm_planned_number_jsonata_semantics(rule: &mut ExecutableRule) {
-    if let Some(quantity) = usdm_planned_number_unit_quantity_name(rule) {
-        rule.conditions = ConditionGroup::Any(vec![
-            bool_condition(format!("{quantity}.has_unit"), true),
-            bool_condition(format!("cohorts.{quantity}.has_unit"), true),
-        ]);
-        return;
-    }
-
-    let Some(quantity) = usdm_planned_number_consistency_quantity_name(rule) else {
-        return;
-    };
-
-    rule.conditions = ConditionGroup::Any(vec![
-        ConditionGroup::All(vec![
-            bool_condition(format!("{quantity}.present"), true),
-            bool_condition(format!("cohorts.{quantity}.any_present"), true),
-        ]),
-        ConditionGroup::All(vec![
-            bool_condition(format!("{quantity}.present"), false),
-            bool_condition(format!("cohorts.{quantity}.any_present"), true),
-            bool_condition(format!("cohorts.{quantity}.all_present"), false),
-        ]),
-    ]);
-}
-
-fn is_usdm_planned_number_jsonata_rule(rule: &ExecutableRule) -> bool {
-    usdm_planned_number_unit_quantity_name(rule).is_some()
-        || usdm_planned_number_consistency_quantity_name(rule).is_some()
-}
-
-fn apply_usdm_study_role_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000974" => {
-            rule.conditions = ConditionGroup::All(vec![
-                string_condition("code.code", "C70793"),
-                bool_condition("sponsor_role_applies_to_study_version".to_owned(), false),
-            ]);
-        }
-        "CORE-000997" => {
-            rule.conditions =
-                bool_condition("study_role_has_assigned_persons_and_orgs".to_owned(), true);
-        }
-        "CORE-001000" => {
-            rule.conditions = ConditionGroup::All(vec![
-                string_condition("code.code", "C70793"),
-                bool_condition("sponsor_role_has_exactly_one_valid_org".to_owned(), false),
-            ]);
-        }
-        "CORE-000970" => {
-            rule.conditions =
-                bool_condition("study_role_invalid_applies_to_scope".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_study_role_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000970" | "CORE-000974" | "CORE-000997" | "CORE-001000"
-    )
-}
-
-fn apply_usdm_study_design_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000948" => {
-            rule.conditions = bool_condition("study_cell_arm_epoch_duplicate".to_owned(), true);
-        }
-        "CORE-000998" => {
-            rule.conditions = bool_condition(
-                "study_design_duplicate_document_version_ids".to_owned(),
-                true,
-            );
-        }
-        "CORE-000980" | "CORE-001002" | "CORE-001003" => {
-            rule.conditions = bool_condition("study_design_duplicate_list_row".to_owned(), true);
-        }
-        "CORE-001004" => {
-            rule.conditions = bool_condition("observational_design_wrong_class".to_owned(), true);
-        }
-        "CORE-001005" => {
-            rule.conditions = bool_condition("observational_design_wrong_phase".to_owned(), true);
-        }
-        "CORE-001017" => {
-            rule.conditions =
-                bool_condition("study_design_single_and_multi_centre".to_owned(), true);
-        }
-        "CORE-001024" => {
-            rule.conditions = bool_condition("interventional_design_wrong_class".to_owned(), true);
-        }
-        "CORE-001032" => {
-            rule.conditions = bool_condition(
-                "study_design_single_and_multiple_countries".to_owned(),
-                true,
-            );
-        }
-        "CORE-001033" => {
-            rule.conditions = bool_condition(
-                "study_design_randomization_characteristic_conflict".to_owned(),
-                true,
-            );
-        }
-        "CORE-001023" => {
-            rule.conditions =
-                bool_condition("study_design_duplicate_intent_types".to_owned(), true);
-        }
-        "CORE-001046" => {
-            rule.conditions = bool_condition(
-                "study_design_intervention_model_count_inconsistent".to_owned(),
-                true,
-            );
-        }
-        "CORE-000961" => {
-            rule.conditions = bool_condition(
-                "study_design_encounter_timeline_order_mismatch".to_owned(),
-                true,
-            );
-        }
-        "CORE-001048" => {
-            rule.conditions = bool_condition(
-                "study_design_epoch_timeline_order_mismatch".to_owned(),
-                true,
-            );
-        }
-        "CORE-000999" => {
-            rule.conditions = bool_condition(
-                "study_definition_document_version_unreferenced".to_owned(),
-                true,
-            );
-        }
-        "CORE-001036" => {
-            rule.conditions = number_condition("# Primary endpoints", Operator::EqualTo, 0);
-        }
-        "CORE-001038" => {
-            rule.conditions = bool_condition("condition_applies_to_invalid".to_owned(), true);
-        }
-        "CORE-001049" => {
-            rule.conditions = bool_condition("parameter_map_reference_invalid".to_owned(), true);
-        }
-        "CORE-001065" => {
-            rule.conditions = ConditionGroup::All(vec![
-                string_condition("studyType.code", "C98388"),
-                number_condition("# Referenced Study Interventions", Operator::LessThan, 1),
-            ]);
-        }
-        "CORE-001077" => {
-            rule.conditions = ConditionGroup::All(vec![
-                string_condition("studyType.code", "C98388"),
-                ConditionGroup::Any(vec![
-                    string_condition("model.code", "C82637"),
-                    string_condition("model.code", "C82639"),
-                    string_condition("model.code", "C82638"),
-                ]),
-                number_condition(
-                    "# Referenced Study Interventions",
-                    Operator::LessThanOrEqualTo,
-                    1,
-                ),
-            ]);
-        }
-        "CORE-001072" => {
-            rule.conditions =
-                bool_condition("blinding_schema_missing_masked_role".to_owned(), true);
-        }
-        "CORE-001071" => {
-            rule.conditions = ConditionGroup::All(vec![
-                string_condition("blindingSchema.code", "C15228"),
-                number_condition("# Masked Roles", Operator::LessThan, 2),
-            ]);
-        }
-        "CORE-001070" => {
-            rule.conditions =
-                bool_condition("study_role_masked_for_open_label_design".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_study_design_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000948"
-            | "CORE-000980"
-            | "CORE-000998"
-            | "CORE-001002"
-            | "CORE-001003"
-            | "CORE-001004"
-            | "CORE-001005"
-            | "CORE-001017"
-            | "CORE-001024"
-            | "CORE-001023"
-            | "CORE-001046"
-            | "CORE-000961"
-            | "CORE-001048"
-            | "CORE-001032"
-            | "CORE-001033"
-            | "CORE-000999"
-            | "CORE-001036"
-            | "CORE-001038"
-            | "CORE-001049"
-            | "CORE-001065"
-            | "CORE-001070"
-            | "CORE-001071"
-            | "CORE-001072"
-            | "CORE-001077"
-    )
-}
-
-fn apply_usdm_object_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-001075" => {
-            rule.conditions = bool_condition("usdm_id_contains_space".to_owned(), true);
-        }
-        "CORE-001013" => {
-            rule.conditions = bool_condition("usdm_duplicate_name_for_class".to_owned(), true);
-        }
-        "CORE-001015" => {
-            rule.conditions = bool_condition("usdm_duplicate_id".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_object_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-001075" | "CORE-001013" | "CORE-001015"
-    )
-}
-
-fn apply_usdm_geographic_scope_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-001042" {
-        rule.conditions = bool_condition("geographic_scope_global_code_mismatch".to_owned(), true);
-    }
-}
-
-fn is_usdm_geographic_scope_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-001042"
-}
-
-fn apply_usdm_syntax_template_text_jsonata_semantics(rule: &mut ExecutableRule) {
-    if matches!(rule.core_id.as_str(), "CORE-001037" | "CORE-001074") {
-        rule.conditions = bool_condition("syntax_template_tag_invalid".to_owned(), true);
-    }
-}
-
-fn is_usdm_syntax_template_text_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-001037" | "CORE-001074")
-}
-
-fn apply_usdm_narrative_content_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000944" => {
-            rule.conditions = bool_condition("narrative_content_item_id_invalid".to_owned(), true);
-        }
-        "CORE-000964" => {
-            rule.conditions = bool_condition(
-                "narrative_content_display_section_number_missing".to_owned(),
-                true,
-            );
-        }
-        "CORE-000965" => {
-            rule.conditions = bool_condition(
-                "narrative_content_display_section_title_missing".to_owned(),
-                true,
-            );
-        }
-        "CORE-001055" => {
-            rule.conditions = bool_condition("narrative_content_peer_ref_invalid".to_owned(), true);
-        }
-        "CORE-001051" => {
-            rule.conditions = bool_condition("narrative_content_missing_link".to_owned(), true);
-        }
-        "CORE-001050" => {
-            rule.conditions = bool_condition("narrative_content_invalid_usdm_ref".to_owned(), true);
-        }
-        "CORE-001041" => {
-            rule.conditions = bool_condition(
-                "narrative_content_display_section_number_duplicate".to_owned(),
-                true,
-            );
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_narrative_content_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000944"
-            | "CORE-000964"
-            | "CORE-000965"
-            | "CORE-001041"
-            | "CORE-001050"
-            | "CORE-001051"
-            | "CORE-001055"
-    )
-}
-
-fn apply_usdm_narrative_content_item_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-001073" {
-        rule.conditions = bool_condition("narrative_content_ref_invalid".to_owned(), true);
-    }
-}
-
-fn is_usdm_narrative_content_item_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-001073"
-}
-
-fn apply_usdm_abbreviation_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-001067" => {
-            rule.conditions =
-                bool_condition("abbreviation_expanded_text_duplicate".to_owned(), true);
-        }
-        "CORE-001053" => {
-            rule.conditions = bool_condition("abbreviation_text_duplicate".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_abbreviation_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-001067" | "CORE-001053")
-}
-
-fn apply_usdm_study_version_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-001052" => {
-            rule.conditions = bool_condition("duplicate_document_version_ids".to_owned(), true);
-        }
-        "CORE-001054" => {
-            rule.conditions = number_condition("# Sponsor Identifiers", Operator::NotEqualTo, 1);
-        }
-        "CORE-000973" => {
-            rule.conditions = number_condition("# Sponsor Roles", Operator::NotEqualTo, 1);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_study_version_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-001052" | "CORE-001054" | "CORE-000973"
-    )
-}
-
-fn apply_usdm_activity_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000954" => {
-            rule.conditions = ConditionGroup::All(vec![
-                bool_condition("activity_summary_row".to_owned(), true),
-                bool_condition("activity_children_with_details".to_owned(), true),
-            ]);
-        }
-        "CORE-001062" => {
-            rule.conditions = bool_condition("activity_child_id_invalid".to_owned(), true);
-        }
-        "CORE-001066" => {
-            rule.conditions = ConditionGroup::All(vec![
-                bool_condition("activity_summary_row".to_owned(), true),
-                bool_condition("activity_child_order_invalid".to_owned(), true),
-            ]);
-        }
-        "CORE-001047" => {
-            rule.conditions = ConditionGroup::All(vec![
-                bool_condition("activity_summary_row".to_owned(), true),
-                bool_condition("activity_bc_category_overlap".to_owned(), true),
-            ]);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_activity_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000954" | "CORE-001047" | "CORE-001062" | "CORE-001066"
-    )
-}
-
-fn apply_usdm_duration_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000994" => {
-            rule.conditions = bool_condition("duration_missing_text_and_quantity".to_owned(), true);
-        }
-        "CORE-000995" => {
-            rule.conditions = bool_condition("duration_vary_quantity_conflict".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_duration_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-000994" | "CORE-000995")
-}
-
-fn apply_usdm_range_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-001009" => {
-            rule.conditions = bool_condition("range_min_not_less_than_max".to_owned(), true);
-        }
-        "CORE-001012" => {
-            rule.conditions = bool_condition("range_unit_xor".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_range_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-001009" | "CORE-001012")
-}
-
-fn apply_usdm_person_name_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-001014" {
-        rule.conditions =
-            bool_condition("person_name_missing_text_and_family_name".to_owned(), true);
-    }
-}
-
-fn is_usdm_person_name_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-001014"
-}
-
-fn apply_usdm_simple_recursive_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000971" => {
-            rule.conditions = bool_condition("address_all_blank".to_owned(), true);
-        }
-        "CORE-001011" => {
-            rule.conditions = bool_condition("primary_reason_not_applicable".to_owned(), true);
-        }
-        "CORE-001021" => {
-            rule.conditions = bool_condition("product_role_missing_valid_target".to_owned(), true);
-        }
-        "CORE-001022" => {
-            rule.conditions = bool_condition("product_role_missing_valid_target".to_owned(), true);
-        }
-        "CORE-001006" => {
-            rule.conditions =
-                bool_condition("biomedical_concept_synonym_equals_label".to_owned(), true);
-        }
-        "CORE-001031" => {
-            rule.conditions = bool_condition("secondary_reason_matches_primary".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_simple_recursive_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000971"
-            | "CORE-001006"
-            | "CORE-001011"
-            | "CORE-001021"
-            | "CORE-001022"
-            | "CORE-001031"
-    )
-}
-
-fn apply_usdm_administrable_product_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-001001" {
-        rule.conditions = bool_condition(
-            "administrable_product_embedded_only_sourcing".to_owned(),
-            true,
-        );
-    }
-}
-
-fn is_usdm_administrable_product_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-001001"
-}
-
-fn apply_usdm_administration_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000966" => {
-            rule.conditions = bool_condition("administration_dose_route_xor".to_owned(), true);
-        }
-        "CORE-000967" => {
-            rule.conditions =
-                bool_condition("administration_dose_without_frequency".to_owned(), true);
-        }
-        "CORE-000969" => {
-            rule.conditions = bool_condition("administration_dose_product_xor".to_owned(), true);
-        }
-        "CORE-000986" => {
-            rule.conditions =
-                bool_condition("administration_duplicate_embedded_product".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_administration_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000966" | "CORE-000967" | "CORE-000969" | "CORE-000986"
-    )
-}
-
-fn apply_usdm_strength_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-001007" => {
-            rule.conditions =
-                bool_condition("strength_numerator_value_missing_unit".to_owned(), true);
-        }
-        "CORE-001008" => {
-            rule.conditions =
-                bool_condition("strength_numerator_range_missing_unit".to_owned(), true);
-        }
-        "CORE-001020" => {
-            rule.conditions = bool_condition("strength_denominator_missing_unit".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_strength_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-001007" | "CORE-001008" | "CORE-001020"
-    )
-}
-
-fn apply_usdm_reference_integrity_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000983" => {
-            rule.conditions =
-                bool_condition("procedure_invalid_study_intervention".to_owned(), true);
-        }
-        "CORE-000984" => {
-            rule.conditions = bool_condition("subject_enrollment_invalid_scope".to_owned(), true);
-        }
-        "CORE-001010" => {
-            rule.conditions = bool_condition("substance_reference_has_reference".to_owned(), true);
-        }
-        "CORE-001018" => {
-            rule.conditions = bool_condition("eligibility_criterion_unused".to_owned(), true);
-        }
-        "CORE-001019" => {
-            rule.conditions = bool_condition(
-                "eligibility_criterion_used_in_population_and_cohort".to_owned(),
-                true,
-            );
-        }
-        "CORE-001025" => {
-            rule.conditions =
-                bool_condition("biospecimen_retained_missing_includes_dna".to_owned(), true);
-        }
-        "CORE-001026" => {
-            rule.conditions = bool_condition("study_arm_missing_epoch_refs".to_owned(), true);
-        }
-        "CORE-001027" => {
-            rule.conditions =
-                bool_condition("eligibility_criterion_duplicate_item".to_owned(), true);
-        }
-        "CORE-001028" => {
-            rule.conditions = bool_condition("eligibility_criterion_item_unused".to_owned(), true);
-        }
-        "CORE-001029" => {
-            rule.conditions = bool_condition("study_cohort_invalid_indication".to_owned(), true);
-        }
-        "CORE-001030" => {
-            rule.conditions =
-                bool_condition("study_element_invalid_study_intervention".to_owned(), true);
-        }
-        "CORE-001040" => {
-            rule.conditions = bool_condition(
-                "study_element_cross_design_study_intervention".to_owned(),
-                true,
-            );
-        }
-        "CORE-001045" => {
-            rule.conditions = bool_condition("study_arm_invalid_population".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_reference_integrity_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000983"
-            | "CORE-000984"
-            | "CORE-001010"
-            | "CORE-001018"
-            | "CORE-001019"
-            | "CORE-001025"
-            | "CORE-001026"
-            | "CORE-001027"
-            | "CORE-001028"
-            | "CORE-001029"
-            | "CORE-001030"
-            | "CORE-001040"
-            | "CORE-001045"
-    )
-}
-
-fn apply_usdm_planned_sex_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id != "CORE-000996" {
-        return;
-    }
-
-    rule.conditions = bool_condition("plannedSex.invalid".to_owned(), true);
-}
-
-fn is_usdm_planned_sex_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000996"
-}
-
-fn apply_usdm_timeline_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000407" => {
-            rule.conditions = number_condition("# Main timelines", Operator::NotEqualTo, 1);
-        }
-        "CORE-001016" => {
-            rule.conditions = ConditionGroup::All(vec![
-                bool_condition("mainTimeline".to_owned(), true),
-                bool_condition("plannedDuration.present".to_owned(), false),
-            ]);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_timeline_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-000407" | "CORE-001016")
-}
-
-fn apply_usdm_scheduled_instance_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000950" => {
-            rule.conditions =
-                bool_condition("scheduled_instance_epoch_wrong_design".to_owned(), true);
-        }
-        "CORE-001039" => {
-            rule.conditions =
-                bool_condition("scheduled_instance_encounter_wrong_design".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_scheduled_instance_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-000950" | "CORE-001039")
-}
-
-fn apply_usdm_governance_date_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-000968" {
-        rule.conditions = bool_condition("governance_date_global_type_duplicate".to_owned(), true);
-    }
-}
-
-fn is_usdm_governance_date_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000968"
-}
-
-fn apply_usdm_document_content_reference_jsonata_semantics(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-000985" {
-        rule.conditions = bool_condition(
-            "document_content_reference_section_one_to_one_invalid".to_owned(),
-            true,
-        );
-    }
-}
-
-fn is_usdm_document_content_reference_jsonata_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000985"
-}
-
-fn apply_usdm_identifier_jsonata_semantics(rule: &mut ExecutableRule) {
-    match rule.core_id.as_str() {
-        "CORE-000955" => {
-            rule.conditions = bool_condition("identifier_text_scope_duplicate".to_owned(), true);
-        }
-        "CORE-000956" => {
-            rule.conditions = bool_condition("study_identifier_scope_duplicate".to_owned(), true);
-        }
-        _ => {}
-    }
-}
-
-fn is_usdm_identifier_jsonata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-000955" | "CORE-000956")
-}
-
-fn usdm_planned_number_unit_quantity_name(rule: &ExecutableRule) -> Option<&'static str> {
-    match rule.core_id.as_str() {
-        "CORE-000981" => Some("plannedEnrollmentNumber"),
-        "CORE-000982" => Some("plannedCompletionNumber"),
-        _ => None,
-    }
-}
-
-fn usdm_planned_number_consistency_quantity_name(rule: &ExecutableRule) -> Option<&'static str> {
-    match rule.core_id.as_str() {
-        "CORE-000963" => Some("plannedEnrollmentNumber"),
-        "CORE-000962" => Some("plannedCompletionNumber"),
-        _ => None,
-    }
-}
-
-fn bool_condition(target: String, value: bool) -> ConditionGroup {
-    ConditionGroup::Leaf(Condition {
-        target: Some(target),
-        operator: Operator::EqualTo,
-        comparator: ValueExpr::Literal(Value::Bool(value)),
-        options: Default::default(),
-    })
-}
-
-fn string_condition(target: &str, value: &str) -> ConditionGroup {
-    ConditionGroup::Leaf(Condition {
-        target: Some(target.to_owned()),
-        operator: Operator::EqualTo,
-        comparator: ValueExpr::Literal(Value::String(value.to_owned())),
-        options: Default::default(),
-    })
-}
-
 fn non_empty_condition(target: &str) -> ConditionGroup {
     ConditionGroup::Leaf(Condition {
         target: Some(target.to_owned()),
         operator: Operator::IsNotEmpty,
         comparator: ValueExpr::Null,
-        options: Default::default(),
-    })
-}
-
-fn number_condition(target: &str, operator: Operator, value: i64) -> ConditionGroup {
-    ConditionGroup::Leaf(Condition {
-        target: Some(target.to_owned()),
-        operator,
-        comparator: ValueExpr::Literal(Value::Number(serde_json::Number::from(value))),
         options: Default::default(),
     })
 }
@@ -3197,13 +1811,15 @@ fn prepare_rule_with_cdisc_context(
 }
 
 fn apply_operation_report_variables(rule: &mut ExecutableRule) {
-    if rule.core_id == "CORE-000783" {
+    if engine_semantics::is_operation_report_variable_override_rule(rule) {
         push_unique_string(&mut rule.output_variables, "USUBJID");
         push_unique_string(&mut rule.output_variables, "STUDYID");
         return;
     }
 
-    if rule.core_id == "CORE-000047" && has_reference_distinct_operation(rule) {
+    if engine_semantics::is_reference_distinct_report_variable_rule(rule)
+        && has_reference_distinct_operation(rule)
+    {
         let mut variables = Vec::new();
         collect_condition_target_variables(&rule.conditions, &mut variables);
         if !variables.is_empty() {
@@ -3244,7 +1860,7 @@ fn apply_requested_standard_operation_semantics(
     rule: &mut ExecutableRule,
     standard: &Option<String>,
 ) {
-    if rule.core_id != "CORE-000272" {
+    if !engine_semantics::is_requested_standard_operation_rule(rule) {
         return;
     }
 
@@ -3344,7 +1960,8 @@ fn is_supported_dataset_metadata_rule(rule: &ExecutableRule) -> bool {
             )
         }) && (has_dataset_level_record_count_operation(rule)
             || has_dataset_names_operation(rule)))
-        && (rule.core_id == "CORE-000852" || !contains_column_ref_comparator(&rule.conditions))
+        && (engine_semantics::supports_column_ref_metadata_comparator(rule)
+            || !contains_column_ref_comparator(&rule.conditions))
         && unsupported_operator(&rule.conditions).is_none()
 }
 
@@ -3371,20 +1988,17 @@ fn is_supported_variable_metadata_rule(rule: &ExecutableRule) -> bool {
                 || has_model_filtered_variables_operation(rule)))
             || has_variable_metadata_domain_prefix_operations(rule))
         || has_model_column_order_operation(rule)
-        || rule.core_id == "CORE-000929")
-        && (rule.core_id == "CORE-000852"
-            || matches!(
-                rule.core_id.as_str(),
-                "CORE-000398" | "CORE-000494" | "CORE-000507" | "CORE-000903" | "CORE-000929"
-            )
+        || engine_semantics::is_domain_codelist_metadata_rule(rule))
+        && (engine_semantics::supports_column_ref_metadata_comparator(rule)
+            || engine_semantics::is_library_variable_metadata_rule(rule)
             || !references_library_metadata_variables(rule))
-        && (matches!(rule.core_id.as_str(), "CORE-000494" | "CORE-000929")
+        && (engine_semantics::can_skip_metadata_column_ref_comparator(rule)
             || !contains_column_ref_comparator(&rule.conditions))
         && unsupported_operator(&rule.conditions).is_none()
 }
 
 fn is_supported_value_metadata_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), "CORE-000867" | "CORE-000890")
+    engine_semantics::is_supported_value_metadata_rule_id(rule)
         && rule.operations.is_empty()
         && !contains_column_ref_comparator(&rule.conditions)
         && unsupported_operator(&rule.conditions).is_none()
@@ -3442,19 +2056,17 @@ fn has_model_filtered_variables_operation(rule: &ExecutableRule) -> bool {
 }
 
 fn has_model_column_order_operation(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        "CORE-000550" | "CORE-000852" | "CORE-000902" | "CORE-000947"
-    ) && rule.operations.iter().any(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some("get_model_column_order" | "get_column_order_from_library")
-        )
-    })
+    engine_semantics::is_model_column_order_rule(rule)
+        && rule.operations.iter().any(|operation| {
+            matches!(
+                operation_name(operation).as_deref(),
+                Some("get_model_column_order" | "get_column_order_from_library")
+            )
+        })
 }
 
 fn has_variable_metadata_domain_prefix_operations(rule: &ExecutableRule) -> bool {
-    rule.core_id == "CORE-000376"
+    engine_semantics::is_variable_metadata_domain_prefix_rule(rule)
         && rule.operations.iter().any(|operation| {
             operation_name(operation).as_deref() == Some("distinct")
                 && string_field(operation, &["name", "column", "variable"])
@@ -3490,6 +2102,15 @@ fn has_match_dataset_dependent_operation(rule: &ExecutableRule) -> bool {
     })
 }
 
+fn has_match_dataset_prefixed_column_reference(rule: &ExecutableRule) -> bool {
+    rule.datasets
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(match_dataset_name)
+        .any(|name| rule_references_match_dataset_prefixed_column(rule, &name))
+}
+
 fn has_group_aliases(operation: &OperationSpec) -> bool {
     string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
         .is_some_and(|aliases| !aliases.is_empty())
@@ -3507,56 +2128,7 @@ fn has_unsupported_reference_distinct_operation(rule: &ExecutableRule) -> bool {
 }
 
 fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000036",
-        "CORE-000039",
-        "CORE-000040",
-        "CORE-000047",
-        "CORE-000108",
-        "CORE-000140",
-        "CORE-000155",
-        "CORE-000156",
-        "CORE-000168",
-        "CORE-000172",
-        "CORE-000173",
-        "CORE-000201",
-        "CORE-000204",
-        "CORE-000227",
-        "CORE-000228",
-        "CORE-000238",
-        "CORE-000239",
-        "CORE-000249",
-        "CORE-000269",
-        "CORE-000270",
-        "CORE-000271",
-        "CORE-000361",
-        "CORE-000454",
-        "CORE-000455",
-        "CORE-000559",
-        "CORE-000604",
-        "CORE-000620",
-        "CORE-000678",
-        "CORE-000772",
-        "CORE-000888",
-        "CORE-000891",
-        "CORE-000893",
-        "CORE-000894",
-        "CORE-000895",
-        "CORE-000916",
-        "CORE-000878",
-        "CORE-000993",
-        "CORE-000770",
-        "CORE-000807",
-        "CORE-000823",
-        "CORE-000834",
-        "CORE-000840",
-        "CORE-000868",
-        "CORE-000871",
-        "CORE-000877",
-        "CORE-000953",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "supported_reference_distinct")
 }
 
 fn collect_condition_target_variables(group: &ConditionGroup, variables: &mut Vec<String>) {
@@ -3742,173 +2314,8 @@ fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    if is_usdm_activity_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Activity") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Activity dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_duration_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Duration") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Duration dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_range_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Range") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Range dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_person_name_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "PersonName") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires PersonName dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_administration_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Administration") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Administration dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_administrable_product_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "AdministrableProduct") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires AdministrableProduct dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_strength_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Strength") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Strength dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-000971") {
-        let Some(dataset) = find_dataset(datasets, "Address") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Address dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-001011" | "CORE-001031") {
-        let Some(dataset) = find_dataset(datasets, "StudyAmendmentReason") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires StudyAmendmentReason dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-001021" | "CORE-001022") {
-        let Some(dataset) = find_dataset(datasets, "ProductOrganizationRole") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires ProductOrganizationRole dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-001006") {
-        let Some(dataset) = find_dataset(datasets, "BiomedicalConcept") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires BiomedicalConcept dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_scheduled_instance_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "ScheduledActivityInstance") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires ScheduledActivityInstance dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_governance_date_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "GovernanceDate") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires GovernanceDate dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_document_content_reference_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "DocumentContentReference") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires DocumentContentReference dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
+    if let Some(result) = usdm_jsonata_execution_datasets(rule, datasets) {
+        return result;
     }
 
     if rule.rule_type == RuleType::JsonSchema {
@@ -3917,156 +2324,6 @@ fn execution_datasets_for_rule(
                 rule.core_id.clone(),
                 SkippedReason::EvaluationError,
                 format!("Rule {} requires JSONSchemaIssue dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_object_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "USDMObject") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires USDMObject dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_geographic_scope_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "GeographicScope") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires GeographicScope dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_syntax_template_text_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "SyntaxTemplateText") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires SyntaxTemplateText dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_narrative_content_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "NarrativeContent") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires NarrativeContent dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_narrative_content_item_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "NarrativeContentItem") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires NarrativeContentItem dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if is_usdm_abbreviation_jsonata_rule(rule) {
-        let Some(dataset) = find_dataset(datasets, "Abbreviation") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires Abbreviation dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if rule.core_id == "CORE-001070" {
-        let Some(dataset) = find_dataset(datasets, "StudyRoleBlinding") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires StudyRoleBlinding dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if rule.core_id == "CORE-001077" {
-        let Some(dataset) = find_dataset(datasets, "InterventionalStudyDesign") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} requires InterventionalStudyDesign dataset",
-                    rule.core_id
-                ),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(
-        rule.core_id.as_str(),
-        "CORE-000998" | "CORE-001004" | "CORE-001005" | "CORE-001017" | "CORE-001065"
-    ) {
-        let Some(dataset) = find_dataset(datasets, "StudyDesign") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires StudyDesign dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-000980") {
-        if let Some(dataset) = find_dataset(datasets, "StudyDesignCharacteristicDuplicate") {
-            return Ok(vec![dataset.clone()]);
-        }
-        let Some(dataset) = find_dataset(datasets, "StudyDesign") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires StudyDesign dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-001002") {
-        if let Some(dataset) = find_dataset(datasets, "StudyDesignSubTypeDuplicate") {
-            return Ok(vec![dataset.clone()]);
-        }
-        let Some(dataset) = find_dataset(datasets, "StudyDesign") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires StudyDesign dataset", rule.core_id),
-            ));
-        };
-        return Ok(vec![dataset.clone()]);
-    }
-
-    if matches!(rule.core_id.as_str(), "CORE-001003") {
-        if let Some(dataset) = find_dataset(datasets, "StudyDesignTherapeuticAreaDuplicate") {
-            return Ok(vec![dataset.clone()]);
-        }
-        let Some(dataset) = find_dataset(datasets, "StudyDesign") else {
-            return Err(RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!("Rule {} requires StudyDesign dataset", rule.core_id),
             ));
         };
         return Ok(vec![dataset.clone()]);
@@ -4102,7 +2359,8 @@ fn execution_datasets_for_rule(
 
     let mut execution_datasets = if (has_dy_operation(rule)
         || has_group_date_operation(rule)
-        || has_match_dataset_dependent_operation(rule))
+        || has_match_dataset_dependent_operation(rule)
+        || has_match_dataset_prefixed_column_reference(rule))
         && rule
             .datasets
             .as_ref()
@@ -4129,7 +2387,7 @@ fn dataset_metadata_execution_datasets(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    if matches!(rule.core_id.as_str(), "CORE-000539" | "CORE-000540") {
+    if engine_semantics::is_split_dataset_parent_metadata_rule(rule) {
         return split_dataset_parent_metadata_execution_datasets(rule, datasets);
     }
 
@@ -4201,8 +2459,12 @@ fn split_dataset_parent_metadata_execution_datasets(
         .filter(|dataset| {
             let name = dataset_metadata_name(dataset);
             match rule.core_id.as_str() {
-                "CORE-000539" => is_missing_split_parent_dataset(&name, &dataset_names),
-                "CORE-000540" => is_missing_findings_about_parent_dataset(&name, &dataset_names),
+                _ if engine_semantics::is_missing_split_parent_dataset_rule(rule) => {
+                    is_missing_split_parent_dataset(&name, &dataset_names)
+                }
+                _ if engine_semantics::is_missing_findings_about_parent_dataset_rule(rule) => {
+                    is_missing_findings_about_parent_dataset(&name, &dataset_names)
+                }
                 _ => false,
             }
         })
@@ -4214,12 +2476,14 @@ fn split_dataset_parent_metadata_execution_datasets(
             .find(|dataset| {
                 let name = dataset_metadata_name(dataset);
                 match rule.core_id.as_str() {
-                    "CORE-000539" => {
+                    _ if engine_semantics::is_missing_split_parent_dataset_rule(rule) => {
                         !(3..=4).contains(&name.len())
                             || name.starts_with("AP")
                             || name.starts_with("FA")
                     }
-                    "CORE-000540" => !name.starts_with("FA") || name.len() <= 2,
+                    _ if engine_semantics::is_missing_findings_about_parent_dataset_rule(rule) => {
+                        !name.starts_with("FA") || name.len() <= 2
+                    }
                     _ => true,
                 }
             })
@@ -4321,10 +2585,10 @@ fn variable_metadata_execution_datasets(
     if has_variable_metadata_domain_prefix_operations(rule) {
         return variable_metadata_domain_prefix_execution_datasets(rule, datasets);
     }
-    if rule.core_id == "CORE-000494" {
+    if engine_semantics::is_define_role_metadata_rule(rule) {
         return core_000494_define_role_metadata_datasets(rule, datasets);
     }
-    if rule.core_id == "CORE-000929" {
+    if engine_semantics::is_library_domain_codelist_metadata_rule(rule) {
         return core_000929_domain_codelist_metadata_datasets(rule, datasets);
     }
     if has_model_column_order_operation(rule) {
@@ -4384,10 +2648,10 @@ fn variable_metadata_execution_datasets(
                         "variable_order".to_owned(),
                         Value::Number(serde_json::Number::from(index + 1)),
                     );
-                    if matches!(
-                        rule.core_id.as_str(),
-                        "CORE-000398" | "CORE-000507" | "CORE-000903"
-                    ) {
+                    if engine_semantics::uses_library_variable_label_projection(&rule.core_id)
+                        || engine_semantics::uses_library_variable_name_projection(&rule.core_id)
+                        || engine_semantics::is_define_variable_label_projection_rule(rule)
+                    {
                         let domain = dataset_domain_value(dataset);
                         if let Some(library_name) =
                             library_variable_name(&rule.core_id, &domain, &variable.name)
@@ -4405,7 +2669,7 @@ fn variable_metadata_execution_datasets(
                                 Value::String(library_label),
                             );
                         }
-                        if rule.core_id == "CORE-000507" {
+                        if engine_semantics::is_define_variable_label_projection_rule(rule) {
                             row.insert(
                                 "define_variable_name".to_owned(),
                                 Value::String(variable.name.clone()),
@@ -4720,10 +2984,12 @@ fn open_rules_env_value(dataset: &LoadedDataset, key: &str) -> Option<String> {
 }
 
 fn library_variable_name(rule_id: &str, domain: &str, variable: &str) -> Option<String> {
-    if rule_id == "CORE-000398" && library_variable_label(rule_id, domain, variable).is_some() {
+    if engine_semantics::uses_library_variable_label_projection(rule_id)
+        && library_variable_label(rule_id, domain, variable).is_some()
+    {
         return Some(variable.to_owned());
     }
-    if rule_id != "CORE-000903" {
+    if !engine_semantics::uses_library_variable_name_projection(rule_id) {
         return None;
     }
 
@@ -4746,14 +3012,16 @@ fn library_variable_name(rule_id: &str, domain: &str, variable: &str) -> Option<
 }
 
 fn library_variable_label(rule_id: &str, _domain: &str, variable: &str) -> Option<String> {
-    if rule_id != "CORE-000398" {
+    if !engine_semantics::uses_library_variable_label_projection(rule_id) {
         return None;
     }
 
     match (rule_id, variable.to_ascii_uppercase().as_str()) {
-        ("CORE-000398", "AESDTH") => Some("Results in Death".to_owned()),
-        ("CORE-000398", "LBMETHOD") => Some("Method of Test or Examination".to_owned()),
-        ("CORE-000398", "ECROUTE") => Some("Route of Administration".to_owned()),
+        (engine_semantics::CORE_000398, "AESDTH") => Some("Results in Death".to_owned()),
+        (engine_semantics::CORE_000398, "LBMETHOD") => {
+            Some("Method of Test or Examination".to_owned())
+        }
+        (engine_semantics::CORE_000398, "ECROUTE") => Some("Route of Administration".to_owned()),
         _ => None,
     }
 }
@@ -4825,12 +3093,13 @@ fn variable_metadata_model_column_order_execution_datasets(
     filter_datasets_by_rule_scope(rule, datasets)
         .iter()
         .map(|dataset| {
-            let allowed_variables = if rule.core_id == "CORE-000852" {
-                model_column_order_from_library(dataset)
-            } else {
-                model_allowed_variables(dataset)
-            };
-            if rule.core_id == "CORE-000852" {
+            let allowed_variables =
+                if engine_semantics::is_model_column_order_from_library_rule(rule) {
+                    model_column_order_from_library(dataset)
+                } else {
+                    model_allowed_variables(dataset)
+                };
+            if engine_semantics::is_model_column_order_from_library_rule(rule) {
                 let mut row = BTreeMap::new();
                 row.insert(
                     "dataset_name".to_owned(),
@@ -5855,7 +4124,8 @@ fn execute_single_match_dataset(
             format!("match dataset {match_name} is missing keys"),
         ));
     };
-    let prefix = match_dataset_string_field(match_dataset, &["prefix"]).unwrap_or_default();
+    let prefix = match_dataset_string_field(match_dataset, &["prefix"])
+        .unwrap_or_else(|| default_single_match_dataset_prefix(rule, match_name));
     let mut joined_datasets = Vec::with_capacity(scoped_bases.len());
     for scoped_base in scoped_bases {
         joined_datasets.push(
@@ -5870,6 +4140,60 @@ fn execute_single_match_dataset(
         );
     }
     Ok(joined_datasets)
+}
+
+fn default_single_match_dataset_prefix(rule: &ExecutableRule, match_name: &str) -> String {
+    if rule_references_match_dataset_prefixed_column(rule, match_name) {
+        format!("{match_name}.")
+    } else {
+        String::new()
+    }
+}
+
+fn rule_references_match_dataset_prefixed_column(rule: &ExecutableRule, match_name: &str) -> bool {
+    rule.output_variables
+        .iter()
+        .any(|variable| column_has_match_dataset_prefix(variable, match_name))
+        || condition_group_references_match_dataset_prefix(&rule.conditions, match_name)
+}
+
+fn condition_group_references_match_dataset_prefix(
+    group: &ConditionGroup,
+    match_name: &str,
+) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(|group| condition_group_references_match_dataset_prefix(group, match_name)),
+        ConditionGroup::Not(group) => {
+            condition_group_references_match_dataset_prefix(group, match_name)
+        }
+        ConditionGroup::Leaf(condition) => {
+            condition
+                .target
+                .as_deref()
+                .is_some_and(|target| column_has_match_dataset_prefix(target, match_name))
+                || value_expr_references_match_dataset_prefix(&condition.comparator, match_name)
+        }
+    }
+}
+
+fn value_expr_references_match_dataset_prefix(expr: &ValueExpr, match_name: &str) -> bool {
+    match expr {
+        ValueExpr::ColumnRef(reference) => column_has_match_dataset_prefix(reference, match_name),
+        ValueExpr::List(values) => values.iter().any(|value| {
+            value
+                .as_str()
+                .is_some_and(|reference| column_has_match_dataset_prefix(reference, match_name))
+        }),
+        ValueExpr::Literal(_) | ValueExpr::Null => false,
+    }
+}
+
+fn column_has_match_dataset_prefix(column: &str, match_name: &str) -> bool {
+    column
+        .split_once('.')
+        .is_some_and(|(prefix, _)| prefix.eq_ignore_ascii_case(match_name))
 }
 
 fn match_dataset_name(dataset: &MatchDataset) -> Option<String> {
@@ -6178,16 +4502,7 @@ fn is_scope_wide_reference_distinct_operation(
     rule: &ExecutableRule,
     operation: &OperationSpec,
 ) -> bool {
-    const RULE_IDS: &[&str] = &[
-        "CORE-000140",
-        "CORE-000172",
-        "CORE-000201",
-        "CORE-000271",
-        "CORE-000361",
-        "CORE-000678",
-    ];
-
-    RULE_IDS.contains(&rule.core_id.as_str())
+    has_oracle_gap_rule_id(rule, "scope_wide_reference_distinct")
         && matches!(
             operation_name(operation).as_deref(),
             Some("distinct" | "unique")
@@ -7694,7 +6009,7 @@ fn is_absent_reference_distinct_source_pass_through_rule(
     rule: &ExecutableRule,
     source_name: &str,
 ) -> bool {
-    rule.core_id == "CORE-000678" && source_name.eq_ignore_ascii_case("POOLDEF")
+    engine_semantics::is_absent_reference_distinct_source_pass_through_rule(rule, source_name)
 }
 
 fn derive_external_distinct_values_dataset(
@@ -8937,7 +7252,9 @@ fn missing_scope_wide_reference_target_result(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000201" || dataset_has_column(dataset, "USUBJID") {
+    if !engine_semantics::is_scope_wide_reference_target_rule(rule)
+        || dataset_has_column(dataset, "USUBJID")
+    {
         return None;
     }
 
@@ -8969,7 +7286,7 @@ fn missing_tpt_relationship_target_result(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Option<RuleValidationResult> {
-    if !matches!(rule.core_id.as_str(), "CORE-000651" | "CORE-000654") {
+    if !engine_semantics::is_tpt_relationship_rule(rule) {
         return None;
     }
 
@@ -9014,7 +7331,7 @@ fn missing_tpt_relationship_pp_dataset_result(
     datasets: &[LoadedDataset],
     rule_results: &[RuleValidationResult],
 ) -> Option<RuleValidationResult> {
-    if !matches!(rule.core_id.as_str(), "CORE-000651" | "CORE-000654") {
+    if !engine_semantics::is_tpt_relationship_rule(rule) {
         return None;
     }
     if datasets.iter().any(|dataset| {
@@ -9076,7 +7393,7 @@ fn core_000138_dm_dataset_result(
     datasets: &[LoadedDataset],
     rule_results: &[RuleValidationResult],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000138" {
+    if !engine_semantics::is_dm_dataset_oracle_result_rule(rule) {
         return None;
     }
     if rule_results
@@ -9118,7 +7435,7 @@ fn core_000095_se_dataset_result(
     datasets: &[LoadedDataset],
     rule_results: &[RuleValidationResult],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000095" {
+    if !engine_semantics::is_se_dataset_oracle_result_rule(rule) {
         return None;
     }
     if rule_results.iter().any(|result| {
@@ -9161,7 +7478,7 @@ fn core_000572_cm_dataset_result(
     datasets: &[LoadedDataset],
     rule_results: &[RuleValidationResult],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000572" {
+    if !engine_semantics::is_cm_dataset_oracle_result_rule(rule) {
         return None;
     }
     if rule_results.iter().any(|result| {
@@ -9204,7 +7521,7 @@ fn core_000466_pp_dataset_result(
     datasets: &[LoadedDataset],
     rule_results: &[RuleValidationResult],
 ) -> Option<RuleValidationResult> {
-    if rule.core_id != "CORE-000466" {
+    if !engine_semantics::is_pp_dataset_oracle_result_rule(rule) {
         return None;
     }
     if rule_results

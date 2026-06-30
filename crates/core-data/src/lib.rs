@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+mod open_rules_variables;
+
+use open_rules_variables::open_rules_variable_descriptors;
+
 pub type Result<T> = std::result::Result<T, DataError>;
 
 #[derive(Debug, Error)]
@@ -270,7 +274,8 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
         return load_open_rules_json_data_dir(data_dir);
     }
 
-    let variable_rows = read_csv_dict_rows(&variables_path)?;
+    let variable_records = read_csv_records(&variables_path)?;
+    let variable_rows = csv_records_to_dict_rows(&variable_records);
     let datasets_path = data_dir.join("_datasets.csv");
     let datasets = if datasets_path.is_file() {
         read_csv_dict_rows(&datasets_path)?
@@ -281,10 +286,7 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
     } else {
         infer_open_rules_dataset_descriptors(data_dir, &variable_rows)?
     };
-    let variables = variable_rows
-        .iter()
-        .map(open_rules_variable_descriptor)
-        .collect::<Result<Vec<_>>>()?;
+    let variables = open_rules_variable_descriptors(&variable_records, &variable_rows, &datasets)?;
 
     let mut variables_by_dataset = BTreeMap::<String, Vec<OpenRulesVariable>>::new();
     for variable in variables {
@@ -7405,41 +7407,6 @@ fn is_open_rules_auxiliary_csv(filename: &str) -> bool {
     )
 }
 
-fn open_rules_variable_descriptor(row: &BTreeMap<String, String>) -> Result<OpenRulesVariable> {
-    let dataset =
-        row_string(row, &["dataset", "Dataset", "domain", "Domain"]).ok_or_else(|| {
-            DataError::InvalidDatasetPackage("_variables.csv missing dataset".to_owned())
-        })?;
-    let variable = row_string(
-        row,
-        &[
-            "variable",
-            "Variable",
-            "name",
-            "Name",
-            "variable_name",
-            "Variable Name",
-        ],
-    )
-    .ok_or_else(|| {
-        DataError::InvalidDatasetPackage("_variables.csv missing variable".to_owned())
-    })?;
-    let variable_type = row_string(row, &["type", "Type", "DataType", "datatype"]);
-    let length =
-        row_string(row, &["length", "Length"]).and_then(|value| value.parse::<usize>().ok());
-
-    Ok(OpenRulesVariable {
-        dataset: normalize_dataset_name(&dataset),
-        variable: DatasetVariable {
-            name: variable.trim().to_ascii_uppercase(),
-            label: row_string(row, &["label", "Label"]),
-            variable_type,
-            length,
-            extra: BTreeMap::new(),
-        },
-    })
-}
-
 fn load_open_rules_dataset(
     data_dir: &Path,
     dataset: OpenRulesDataset,
@@ -7642,18 +7609,22 @@ fn read_csv_records(path: &Path) -> Result<CsvRecords> {
 
 fn read_csv_dict_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
     let records = read_csv_records(path)?;
-    Ok(records
+    Ok(csv_records_to_dict_rows(&records))
+}
+
+fn csv_records_to_dict_rows(records: &CsvRecords) -> Vec<BTreeMap<String, String>> {
+    records
         .records
-        .into_iter()
+        .iter()
         .map(|record| {
             records
                 .headers
                 .iter()
-                .zip(record)
+                .zip(record.iter())
                 .map(|(key, value)| (key.clone(), value.trim().to_owned()))
                 .collect::<BTreeMap<_, _>>()
         })
-        .collect())
+        .collect()
 }
 
 fn row_string(row: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
@@ -9368,6 +9339,52 @@ mod tests {
         assert_eq!(
             dataset_column_values(dataset, "CMTRT").expect("CMTRT values"),
             vec![serde_json::json!("ASPIRIN"), serde_json::json!("PLACEBO")]
+        );
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_uses_horizontal_variables_schema() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\nvs,Vital Signs\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "STUDYID,DOMAIN,USUBJID,VSSEQ,VSTESTCD\n\
+Study Identifier,Domain Abbreviation,Unique Subject Identifier,Sequence Number,Vital Signs Test Short Name\n\
+Char,Char,Char,Num,Char\n\
+12,2,8,8,12\n",
+        )
+        .expect("write horizontal variables csv");
+        fs::write(
+            dir.path().join("vs.csv"),
+            "STUDYID,DOMAIN,USUBJID,VSSEQ,VSTESTCD\n\
+CDISCPILOT01,VS,CDISC001,1,DIABP_1\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert_eq!(result.datasets.len(), 1);
+        assert!(result.warnings.is_empty());
+        let dataset = &result.datasets[0];
+        assert_eq!(dataset.metadata.name, "VS");
+        assert_eq!(dataset.metadata.variables[3].name, "VSSEQ");
+        assert_eq!(
+            dataset.metadata.variables[3].label.as_deref(),
+            Some("Sequence Number")
+        );
+        assert_eq!(
+            dataset.metadata.variables[3].variable_type.as_deref(),
+            Some("Num")
+        );
+        assert_eq!(dataset.metadata.variables[3].length, Some(8));
+        assert_eq!(
+            dataset_column_values(dataset, "VSSEQ").expect("VSSEQ values"),
+            vec![serde_json::json!(1)]
         );
     }
 
