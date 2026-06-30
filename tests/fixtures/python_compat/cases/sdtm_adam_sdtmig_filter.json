@@ -1,6 +1,6 @@
 {
   "name": "sdtm_adam_sdtmig_filter",
-  "description": "Stored golden regression output modeled after Python/CDISC behavior for the SDTMIG-filtered subset of the SDTM/ADaM-like package.",
+  "description": "Stored Python/CDISC-compatible expected output for SDTMIG-filtered subset of the SDTM/ADaM-like package.",
   "rule_paths": ["rules/sdtm_adam"],
   "dataset_paths": ["datasets/sdtm_adam/study_package.json"],
   "define_xml_paths": ["cdisc/sdtm_adam_define.xml"],

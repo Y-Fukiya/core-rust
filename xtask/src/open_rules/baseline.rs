@@ -222,7 +222,7 @@ fn native_engine_coverage_regressed(baseline: &Scoreboard, current: &Scoreboard)
 
 impl BaselineReport {
     pub fn should_fail(&self) -> bool {
-        !self.regressions.is_empty()
+        !self.regressions.is_empty() || !self.review_required.is_empty()
     }
 }
 
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn baseline_reports_hand_port_to_native_as_review_required() {
+    fn baseline_fails_hand_port_to_native_as_review_required() {
         let report = compare_scoreboards(
             &scoreboard_with_provenance(
                 ScoreBucket::SupportedMatch,
@@ -472,7 +472,7 @@ mod tests {
             ),
         );
 
-        assert!(!report.should_fail());
+        assert!(report.should_fail());
         assert!(report.improvements.is_empty());
         assert!(report
             .review_required

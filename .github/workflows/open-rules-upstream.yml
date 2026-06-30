@@ -26,7 +26,7 @@ jobs:
           git clone "$upstream_repo" ../cdisc-open-rules
           git -C ../cdisc-open-rules checkout "$upstream_sha"
 
-      - name: Run full upstream oracle observe
+      - name: Run full upstream oracle
         run: |
           set +e
           cargo run -p xtask -- open-rules run-score \
@@ -88,11 +88,19 @@ jobs:
       - name: Run full upstream oracle
         if: steps.baseline.outputs.available == 'true'
         run: |
+          set +e
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root ../cdisc-open-rules \
             --core-rs-results-root target/open-rules-core-rs-upstream \
             --out target/open-rules-scoreboard-upstream \
             --strict-lock
+          score_status=$?
+          set -e
+          echo "open-rules upstream regression score exit code: ${score_status}"
+          if [ ! -f target/open-rules-scoreboard-upstream/scoreboard.json ]; then
+            echo "scoreboard.json was not generated; this is an infrastructure or harness failure"
+            exit 1
+          fi
 
       - name: Compare full upstream regression baseline
         if: steps.baseline.outputs.available == 'true'
