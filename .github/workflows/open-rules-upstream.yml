@@ -26,7 +26,7 @@ jobs:
           git clone "$upstream_repo" ../cdisc-open-rules
           git -C ../cdisc-open-rules checkout "$upstream_sha"
 
-      - name: Run full upstream oracle
+      - name: Run full upstream oracle observe
         run: |
           set +e
           cargo run -p xtask -- open-rules run-score \

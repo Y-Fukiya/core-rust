@@ -113,6 +113,244 @@ fn validate_writes_skipped_result_for_missing_requested_rule() {
 }
 
 #[test]
+fn validate_strict_fails_for_skipped_results() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-TEST-0001.json"),
+        r#"{
+  "Core": { "Id": "CORE-TEST-0001", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "DOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--rules",
+        "CORE-MISSING",
+        "--strict",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation gate failed: 0 failed result(s), 1 skipped result(s)",
+    ));
+}
+
+#[test]
+fn validate_fail_on_failed_fails_for_failed_results() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-TEST-0001.json"),
+        r#"{
+  "Core": { "Id": "CORE-TEST-0001", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must not be AE" }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "DOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--fail-on",
+        "failed",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation gate failed: 1 failed result(s), 0 skipped result(s)",
+    ));
+}
+
+#[test]
+fn validate_strict_fails_for_failed_results() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-TEST-0001.json"),
+        r#"{
+  "Core": { "Id": "CORE-TEST-0001", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must not be AE" }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "DOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--strict",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation gate failed: 1 failed result(s), 0 skipped result(s)",
+    ));
+}
+
+#[test]
+fn validate_fail_on_skipped_fails_for_skipped_results() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-TEST-0001.json"),
+        r#"{
+  "Core": { "Id": "CORE-TEST-0001", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "DOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--rules",
+        "CORE-MISSING",
+        "--fail-on",
+        "skipped",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation gate failed: 0 failed result(s), 1 skipped result(s)",
+    ));
+}
+
+#[test]
 fn validate_honors_json_output_format() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

@@ -340,6 +340,7 @@ mod tests {
                 candidate_report_csv: "report.csv".into(),
                 execution_provenance: ExecutionProvenance::Unknown,
                 bucket,
+                execution_provenance: ExecutionProvenance::NativeEngine,
                 reason: None,
                 skipped_reasons: Vec::new(),
                 official_issue_count: Some(1),

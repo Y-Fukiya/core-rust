@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use core_api::{run_validation, ValidateRequest};
-use core_report::ReportOutputFormat;
+use core_report::{ReportOutputFormat, ReportSummary};
 
 #[derive(Debug, Parser)]
 #[command(name = "core-rs", version, about = "CDISC Rules Engine Rust port")]
@@ -63,6 +63,14 @@ struct ValidateArgs {
 
     #[arg(long, value_enum, value_name = "disabled|info|debug|warn|error")]
     log_level: Option<LogLevel>,
+
+    /// Exit with failure when validation produces failed or skipped results.
+    #[arg(long)]
+    strict: bool,
+
+    /// Exit with failure for selected result statuses, e.g. --fail-on failed,skipped.
+    #[arg(long, value_enum, value_delimiter = ',', value_name = "failed|skipped")]
+    fail_on: Vec<FailOnStatus>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -78,6 +86,12 @@ enum LogLevel {
     Debug,
     Warn,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum FailOnStatus {
+    Failed,
+    Skipped,
 }
 
 fn main() -> Result<()> {
@@ -133,6 +147,19 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         if let Some(log) = reports.log {
             println!("wrote {}", log.display());
         }
+    }
+
+    let fail_on_failed = args.strict || args.fail_on.contains(&FailOnStatus::Failed);
+    let fail_on_skipped = args.strict || args.fail_on.contains(&FailOnStatus::Skipped);
+    let summary = ReportSummary::from_results(&outcome.results);
+    let failed = summary.failed;
+    let skipped = summary.skipped;
+    if (fail_on_failed && failed > 0) || (fail_on_skipped && skipped > 0) {
+        anyhow::bail!(
+            "validation gate failed: {} failed result(s), {} skipped result(s)",
+            failed,
+            skipped
+        );
     }
 
     Ok(())

@@ -305,6 +305,7 @@ fn push_case_section(
             case.rule_id,
             case.case_kind,
             case.case_id,
+            provenance_text(case.execution_provenance),
             reason,
             provenance_suffix(&case.execution_provenance),
             count_text(case.official_issue_count),
@@ -312,6 +313,24 @@ fn push_case_section(
         ));
     }
     lines.push(String::new());
+}
+
+fn provenance_row(
+    label: &str,
+    matches: usize,
+    mismatches: usize,
+    accuracy: Option<f64>,
+    coverage: Option<f64>,
+) -> String {
+    format!(
+        "| {label} | {matches} | {mismatches} | {} | {} |",
+        percent_or_na(accuracy),
+        percent_or_na(coverage)
+    )
+}
+
+fn provenance_text(provenance: ExecutionProvenance) -> &'static str {
+    provenance.as_str()
 }
 
 fn count_text(value: Option<usize>) -> String {
@@ -385,6 +404,7 @@ mod tests {
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::NativeEngine,
                     bucket: ScoreBucket::SupportedMismatch,
+                    execution_provenance: ExecutionProvenance::NativeEngine,
                     reason: None,
                     skipped_reasons: Vec::new(),
                     official_issue_count: Some(1),
@@ -402,6 +422,7 @@ mod tests {
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::Unknown,
                     bucket: ScoreBucket::SkippedUnsupported,
+                    execution_provenance: ExecutionProvenance::NativeEngine,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
                     official_issue_count: Some(0),
@@ -419,6 +440,7 @@ mod tests {
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::RuleIdHandPort,
                     bucket: ScoreBucket::SupportedMatch,
+                    execution_provenance: ExecutionProvenance::RuleIdHandPort,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
                             .to_owned(),

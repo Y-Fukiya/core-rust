@@ -14,7 +14,8 @@ CORE rules engine can look like.
 
 - Experimenting with CDISC CORE-like rules in a small, fast Rust codebase.
 - Running supplemental validation against SDTM/ADaM-style fixture or study data.
-- Comparing Rust behavior with Python/CDISC-compatible expected outputs.
+- Comparing Rust behavior with stored golden regression outputs modeled after
+  Python/CDISC behavior.
 - Producing JSON, CSV, and log reports for traceable validation results.
 - Developing validation engine features such as rule normalization, dataset
   operations, JSONATA-like conditions, Define-XML metadata, controlled
@@ -70,7 +71,8 @@ The repository includes golden fixtures for:
 - integrated DatasetPackageJson + Define-XML + CT flows
 - SDTM/ADaM-like multi-domain packages
 - regulatory-style SDTM/ADaM fixtures
-- Python/CDISC-compatible expected output comparisons
+- stored golden regression output comparisons modeled after Python/CDISC
+  behavior
 - issue identity traceability with `usubjid` and sequence fields
 - CSV and log report structure
 - GitHub Actions CI running format, check, and workspace tests
@@ -110,6 +112,33 @@ target/core-rust-report/report.json
 target/core-rust-report/report.csv
 target/core-rust-report/validation.log
 ```
+
+By default, validation findings are written to reports and the CLI exits
+successfully if execution completed. Use `--strict` when validation results
+should be a CI gate:
+
+```sh
+cargo run -p core-cli -- validate \
+  --local-rules tests/fixtures/rules/regulatory \
+  --dataset-path tests/fixtures/datasets/regulatory/study_package.json \
+  --define-xml tests/fixtures/cdisc/regulatory_define.xml \
+  --ct tests/fixtures/cdisc/regulatory_ct.json \
+  --external-dictionary tests/fixtures/cdisc/regulatory_external_dictionary.csv \
+  --log-level info \
+  --output target/core-rust-report \
+  --strict
+```
+
+`--strict` fails on failed or skipped validation results after reports are
+written. For finer control, use `--fail-on failed`, `--fail-on skipped`, or
+`--fail-on failed,skipped`.
+
+| Mode | Exit behavior |
+| --- | --- |
+| default | Exits 0 if execution completes, even when reports contain failed or skipped results. |
+| `--fail-on failed` | Exits non-zero when failed validation results are present. |
+| `--fail-on skipped` | Exits non-zero when skipped validation results are present. |
+| `--strict` | Equivalent to `--fail-on failed,skipped`. |
 
 Show CLI help:
 
@@ -259,6 +288,20 @@ synthesis. Treat those reports as historical debugging artifacts only. For
 current conformance claims, rerun the Open Rules harness and cite the generated
 `scoreboard.json` / `summary.md` from that run.
 
+Full upstream Open Rules compatibility is tracked by the scheduled observe
+workflow and its uploaded scoreboard artifacts. The repository-local fixture is
+the enforced PR gate; see `docs/open-rules-upstream-status.md` for the current
+policy.
+
+Open Rules scoreboards distinguish native engine-supported cases from
+rule-id hand-ported cases. Use `native_engine_supported_accuracy` and
+`rule_id_hand_port_supported_accuracy` when describing what the generic engine
+can do versus what has been manually migrated for compatibility.
+
+For future full-corpus regression gating and large Rust module cleanup, see
+`docs/open-rules-upstream-regression-gate.md` and
+`docs/rust-file-split-plan.md`.
+
 Latest expanded SDTM-IG draft export:
 
 - Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
@@ -318,9 +361,11 @@ Minimal generated outputs include:
 
 ## Compatibility Position
 
-The goal is to move toward Python/CDISC-compatible behavior where practical, but
+The goal is to move toward Python/CDISC-aligned behavior where practical, but
 the project intentionally publishes its current state as a technical preview.
-Compatibility should be treated as evidence-based rather than guaranteed:
+The `python_compat` fixtures are stored golden regression expectations, not an
+independent CI run of the Python `cdisc-rules-engine`. Compatibility should be
+treated as evidence-based rather than guaranteed:
 
 - If a behavior is covered by a golden fixture, regressions should be caught by
   CI.

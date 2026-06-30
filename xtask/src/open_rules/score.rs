@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use core_api::rule_uses_rule_id_hand_port;
+use core_rule_model::load_rule_file;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
@@ -63,6 +65,25 @@ impl ScoreBucket {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionProvenance {
+    NativeEngine,
+    RuleIdHandPort,
+    #[default]
+    Unknown,
+}
+
+impl ExecutionProvenance {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::NativeEngine => "native_engine",
+            Self::RuleIdHandPort => "rule_id_hand_port",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScoredCase {
     pub scope: String,
@@ -75,6 +96,8 @@ pub struct ScoredCase {
     #[serde(default)]
     pub execution_provenance: ExecutionProvenance,
     pub bucket: ScoreBucket,
+    #[serde(default)]
+    pub execution_provenance: ExecutionProvenance,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped_reasons: Vec<String>,
@@ -186,6 +209,7 @@ pub fn relative_candidate_report_path(case: &OpenRulesCase) -> PathBuf {
 
 fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let candidate_report_csv = core_rs_results_root.join(relative_candidate_report_path(case));
+    let execution_provenance = execution_provenance_for_case(case);
     let base = ScoredCase {
         scope: case.scope.clone(),
         rule_id: case.rule_id.clone(),
@@ -196,6 +220,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         candidate_report_csv: candidate_report_csv.clone(),
         execution_provenance: candidate_execution_provenance(&candidate_report_csv),
         bucket: ScoreBucket::HarnessError,
+        execution_provenance,
         reason: None,
         skipped_reasons: Vec::new(),
         official_issue_count: None,
@@ -722,6 +747,18 @@ mod tests {
         assert_eq!(summary.harness_error, 1);
         assert_eq!(summary.supported_accuracy, Some(2.0 / 3.0));
         assert_eq!(summary.coverage, Some(3.0 / 6.0));
+        assert_eq!(summary.native_engine_supported_match, 0);
+        assert_eq!(summary.native_engine_supported_mismatch, 0);
+        assert_eq!(summary.native_engine_supported_accuracy, None);
+        assert_eq!(summary.rule_id_hand_port_supported_match, 0);
+        assert_eq!(summary.rule_id_hand_port_supported_mismatch, 0);
+        assert_eq!(summary.rule_id_hand_port_supported_accuracy, None);
+        assert_eq!(summary.unknown_provenance_supported_match, 2);
+        assert_eq!(summary.unknown_provenance_supported_mismatch, 1);
+        assert_eq!(
+            summary.unknown_provenance_supported_accuracy,
+            Some(2.0 / 3.0)
+        );
         assert!(summary.should_fail());
         let skipped = scored
             .iter()
@@ -735,6 +772,64 @@ mod tests {
             skipped.reason,
             Some("candidate skipped rows: unsupported_operator".to_owned())
         );
+    }
+
+    #[test]
+    fn scores_rule_id_hand_port_provenance_separately() {
+        let dir = tempdir().expect("tempdir");
+        let rule_dir = dir.path().join("open/Published/CORE-000948");
+        let case_dir = rule_dir.join("negative/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            rule_dir.join("rule.yml"),
+            "Core:\n  Id: CORE-000948\n  Status: Published\nSensitivity: Record\nRule Type: Record Data\nCheck:\n  name: USUBJID\n  operator: non_empty\nOutcome:\n  Message: USUBJID must be populated\n",
+        )
+        .expect("write rule");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\nCORE-000948,DM,1,USUBJID\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000948/negative/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000948,failed,DM,DM,1,USUBJID,bad,1,,,\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000948".to_owned(),
+            rule_dir: rule_dir.clone(),
+            rule_path: rule_dir.join("rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].execution_provenance,
+            ExecutionProvenance::RuleIdHandPort
+        );
+        assert_eq!(summary.native_engine_supported_match, 0);
+        assert_eq!(summary.rule_id_hand_port_supported_match, 1);
+        assert_eq!(summary.rule_id_hand_port_supported_accuracy, Some(1.0));
     }
 
     #[test]
