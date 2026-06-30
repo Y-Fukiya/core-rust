@@ -7,129 +7,28 @@
 use core_engine::RuleValidationResult;
 use core_rule_model::ExecutableRule;
 
+const HAND_PORT_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/hand_port_rule_ids.csv");
+
 pub fn rule_id_uses_hand_port(rule_id: &str) -> bool {
-    matches!(
-        rule_id,
-        "CORE-000047"
-            | "CORE-000095"
-            | "CORE-000138"
-            | "CORE-000139"
-            | "CORE-000201"
-            | "CORE-000272"
-            | "CORE-000324"
-            | "CORE-000361"
-            | "CORE-000460"
-            | "CORE-000466"
-            | "CORE-000505"
-            | "CORE-000572"
-            | "CORE-000583"
-            | "CORE-000595"
-            | "CORE-000651"
-            | "CORE-000653"
-            | "CORE-000654"
-            | "CORE-000677"
-            | "CORE-000711"
-            | "CORE-000714"
-            | "CORE-000744"
-            | "CORE-000783"
-            | "CORE-000866"
-            | "CORE-000929"
-            | "CORE-000944"
-            | "CORE-000948"
-            | "CORE-000950"
-            | "CORE-000954"
-            | "CORE-000955"
-            | "CORE-000956"
-            | "CORE-000961"
-            | "CORE-000962"
-            | "CORE-000963"
-            | "CORE-000964"
-            | "CORE-000965"
-            | "CORE-000966"
-            | "CORE-000967"
-            | "CORE-000968"
-            | "CORE-000969"
-            | "CORE-000970"
-            | "CORE-000971"
-            | "CORE-000973"
-            | "CORE-000974"
-            | "CORE-000980"
-            | "CORE-000981"
-            | "CORE-000982"
-            | "CORE-000983"
-            | "CORE-000984"
-            | "CORE-000985"
-            | "CORE-000986"
-            | "CORE-000994"
-            | "CORE-000995"
-            | "CORE-000996"
-            | "CORE-000997"
-            | "CORE-000998"
-            | "CORE-000999"
-            | "CORE-001000"
-            | "CORE-001001"
-            | "CORE-001002"
-            | "CORE-001003"
-            | "CORE-001004"
-            | "CORE-001005"
-            | "CORE-001006"
-            | "CORE-001007"
-            | "CORE-001008"
-            | "CORE-001009"
-            | "CORE-001010"
-            | "CORE-001011"
-            | "CORE-001012"
-            | "CORE-001013"
-            | "CORE-001014"
-            | "CORE-001015"
-            | "CORE-001016"
-            | "CORE-001017"
-            | "CORE-001018"
-            | "CORE-001019"
-            | "CORE-001020"
-            | "CORE-001021"
-            | "CORE-001022"
-            | "CORE-001023"
-            | "CORE-001024"
-            | "CORE-001025"
-            | "CORE-001026"
-            | "CORE-001027"
-            | "CORE-001028"
-            | "CORE-001029"
-            | "CORE-001030"
-            | "CORE-001031"
-            | "CORE-001032"
-            | "CORE-001033"
-            | "CORE-001036"
-            | "CORE-001037"
-            | "CORE-001038"
-            | "CORE-001039"
-            | "CORE-001040"
-            | "CORE-001041"
-            | "CORE-001042"
-            | "CORE-001045"
-            | "CORE-001046"
-            | "CORE-001047"
-            | "CORE-001048"
-            | "CORE-001049"
-            | "CORE-001050"
-            | "CORE-001051"
-            | "CORE-001052"
-            | "CORE-001053"
-            | "CORE-001054"
-            | "CORE-001055"
-            | "CORE-001062"
-            | "CORE-001065"
-            | "CORE-001066"
-            | "CORE-001067"
-            | "CORE-001070"
-            | "CORE-001071"
-            | "CORE-001072"
-            | "CORE-001073"
-            | "CORE-001074"
-            | "CORE-001075"
-            | "CORE-001077"
-    )
+    let rule_id = rule_id.trim();
+    !rule_id.is_empty() && hand_port_rule_ids().any(|manifest_rule_id| manifest_rule_id == rule_id)
+}
+
+fn hand_port_rule_ids() -> impl Iterator<Item = &'static str> {
+    HAND_PORT_RULE_ID_MANIFEST
+        .lines()
+        .filter_map(parse_hand_port_manifest_rule_id)
+}
+
+fn parse_hand_port_manifest_rule_id(line: &'static str) -> Option<&'static str> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') || line.starts_with("rule_id,") {
+        return None;
+    }
+    line.split(',')
+        .next()
+        .map(str::trim)
+        .filter(|rule_id| !rule_id.is_empty())
 }
 
 pub(crate) fn post_execution_oracle_gap_result(
@@ -140,4 +39,33 @@ pub(crate) fn post_execution_oracle_gap_result(
     // Do not rewrite executed engine output into skipped oracle-gap rows. Keeping
     // failures as failures preserves scoreboard independence.
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn hand_port_rule_ids_are_loaded_from_manifest() {
+        assert!(rule_id_uses_hand_port("CORE-000583"));
+        assert!(rule_id_uses_hand_port(" CORE-001077 "));
+        assert!(!rule_id_uses_hand_port("CORE-PROV"));
+        assert!(!rule_id_uses_hand_port(""));
+    }
+
+    #[test]
+    fn hand_port_manifest_has_unique_rule_ids() {
+        let mut seen = BTreeSet::new();
+        let mut count = 0;
+        for rule_id in hand_port_rule_ids() {
+            assert!(
+                seen.insert(rule_id),
+                "duplicate hand-port rule id {rule_id}"
+            );
+            count += 1;
+        }
+        assert!(count > 100, "unexpectedly small hand-port manifest");
+    }
 }
