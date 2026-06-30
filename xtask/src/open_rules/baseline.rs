@@ -276,8 +276,8 @@ fn difference(
         case_key,
         baseline_bucket: baseline_case.map(|case| case.bucket.clone()),
         current_bucket: current_case.map(|case| case.bucket.clone()),
-        baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance.clone()),
-        current_execution_provenance: current_case.map(|case| case.execution_provenance.clone()),
+        baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance),
+        current_execution_provenance: current_case.map(|case| case.execution_provenance),
         message: message.to_owned(),
     }
 }
@@ -340,7 +340,6 @@ mod tests {
                 candidate_report_csv: "report.csv".into(),
                 execution_provenance: ExecutionProvenance::Unknown,
                 bucket,
-                execution_provenance: ExecutionProvenance::NativeEngine,
                 reason: None,
                 skipped_reasons: Vec::new(),
                 official_issue_count: Some(1),

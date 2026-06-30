@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use core_api::rule_uses_rule_id_hand_port;
-use core_rule_model::load_rule_file;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
@@ -41,15 +39,6 @@ pub enum ScoreBucket {
     MixedSkippedAndIssues,
     NoOfficialOracle,
     HarnessError,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionProvenance {
-    NativeEngine,
-    RuleIdHandPort,
-    #[default]
-    Unknown,
 }
 
 impl ScoreBucket {
@@ -96,8 +85,6 @@ pub struct ScoredCase {
     #[serde(default)]
     pub execution_provenance: ExecutionProvenance,
     pub bucket: ScoreBucket,
-    #[serde(default)]
-    pub execution_provenance: ExecutionProvenance,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped_reasons: Vec<String>,
@@ -209,7 +196,6 @@ pub fn relative_candidate_report_path(case: &OpenRulesCase) -> PathBuf {
 
 fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let candidate_report_csv = core_rs_results_root.join(relative_candidate_report_path(case));
-    let execution_provenance = execution_provenance_for_case(case);
     let base = ScoredCase {
         scope: case.scope.clone(),
         rule_id: case.rule_id.clone(),
@@ -220,7 +206,6 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         candidate_report_csv: candidate_report_csv.clone(),
         execution_provenance: candidate_execution_provenance(&candidate_report_csv),
         bucket: ScoreBucket::HarnessError,
-        execution_provenance,
         reason: None,
         skipped_reasons: Vec::new(),
         official_issue_count: None,
@@ -796,7 +781,7 @@ mod tests {
         fs::create_dir_all(&candidate_dir).expect("create candidate dir");
         fs::write(
             candidate_dir.join("report.csv"),
-            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000948,failed,DM,DM,1,USUBJID,bad,1,,,\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\nCORE-000948,failed,DM,DM,1,USUBJID,bad,1,,,,rule_id_hand_port\n",
         )
         .expect("write candidate report");
         let case = OpenRulesCase {
