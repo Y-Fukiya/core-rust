@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use core_api::rule_uses_rule_id_hand_port;
-use core_rule_model::load_rule_file;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
@@ -84,9 +82,9 @@ pub struct ScoredCase {
     pub case_dir: PathBuf,
     pub official_results_csv: PathBuf,
     pub candidate_report_csv: PathBuf,
-    pub bucket: ScoreBucket,
     #[serde(default)]
     pub execution_provenance: ExecutionProvenance,
+    pub bucket: ScoreBucket,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped_reasons: Vec<String>,
@@ -198,7 +196,6 @@ pub fn relative_candidate_report_path(case: &OpenRulesCase) -> PathBuf {
 
 fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let candidate_report_csv = core_rs_results_root.join(relative_candidate_report_path(case));
-    let execution_provenance = execution_provenance_for_case(case);
     let base = ScoredCase {
         scope: case.scope.clone(),
         rule_id: case.rule_id.clone(),
@@ -207,8 +204,8 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         case_dir: case.case_dir.clone(),
         official_results_csv: case.official_results_csv.clone(),
         candidate_report_csv: candidate_report_csv.clone(),
+        execution_provenance: candidate_execution_provenance(&candidate_report_csv),
         bucket: ScoreBucket::HarnessError,
-        execution_provenance,
         reason: None,
         skipped_reasons: Vec::new(),
         official_issue_count: None,
@@ -309,14 +306,6 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         missing,
         extra,
         ..base
-    }
-}
-
-fn execution_provenance_for_case(case: &OpenRulesCase) -> ExecutionProvenance {
-    match load_rule_file(&case.rule_path) {
-        Ok(rule) if rule_uses_rule_id_hand_port(&rule) => ExecutionProvenance::RuleIdHandPort,
-        Ok(_) => ExecutionProvenance::NativeEngine,
-        Err(_) => ExecutionProvenance::Unknown,
     }
 }
 
@@ -480,35 +469,35 @@ impl ScoreSummary {
         let harness_error = *counts.get("harness_error").unwrap_or(&0);
         let supported = supported_match + supported_mismatch;
         let total_cases = cases.len();
-        let native_engine_supported_match = supported_count_by_provenance(
+        let native_engine_supported_match = count_supported_by_provenance(
             cases,
+            ScoreBucket::SupportedMatch,
             ExecutionProvenance::NativeEngine,
-            ScoreBucket::SupportedMatch,
         );
-        let native_engine_supported_mismatch = supported_count_by_provenance(
+        let native_engine_supported_mismatch = count_supported_by_provenance(
             cases,
+            ScoreBucket::SupportedMismatch,
             ExecutionProvenance::NativeEngine,
-            ScoreBucket::SupportedMismatch,
         );
-        let rule_id_hand_port_supported_match = supported_count_by_provenance(
+        let rule_id_hand_port_supported_match = count_supported_by_provenance(
             cases,
-            ExecutionProvenance::RuleIdHandPort,
             ScoreBucket::SupportedMatch,
-        );
-        let rule_id_hand_port_supported_mismatch = supported_count_by_provenance(
-            cases,
             ExecutionProvenance::RuleIdHandPort,
-            ScoreBucket::SupportedMismatch,
         );
-        let unknown_provenance_supported_match = supported_count_by_provenance(
+        let rule_id_hand_port_supported_mismatch = count_supported_by_provenance(
             cases,
-            ExecutionProvenance::Unknown,
+            ScoreBucket::SupportedMismatch,
+            ExecutionProvenance::RuleIdHandPort,
+        );
+        let unknown_provenance_supported_match = count_supported_by_provenance(
+            cases,
             ScoreBucket::SupportedMatch,
-        );
-        let unknown_provenance_supported_mismatch = supported_count_by_provenance(
-            cases,
             ExecutionProvenance::Unknown,
+        );
+        let unknown_provenance_supported_mismatch = count_supported_by_provenance(
+            cases,
             ScoreBucket::SupportedMismatch,
+            ExecutionProvenance::Unknown,
         );
         Self {
             total_cases,
@@ -564,14 +553,14 @@ impl ScoreSummary {
     }
 }
 
-fn supported_count_by_provenance(
+fn count_supported_by_provenance(
     cases: &[ScoredCase],
-    provenance: ExecutionProvenance,
     bucket: ScoreBucket,
+    provenance: ExecutionProvenance,
 ) -> usize {
     cases
         .iter()
-        .filter(|case| case.execution_provenance == provenance && case.bucket == bucket)
+        .filter(|case| case.bucket == bucket && case.execution_provenance == provenance)
         .count()
 }
 
@@ -582,6 +571,33 @@ fn supported_accuracy_for_counts(matches: usize, mismatches: usize) -> Option<f6
 
 fn coverage_for_counts(supported: usize, total_cases: usize) -> Option<f64> {
     (total_cases > 0).then(|| supported as f64 / total_cases as f64)
+}
+
+fn candidate_execution_provenance(path: &Path) -> ExecutionProvenance {
+    read_candidate_execution_provenance(path).unwrap_or_default()
+}
+
+fn read_candidate_execution_provenance(path: &Path) -> Option<ExecutionProvenance> {
+    let source = std::fs::read_to_string(path).ok()?;
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(source.as_bytes());
+    let headers = reader.headers().ok()?.clone();
+    let index = headers
+        .iter()
+        .position(|header| header.trim().eq_ignore_ascii_case("execution_provenance"))?;
+    for record in reader.records().flatten() {
+        let provenance = record.get(index).unwrap_or_default().trim();
+        if provenance.is_empty() {
+            continue;
+        }
+        return Some(match provenance.to_ascii_lowercase().as_str() {
+            "native_engine" => ExecutionProvenance::NativeEngine,
+            "rule_id_hand_port" => ExecutionProvenance::RuleIdHandPort,
+            _ => ExecutionProvenance::Unknown,
+        });
+    }
+    Some(ExecutionProvenance::Unknown)
 }
 
 fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {
@@ -765,7 +781,7 @@ mod tests {
         fs::create_dir_all(&candidate_dir).expect("create candidate dir");
         fs::write(
             candidate_dir.join("report.csv"),
-            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\nCORE-000948,failed,DM,DM,1,USUBJID,bad,1,,,\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\nCORE-000948,failed,DM,DM,1,USUBJID,bad,1,,,,rule_id_hand_port\n",
         )
         .expect("write candidate report");
         let case = OpenRulesCase {
@@ -850,6 +866,58 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
         assert_eq!(scored[0].bucket, ScoreBucket::MixedSkippedAndIssues);
         assert_eq!(summary.mixed_skipped_and_issues, 1);
         assert!(summary.should_fail());
+    }
+
+    #[test]
+    fn scores_supported_match_with_candidate_execution_provenance() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-PROV/negative/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\nCORE-PROV,DM,1,USUBJID\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir.path().join("candidate/Published/CORE-PROV/negative/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\n\
+CORE-PROV,failed,DM,DM,1,USUBJID,bad,1,,,,native_engine\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-PROV".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-PROV"),
+            rule_path: dir.path().join("open/Published/CORE-PROV/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-PROV/negative/01/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].execution_provenance,
+            ExecutionProvenance::NativeEngine
+        );
+        assert_eq!(summary.native_engine_supported_match, 1);
+        assert_eq!(summary.native_engine_coverage, Some(1.0));
     }
 
     #[test]

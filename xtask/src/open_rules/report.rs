@@ -62,16 +62,8 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         ),
         format!("| Coverage | {} |", percent_or_na(summary.coverage)),
         format!(
-            "| Native engine supported accuracy | {} |",
-            percent_or_na(summary.native_engine_supported_accuracy)
-        ),
-        format!(
             "| Native engine coverage | {} |",
             percent_or_na(summary.native_engine_coverage)
-        ),
-        format!(
-            "| Rule-id hand-port supported accuracy | {} |",
-            percent_or_na(summary.rule_id_hand_port_supported_accuracy)
         ),
         format!(
             "| Rule-id hand-port coverage | {} |",
@@ -104,7 +96,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             summary.unknown_provenance_coverage,
         ),
         String::new(),
-        "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support. Native engine rows are official-oracle supported cases evaluated without known rule-id-specific execution rewrites. Rule-id hand-port rows are supported cases whose rule semantics are hand-ported or adjusted by CORE rule id before engine execution."
+        "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support."
             .to_owned(),
         String::new(),
         "## Gate".to_owned(),
@@ -309,12 +301,13 @@ fn push_case_section(
             .map(|reason| format!(": {reason}"))
             .unwrap_or_default();
         lines.push(format!(
-            "- `{}` {}/{} provenance={}{} official={} candidate={}",
+            "- `{}` {}/{}{}{}{} official={} candidate={}",
             case.rule_id,
             case.case_kind,
             case.case_id,
             provenance_text(case.execution_provenance),
             reason,
+            provenance_suffix(&case.execution_provenance),
             count_text(case.official_issue_count),
             count_text(case.candidate_issue_count)
         ));
@@ -344,6 +337,14 @@ fn count_text(value: Option<usize>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "n/a".to_owned())
+}
+
+fn provenance_suffix(provenance: &ExecutionProvenance) -> &'static str {
+    match provenance {
+        ExecutionProvenance::NativeEngine => " provenance=native_engine",
+        ExecutionProvenance::RuleIdHandPort => " provenance=rule_id_hand_port",
+        ExecutionProvenance::Unknown => "",
+    }
 }
 
 fn percent_or_na(value: Option<f64>) -> String {
@@ -387,8 +388,8 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
-                    bucket: ScoreBucket::SupportedMismatch,
                     execution_provenance: ExecutionProvenance::NativeEngine,
+                    bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
                     official_issue_count: Some(1),
@@ -404,8 +405,8 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::Unknown,
                     bucket: ScoreBucket::SkippedUnsupported,
-                    execution_provenance: ExecutionProvenance::NativeEngine,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
                     official_issue_count: Some(0),
@@ -421,8 +422,8 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "missing-results.csv".into(),
                     candidate_report_csv: "report.csv".into(),
-                    bucket: ScoreBucket::SupportedMatch,
                     execution_provenance: ExecutionProvenance::RuleIdHandPort,
+                    bucket: ScoreBucket::SupportedMatch,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
                             .to_owned(),
