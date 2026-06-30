@@ -102,9 +102,12 @@ Read these fields together:
 The synthetic oracle counters remain in the JSON schema for older scoreboard
 compatibility, but current scoring should leave them at zero.
 
-`summary.md` also includes a `Skipped Unsupported Reasons` section when skipped
-cases have `skipped_reason` values. Use that section as the first coverage
-triage list before promoting more cases into supported coverage.
+`summary.md` includes an `Execution Provenance` section. Read it before using
+aggregate supported accuracy as an engine-capability claim: native engine and
+rule-id hand-port support are intentionally reported separately. `summary.md`
+also includes a `Skipped Unsupported Reasons` section when skipped cases have
+`skipped_reason` values. Use that section as the first coverage triage list
+before promoting more cases into supported coverage.
 
 ## Metrics
 
@@ -134,6 +137,12 @@ Rule-id hand-port provenance is driven by
 Rust `matches!` list. Treat that manifest as an Open Rules oracle-harness
 compatibility policy file: entries should be reviewed like coverage exceptions,
 not like generic engine semantics.
+
+A supported case moving from `rule_id_hand_port` provenance to `native_engine`
+provenance is not counted as an automatic baseline improvement. The baseline
+command reports that transition as `review-required` so reviewers can confirm
+that the rule-specific execution path was actually retired or replaced by
+generic engine semantics.
 
 ## Normalization
 
@@ -179,7 +188,9 @@ state. The baseline command fails on regressions such as:
 
 Improvements to `supported_match` are allowed and printed as improvements.
 Supported matches moving from `rule_id_hand_port` provenance to
-`native_engine` provenance are also reported as improvements.
+`native_engine` provenance are reported as `review-required`, not automatic
+improvements, because manifest removal alone is not evidence that generic
+engine semantics replaced rule-specific behavior.
 Unknown provenance transitions are reported neutrally unless they also change
 the score bucket. Provenance-related differences include the old and new
 provenance values in the baseline report output.
