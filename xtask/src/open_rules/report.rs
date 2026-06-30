@@ -301,11 +301,10 @@ fn push_case_section(
             .map(|reason| format!(": {reason}"))
             .unwrap_or_default();
         lines.push(format!(
-            "- `{}` {}/{}{}{}{} official={} candidate={}",
+            "- `{}` {}/{}{}{} official={} candidate={}",
             case.rule_id,
             case.case_kind,
             case.case_id,
-            provenance_text(&case.execution_provenance),
             reason,
             provenance_suffix(&case.execution_provenance),
             count_text(case.official_issue_count),
@@ -313,24 +312,6 @@ fn push_case_section(
         ));
     }
     lines.push(String::new());
-}
-
-fn provenance_row(
-    label: &str,
-    matches: usize,
-    mismatches: usize,
-    accuracy: Option<f64>,
-    coverage: Option<f64>,
-) -> String {
-    format!(
-        "| {label} | {matches} | {mismatches} | {} | {} |",
-        percent_or_na(accuracy),
-        percent_or_na(coverage)
-    )
-}
-
-fn provenance_text(provenance: &ExecutionProvenance) -> &'static str {
-    provenance.as_str()
 }
 
 fn count_text(value: Option<usize>) -> String {
@@ -345,6 +326,20 @@ fn provenance_suffix(provenance: &ExecutionProvenance) -> &'static str {
         ExecutionProvenance::RuleIdHandPort => " provenance=rule_id_hand_port",
         ExecutionProvenance::Unknown => "",
     }
+}
+
+fn provenance_row(
+    label: &str,
+    matches: usize,
+    mismatches: usize,
+    accuracy: Option<f64>,
+    coverage: Option<f64>,
+) -> String {
+    format!(
+        "| {label} | {matches} | {mismatches} | {} | {} |",
+        percent_or_na(accuracy),
+        percent_or_na(coverage)
+    )
 }
 
 fn percent_or_na(value: Option<f64>) -> String {
@@ -456,6 +451,17 @@ mod tests {
             "Aggregate coverage includes both native engine and rule-id hand-port supported cases."
         ));
         assert!(markdown.contains("provenance=native_engine"));
+        assert!(markdown.contains(
+            "- `CORE-000005` negative/01 provenance=native_engine official=1 candidate=1"
+        ));
+        assert!(!markdown.contains("negative/01native_engine"));
+        assert!(!markdown.contains("positive/01rule_id_hand_port"));
+        for line in markdown
+            .lines()
+            .filter(|line| line.starts_with("- `CORE-000005`"))
+        {
+            assert_eq!(line.matches("provenance=").count(), 1);
+        }
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));
