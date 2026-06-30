@@ -1039,6 +1039,58 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
     }
 
     #[test]
+    fn scores_supported_match_with_candidate_execution_provenance() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-PROV/negative/01");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\nCORE-PROV,DM,1,USUBJID\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir.path().join("candidate/Published/CORE-PROV/negative/01");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq,execution_provenance\n\
+CORE-PROV,failed,DM,DM,1,USUBJID,bad,1,,,,native_engine\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-PROV".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-PROV"),
+            rule_path: dir.path().join("open/Published/CORE-PROV/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-PROV/negative/01/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(
+            scored[0].execution_provenance,
+            ExecutionProvenance::NativeEngine
+        );
+        assert_eq!(summary.native_engine_supported_match, 1);
+        assert_eq!(summary.native_engine_coverage, Some(1.0));
+    }
+
+    #[test]
     fn missing_official_empty_candidate_is_no_official_oracle() {
         let dir = tempdir().expect("tempdir");
         let case_dir = dir
