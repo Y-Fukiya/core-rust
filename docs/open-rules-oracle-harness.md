@@ -92,6 +92,10 @@ Read these fields together:
   `results.csv`.
 - `supported_mismatch`: official-oracle-backed cases where structural issue keys
   differ.
+- `native_engine_coverage`: share of all discovered cases covered by supported
+  native engine execution.
+- `rule_id_hand_port_coverage`: share of all discovered cases covered by
+  supported rule-id hand-port execution.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
 
@@ -108,6 +112,12 @@ triage list before promoting more cases into supported coverage.
 supported_accuracy = supported_match / (supported_match + supported_mismatch)
 coverage = (supported_match + supported_mismatch) / total_cases
 official_coverage = official_oracle_match / total_cases
+native_engine_coverage =
+  (native_engine_supported_match + native_engine_supported_mismatch) /
+  total_cases
+rule_id_hand_port_coverage =
+  (rule_id_hand_port_supported_match + rule_id_hand_port_supported_mismatch) /
+  total_cases
 ```
 
 Coverage can be low while supported accuracy is high. That means the roadmap is
@@ -115,6 +125,9 @@ large, not that supported behavior is wrong.
 
 `coverage` is now official-oracle-backed coverage because missing-official cases
 are excluded from the supported numerator.
+
+Aggregate `coverage` includes both native engine and rule-id hand-port supported
+cases. Use `native_engine_coverage` when describing generic engine support.
 
 ## Normalization
 
@@ -152,11 +165,18 @@ loaded as null rather than panicking.
 state. The baseline command fails on regressions such as:
 
 - `supported_match` becoming any other bucket.
+- `supported_match` staying matched but regressing from `native_engine`
+  provenance to `rule_id_hand_port` or `unknown` provenance.
 - new `supported_mismatch` cases.
 - new `harness_error` cases.
 - baseline cases missing from the current scoreboard.
 
 Improvements to `supported_match` are allowed and printed as improvements.
+Supported matches moving from `rule_id_hand_port` provenance to
+`native_engine` provenance are also reported as improvements.
+Unknown provenance transitions are reported neutrally unless they also change
+the score bucket. Provenance-related differences include the old and new
+provenance values in the baseline report output.
 
 The run-score command exits non-zero for correctness failures, harness failures,
 or unresolved official oracle gaps: `supported_mismatch > 0`,

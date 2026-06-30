@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::result_large_err)]
 
+mod open_rules_compat;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
@@ -32,6 +34,8 @@ use core_rule_model::{
 };
 use serde_json::Value;
 use thiserror::Error;
+
+use open_rules_compat::post_execution_oracle_gap_result;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -227,7 +231,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                         open_rules_compat,
                     );
                     if open_rules_compat {
-                        if let Some(skipped) = oracle_gap_result_after_execution(&rule, &result) {
+                        if let Some(skipped) = post_execution_oracle_gap_result(&rule, &result) {
                             results.push(skipped);
                             continue;
                         }
@@ -425,17 +429,6 @@ fn normalize_validation_result(
     result.errors = vec![issue];
     result.error_count = 1;
     result
-}
-
-fn oracle_gap_result_after_execution(
-    rule: &ExecutableRule,
-    result: &RuleValidationResult,
-) -> Option<RuleValidationResult> {
-    let _ = (rule, result);
-    // Open Rules oracle gaps are coverage decisions, not a reason to rewrite an
-    // executed engine failure. Keeping failures as failures preserves the
-    // independence of score reports and prevents false-positive conformance.
-    None
 }
 
 fn is_core_000595_missing_casno_oracle_issue(

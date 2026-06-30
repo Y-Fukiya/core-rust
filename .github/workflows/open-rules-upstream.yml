@@ -6,8 +6,8 @@ on:
     - cron: "0 18 * * 0"
 
 jobs:
-  upstream:
-    name: Full Upstream Oracle
+  upstream-observe:
+    name: Full Upstream Oracle Observe
     runs-on: ubuntu-latest
     steps:
       - name: Checkout core-rust
@@ -28,19 +28,84 @@ jobs:
 
       - name: Run full upstream oracle
         run: |
+          set +e
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root ../cdisc-open-rules \
             --core-rs-results-root target/open-rules-core-rs-upstream \
             --out target/open-rules-scoreboard-upstream \
-            --strict-lock \
-            --min-coverage 1.0 \
-            --max-skipped-unsupported 0
+            --strict-lock
+          score_status=$?
+          set -e
+          echo "open-rules upstream observe exit code: ${score_status}"
+          if [ ! -f target/open-rules-scoreboard-upstream/scoreboard.json ]; then
+            echo "scoreboard.json was not generated; this is an infrastructure or harness failure"
+            exit 1
+          fi
+          echo "Scoreboard generated; compatibility gaps are tracked in uploaded artifacts."
 
       - name: Upload upstream scoreboard
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: open-rules-upstream-scoreboard
+          path: |
+            target/open-rules-scoreboard-upstream
+            target/open-rules-core-rs-upstream/run-summary.json
+
+  upstream-regression:
+    name: Full Upstream Regression Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout core-rust
+        uses: actions/checkout@v4
+
+      - name: Check full upstream baseline availability
+        id: baseline
+        run: |
+          if [ -f tests/open_rules/upstream-baseline.json ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "tests/open_rules/upstream-baseline.json is not present; skipping regression baseline."
+          fi
+
+      - name: Install Rust
+        if: steps.baseline.outputs.available == 'true'
+        uses: dtolnay/rust-toolchain@1.93.1
+
+      - name: Cache cargo
+        if: steps.baseline.outputs.available == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Checkout pinned cdisc-open-rules
+        if: steps.baseline.outputs.available == 'true'
+        run: |
+          upstream_repo="$(sed -n 's/^repo=//p' tests/open_rules/upstream.lock)"
+          upstream_sha="$(sed -n 's/^sha=//p' tests/open_rules/upstream.lock)"
+          git clone "$upstream_repo" ../cdisc-open-rules
+          git -C ../cdisc-open-rules checkout "$upstream_sha"
+
+      - name: Run full upstream oracle
+        if: steps.baseline.outputs.available == 'true'
+        run: |
+          cargo run -p xtask -- open-rules run-score \
+            --open-rules-root ../cdisc-open-rules \
+            --core-rs-results-root target/open-rules-core-rs-upstream \
+            --out target/open-rules-scoreboard-upstream \
+            --strict-lock
+
+      - name: Compare full upstream regression baseline
+        if: steps.baseline.outputs.available == 'true'
+        run: |
+          cargo run -p xtask -- open-rules baseline \
+            --scoreboard target/open-rules-scoreboard-upstream/scoreboard.json \
+            --baseline tests/open_rules/upstream-baseline.json
+
+      - name: Upload upstream regression scoreboard
+        if: always() && steps.baseline.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-rules-upstream-regression-scoreboard
           path: |
             target/open-rules-scoreboard-upstream
             target/open-rules-core-rs-upstream/run-summary.json

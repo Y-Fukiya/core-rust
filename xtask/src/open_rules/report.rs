@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::open_rules::score::{ScoreBucket, Scoreboard};
+use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard};
 
 pub fn write_scoreboard(out_dir: &Path, scoreboard: &Scoreboard) -> Result<()> {
     fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
@@ -61,6 +61,43 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             percent_or_na(summary.supported_accuracy)
         ),
         format!("| Coverage | {} |", percent_or_na(summary.coverage)),
+        format!(
+            "| Native engine coverage | {} |",
+            percent_or_na(summary.native_engine_coverage)
+        ),
+        format!(
+            "| Rule-id hand-port coverage | {} |",
+            percent_or_na(summary.rule_id_hand_port_coverage)
+        ),
+        String::new(),
+        "## Execution Provenance".to_owned(),
+        String::new(),
+        "| Provenance | Supported match | Supported mismatch | Accuracy | Coverage |".to_owned(),
+        "|---|---:|---:|---:|---:|".to_owned(),
+        provenance_row(
+            "Native engine",
+            summary.native_engine_supported_match,
+            summary.native_engine_supported_mismatch,
+            summary.native_engine_supported_accuracy,
+            summary.native_engine_coverage,
+        ),
+        provenance_row(
+            "Rule-id hand-port",
+            summary.rule_id_hand_port_supported_match,
+            summary.rule_id_hand_port_supported_mismatch,
+            summary.rule_id_hand_port_supported_accuracy,
+            summary.rule_id_hand_port_coverage,
+        ),
+        provenance_row(
+            "Unknown",
+            summary.unknown_provenance_supported_match,
+            summary.unknown_provenance_supported_mismatch,
+            summary.unknown_provenance_supported_accuracy,
+            summary.unknown_provenance_coverage,
+        ),
+        String::new(),
+        "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support."
+            .to_owned(),
         String::new(),
         "## Gate".to_owned(),
         String::new(),
@@ -264,11 +301,12 @@ fn push_case_section(
             .map(|reason| format!(": {reason}"))
             .unwrap_or_default();
         lines.push(format!(
-            "- `{}` {}/{}{} official={} candidate={}",
+            "- `{}` {}/{}{}{} official={} candidate={}",
             case.rule_id,
             case.case_kind,
             case.case_id,
             reason,
+            provenance_suffix(&case.execution_provenance),
             count_text(case.official_issue_count),
             count_text(case.candidate_issue_count)
         ));
@@ -280,6 +318,28 @@ fn count_text(value: Option<usize>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "n/a".to_owned())
+}
+
+fn provenance_suffix(provenance: &ExecutionProvenance) -> &'static str {
+    match provenance {
+        ExecutionProvenance::NativeEngine => " provenance=native_engine",
+        ExecutionProvenance::RuleIdHandPort => " provenance=rule_id_hand_port",
+        ExecutionProvenance::Unknown => "",
+    }
+}
+
+fn provenance_row(
+    label: &str,
+    matches: usize,
+    mismatches: usize,
+    accuracy: Option<f64>,
+    coverage: Option<f64>,
+) -> String {
+    format!(
+        "| {label} | {matches} | {mismatches} | {} | {} |",
+        percent_or_na(accuracy),
+        percent_or_na(coverage)
+    )
 }
 
 fn percent_or_na(value: Option<f64>) -> String {
@@ -296,7 +356,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::open_rules::score::{ScoreBucket, ScoreSummary, Scoreboard, ScoredCase};
+    use crate::open_rules::score::{
+        ExecutionProvenance, ScoreBucket, ScoreSummary, Scoreboard, ScoredCase,
+    };
     use crate::open_rules::upstream::UpstreamInfo;
 
     use super::*;
@@ -321,6 +383,7 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::NativeEngine,
                     bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
@@ -337,6 +400,7 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::Unknown,
                     bucket: ScoreBucket::SkippedUnsupported,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
@@ -353,6 +417,7 @@ mod tests {
                     case_dir: "case".into(),
                     official_results_csv: "missing-results.csv".into(),
                     candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::RuleIdHandPort,
                     bucket: ScoreBucket::SupportedMatch,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
@@ -379,6 +444,13 @@ mod tests {
         assert!(markdown.contains("| Synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
+        assert!(markdown.contains("## Execution Provenance"));
+        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 33.33% |"));
+        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 33.33% |"));
+        assert!(markdown.contains(
+            "Aggregate coverage includes both native engine and rule-id hand-port supported cases."
+        ));
+        assert!(markdown.contains("provenance=native_engine"));
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));
