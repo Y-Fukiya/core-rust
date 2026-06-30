@@ -3,6 +3,8 @@
 
 mod open_rules_compat;
 
+pub use open_rules_compat::rule_id_uses_hand_port;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
@@ -90,45 +92,6 @@ pub struct ValidateRequest {
 pub struct ValidateOutcome {
     pub results: Vec<RuleValidationResult>,
     pub reports: Option<WrittenReports>,
-}
-
-/// Returns true when `core-api` applies rule-id-specific execution semantics
-/// instead of relying only on the generic normalized condition tree.
-///
-/// This is intentionally scoped to execution semantics used by
-/// `prepare_rule_for_execution`. Open Rules scoring uses it as provenance so
-/// oracle matches can distinguish native engine coverage from hand-ported rule
-/// semantics.
-pub fn rule_uses_rule_id_hand_port(rule: &ExecutableRule) -> bool {
-    is_usdm_planned_number_jsonata_rule(rule)
-        || is_usdm_study_role_jsonata_rule(rule)
-        || is_usdm_study_design_jsonata_rule(rule)
-        || is_usdm_study_version_jsonata_rule(rule)
-        || is_usdm_activity_jsonata_rule(rule)
-        || is_usdm_duration_jsonata_rule(rule)
-        || is_usdm_range_jsonata_rule(rule)
-        || is_usdm_person_name_jsonata_rule(rule)
-        || is_usdm_simple_recursive_jsonata_rule(rule)
-        || is_usdm_administrable_product_jsonata_rule(rule)
-        || is_usdm_administration_jsonata_rule(rule)
-        || is_usdm_strength_jsonata_rule(rule)
-        || is_usdm_reference_integrity_jsonata_rule(rule)
-        || is_usdm_planned_sex_jsonata_rule(rule)
-        || is_usdm_timeline_jsonata_rule(rule)
-        || is_usdm_scheduled_instance_jsonata_rule(rule)
-        || is_usdm_governance_date_jsonata_rule(rule)
-        || is_usdm_document_content_reference_jsonata_rule(rule)
-        || is_usdm_identifier_jsonata_rule(rule)
-        || is_usdm_object_jsonata_rule(rule)
-        || is_usdm_geographic_scope_jsonata_rule(rule)
-        || is_usdm_syntax_template_text_jsonata_rule(rule)
-        || is_usdm_narrative_content_jsonata_rule(rule)
-        || is_usdm_narrative_content_item_jsonata_rule(rule)
-        || is_usdm_abbreviation_jsonata_rule(rule)
-        || matches!(
-            rule.core_id.as_str(),
-            "CORE-000272" | "CORE-000361" | "CORE-000583"
-        )
 }
 
 #[derive(Debug, Clone, PartialEq)]
