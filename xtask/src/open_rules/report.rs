@@ -305,7 +305,7 @@ fn push_case_section(
             case.rule_id,
             case.case_kind,
             case.case_id,
-            provenance_text(case.execution_provenance),
+            provenance_text(case.execution_provenance.clone()),
             reason,
             provenance_suffix(&case.execution_provenance),
             count_text(case.official_issue_count),

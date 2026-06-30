@@ -276,8 +276,8 @@ fn difference(
         case_key,
         baseline_bucket: baseline_case.map(|case| case.bucket.clone()),
         current_bucket: current_case.map(|case| case.bucket.clone()),
-        baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance),
-        current_execution_provenance: current_case.map(|case| case.execution_provenance),
+        baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance.clone()),
+        current_execution_provenance: current_case.map(|case| case.execution_provenance.clone()),
         message: message.to_owned(),
     }
 }
