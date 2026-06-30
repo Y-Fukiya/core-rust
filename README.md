@@ -117,6 +117,16 @@ Show CLI help:
 cargo run -p core-cli -- validate --help
 ```
 
+CLI exit behavior:
+
+| Command mode | Exit behavior |
+|---|---|
+| default `validate` | Exits 0 when the validation run and report writing complete, even if the report contains failed or skipped validation results. |
+| `validate --fail-on failed` | Exits non-zero when any rule result has `execution_status = failed`. |
+| `validate --fail-on skipped` | Exits non-zero when any rule result has `execution_status = skipped`. |
+| `validate --fail-on failed,skipped` | Exits non-zero for either failed or skipped results. |
+| `validate --strict` | Equivalent to failing on both failed and skipped results. |
+
 ## CDISC Rulekit Pilot
 
 The Python `cdisc_rulekit` package provides a Phase 1 read-only pipeline for

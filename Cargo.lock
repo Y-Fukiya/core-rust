@@ -534,6 +534,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "core-api",
+ "core-engine",
  "core-report",
  "predicates",
  "tempfile",

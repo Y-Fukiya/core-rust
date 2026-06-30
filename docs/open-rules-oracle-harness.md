@@ -245,6 +245,13 @@ also runs weekly. That workflow checks out the pinned SHA from
 `tests/open_rules/upstream.lock`, runs `xtask open-rules run-score` with
 `--strict-lock`, and uploads the upstream scoreboard artifacts.
 
+The committed full upstream baseline is a default-engine regression baseline.
+`ValidateRequest::open_rules_oracle_compat` remains an explicit API/test-only
+compatibility switch; the upstream workflow does not silently enable it. Treat
+`tests/open_rules/upstream-baseline.json` as a "do not get worse" guard for the
+default engine plus tracked hand-port provenance, not as a full conformance
+certificate.
+
 ## Full Upstream Workflow
 
 Use a separately checked out and reviewed `cdisc-open-rules` tree for local

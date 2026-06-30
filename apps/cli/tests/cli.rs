@@ -113,6 +113,69 @@ fn validate_writes_skipped_result_for_missing_requested_rule() {
 }
 
 #[test]
+fn validate_strict_fails_when_result_is_skipped() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    let output_dir = dir.path().join("out");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_domain_rule(&rules_dir);
+    let dataset_path = write_domain_dataset(&data_dir, "AE");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--rules",
+        "CORE-MISSING",
+        "--strict",
+        "-o",
+        output_dir.to_str().expect("output path"),
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("validation gate failed"))
+    .stderr(predicate::str::contains("1 skipped result"));
+
+    assert!(output_dir.join("report.json").is_file());
+}
+
+#[test]
+fn validate_fail_on_failed_fails_when_result_is_failed() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    let output_dir = dir.path().join("out");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_domain_rule(&rules_dir);
+    let dataset_path = write_domain_dataset(&data_dir, "CM");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        rules_dir.to_str().expect("rules dir path"),
+        "--dataset-path",
+        dataset_path.to_str().expect("dataset path"),
+        "--fail-on",
+        "failed",
+        "--output",
+        output_dir.to_str().expect("output path"),
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("validation gate failed"))
+    .stderr(predicate::str::contains("1 failed result"));
+
+    assert!(output_dir.join("report.json").is_file());
+}
+
+#[test]
 fn validate_honors_json_output_format() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -273,4 +336,46 @@ fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("tests/fixtures")
+}
+
+fn write_domain_rule(rules_dir: &Path) {
+    fs::write(
+        rules_dir.join("CORE-TEST-0001.json"),
+        r#"{
+  "Core": { "Id": "CORE-TEST-0001", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "AE"
+  },
+  "Outcome": { "Message": "DOMAIN must be AE" }
+}"#,
+    )
+    .expect("write rule");
+}
+
+fn write_domain_dataset(data_dir: &Path, domain: &str) -> PathBuf {
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        format!(
+            r#"{{
+  "datasets": [
+    {{
+      "filename": "{domain_lower}.xpt",
+      "domain": "{domain}",
+      "records": {{
+        "DOMAIN": ["{domain}"]
+      }}
+    }}
+  ]
+}}"#,
+            domain_lower = domain.to_ascii_lowercase(),
+        ),
+    )
+    .expect("write data");
+    dataset_path
 }

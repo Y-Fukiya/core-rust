@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use core_api::{run_validation, ValidateRequest};
+use core_engine::ExecutionStatus;
 use core_report::ReportOutputFormat;
 
 #[derive(Debug, Parser)]
@@ -63,6 +64,14 @@ struct ValidateArgs {
 
     #[arg(long, value_enum, value_name = "disabled|info|debug|warn|error")]
     log_level: Option<LogLevel>,
+
+    /// Exit non-zero when validation produces failed or skipped results.
+    #[arg(long)]
+    strict: bool,
+
+    /// Exit non-zero for selected validation statuses. Accepts comma-separated values.
+    #[arg(long, value_enum, value_delimiter = ',', num_args = 1.., value_name = "failed|skipped")]
+    fail_on: Vec<FailOnStatus>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -78,6 +87,12 @@ enum LogLevel {
     Debug,
     Warn,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum FailOnStatus {
+    Failed,
+    Skipped,
 }
 
 fn main() -> Result<()> {
@@ -133,6 +148,24 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         if let Some(log) = reports.log {
             println!("wrote {}", log.display());
         }
+    }
+
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .count();
+    let skipped = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Skipped)
+        .count();
+    let fail_on_failed = args.strict || args.fail_on.contains(&FailOnStatus::Failed);
+    let fail_on_skipped = args.strict || args.fail_on.contains(&FailOnStatus::Skipped);
+    if (fail_on_failed && failed > 0) || (fail_on_skipped && skipped > 0) {
+        anyhow::bail!(
+            "validation gate failed: {failed} failed result(s), {skipped} skipped result(s)"
+        );
     }
 
     Ok(())

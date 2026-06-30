@@ -20,6 +20,53 @@ const ORACLE_GAP_RULE_ID_HEADER: &str = "rule_id,category,reason,owner,evidence,
 const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 425;
 const ORACLE_GAP_SCOPE: &str = "open-rules-oracle-harness";
 #[cfg(test)]
+const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["usdm_match_dataset"];
+#[cfg(test)]
+const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
+    "dataset_presence",
+    "date_operator",
+    "defer_date_operator",
+    "defer_distinct_operation",
+    "defer_domain_placeholder_column_ref",
+    "defer_domain_presence",
+    "defer_duplicate_match_dataset",
+    "defer_dy_operation",
+    "defer_empty_non_empty",
+    "defer_entity_column_ref",
+    "defer_etcd_length",
+    "defer_inconsistent_across_dataset",
+    "defer_multi_base_match_dataset",
+    "defer_not_unique_relationship",
+    "defer_positive_zero_probe",
+    "defer_relrec_or_supp_match_dataset",
+    "defer_sort_operator",
+    "defer_unique_set",
+    "defer_variable_metadata",
+    "distinct_operation",
+    "domain_placeholder_column_ref_comparator",
+    "domain_presence",
+    "duplicate_match_dataset",
+    "dy_operation",
+    "empty_non_empty",
+    "entity_literal",
+    "inconsistent_across_dataset",
+    "missing_column",
+    "missing_condition_columns_as_null",
+    "multi_base_match_dataset",
+    "not_unique_relationship",
+    "operation",
+    "relrec_or_supp_match_dataset",
+    "required_value_metadata",
+    "scope_wide_reference_distinct",
+    "sort_operator",
+    "supported_entity_match_column_ref",
+    "supported_reference_distinct",
+    "unique_set",
+    "unsafe_positive_zero_probe",
+    "usdm_match_dataset",
+    "variable_metadata",
+];
+#[cfg(test)]
 const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
     include_str!("open_rules_compat/rule_specific_semantics.csv");
 #[cfg(test)]
@@ -415,7 +462,8 @@ pub(crate) fn post_execution_oracle_gap_result(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::{Path, PathBuf};
 
     use super::*;
 
@@ -546,6 +594,46 @@ CORE-000095,rule_id_hand_port,core-api,open-rules-oracle-harness\n",
     }
 
     #[test]
+    fn oracle_gap_categories_are_declared_and_used_consistently() {
+        let manifest_categories = oracle_gap_rule_ids()
+            .map(|(category, _)| category)
+            .collect::<BTreeSet<_>>();
+        let empty_categories = EMPTY_ORACLE_GAP_CATEGORIES
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let code_categories = ORACLE_GAP_CATEGORIES_USED_BY_CODE
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let declared_categories = manifest_categories
+            .union(&empty_categories)
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let missing_from_manifest_or_empty_declaration = code_categories
+            .difference(&declared_categories)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            missing_from_manifest_or_empty_declaration.is_empty(),
+            "oracle-gap categories used by code are not declared: {missing_from_manifest_or_empty_declaration:?}"
+        );
+        let unused_manifest_categories = manifest_categories
+            .difference(&code_categories)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            unused_manifest_categories.is_empty(),
+            "oracle-gap manifest categories are not used by code: {unused_manifest_categories:?}"
+        );
+        assert!(
+            !manifest_categories.contains("usdm_match_dataset")
+                && empty_categories.contains("usdm_match_dataset"),
+            "usdm_match_dataset must be explicitly declared as an empty oracle-gap category"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "invalid oracle-gap manifest row")]
     fn oracle_gap_manifest_rejects_wrong_column_count() {
         parse_oracle_gap_manifest_rule_id((
@@ -614,19 +702,73 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
 
     #[test]
     fn rule_specific_semantics_manifest_covers_core_api_hard_coded_rule_ids() {
-        let mut hard_coded = core_rule_ids_in(include_str!("lib.rs"));
-        hard_coded.extend(core_rule_ids_in(include_str!("engine_semantics.rs")));
-        hard_coded.extend(core_rule_ids_in(include_str!("standard_filter.rs")));
-        hard_coded.extend(core_rule_ids_in(include_str!("usdm_jsonata.rs")));
-        let classified = rule_specific_semantics_rule_ids().collect::<BTreeSet<_>>();
-        let missing = hard_coded
-            .difference(&classified)
-            .copied()
-            .collect::<Vec<_>>();
+        let hard_coded_by_file = production_core_api_source_rule_ids();
+        let classified = rule_specific_semantics_rule_ids()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let mut missing = Vec::new();
+        for (path, rule_ids) in hard_coded_by_file {
+            for rule_id in rule_ids {
+                if !classified.contains(&rule_id) {
+                    missing.push(format!("{path}:{rule_id}"));
+                }
+            }
+        }
         assert!(
             missing.is_empty(),
             "rule-specific semantics manifest is missing {missing:?}"
         );
+    }
+
+    fn production_core_api_source_rule_ids() -> BTreeMap<String, BTreeSet<String>> {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect_rust_sources(&src, &mut files);
+        files
+            .into_iter()
+            .filter_map(|path| {
+                let source = std::fs::read_to_string(&path).expect("read core-api source");
+                let production_source = source
+                    .split("\n#[cfg(test)]")
+                    .next()
+                    .unwrap_or(source.as_str());
+                let rule_ids = core_rule_ids_in(production_source)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<BTreeSet<_>>();
+                (!rule_ids.is_empty()).then(|| (relative_source_path(&src, &path), rule_ids))
+            })
+            .collect()
+    }
+
+    fn collect_rust_sources(dir: &Path, files: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read core-api source dir") {
+            let path = entry.expect("read core-api source entry").path();
+            if path.is_dir() {
+                if path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy() == "tests")
+                {
+                    continue;
+                }
+                collect_rust_sources(&path, files);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension.to_string_lossy() == "rs")
+                && path
+                    .file_name()
+                    .is_none_or(|name| name.to_string_lossy() != "tests.rs")
+            {
+                files.push(path);
+            }
+        }
+    }
+
+    fn relative_source_path(root: &Path, path: &Path) -> String {
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
     }
 
     #[test]

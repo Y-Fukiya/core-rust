@@ -1,4 +1,4 @@
-# Open Rules Upstream Run 2026-06-19
+# Open Rules Upstream Baseline
 
 ## Inputs
 
@@ -18,33 +18,39 @@ cargo run -p xtask -- open-rules run-score \
 The archive has no `.git` metadata, so the run reports the expected SHA from
 `tests/open_rules/upstream.lock` but cannot report an observed checkout SHA.
 
-## Result After Phase 6 Classification Fixes
+## Current Committed Regression Baseline
+
+These numbers describe the committed `tests/open_rules/upstream-baseline.json`.
+They are a regression baseline for the current engine and oracle harness, not a
+claim of full CDISC Open Rules conformance.
 
 | Metric | Value |
 |---|---:|
 | Total cases | 2298 |
-| Supported match | 68 |
-| Supported mismatch | 0 |
-| Skipped unsupported | 2046 |
-| No official oracle | 184 |
+| Supported match | 1793 |
+| Supported mismatch | 254 |
+| Skipped unsupported | 63 |
+| Mixed skipped/issues | 2 |
+| No official oracle | 186 |
 | Harness error | 0 |
-| Supported accuracy | 100.00% |
-| Coverage | 2.96% |
+| Supported accuracy | 87.59% |
+| Aggregate coverage | 89.08% |
+| Native engine coverage | 75.02% |
+| Rule-id hand-port coverage | 14.06% |
 
-Phase 6 deliberately tightens the definition of "supported" to cases that
-core-rust can currently compare against the official oracle without known
-semantic gaps. This moves unsupported JSONata, missing-oracle cases, dataset
-presence semantics, and column-reference comparator semantics out of
-`harness_error`/`supported_mismatch` and into explicit skipped buckets.
+The aggregate coverage includes both native engine execution and explicitly
+tracked Open Rules rule-id hand ports. Read it together with
+`native_engine_coverage`; a hand-port match is useful regression coverage, but
+it is not evidence that generic engine semantics fully cover that rule family.
 
-The Phase 5-to-Phase 6 change moved the scoreboard from:
+The baseline intentionally preserves known gaps:
 
-- `supported_match`: 245 -> 68
-- `supported_mismatch`: 36 -> 0
-- `skipped_unsupported`: 1559 -> 2046
-- `harness_error`: 458 -> 0
-- `supported_accuracy`: 87.19% -> 100.00%
-- `coverage`: 12.23% -> 2.96%
+- `supported_mismatch` cases remain correctness gaps to reduce.
+- `no_official_oracle` cases are excluded from supported accuracy because the
+  upstream case has no official `results.csv`.
+- `skipped_unsupported` cases are coverage gaps, not correctness matches.
+- `mixed_skipped_and_issues` is a failing bucket because skipped rows and issue
+  rows in one candidate report cannot be treated as green.
 
 ## Fixes Applied
 
@@ -91,17 +97,18 @@ now supported-match.
 
 ## Remaining Mismatch Hotspots
 
-There are no remaining `supported_mismatch` cases in the Phase 6 scoreboard.
-The next precision work is to re-promote skipped coverage buckets into
-supported coverage once their semantics are implemented and verified against
-the official oracle.
+There are 254 `supported_mismatch` cases in the committed upstream baseline.
+They are the next source of native engine precision work. Baseline comparison
+is intended to prevent these known gaps from increasing and to flag
+same-bucket issue-count regressions even when the bucket name stays
+`supported_mismatch`.
 
 ## Harness Error Split
 
 | Error type | Count |
 |---|---:|
 | Missing candidate report | 0 |
-| Missing official results classified as `no_official_oracle` | 184 |
+| Missing official results classified as `no_official_oracle` | 186 |
 | Harness error | 0 |
 
 ## Skipped Unsupported Split
@@ -110,25 +117,21 @@ These are case counts after excluding `no_official_oracle` cases.
 
 | Skipped reason | Cases |
 |---|---:|
-| `unsupported_operator` | 1295 |
-| `operations_not_supported` | 348 |
-| `unsupported_rule_type` | 296 |
-| `evaluation_error` | 47 |
-| `standard_mismatch` | 44 |
-| `dataset_join_not_supported` | 16 |
+| `evaluation_error` | 31 |
+| `dataset_join_not_supported` | 14 |
+| `operations_not_supported` | 10 |
+| `oracle_semantics_gap` | 6 |
+| `unsupported_rule_type` | 2 |
 
 ## Next Precision Work
 
-The next precision pass should raise coverage while keeping
-`supported_mismatch = 0`, starting with:
+The next precision pass should reduce `supported_mismatch` while keeping
+`harness_error = 0`, starting with:
 
-- `dataset_join_not_supported` first because it is the smallest bucket at 16
+- `dataset_join_not_supported` first because it is a small bucket at 14
   cases and can be isolated behind join-specific fixtures.
-- `standard_mismatch` next, after deciding whether Open Rules `.env`
-  product/version metadata or rule metadata should be the source of truth for
-  those 44 cases.
 - `evaluation_error` after adding regression fixtures for the representative
   evaluation failure classes.
-- `unsupported_rule_type`, `operations_not_supported`, and
-  `unsupported_operator` last, because those buckets contain broad rule-model
-  and JSONata semantics rather than one small harness gap.
+- `operations_not_supported`, `oracle_semantics_gap`, and
+  `unsupported_rule_type` last, because those buckets contain broader
+  rule-model and oracle-semantics decisions rather than one small harness gap.
