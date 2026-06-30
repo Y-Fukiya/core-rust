@@ -66,34 +66,45 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             percent_or_na(summary.native_engine_supported_accuracy)
         ),
         format!(
+            "| Native engine coverage | {} |",
+            percent_or_na(summary.native_engine_coverage)
+        ),
+        format!(
             "| Rule-id hand-port supported accuracy | {} |",
             percent_or_na(summary.rule_id_hand_port_supported_accuracy)
+        ),
+        format!(
+            "| Rule-id hand-port coverage | {} |",
+            percent_or_na(summary.rule_id_hand_port_coverage)
         ),
         String::new(),
         "## Execution Provenance".to_owned(),
         String::new(),
-        "| Provenance | Supported match | Supported mismatch | Accuracy |".to_owned(),
-        "|---|---:|---:|---:|".to_owned(),
+        "| Provenance | Supported match | Supported mismatch | Accuracy | Coverage |".to_owned(),
+        "|---|---:|---:|---:|---:|".to_owned(),
         provenance_row(
             "Native engine",
             summary.native_engine_supported_match,
             summary.native_engine_supported_mismatch,
             summary.native_engine_supported_accuracy,
+            summary.native_engine_coverage,
         ),
         provenance_row(
             "Rule-id hand-port",
             summary.rule_id_hand_port_supported_match,
             summary.rule_id_hand_port_supported_mismatch,
             summary.rule_id_hand_port_supported_accuracy,
+            summary.rule_id_hand_port_coverage,
         ),
         provenance_row(
             "Unknown",
             summary.unknown_provenance_supported_match,
             summary.unknown_provenance_supported_mismatch,
             summary.unknown_provenance_supported_accuracy,
+            summary.unknown_provenance_coverage,
         ),
         String::new(),
-        "Native engine rows are official-oracle supported cases evaluated without known rule-id-specific execution rewrites. Rule-id hand-port rows are supported cases whose rule semantics are hand-ported or adjusted by CORE rule id before engine execution."
+        "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support. Native engine rows are official-oracle supported cases evaluated without known rule-id-specific execution rewrites. Rule-id hand-port rows are supported cases whose rule semantics are hand-ported or adjusted by CORE rule id before engine execution."
             .to_owned(),
         String::new(),
         "## Gate".to_owned(),
@@ -311,10 +322,17 @@ fn push_case_section(
     lines.push(String::new());
 }
 
-fn provenance_row(label: &str, matches: usize, mismatches: usize, accuracy: Option<f64>) -> String {
+fn provenance_row(
+    label: &str,
+    matches: usize,
+    mismatches: usize,
+    accuracy: Option<f64>,
+    coverage: Option<f64>,
+) -> String {
     format!(
-        "| {label} | {matches} | {mismatches} | {} |",
-        percent_or_na(accuracy)
+        "| {label} | {matches} | {mismatches} | {} | {} |",
+        percent_or_na(accuracy),
+        percent_or_na(coverage)
     )
 }
 
@@ -431,8 +449,11 @@ mod tests {
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
         assert!(markdown.contains("## Execution Provenance"));
-        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% |"));
-        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% |"));
+        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 33.33% |"));
+        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 33.33% |"));
+        assert!(markdown.contains(
+            "Aggregate coverage includes both native engine and rule-id hand-port supported cases."
+        ));
         assert!(markdown.contains("provenance=native_engine"));
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
