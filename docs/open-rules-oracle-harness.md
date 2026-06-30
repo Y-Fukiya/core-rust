@@ -98,15 +98,6 @@ Read these fields together:
   supported rule-id hand-port execution.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
-- `native_engine_supported_accuracy`: accuracy for supported cases evaluated
-  without known rule-id-specific execution rewrites.
-- `native_engine_coverage`: share of all discovered cases covered by native
-  engine supported cases.
-- `rule_id_hand_port_supported_accuracy`: accuracy for supported cases whose
-  executable semantics are hand-ported or adjusted by CORE rule id before
-  engine execution.
-- `rule_id_hand_port_coverage`: share of all discovered cases covered by
-  rule-id hand-port supported cases.
 
 The synthetic oracle counters remain in the JSON schema for older scoreboard
 compatibility, but current scoring should leave them at zero.
@@ -114,16 +105,6 @@ compatibility, but current scoring should leave them at zero.
 `summary.md` also includes a `Skipped Unsupported Reasons` section when skipped
 cases have `skipped_reason` values. Use that section as the first coverage
 triage list before promoting more cases into supported coverage.
-
-`summary.md` also includes an `Execution Provenance` section. Use it to keep
-native operator-engine coverage separate from rule-id hand ports. A full
-`supported_accuracy` claim is useful for regression tracking, but it should not
-be presented as pure generic engine capability unless the native-engine
-provenance counters support that claim.
-
-Aggregate `coverage` includes both native engine and rule-id hand-port
-supported cases. Use `native_engine_coverage` when describing generic engine
-support.
 
 ## Metrics
 
@@ -147,6 +128,12 @@ are excluded from the supported numerator.
 
 Aggregate `coverage` includes both native engine and rule-id hand-port supported
 cases. Use `native_engine_coverage` when describing generic engine support.
+
+Rule-id hand-port provenance is driven by
+`crates/core-api/src/open_rules_compat/hand_port_rule_ids.csv`, not by an inline
+Rust `matches!` list. Treat that manifest as an Open Rules oracle-harness
+compatibility policy file: entries should be reviewed like coverage exceptions,
+not like generic engine semantics.
 
 ## Normalization
 
