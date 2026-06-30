@@ -11,7 +11,10 @@ use core_report::ReportOutputFormat;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
-use crate::open_rules::score::{relative_candidate_report_path, ScoreArgs};
+use crate::open_rules::score::{
+    execution_provenance_for_rule_id, relative_candidate_report_path, ExecutionProvenance,
+    ScoreArgs,
+};
 use crate::open_rules::upstream::{ensure_strict_lock_matches, load_upstream_info};
 
 #[derive(Debug, Clone, Parser)]
@@ -164,15 +167,60 @@ fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
         )
     })?;
 
-    if outcome
-        .reports
-        .and_then(|reports| reports.csv)
-        .is_some_and(|path| path.is_file())
-    {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("candidate report.csv was not written"))
+    let Some(report_csv) = outcome.reports.and_then(|reports| reports.csv) else {
+        return Err(anyhow::anyhow!("candidate report.csv was not written"));
+    };
+    if !report_csv.is_file() {
+        return Err(anyhow::anyhow!("candidate report.csv was not written"));
     }
+
+    annotate_candidate_report_provenance(
+        &report_csv,
+        execution_provenance_for_rule_id(&case.rule_id),
+    )
+}
+
+fn annotate_candidate_report_provenance(
+    report_csv: &Path,
+    provenance: ExecutionProvenance,
+) -> Result<()> {
+    let source =
+        fs::read_to_string(report_csv).with_context(|| format!("read {}", report_csv.display()))?;
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(source.as_bytes());
+    let headers = reader
+        .headers()
+        .with_context(|| format!("read CSV headers {}", report_csv.display()))?
+        .clone();
+    if headers
+        .iter()
+        .any(|header| header.trim().eq_ignore_ascii_case("execution_provenance"))
+    {
+        return Ok(());
+    }
+
+    let mut output = Vec::new();
+    {
+        let mut writer = csv::Writer::from_writer(&mut output);
+        let mut annotated_headers = headers.clone();
+        annotated_headers.push_field("execution_provenance");
+        writer
+            .write_record(&annotated_headers)
+            .with_context(|| format!("write CSV headers {}", report_csv.display()))?;
+        for record in reader.records() {
+            let mut record =
+                record.with_context(|| format!("read CSV record {}", report_csv.display()))?;
+            record.push_field(provenance.as_str());
+            writer
+                .write_record(&record)
+                .with_context(|| format!("write CSV record {}", report_csv.display()))?;
+        }
+        writer
+            .flush()
+            .with_context(|| format!("flush CSV {}", report_csv.display()))?;
+    }
+    fs::write(report_csv, output).with_context(|| format!("write {}", report_csv.display()))
 }
 
 fn standard_filter_from_env(env: &BTreeMap<String, String>) -> (Option<String>, Option<String>) {
@@ -215,14 +263,20 @@ mod tests {
         assert_eq!(summary.total_cases, 2);
         assert_eq!(summary.succeeded, 2);
         assert!(summary.errors.is_empty());
-        assert!(candidate_root
+        let positive_report = candidate_root
             .path()
-            .join("Published/CORE-OPEN-0001/positive/01/report.csv")
-            .is_file());
-        assert!(candidate_root
+            .join("Published/CORE-OPEN-0001/positive/01/report.csv");
+        let negative_report = candidate_root
             .path()
-            .join("Published/CORE-OPEN-0001/negative/01/report.csv")
-            .is_file());
+            .join("Published/CORE-OPEN-0001/negative/01/report.csv");
+        assert!(positive_report.is_file());
+        assert!(negative_report.is_file());
+        let report_csv = std::fs::read_to_string(&negative_report).expect("read report csv");
+        assert!(report_csv
+            .lines()
+            .next()
+            .is_some_and(|header| header.contains("execution_provenance")));
+        assert!(report_csv.contains("native_engine"));
         let run_summary = std::fs::read_to_string(candidate_root.path().join("run-summary.json"))
             .expect("read run summary");
         assert!(run_summary.contains("\"total_cases\": 2"));
@@ -330,5 +384,7 @@ mod tests {
             .expect("read scoreboard");
         assert!(scoreboard.contains("\"total_cases\": 2"));
         assert!(scoreboard.contains("\"supported_match\": 2"));
+        assert!(scoreboard.contains("\"native_engine_supported_match\": 2"));
+        assert!(scoreboard.contains("\"unknown_provenance_supported_match\": 0"));
     }
 }
