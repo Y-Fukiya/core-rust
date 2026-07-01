@@ -498,7 +498,7 @@ fn normalize_validation_result(
                     .and_then(Value::as_u64)
                     .unwrap_or(1)
                     .max(1) as usize;
-                std::iter::repeat(issue).take(repeat).collect::<Vec<_>>()
+                std::iter::repeat_n(issue, repeat).collect::<Vec<_>>()
             })
             .collect();
         result.error_count = result.errors.len();
@@ -522,7 +522,7 @@ fn normalize_validation_result(
                     .and_then(Value::as_u64)
                     .unwrap_or(1)
                     .max(1) as usize;
-                std::iter::repeat(issue).take(repeat).collect::<Vec<_>>()
+                std::iter::repeat_n(issue, repeat).collect::<Vec<_>>()
             })
             .collect();
         result.error_count = result.errors.len();
@@ -1547,9 +1547,7 @@ fn core_000884_ts_age_parameter_count_result(
         return None;
     }
 
-    let Some(ts) = find_dataset(datasets, "TS") else {
-        return None;
-    };
+    let ts = find_dataset(datasets, "TS")?;
     let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
     let age_count = ts_parameter_count(ts, "AGE");
     let agetxt_count = ts_parameter_count(ts, "AGETXT");
