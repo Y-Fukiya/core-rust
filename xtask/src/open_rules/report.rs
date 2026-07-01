@@ -474,6 +474,11 @@ mod tests {
                     skipped_reasons: Vec::new(),
                     official_issue_count: Some(1),
                     candidate_issue_count: Some(1),
+                    missing_count: Some(0),
+                    extra_count: Some(0),
+                    issue_fingerprint_hash: Some(
+                        crate::open_rules::score::issue_fingerprint_hash(&[], &[]),
+                    ),
                     missing: Vec::new(),
                     extra: Vec::new(),
                 },
