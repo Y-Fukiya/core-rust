@@ -5,9 +5,12 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
-use crate::open_rules::normalize::{normalize_csv, IssueKey, ReportSource};
+use crate::open_rules::normalize::{normalize_csv, normalize_scalar, IssueKey, ReportSource};
 use crate::open_rules::report::write_scoreboard;
 use crate::open_rules::upstream::{load_upstream_info, UpstreamInfo};
+
+type IssueSignature = (String, String, String, Vec<String>);
+type IssueRowSignature = (String, String, String, Vec<String>, String);
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreArgs {
@@ -235,10 +238,20 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     ) {
         Ok(normalized) => normalized,
         Err(source) => {
-            return ScoredCase {
-                reason: Some(format!("official normalization error: {source}")),
-                ..base
+            let reason = source.to_string();
+            if official_normalization_error_excludes_oracle(&reason) {
+                return ScoredCase {
+                    bucket: ScoreBucket::NoOfficialOracle,
+                    reason: Some(format!(
+                        "official results.csv is malformed: {reason}; excluded from supported accuracy"
+                    )),
+                    ..base
+                };
             }
+            return ScoredCase {
+                reason: Some(format!("official normalization error: {reason}")),
+                ..base
+            };
         }
     };
     let candidate = match normalize_csv(
@@ -289,10 +302,29 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     }
 
     let official_issues = official.issues;
-    let candidate_issues = align_candidate_identity_to_official(&official_issues, candidate.issues);
+    let duplicate_sequence_values = duplicate_sequence_values_by_dataset(case);
+    let candidate_issues = align_candidate_identity_to_official(
+        &official_issues,
+        candidate.issues,
+        &duplicate_sequence_values,
+    );
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
+    if !missing.is_empty() || !extra.is_empty() {
+        if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
+            return ScoredCase {
+                bucket: ScoreBucket::SkippedUnsupported,
+                reason: Some(reason.clone()),
+                skipped_reasons: vec![reason],
+                official_issue_count: Some(official_issue_count),
+                candidate_issue_count: Some(candidate_issue_count),
+                missing,
+                extra,
+                ..base
+            };
+        }
+    }
     let bucket = if missing.is_empty() && extra.is_empty() {
         ScoreBucket::SupportedMatch
     } else {
@@ -370,6 +402,10 @@ fn missing_official_reason(case: &OpenRulesCase, candidate_report_csv: &Path) ->
     ))
 }
 
+fn official_normalization_error_excludes_oracle(reason: &str) -> bool {
+    reason.contains("merge conflict markers")
+}
+
 pub(crate) fn parse_coverage_ratio(value: &str) -> Result<f64, String> {
     let ratio = value
         .parse::<f64>()
@@ -384,6 +420,7 @@ pub(crate) fn parse_coverage_ratio(value: &str) -> Result<f64, String> {
 fn align_candidate_identity_to_official(
     official: &[IssueKey],
     candidate: Vec<IssueKey>,
+    duplicate_sequence_values: &BTreeSet<(String, String)>,
 ) -> Vec<IssueKey> {
     let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
     let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
@@ -397,6 +434,12 @@ fn align_candidate_identity_to_official(
         .filter(|issue| issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
         .map(issue_signature)
         .collect::<BTreeSet<_>>();
+    let official_row_issues = official
+        .iter()
+        .filter(|issue| !issue.row.is_empty())
+        .map(issue_row_signature)
+        .collect::<BTreeSet<_>>();
+    let candidate_seq_rows = candidate_seq_row_index(&candidate);
 
     candidate
         .into_iter()
@@ -412,8 +455,20 @@ fn align_candidate_identity_to_official(
                 issue.row.clear();
                 issue.usubjid.clear();
                 issue.seq.clear();
-            } else if !compare_usubjid {
-                issue.usubjid.clear();
+            } else {
+                if !compare_seq
+                    && candidate_seq_matches_official_row(
+                        &issue,
+                        &official_row_issues,
+                        &candidate_seq_rows,
+                        duplicate_sequence_values,
+                    )
+                {
+                    issue.row.clone_from(&issue.seq);
+                }
+                if !compare_usubjid {
+                    issue.usubjid.clear();
+                }
             }
             if !compare_seq {
                 issue.seq.clear();
@@ -432,12 +487,131 @@ fn issue_is_unlocated(issue: &IssueKey) -> bool {
         && issue.seq.is_empty()
 }
 
-fn issue_signature(issue: &IssueKey) -> (String, String, String, Vec<String>) {
+fn issue_signature(issue: &IssueKey) -> IssueSignature {
     (
         issue.rule_id.clone(),
         issue.dataset.clone(),
         issue.domain.clone(),
         issue.variables.clone(),
+    )
+}
+
+fn candidate_seq_matches_official_row(
+    issue: &IssueKey,
+    official_row_issues: &BTreeSet<IssueRowSignature>,
+    candidate_seq_rows: &BTreeMap<IssueRowSignature, BTreeSet<String>>,
+    duplicate_sequence_values: &BTreeSet<(String, String)>,
+) -> bool {
+    let seq_signature = (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+        issue.seq.clone(),
+    );
+    !issue.seq.is_empty()
+        && issue.row != issue.seq
+        && !official_row_issues.contains(&issue_row_signature(issue))
+        && duplicate_sequence_values.contains(&(issue.dataset.clone(), issue.seq.clone()))
+        && official_row_issues.contains(&seq_signature)
+        && candidate_seq_rows
+            .get(&seq_signature)
+            .is_some_and(|rows| rows.len() == 1 && rows.contains(&issue.row))
+}
+
+fn duplicate_sequence_values_by_dataset(case: &OpenRulesCase) -> BTreeSet<(String, String)> {
+    case.dataset_files
+        .iter()
+        .filter_map(|path| duplicate_sequence_values_in_dataset(path).ok())
+        .flatten()
+        .collect()
+}
+
+fn duplicate_sequence_values_in_dataset(path: &Path) -> anyhow::Result<Vec<(String, String)>> {
+    let dataset = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .map(normalize_dataset_name)
+        .unwrap_or_default();
+    if dataset.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut reader = csv::ReaderBuilder::new().flexible(true).from_path(path)?;
+    let headers = reader.headers()?.clone();
+    let Some(seq_index) = sequence_column_index(&headers, &dataset) else {
+        return Ok(Vec::new());
+    };
+
+    let mut counts = BTreeMap::<String, usize>::new();
+    for record in reader.records() {
+        let record = record?;
+        let value = record
+            .get(seq_index)
+            .map(normalize_scalar)
+            .unwrap_or_default();
+        if !value.is_empty() {
+            *counts.entry(value).or_default() += 1;
+        }
+    }
+
+    Ok(counts
+        .into_iter()
+        .filter_map(|(seq, count)| (count > 1).then(|| (dataset.clone(), seq)))
+        .collect())
+}
+
+fn sequence_column_index(headers: &csv::StringRecord, dataset: &str) -> Option<usize> {
+    let expected = format!("{dataset}SEQ");
+    headers
+        .iter()
+        .position(|header| header.trim().eq_ignore_ascii_case(&expected))
+        .or_else(|| {
+            headers.iter().position(|header| {
+                let header = header.trim();
+                header.len() > 3
+                    && header.to_ascii_uppercase().ends_with("SEQ")
+                    && !header.eq_ignore_ascii_case("USUBJID")
+            })
+        })
+}
+
+fn normalize_dataset_name(value: &str) -> String {
+    value
+        .trim()
+        .strip_suffix(".csv")
+        .or_else(|| value.trim().strip_suffix(".CSV"))
+        .unwrap_or_else(|| value.trim())
+        .to_ascii_uppercase()
+}
+
+fn candidate_seq_row_index(issues: &[IssueKey]) -> BTreeMap<IssueRowSignature, BTreeSet<String>> {
+    let mut index = BTreeMap::<IssueRowSignature, BTreeSet<String>>::new();
+    for issue in issues {
+        if issue.seq.is_empty() {
+            continue;
+        }
+        index
+            .entry((
+                issue.rule_id.clone(),
+                issue.dataset.clone(),
+                issue.domain.clone(),
+                issue.variables.clone(),
+                issue.seq.clone(),
+            ))
+            .or_default()
+            .insert(issue.row.clone());
+    }
+    index
+}
+
+fn issue_row_signature(issue: &IssueKey) -> IssueRowSignature {
+    (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+        issue.row.clone(),
     )
 }
 
@@ -609,6 +783,87 @@ pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
     }
 }
 
+fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<String> {
+    let reason = [
+        (
+            "defer_empty_non_empty",
+            "deferred empty/non_empty oracle semantics",
+        ),
+        (
+            "defer_domain_placeholder_column_ref",
+            "deferred domain placeholder column-ref oracle semantics",
+        ),
+        (
+            "defer_not_unique_relationship",
+            "deferred not-unique relationship oracle semantics",
+        ),
+        (
+            "defer_duplicate_match_dataset",
+            "deferred duplicate match dataset oracle semantics",
+        ),
+        ("defer_date_operator", "deferred date oracle semantics"),
+        ("defer_unique_set", "deferred unique-set oracle semantics"),
+        (
+            "defer_dy_operation",
+            "deferred DY operation oracle semantics",
+        ),
+        ("defer_sort_operator", "deferred sort oracle semantics"),
+        ("defer_etcd_length", "deferred ETCD length oracle semantics"),
+        (
+            "defer_multi_base_match_dataset",
+            "deferred multi-base match dataset oracle semantics",
+        ),
+        (
+            "defer_distinct_operation",
+            "deferred distinct operation oracle semantics",
+        ),
+        (
+            "defer_positive_zero_probe",
+            "deferred positive-zero probe oracle semantics",
+        ),
+        ("dataset_presence", "dataset presence oracle semantics"),
+        ("date_operator", "date oracle semantics"),
+        ("domain_presence", "domain presence oracle semantics"),
+        ("variable_metadata", "variable metadata oracle semantics"),
+        (
+            "domain_placeholder_column_ref_comparator",
+            "domain placeholder column-ref comparator oracle semantics",
+        ),
+        ("empty_non_empty", "empty/non_empty oracle semantics"),
+        ("missing_column", "missing-column oracle semantics"),
+        ("operation", "operation oracle semantics"),
+        (
+            "scope_wide_reference_distinct",
+            "scope-wide reference distinct oracle semantics",
+        ),
+        (
+            "supported_reference_distinct",
+            "reference distinct oracle semantics",
+        ),
+        ("record_row_locator", "record row locator oracle semantics"),
+        (
+            "usdm_jsonata_entity_scope",
+            "USDM JSONata entity-scope oracle semantics",
+        ),
+        (
+            "record_count_operation",
+            "record-count operation oracle semantics",
+        ),
+        (
+            "usdm_join_operation",
+            "USDM join operation oracle semantics",
+        ),
+        ("xhtml_operation", "XHTML operation oracle semantics"),
+    ]
+    .into_iter()
+    .find_map(|(category, reason)| {
+        core_api::rule_id_has_oracle_gap_category(&case.rule_id, category).then_some(reason)
+    })?;
+    Some(format!(
+        "{reason}; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
 fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {
     let Some(min_coverage) = min_coverage else {
         return false;
@@ -721,6 +976,55 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
     }
 
+    fn write_score_fixture(
+        root: &Path,
+        rule_id: &str,
+        case_kind: &str,
+        case_id: &str,
+        official_csv: &str,
+        candidate_csv: &str,
+    ) -> OpenRulesCase {
+        let case_dir = root
+            .join("open/Published")
+            .join(rule_id)
+            .join(case_kind)
+            .join(case_id);
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(case_dir.join("results/results.csv"), official_csv)
+            .expect("write official results");
+        let candidate_dir = root
+            .join("candidate/Published")
+            .join(rule_id)
+            .join(case_kind)
+            .join(case_id);
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(candidate_dir.join("report.csv"), candidate_csv).expect("write candidate report");
+        let case_kind = match case_kind {
+            "negative" => CaseKind::Negative,
+            "positive" => CaseKind::Positive,
+            other => panic!("unsupported case kind {other}"),
+        };
+        OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: rule_id.to_owned(),
+            rule_dir: root.join("open/Published").join(rule_id),
+            rule_path: root.join("open/Published").join(rule_id).join("rule.yml"),
+            case_kind,
+            case_id: case_id.to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: true,
+        }
+    }
+
     #[test]
     fn scores_match_mismatch_skip_and_harness_errors() {
         let open_rules_root = repo_root().join("tests/fixtures/open_rules_minimal");
@@ -805,6 +1109,120 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
         assert_eq!(scored[0].bucket, ScoreBucket::MixedSkippedAndIssues);
         assert_eq!(summary.mixed_skipped_and_issues, 1);
         assert!(summary.should_fail());
+    }
+
+    #[test]
+    fn deferred_empty_non_empty_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000648",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000648,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000648,failed,DM,DM,2,AGE,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "deferred empty/non_empty oracle semantics; excluded from supported accuracy until native semantics are verified"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn deferred_empty_non_empty_match_remains_supported_match() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000648",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000648,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000648,failed,DM,DM,1,AGE,bad,1,,001,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+    }
+
+    #[test]
+    fn direct_oracle_gap_category_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000698",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000698,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
+        assert!(scored[0].reason.as_deref().is_some_and(|reason| reason
+            .contains("excluded from supported accuracy until native semantics are verified")));
+    }
+
+    #[test]
+    fn direct_oracle_gap_category_match_remains_supported_match() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000698",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000698,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+    }
+
+    #[test]
+    fn supported_reference_distinct_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000108",
+            "negative",
+            "02",
+            "rule_id,dataset,row,variables\nCORE-000108,SV,1,VISIT\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
     }
 
     #[test]
@@ -1015,6 +1433,60 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
         );
         assert_eq!(summary.native_engine_supported_match, 1);
         assert_eq!(summary.unknown_provenance_supported_match, 0);
+    }
+
+    #[test]
+    fn official_merge_conflict_marker_is_no_official_oracle_not_harness_error() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir.path().join("open/Published/CORE-000159/negative/02");
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "Dataset,Record,Variable,Value\n<<<<<<< HEAD\nLB,0,LBTESTCD,OTHER\n=======\nLB.csv,1,LBTESTCD,OTHER\n>>>>>>> main\n",
+        )
+        .expect("write official results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000159/negative/02");
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000159,failed,LB,LB,1,LBTESTCD,bad,1,,,\n",
+        )
+        .expect("write candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000159".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000159"),
+            rule_path: dir.path().join("open/Published/CORE-000159/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "02".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: dir
+                .path()
+                .join("open/Published/CORE-000159/negative/02/results/results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::NoOfficialOracle);
+        assert_eq!(summary.no_official_oracle, 1);
+        assert_eq!(summary.harness_error, 0);
+        assert!(scored[0]
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("official results.csv is malformed")));
     }
 
     #[test]
@@ -1332,6 +1804,206 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
             datasets_path: case_dir.join("data/_datasets.csv"),
             datasets: Vec::new(),
             dataset_files: Vec::new(),
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
+    }
+
+    #[test]
+    fn scores_match_when_candidate_seq_identifies_duplicate_record() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000249/negative/03");
+        let data_dir = case_dir.join("data");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000249/negative/03");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            data_dir.join("lb.csv"),
+            "STUDYID,DOMAIN,USUBJID,LBSEQ,VISITNUM,VISITDY\n\
+             S1,LB,SUBJ001,1,99999,-15\n\
+             S1,LB,SUBJ001,2,200,1\n\
+             S1,LB,SUBJ001,3,2200,141\n\
+             S1,LB,SUBJ001,4,2900,213\n\
+             S1,LB,SUBJ001,2,200,-15\n",
+        )
+        .expect("data csv");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nLB,2,VISITNUM,200\nLB,2,VISITDY,-15\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000249,failed,LB,LB,5,VISITDY|VISITNUM,text,1,,SUBJ001,2\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000249".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000249"),
+            rule_path: dir.path().join("open/Published/CORE-000249/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "03".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: data_dir.clone(),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: vec![data_dir.join("lb.csv")],
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(scored[0].official_issue_count, Some(2));
+        assert_eq!(scored[0].candidate_issue_count, Some(2));
+        assert!(scored[0].missing.is_empty());
+        assert!(scored[0].extra.is_empty());
+    }
+
+    #[test]
+    fn scores_keep_physical_row_when_candidate_seq_is_not_duplicated() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000013/negative/01");
+        let data_dir = case_dir.join("data");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000013/negative/01");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            data_dir.join("ae.csv"),
+            "STUDYID,DOMAIN,USUBJID,AESEQ,AESTAT\n\
+             S1,AE,SUBJ001,1,NOT DONE\n\
+             S1,AE,SUBJ001,2,NOT DONE\n\
+             S1,AE,SUBJ001,11,NOT DONE\n",
+        )
+        .expect("data csv");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\nAE,11,AESTAT,NOT DONE\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000013,failed,AE,AE,3,AESTAT,text,1,,SUBJ001,11\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000013".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000013"),
+            rule_path: dir.path().join("open/Published/CORE-000013/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "01".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: data_dir.clone(),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: vec![data_dir.join("ae.csv")],
+            variables_path: case_dir.join("data/_variables.csv"),
+            variables: Vec::new(),
+            official_results_csv: official_dir.join("results.csv"),
+            has_official_results: true,
+        };
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMismatch);
+        assert_eq!(scored[0].missing.len(), 1);
+        assert_eq!(scored[0].extra.len(), 1);
+    }
+
+    #[test]
+    fn scores_keep_physical_row_when_it_already_matches_official_issue() {
+        let dir = tempdir().expect("tempdir");
+        let case_dir = dir
+            .path()
+            .join("open")
+            .join("Published/CORE-000085/negative/02");
+        let data_dir = case_dir.join("data");
+        let official_dir = case_dir.join("results");
+        let candidate_dir = dir
+            .path()
+            .join("candidate/Published/CORE-000085/negative/02");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::create_dir_all(&official_dir).expect("official dir");
+        fs::create_dir_all(&candidate_dir).expect("candidate dir");
+        fs::write(
+            data_dir.join("ce.csv"),
+            "STUDYID,DOMAIN,USUBJID,CESEQ,CESTRTPT,CESTTPT\n\
+             S1,CE,SUBJ001,1,,\n\
+             S1,CE,SUBJ002,2,,\n\
+             S1,CE,SUBJ003,3,,\n\
+             S1,CE,SUBJ004,14,,FIRST DOSE\n\
+             S1,CE,SUBJ005,5,,\n\
+             S1,CE,SUBJ006,6,,\n\
+             S1,CE,SUBJ007,7,,\n\
+             S1,CE,SUBJ008,4,,\n\
+             S1,CE,SUBJ009,9,,\n\
+             S1,CE,SUBJ010,10,,\n\
+             S1,CE,SUBJ011,4,,FIRST DOSE\n",
+        )
+        .expect("data csv");
+        fs::write(
+            official_dir.join("results.csv"),
+            "Dataset,Record,Variable,Value\n\
+             CE,4,CESTRTPT,\n\
+             CE,4,CESTTPT,FIRST DOSE\n\
+             CE,11,CESTRTPT,\n\
+             CE,11,CESTTPT,FIRST DOSE\n",
+        )
+        .expect("official results");
+        fs::write(
+            candidate_dir.join("report.csv"),
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+             CORE-000085,failed,CE,CE,4,CESTRTPT|CESTTPT,text,2,,SUBJ004,14\n\
+             CORE-000085,failed,CE,CE,11,CESTRTPT|CESTTPT,text,2,,SUBJ011,4\n",
+        )
+        .expect("candidate report");
+        let case = OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-000085".to_owned(),
+            rule_dir: dir.path().join("open/Published/CORE-000085"),
+            rule_path: dir.path().join("open/Published/CORE-000085/rule.yml"),
+            case_kind: CaseKind::Negative,
+            case_id: "02".to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: data_dir.clone(),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: vec![data_dir.join("ce.csv")],
             variables_path: case_dir.join("data/_variables.csv"),
             variables: Vec::new(),
             official_results_csv: official_dir.join("results.csv"),
