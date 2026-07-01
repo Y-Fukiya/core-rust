@@ -5431,13 +5431,34 @@ fn filter_datasets_by_rule_scope(
     datasets: &[LoadedDataset],
 ) -> Vec<LoadedDataset> {
     if rule.entities.is_some() {
-        return datasets
+        let scoped = datasets
             .iter()
             .filter(|dataset| entity_scope_allows(rule.entities.as_ref(), dataset))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+        return deduplicate_entity_scope_datasets_by_path(scoped);
     }
     filter_datasets_by_domain_scope(rule, datasets)
+}
+
+fn deduplicate_entity_scope_datasets_by_path(datasets: Vec<LoadedDataset>) -> Vec<LoadedDataset> {
+    let mut seen_paths = BTreeSet::new();
+    datasets
+        .into_iter()
+        .filter(|dataset| {
+            let Some(path) = first_dataset_path_value(dataset) else {
+                return true;
+            };
+            seen_paths.insert(path)
+        })
+        .collect()
+}
+
+fn first_dataset_path_value(dataset: &LoadedDataset) -> Option<String> {
+    dataset_column_values(dataset, "path")
+        .ok()
+        .and_then(|values| values.first().and_then(json_scalar_string))
+        .filter(|path| !path.is_empty())
 }
 
 fn filter_datasets_by_domain_scope(

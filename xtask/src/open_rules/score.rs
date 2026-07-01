@@ -38,6 +38,7 @@ pub struct ScoreArgs {
 pub enum ScoreBucket {
     SupportedMatch,
     SupportedMismatch,
+    DeferredOracleGapMismatch,
     SkippedUnsupported,
     MixedSkippedAndIssues,
     NoOfficialOracle,
@@ -58,6 +59,7 @@ impl ScoreBucket {
         match self {
             Self::SupportedMatch => "supported_match",
             Self::SupportedMismatch => "supported_mismatch",
+            Self::DeferredOracleGapMismatch => "deferred_oracle_gap_mismatch",
             Self::SkippedUnsupported => "skipped_unsupported",
             Self::MixedSkippedAndIssues => "mixed_skipped_and_issues",
             Self::NoOfficialOracle => "no_official_oracle",
@@ -108,6 +110,8 @@ pub struct ScoreSummary {
     #[serde(default)]
     pub unverified_synthetic_oracle_match: usize,
     pub supported_mismatch: usize,
+    #[serde(default)]
+    pub deferred_oracle_gap_mismatch: usize,
     pub skipped_unsupported: usize,
     #[serde(default)]
     pub mixed_skipped_and_issues: usize,
@@ -314,9 +318,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     if !missing.is_empty() || !extra.is_empty() {
         if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
             return ScoredCase {
-                bucket: ScoreBucket::SkippedUnsupported,
+                bucket: ScoreBucket::DeferredOracleGapMismatch,
                 reason: Some(reason.clone()),
-                skipped_reasons: vec![reason],
+                skipped_reasons: Vec::new(),
                 official_issue_count: Some(official_issue_count),
                 candidate_issue_count: Some(candidate_issue_count),
                 missing,
@@ -637,6 +641,8 @@ impl ScoreSummary {
             .count();
         let official_oracle_match = supported_match.saturating_sub(synthetic_oracle_match);
         let supported_mismatch = *counts.get("supported_mismatch").unwrap_or(&0);
+        let deferred_oracle_gap_mismatch =
+            *counts.get("deferred_oracle_gap_mismatch").unwrap_or(&0);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
         let mixed_skipped_and_issues = *counts.get("mixed_skipped_and_issues").unwrap_or(&0);
         let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
@@ -680,6 +686,7 @@ impl ScoreSummary {
             synthetic_oracle_match,
             unverified_synthetic_oracle_match,
             supported_mismatch,
+            deferred_oracle_gap_mismatch,
             skipped_unsupported,
             mixed_skipped_and_issues,
             no_official_oracle,
@@ -1112,7 +1119,7 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
     }
 
     #[test]
-    fn deferred_empty_non_empty_mismatch_is_scored_as_skipped_unsupported() {
+    fn deferred_empty_non_empty_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
@@ -1127,9 +1134,11 @@ CORE-000648,failed,DM,DM,2,AGE,bad,1,,002,\n",
         let scored = score_cases(&[case], &dir.path().join("candidate"));
         let summary = ScoreSummary::from_cases(&scored);
 
-        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapMismatch);
         assert_eq!(summary.supported_mismatch, 0);
-        assert_eq!(summary.skipped_unsupported, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert!(scored[0].skipped_reasons.is_empty());
         assert_eq!(
             scored[0].reason,
             Some(
@@ -1161,7 +1170,7 @@ CORE-000648,failed,DM,DM,1,AGE,bad,1,,001,\n",
     }
 
     #[test]
-    fn direct_oracle_gap_category_mismatch_is_scored_as_skipped_unsupported() {
+    fn direct_oracle_gap_category_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
@@ -1176,9 +1185,11 @@ CORE-000698,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
         let scored = score_cases(&[case], &dir.path().join("candidate"));
         let summary = ScoreSummary::from_cases(&scored);
 
-        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapMismatch);
         assert_eq!(summary.supported_mismatch, 0);
-        assert_eq!(summary.skipped_unsupported, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert!(scored[0].skipped_reasons.is_empty());
         assert!(scored[0].reason.as_deref().is_some_and(|reason| reason
             .contains("excluded from supported accuracy until native semantics are verified")));
     }
@@ -1205,7 +1216,7 @@ CORE-000698,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
     }
 
     #[test]
-    fn supported_reference_distinct_mismatch_is_scored_as_skipped_unsupported() {
+    fn supported_reference_distinct_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
@@ -1220,9 +1231,11 @@ CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
         let scored = score_cases(&[case], &dir.path().join("candidate"));
         let summary = ScoreSummary::from_cases(&scored);
 
-        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapMismatch);
         assert_eq!(summary.supported_mismatch, 0);
-        assert_eq!(summary.skipped_unsupported, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert!(scored[0].skipped_reasons.is_empty());
     }
 
     #[test]

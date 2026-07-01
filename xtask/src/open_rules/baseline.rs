@@ -160,6 +160,13 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(current_case),
                         "execution provenance requires review",
                     ));
+                } else if bucket_transition_requires_review(baseline_case, current_case) {
+                    review_required.push(difference(
+                        key,
+                        Some(baseline_case),
+                        Some(current_case),
+                        "case bucket requires review",
+                    ));
                 } else if provenance_regressed(baseline_case, current_case) {
                     regressions.push(difference(
                         key,
@@ -225,6 +232,15 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
             None,
             None,
             "skipped_unsupported increased",
+        ));
+    }
+    if current.summary.deferred_oracle_gap_mismatch > baseline.summary.deferred_oracle_gap_mismatch
+    {
+        review_required.push(difference(
+            "summary/deferred_oracle_gap_mismatch".to_owned(),
+            None,
+            None,
+            "deferred oracle-gap mismatch count increased",
         ));
     }
 
@@ -300,6 +316,11 @@ fn provenance_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bo
     supported_match_provenance_changed(baseline, current)
         && baseline.execution_provenance == ExecutionProvenance::RuleIdHandPort
         && current.execution_provenance == ExecutionProvenance::NativeEngine
+}
+
+fn bucket_transition_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    baseline.bucket == ScoreBucket::SupportedMismatch
+        && current.bucket == ScoreBucket::DeferredOracleGapMismatch
 }
 
 fn provenance_regressed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
@@ -542,6 +563,41 @@ mod tests {
         assert!(report.regressions.iter().any(|regression| {
             regression.case_key == "Published/CORE-OPEN-0001/negative/01"
                 && regression.message == "case bucket regressed"
+        }));
+    }
+
+    #[test]
+    fn baseline_requires_review_when_supported_mismatch_becomes_deferred_oracle_gap() {
+        let report = compare_scoreboards(
+            &scoreboard(ScoreBucket::SupportedMismatch),
+            &scoreboard(ScoreBucket::DeferredOracleGapMismatch),
+        );
+
+        assert!(report.should_fail());
+        assert!(report.regressions.iter().any(|regression| {
+            regression.case_key == "summary/coverage" && regression.message == "coverage regressed"
+        }));
+        assert!(report.review_required.iter().any(|review| {
+            review.case_key == "Published/CORE-OPEN-0001/negative/01"
+                && review.message == "case bucket requires review"
+                && review.baseline_bucket == Some(ScoreBucket::SupportedMismatch)
+                && review.current_bucket == Some(ScoreBucket::DeferredOracleGapMismatch)
+        }));
+    }
+
+    #[test]
+    fn baseline_fails_when_deferred_oracle_gap_mismatch_increases() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.deferred_oracle_gap_mismatch =
+            baseline.summary.deferred_oracle_gap_mismatch + 1;
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.case_key == "summary/deferred_oracle_gap_mismatch"
+                && review.message == "deferred oracle-gap mismatch count increased"
         }));
     }
 
