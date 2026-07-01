@@ -165,7 +165,8 @@ pub(crate) fn usdm_jsonata_execution_datasets(
 
     if matches!(
         rule.core_id.as_str(),
-        "CORE-000998"
+        "CORE-000407"
+            | "CORE-000998"
             | "CORE-000961"
             | "CORE-001004"
             | "CORE-001005"
