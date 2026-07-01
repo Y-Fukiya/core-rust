@@ -3509,14 +3509,14 @@ fn apply_entity_instance_type_literals(rule: &mut ExecutableRule) {
     apply_entity_instance_type_literals_to_group(&mut rule.conditions);
 }
 
-fn collect_condition_target_variables(group: &ConditionGroup, variables: &mut Vec<String>) {
+fn apply_entity_instance_type_literals_to_group(group: &mut ConditionGroup) {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
             for group in groups {
-                collect_condition_target_variables(group, variables);
+                apply_entity_instance_type_literals_to_group(group);
             }
         }
-        ConditionGroup::Not(group) => collect_condition_target_variables(group, variables),
+        ConditionGroup::Not(group) => apply_entity_instance_type_literals_to_group(group),
         ConditionGroup::Leaf(condition) => {
             if matches!(
                 condition.operator,
