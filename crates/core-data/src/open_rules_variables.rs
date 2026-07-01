@@ -34,13 +34,23 @@ fn open_rules_variable_descriptor(
     Ok(OpenRulesVariable {
         dataset: normalize_dataset_name(&dataset),
         variable: DatasetVariable {
-            name: variable.trim().to_ascii_uppercase(),
+            name: normalize_open_rules_variable_name(variable.trim()),
             label: raw_label.or_else(|| row_string(row, &["label", "Label"])),
             variable_type,
             length,
             extra: BTreeMap::new(),
         },
     })
+}
+
+fn normalize_open_rules_variable_name(name: &str) -> String {
+    let has_lowercase = name.chars().any(|ch| ch.is_ascii_lowercase());
+    let has_uppercase = name.chars().any(|ch| ch.is_ascii_uppercase());
+    if has_lowercase && has_uppercase {
+        name.to_owned()
+    } else {
+        name.to_ascii_uppercase()
+    }
 }
 
 pub(super) fn open_rules_variable_descriptors(

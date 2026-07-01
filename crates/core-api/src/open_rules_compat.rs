@@ -17,7 +17,7 @@ const HAND_PORT_PROVENANCE: &str = "rule_id_hand_port";
 const HAND_PORT_SCOPE: &str = "open-rules-oracle-harness";
 const ORACLE_GAP_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/oracle_gap_rule_ids.csv");
 const ORACLE_GAP_RULE_ID_HEADER: &str = "rule_id,category,reason,owner,evidence,scope";
-const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 437;
+const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 474;
 const ORACLE_GAP_SCOPE: &str = "open-rules-oracle-harness";
 #[cfg(test)]
 const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["usdm_match_dataset"];
@@ -39,7 +39,6 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "defer_not_unique_relationship",
     "defer_positive_zero_probe",
     "defer_relrec_or_supp_match_dataset",
-    "defer_sort_operator",
     "defer_unique_set",
     "defer_variable_metadata",
     "distinct_operation",
@@ -55,12 +54,14 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "multi_base_match_dataset",
     "not_unique_relationship",
     "operation",
-    "record_count_operation",
+    "official_oracle_fixture_gap",
     "record_row_locator",
+    "reference_distinct_cardinality",
+    "reference_distinct_fixture_row",
+    "reference_distinct_official_empty",
     "relrec_or_supp_match_dataset",
     "required_value_metadata",
     "scope_wide_reference_distinct",
-    "sort_operator",
     "supported_entity_match_column_ref",
     "supported_reference_distinct",
     "usdm_join_operation",
@@ -78,7 +79,7 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,scope";
 #[cfg(test)]
-const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 257;
+const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 262;
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =
     LazyLock::new(load_hand_port_rule_ids);
@@ -594,6 +595,66 @@ CORE-000095,rule_id_hand_port,core-api,open-rules-oracle-harness\n",
         assert!(rule_id_has_oracle_gap_category(
             "CORE-000200",
             "missing_condition_columns_as_null"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000546",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000542",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000770",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000172",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000195",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000197",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000198",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000184",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000268",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000143",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000225",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000252",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000370",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000718",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000454",
+            "official_oracle_fixture_gap"
         ));
         assert!(!rule_id_has_oracle_gap_category(
             "CORE-000773",

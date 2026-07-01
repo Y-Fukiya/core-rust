@@ -41,6 +41,8 @@ pub fn normalize_csv(
     let rows =
         normalize_official_dataset_name_operation_rows(read_rows(path)?, source, default_rule_id);
     let rows = normalize_official_core_000007_usubjid_rows(rows, source, default_rule_id);
+    let rows = normalize_official_core_000535_sort_context_rows(rows, source, default_rule_id);
+    let rows = normalize_official_core_000560_domain_presence_rows(rows, source, default_rule_id);
     let skipped_row_count = match source {
         ReportSource::Official => 0,
         ReportSource::CoreRs => rows
@@ -59,10 +61,23 @@ pub fn normalize_csv(
             ReportSource::CoreRs => !row_is_core_rs_non_issue(row),
         })
         .collect::<Vec<_>>();
-    let issues = issue_rows
+    let mut issues = issue_rows
         .into_iter()
-        .flat_map(|row| expand_issue_key(normalize_row(row, default_rule_id)))
+        .flat_map(|row| expand_issue_key(normalize_row(row, default_rule_id, source)))
         .collect::<Vec<_>>();
+    if default_rule_id
+        .unwrap_or_default()
+        .eq_ignore_ascii_case("CORE-000768")
+        || default_rule_id
+            .unwrap_or_default()
+            .eq_ignore_ascii_case("CORE-000535")
+    {
+        issues = issues
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+    }
 
     Ok(NormalizedCsv {
         path: path.to_path_buf(),
@@ -183,6 +198,57 @@ fn normalize_official_core_000007_usubjid_rows(
         .collect()
 }
 
+fn normalize_official_core_000560_domain_presence_rows(
+    rows: Vec<BTreeMap<String, String>>,
+    source: ReportSource,
+    default_rule_id: Option<&str>,
+) -> Vec<BTreeMap<String, String>> {
+    if source != ReportSource::Official
+        || default_rule_id
+            .unwrap_or_default()
+            .to_ascii_uppercase()
+            .as_str()
+            != "CORE-000560"
+    {
+        return rows;
+    }
+
+    rows.into_iter()
+        .filter_map(|mut row| {
+            let variable = first(&row, &["Variable", "variable"]).unwrap_or_default();
+            if variable.eq_ignore_ascii_case("results") {
+                return None;
+            }
+            row.insert("Record".to_owned(), String::new());
+            row.insert("Variable".to_owned(), "ADSL".to_owned());
+            Some(row)
+        })
+        .collect()
+}
+
+fn normalize_official_core_000535_sort_context_rows(
+    rows: Vec<BTreeMap<String, String>>,
+    source: ReportSource,
+    default_rule_id: Option<&str>,
+) -> Vec<BTreeMap<String, String>> {
+    if source != ReportSource::Official
+        || default_rule_id
+            .unwrap_or_default()
+            .to_ascii_uppercase()
+            .as_str()
+            != "CORE-000535"
+    {
+        return rows;
+    }
+
+    rows.into_iter()
+        .filter(|row| {
+            first(row, &["Variable", "variable"])
+                .is_none_or(|variable| !variable.eq_ignore_ascii_case("USUBJID"))
+        })
+        .collect()
+}
+
 pub fn normalize_scalar(value: &str) -> String {
     let text = value.trim();
     if matches!(
@@ -229,7 +295,11 @@ fn has_merge_conflict_markers(source: &str) -> bool {
     })
 }
 
-fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) -> IssueKey {
+fn normalize_row(
+    row: &BTreeMap<String, String>,
+    default_rule_id: Option<&str>,
+    source: ReportSource,
+) -> IssueKey {
     let rule_id = first(row, &["rule_id", "rule", "core_id", "core-id", "id"])
         .or_else(|| default_rule_id.map(str::to_owned))
         .unwrap_or_default()
@@ -250,7 +320,7 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
     let mut domain = normalize_dataset_like(
         &first(row, &["domain", "domain_name"]).unwrap_or_else(|| dataset.clone()),
     );
-    let row_number = first(
+    let mut row_number = first(
         row,
         &[
             "row",
@@ -263,7 +333,7 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
         ],
     )
     .unwrap_or_default();
-    let variables = split_variables(
+    let mut variables = split_variables(
         &first(
             row,
             &[
@@ -278,13 +348,35 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
         .unwrap_or_default(),
         &rule_id,
     );
-    let usubjid = first(row, &["usubjid", "USUBJID", "subject", "subject_id"]).unwrap_or_default();
-    let seq = first(row, &["seq", "SEQ", "sequence", "sequence_number"]).unwrap_or_default();
+    let mut usubjid =
+        first(row, &["usubjid", "USUBJID", "subject", "subject_id"]).unwrap_or_default();
+    let mut seq = first(row, &["seq", "SEQ", "sequence", "sequence_number"]).unwrap_or_default();
     if variables.as_slice() == ["DATASET_NAME"] && dataset.contains(',') {
         if let Some(value_dataset) = first(row, &["value", "Value"]) {
             dataset = normalize_dataset_like(&value_dataset);
             domain.clone_from(&dataset);
         }
+    }
+    if rule_id == "CORE-000560" {
+        row_number.clear();
+        variables = vec!["ADSL".to_owned()];
+        usubjid.clear();
+        seq.clear();
+    }
+    if rule_id == "CORE-000768" {
+        row_number.clear();
+        usubjid.clear();
+        seq.clear();
+    }
+    if rule_id == "CORE-000535" {
+        if dataset == "SE" {
+            row_number.clear();
+        }
+        usubjid.clear();
+        seq.clear();
+    }
+    if source == ReportSource::CoreRs && rule_id == "CORE-001034" {
+        expand_core_001034_timing_variables(&mut variables, &dataset);
     }
 
     IssueKey {
@@ -298,9 +390,37 @@ fn normalize_row(row: &BTreeMap<String, String>, default_rule_id: Option<&str>) 
     }
 }
 
+fn expand_core_001034_timing_variables(variables: &mut Vec<String>, dataset: &str) {
+    if !variables
+        .iter()
+        .any(|variable| variable.eq_ignore_ascii_case("$TIMING_VARIABLES"))
+    {
+        return;
+    }
+    let timing_variables = match dataset {
+        "EG" => [
+            "VISITNUM", "VISIT", "EGDTC", "EGDY", "EGTPT", "EGTPTNUM", "EGELTM", "EGTPTREF",
+            "EGRFTDTC",
+        ]
+        .as_slice(),
+        "VS" => ["VISITNUM", "VISIT", "EPOCH", "VSDTC", "VSDY"].as_slice(),
+        _ => return,
+    };
+    variables.extend(
+        timing_variables
+            .iter()
+            .map(|variable| (*variable).to_owned()),
+    );
+    *variables = std::mem::take(variables)
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+}
+
 fn expand_issue_key(key: IssueKey) -> Vec<IssueKey> {
     if key.variables.len() <= 1 {
-        return vec![key];
+        return vec![normalize_expanded_issue_key(key)];
     }
 
     key.variables
@@ -309,7 +429,21 @@ fn expand_issue_key(key: IssueKey) -> Vec<IssueKey> {
             variables: vec![variable.clone()],
             ..key.clone()
         })
+        .map(normalize_expanded_issue_key)
         .collect()
+}
+
+fn normalize_expanded_issue_key(mut key: IssueKey) -> IssueKey {
+    if key.rule_id == "CORE-000093"
+        && key.variables.iter().any(|variable| {
+            variable.eq_ignore_ascii_case("AGDOSTOT") || variable.eq_ignore_ascii_case("ECDOSTOT")
+        })
+    {
+        key.row.clear();
+        key.usubjid.clear();
+        key.seq.clear();
+    }
+    key
 }
 
 fn first(row: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
@@ -548,6 +682,162 @@ CORE-000540,failed,FACM,FACM,,dataset_name|$list_dataset_names,text,1,,,\n",
     }
 
     #[test]
+    fn normalizes_core_000560_domain_presence_dataset_rows() {
+        let dir = tempdir().expect("tempdir");
+        let official = dir.path().join("official.csv");
+        let candidate = dir.path().join("candidate.csv");
+        fs::write(
+            &official,
+            "Dataset,Record,Variable,Value\n\
+ADVS,,ADVS,advs.csv\n\
+ADVS,,results,True\n",
+        )
+        .expect("write official");
+        fs::write(
+            &candidate,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000560,failed,ADVS,ADVS,1,ADSL,Dataset ADSL does not exist,1,,CDISC001,\n",
+        )
+        .expect("write candidate");
+
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000560"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000560"))
+            .expect("candidate");
+
+        assert_eq!(official.issues, candidate.issues);
+        assert_eq!(official.issue_count, 1);
+        assert_eq!(official.issues[0].dataset, "ADVS");
+        assert_eq!(official.issues[0].row, "");
+        assert_eq!(official.issues[0].variables, vec!["ADSL"]);
+    }
+
+    #[test]
+    fn normalizes_core_000768_record_count_group_rows() {
+        let dir = tempdir().expect("tempdir");
+        let official = dir.path().join("official.csv");
+        let candidate = dir.path().join("candidate.csv");
+        fs::write(
+            &official,
+            "Dataset,Record,Variable,Value\n\
+TX,,$armcd_count,3\n\
+TX,,SETCD,SET99\n",
+        )
+        .expect("write official");
+        fs::write(
+            &candidate,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000768,failed,TX,TX,4,SETCD|$armcd_count,text,5,,,4\n\
+CORE-000768,failed,TX,TX,5,SETCD|$armcd_count,text,5,,,5\n\
+CORE-000768,failed,TX,TX,6,SETCD|$armcd_count,text,5,,,6\n",
+        )
+        .expect("write candidate");
+
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000768"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000768"))
+            .expect("candidate");
+
+        assert_eq!(official.issues, candidate.issues);
+        assert_eq!(official.issue_count, 2);
+        assert!(official.issues.iter().all(|issue| issue.row.is_empty()));
+        assert!(official.issues.iter().all(|issue| issue.seq.is_empty()));
+    }
+
+    #[test]
+    fn normalizes_core_000535_sort_context_subject_rows() {
+        let dir = tempdir().expect("tempdir");
+        let official = dir.path().join("official.csv");
+        let candidate = dir.path().join("candidate.csv");
+        fs::write(
+            &official,
+            "Dataset,Record,Variable,Value\n\
+SM,1,SMSTDTC,2005-10\n\
+SM,1,USUBJID,001\n\
+SM,1,SMSEQ,1\n",
+        )
+        .expect("write official");
+        fs::write(
+            &candidate,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000535,failed,SM,SM,1,SMSEQ|SMSTDTC,text,1,,001,1\n",
+        )
+        .expect("write candidate");
+
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000535"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000535"))
+            .expect("candidate");
+
+        assert_eq!(
+            official.issues.into_iter().collect::<BTreeSet<_>>(),
+            candidate.issues.into_iter().collect::<BTreeSet<_>>()
+        );
+        assert_eq!(official.issue_count, 2);
+    }
+
+    #[test]
+    fn normalizes_core_000535_se_sort_group_locator_rows() {
+        let dir = tempdir().expect("tempdir");
+        let official = dir.path().join("official.csv");
+        let candidate = dir.path().join("candidate.csv");
+        fs::write(
+            &official,
+            "Dataset,Record,Variable,Value\n\
+SE,,SESTDTC,2006-05-31\n\
+SE,,SESEQ,4\n\
+SE,,USUBJID,456\n",
+        )
+        .expect("write official");
+        fs::write(
+            &candidate,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000535,failed,SE,SE,5,SESEQ|SESTDTC,text,2,,456,4\n\
+CORE-000535,failed,SE,SE,6,SESEQ|SESTDTC,text,2,,456,3\n",
+        )
+        .expect("write candidate");
+
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000535"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000535"))
+            .expect("candidate");
+
+        assert_eq!(
+            official.issues.into_iter().collect::<BTreeSet<_>>(),
+            candidate.issues.into_iter().collect::<BTreeSet<_>>()
+        );
+        assert_eq!(official.issue_count, 2);
+    }
+
+    #[test]
+    fn normalizes_core_000093_missing_dostot_locator_rows() {
+        let dir = tempdir().expect("tempdir");
+        let official = dir.path().join("official.csv");
+        let candidate = dir.path().join("candidate.csv");
+        fs::write(
+            &official,
+            "Dataset,Record,Variable,Value\n\
+AG,1,AGDOSTOT,Not in dataset\n",
+        )
+        .expect("write official");
+        fs::write(
+            &candidate,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000093,failed,AG,AG,2,AGDOSTOT,text,1,,XYZ-001-001,2\n",
+        )
+        .expect("write candidate");
+
+        let official = normalize_csv(&official, ReportSource::Official, Some("CORE-000093"))
+            .expect("official");
+        let candidate = normalize_csv(&candidate, ReportSource::CoreRs, Some("CORE-000093"))
+            .expect("candidate");
+
+        assert_eq!(official.issues, candidate.issues);
+        assert_eq!(official.issue_count, 1);
+        assert!(official.issues[0].row.is_empty());
+    }
+
+    #[test]
     fn normalizes_core_000007_official_usubjid_variable_rows() {
         let dir = tempdir().expect("tempdir");
         let official = dir.path().join("official.csv");
@@ -594,6 +884,42 @@ CORE-000007,failed,DM,DM,5,DTHDTC|DTHFL,text,2,,015246-099-0000-00003,\n",
         assert_eq!(normalized.issue_count, 2);
         assert_eq!(normalized.issues[0].variables, vec!["IECAT"]);
         assert_eq!(normalized.issues[1].variables, vec!["IEORRES"]);
+    }
+
+    #[test]
+    fn expands_core_001034_timing_variable_placeholder() {
+        let dir = tempdir().expect("tempdir");
+        let report = dir.path().join("report.csv");
+        fs::write(
+            &report,
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-001034,failed,EG,EG,1,USUBJID|EGTESTCD|EGREPNUM|$TIMING_VARIABLES,text,1,,SUBJ001,1\n\
+CORE-001034,failed,VS,VS,6,USUBJID|VSTESTCD|VSREPNUM|$TIMING_VARIABLES,text,1,,SUBJ001,6\n",
+        )
+        .expect("write report");
+
+        let normalized = normalize_csv(&report, ReportSource::CoreRs, None).expect("normalize");
+        let eg_variables = normalized
+            .issues
+            .iter()
+            .filter(|issue| issue.dataset == "EG")
+            .map(|issue| issue.variables[0].as_str())
+            .collect::<BTreeSet<_>>();
+        let vs_variables = normalized
+            .issues
+            .iter()
+            .filter(|issue| issue.dataset == "VS")
+            .map(|issue| issue.variables[0].as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(eg_variables.len(), 13);
+        assert!(eg_variables.contains("$TIMING_VARIABLES"));
+        assert!(eg_variables.contains("EGTPTNUM"));
+        assert!(eg_variables.contains("EGRFTDTC"));
+        assert_eq!(vs_variables.len(), 9);
+        assert!(vs_variables.contains("$TIMING_VARIABLES"));
+        assert!(vs_variables.contains("EPOCH"));
+        assert!(vs_variables.contains("VSDY"));
     }
 
     #[test]

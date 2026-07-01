@@ -277,6 +277,21 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             }
         }
 
+        if let Some(result) = missing_scoped_dataset_presence_result(&rule, &execution_datasets) {
+            results.push(result);
+        }
+
+        results.extend(core_000750_split_domain_unique_set_results(
+            &rule,
+            &datasets,
+            &results[rule_result_start..],
+        ));
+        results.extend(core_000878_invalid_condition_context_results(
+            &rule,
+            &datasets,
+            &results[rule_result_start..],
+        ));
+
         if open_rules_compat {
             if let Some(result) = missing_tpt_relationship_pp_dataset_result(
                 &rule,
@@ -3997,6 +4012,7 @@ fn execution_datasets_for_rule(
     let mut execution_datasets = if (has_dy_operation(rule)
         || has_group_date_operation(rule)
         || has_match_dataset_dependent_operation(rule)
+        || has_reference_distinct_operation(rule)
         || has_match_dataset_prefixed_column_reference(rule)
         || has_match_dataset_suffixed_column_reference(rule))
         && rule
@@ -4332,6 +4348,387 @@ fn dataset_domain_value(dataset: &LoadedDataset) -> String {
         .or_else(|| dataset.metadata.domain.clone())
         .unwrap_or_else(|| dataset.metadata.name.clone())
         .to_ascii_uppercase()
+}
+
+#[derive(Debug, Clone)]
+struct SplitDomainUniqueSetRow {
+    dataset: String,
+    domain: String,
+    row: usize,
+    usubjid: Option<String>,
+    poolid: Option<String>,
+    seq_column: String,
+    seq: String,
+}
+
+fn core_000750_split_domain_unique_set_results(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+    existing_results: &[RuleValidationResult],
+) -> Vec<RuleValidationResult> {
+    if rule.core_id != engine_semantics::CORE_000750 {
+        return Vec::new();
+    }
+
+    let mut rows = Vec::new();
+    for dataset in datasets
+        .iter()
+        .filter(|dataset| core_000750_split_domain_dataset_allowed(rule, dataset))
+    {
+        let Some(seq_column) = split_domain_sequence_column(dataset) else {
+            continue;
+        };
+        let Some(seq_values) = resolved_dataset_column_values(dataset, &seq_column) else {
+            continue;
+        };
+        let domain_values = resolved_dataset_column_values(dataset, "DOMAIN").unwrap_or_default();
+        let usubjid_values = resolved_dataset_column_values(dataset, "USUBJID").unwrap_or_default();
+        let poolid_values = resolved_dataset_column_values(dataset, "POOLID").unwrap_or_default();
+        let dataset_name = dataset.metadata.name.to_ascii_uppercase();
+        for row in 0..dataset.frame().height() {
+            let seq = json_report_string(seq_values.get(row).unwrap_or(&Value::Null));
+            if seq.trim().is_empty() {
+                continue;
+            }
+            let domain = domain_values
+                .get(row)
+                .map(json_report_string)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| dataset_domain_value(dataset));
+            let usubjid = usubjid_values
+                .get(row)
+                .map(json_report_string)
+                .filter(|value| !value.trim().is_empty());
+            let poolid = poolid_values
+                .get(row)
+                .map(json_report_string)
+                .filter(|value| !value.trim().is_empty());
+            rows.push(SplitDomainUniqueSetRow {
+                dataset: dataset_name.clone(),
+                domain: domain.to_ascii_uppercase(),
+                row: row + 1,
+                usubjid,
+                poolid,
+                seq_column: seq_column.clone(),
+                seq,
+            });
+        }
+    }
+
+    let mut key_datasets = BTreeMap::<Vec<String>, BTreeSet<String>>::new();
+    for row in &rows {
+        for key in split_domain_unique_set_keys(row) {
+            key_datasets
+                .entry(key)
+                .or_default()
+                .insert(row.dataset.clone());
+        }
+    }
+
+    let existing = existing_results
+        .iter()
+        .flat_map(|result| result.errors.iter())
+        .filter_map(|issue| {
+            Some((
+                issue.dataset.to_ascii_uppercase(),
+                issue.row?,
+                issue.seq.clone().unwrap_or_default(),
+            ))
+        })
+        .collect::<BTreeSet<_>>();
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let mut issues_by_dataset = BTreeMap::<String, Vec<ValidationIssue>>::new();
+    let mut seen_rows = BTreeSet::<(String, usize, String)>::new();
+    for row in rows {
+        let crosses_split_dataset = split_domain_unique_set_keys(&row).into_iter().any(|key| {
+            key_datasets
+                .get(&key)
+                .is_some_and(|datasets| datasets.len() > 1)
+        });
+        if !crosses_split_dataset {
+            continue;
+        }
+        let issue_key = (row.dataset.clone(), row.row, row.seq.clone());
+        if existing.contains(&issue_key) || !seen_rows.insert(issue_key) {
+            continue;
+        }
+        let mut variables = vec![row.seq_column.clone()];
+        if row.usubjid.is_some() {
+            variables.insert(0, "USUBJID".to_owned());
+        }
+        push_unique_string(&mut variables, "POOLID");
+        let issue = ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: row.dataset.clone(),
+            domain: Some(row.domain),
+            row: Some(row.row),
+            variables,
+            message: message.clone(),
+            usubjid: row.usubjid,
+            seq: Some(row.seq),
+        };
+        issues_by_dataset
+            .entry(issue.dataset.clone())
+            .or_default()
+            .push(issue);
+    }
+
+    issues_by_dataset
+        .into_iter()
+        .map(|(dataset, errors)| RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset,
+            domain: errors.first().and_then(|issue| issue.domain.clone()),
+            message: message.clone(),
+            error_count: errors.len(),
+            errors,
+        })
+        .collect()
+}
+
+fn core_000750_split_domain_dataset_allowed(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> bool {
+    let row_domain = dataset_domain_value(dataset);
+    let domains = [
+        dataset.metadata.name.as_str(),
+        dataset
+            .metadata
+            .domain
+            .as_deref()
+            .unwrap_or(&dataset.metadata.name),
+        row_domain.as_str(),
+    ];
+
+    if !core_000750_split_domain_class_scope_allows(rule.classes.as_ref(), &domains) {
+        return false;
+    }
+
+    let includes = scope_values(rule.domains.as_ref(), "Include");
+    let excludes = scope_values(rule.domains.as_ref(), "Exclude");
+
+    if domains
+        .iter()
+        .any(|domain| scope_matches(&excludes, domain))
+    {
+        return false;
+    }
+
+    includes.is_empty()
+        || scope_contains_all(&includes)
+        || domains
+            .iter()
+            .any(|domain| scope_matches(&includes, domain))
+}
+
+fn core_000750_split_domain_class_scope_allows(scope: Option<&Value>, domains: &[&str]) -> bool {
+    let includes = scope_values(scope, "Include");
+    let excludes = scope_values(scope, "Exclude");
+    let classes = domains
+        .iter()
+        .filter_map(|domain| domain_class_name(domain))
+        .collect::<Vec<_>>();
+
+    if classes.is_empty() {
+        return true;
+    }
+    if classes
+        .iter()
+        .any(|class| class_scope_matches(&excludes, class))
+    {
+        return false;
+    }
+    includes.is_empty()
+        || scope_contains_all(&includes)
+        || classes
+            .iter()
+            .any(|class| class_scope_matches(&includes, class))
+}
+
+fn split_domain_unique_set_keys(row: &SplitDomainUniqueSetRow) -> Vec<Vec<String>> {
+    let mut keys = Vec::new();
+    if let Some(usubjid) = &row.usubjid {
+        keys.push(vec![
+            "USUBJID".to_owned(),
+            row.domain.clone(),
+            usubjid.clone(),
+            row.seq.clone(),
+        ]);
+    }
+    if let Some(poolid) = &row.poolid {
+        keys.push(vec![
+            "POOLID".to_owned(),
+            row.domain.clone(),
+            poolid.clone(),
+            row.seq.clone(),
+        ]);
+    }
+    keys
+}
+
+fn split_domain_sequence_column(dataset: &LoadedDataset) -> Option<String> {
+    let domain = dataset_domain_value(dataset);
+    dataset_column_name(dataset, &format!("{domain}SEQ")).or_else(|| {
+        dataset
+            .summary()
+            .columns
+            .into_iter()
+            .find(|column| column.to_ascii_uppercase().ends_with("SEQ"))
+    })
+}
+
+fn resolved_dataset_column_values(dataset: &LoadedDataset, column: &str) -> Option<Vec<Value>> {
+    let actual = dataset_column_name(dataset, column)?;
+    dataset_column_values(dataset, &actual).ok()
+}
+
+fn json_report_string(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => value.to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn core_000878_invalid_condition_context_results(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+    existing_results: &[RuleValidationResult],
+) -> Vec<RuleValidationResult> {
+    if rule.core_id != engine_semantics::CORE_000878 {
+        return Vec::new();
+    }
+
+    let valid_context_ids = datasets
+        .iter()
+        .flat_map(|dataset| {
+            let ids = resolved_dataset_column_values(dataset, "id").unwrap_or_default();
+            let instance_types =
+                resolved_dataset_column_values(dataset, "instanceType").unwrap_or_default();
+            (0..dataset.frame().height()).filter_map(move |row| {
+                let id = ids.get(row).map(json_report_string)?;
+                let instance_type = instance_types.get(row).map(json_report_string)?;
+                matches!(
+                    instance_type.as_str(),
+                    "Activity" | "ScheduledActivityInstance"
+                )
+                .then_some(id)
+            })
+        })
+        .collect::<BTreeSet<_>>();
+
+    let existing = existing_results
+        .iter()
+        .flat_map(|result| result.errors.iter())
+        .filter_map(|issue| Some((issue.dataset.to_ascii_uppercase(), issue.row?)))
+        .collect::<BTreeSet<_>>();
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let variables = if rule.output_variables.is_empty() {
+        vec![
+            "$condition_parent_entity".to_owned(),
+            "$condition_parent_id".to_owned(),
+            "$condition_parent_rel".to_owned(),
+            "$condition_rel_type".to_owned(),
+            "$condition_name".to_owned(),
+            "id".to_owned(),
+            "name".to_owned(),
+            "parent_id".to_owned(),
+            "parent_rel".to_owned(),
+            "rel_type".to_owned(),
+            "instanceType".to_owned(),
+            "value".to_owned(),
+            "$error_type".to_owned(),
+        ]
+    } else {
+        rule.output_variables.clone()
+    };
+    let mut issues_by_dataset = BTreeMap::<String, Vec<ValidationIssue>>::new();
+    for dataset in datasets {
+        let parent_entities =
+            resolved_dataset_column_values(dataset, "parent_entity").unwrap_or_default();
+        let parent_rels = resolved_dataset_column_values(dataset, "parent_rel").unwrap_or_default();
+        let rel_types = resolved_dataset_column_values(dataset, "rel_type").unwrap_or_default();
+        let instance_types =
+            resolved_dataset_column_values(dataset, "instanceType").unwrap_or_default();
+        let values = resolved_dataset_column_values(dataset, "value").unwrap_or_default();
+        let dataset_name = dataset.metadata.name.to_ascii_uppercase();
+        for row in 0..dataset.frame().height() {
+            let parent_entity = parent_entities
+                .get(row)
+                .map(json_report_string)
+                .unwrap_or_default();
+            let parent_rel = parent_rels
+                .get(row)
+                .map(json_report_string)
+                .unwrap_or_default();
+            if !parent_entity.eq_ignore_ascii_case("Condition")
+                || !parent_rel.eq_ignore_ascii_case("contextIds")
+            {
+                continue;
+            }
+
+            let rel_type = rel_types
+                .get(row)
+                .map(json_report_string)
+                .unwrap_or_default();
+            let invalid_context = if rel_type.eq_ignore_ascii_case("reference") {
+                let instance_type = instance_types
+                    .get(row)
+                    .map(json_report_string)
+                    .unwrap_or_default();
+                !matches!(
+                    instance_type.as_str(),
+                    "Activity" | "ScheduledActivityInstance"
+                )
+            } else if rel_type.eq_ignore_ascii_case("definition") {
+                let value = values.get(row).map(json_report_string).unwrap_or_default();
+                !value.trim().is_empty() && !valid_context_ids.contains(&value)
+            } else {
+                false
+            };
+            if !invalid_context {
+                continue;
+            }
+
+            let row_number = row + 1;
+            if existing.contains(&(dataset_name.clone(), row_number)) {
+                continue;
+            }
+            let issue = ValidationIssue {
+                rule_id: rule.core_id.clone(),
+                dataset: dataset_name.clone(),
+                domain: Some(dataset_domain_value(dataset)),
+                row: Some(row_number),
+                variables: variables.clone(),
+                message: message.clone(),
+                usubjid: None,
+                seq: None,
+            };
+            issues_by_dataset
+                .entry(issue.dataset.clone())
+                .or_default()
+                .push(issue);
+        }
+    }
+
+    issues_by_dataset
+        .into_iter()
+        .map(|(dataset, errors)| RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset,
+            domain: errors.first().and_then(|issue| issue.domain.clone()),
+            message: message.clone(),
+            error_count: errors.len(),
+            errors,
+        })
+        .collect()
 }
 
 fn variable_metadata_execution_datasets(
@@ -5572,8 +5969,12 @@ fn dataset_domain_class(dataset: &LoadedDataset) -> Option<&'static str> {
         .metadata
         .domain
         .as_deref()
-        .unwrap_or(&dataset.metadata.name)
-        .to_ascii_uppercase();
+        .unwrap_or(&dataset.metadata.name);
+    domain_class_name(domain)
+}
+
+fn domain_class_name(domain: &str) -> Option<&'static str> {
+    let domain = domain.to_ascii_uppercase();
     match domain.as_str() {
         "CM" | "EC" | "EX" | "ML" | "PR" | "SU" => Some("INTERVENTIONS"),
         "AE" | "CE" | "DS" | "DV" | "MH" => Some("EVENTS"),
@@ -5925,6 +6326,9 @@ fn execute_single_match_dataset(
         .unwrap_or_else(|| default_single_match_dataset_prefix(rule, match_name));
     let mut joined_datasets = Vec::with_capacity(scoped_bases.len());
     for scoped_base in scoped_bases {
+        if !dataset_has_join_keys(scoped_base, &keys.left) {
+            continue;
+        }
         let scoped_base = add_source_row_column(scoped_base)
             .map_err(|source| join_skipped_result(rule, source.to_string()))?;
         let lookup_dataset = if prefix.is_empty() {
@@ -5961,6 +6365,12 @@ fn execute_single_match_dataset(
         joined_datasets.push(joined);
     }
     Ok(joined_datasets)
+}
+
+fn dataset_has_join_keys(dataset: &LoadedDataset, keys: &[String]) -> bool {
+    keys.iter()
+        .map(|key| expand_dataset_domain_placeholder(dataset, key))
+        .all(|key| dataset_has_column(dataset, &key))
 }
 
 fn add_source_row_column(dataset: &LoadedDataset) -> core_data::Result<LoadedDataset> {
@@ -7870,7 +8280,7 @@ fn execute_reference_distinct_operation(
     .unwrap_or_default();
     let group_aliases = string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
         .unwrap_or_default();
-    if !group_keys.is_empty() && (scope_wide || !group_aliases.is_empty()) {
+    if !group_keys.is_empty() {
         let source_mask = match operation_inline_filter_mask(rule, operation, source_dataset) {
             Ok(mask) => mask,
             Err(skipped) => return Some(Err(skipped)),
@@ -7902,6 +8312,10 @@ fn execute_reference_distinct_operation(
             datasets
                 .iter()
                 .filter(|dataset| !scope_wide || !dataset_matches_name(dataset, &source_name))
+                .filter(|dataset| {
+                    !group_aliases.is_empty()
+                        || reference_distinct_target_has_group_keys(dataset, &target_keys)
+                })
                 .map(|dataset| {
                     derive_external_group_distinct_values_dataset(
                         source_dataset,
@@ -7933,6 +8347,13 @@ fn execute_reference_distinct_operation(
             })
             .collect(),
     )
+}
+
+fn reference_distinct_target_has_group_keys(
+    dataset: &LoadedDataset,
+    target_keys: &[String],
+) -> bool {
+    operation_group_key_columns(dataset, target_keys).is_ok()
 }
 
 fn is_absent_reference_distinct_source_pass_through_rule(
@@ -7981,7 +8402,7 @@ fn derive_external_distinct_values_dataset(
     let values = operation_column_values(source_dataset, source_column)?;
     let joined = values
         .iter()
-        .filter_map(json_scalar_string)
+        .filter_map(json_distinct_value_string)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>()
@@ -8027,7 +8448,7 @@ fn derive_external_group_distinct_values_dataset(
         if !source_mask.get(row).copied().unwrap_or(false) {
             continue;
         }
-        if let Some(value) = source_values.get(row).and_then(json_scalar_string) {
+        if let Some(value) = source_values.get(row).and_then(json_distinct_value_string) {
             groups
                 .entry(filtered_group_count_key(&source_key_columns, row, None))
                 .or_default()
@@ -10702,6 +11123,9 @@ fn xhtml_fragment_errors(text: &str, namespace: &str) -> Vec<String> {
             if name == "tag" && !node.has_attribute("name") {
                 errors.push("usdm:tag requires name".to_owned());
             }
+            if name == "ref" && !node.has_attribute("id") {
+                errors.push("usdm:ref requires id".to_owned());
+            }
             if node.children().any(|child| {
                 child.is_element() || child.text().is_some_and(|text| !text.trim().is_empty())
             }) {
@@ -10721,6 +11145,16 @@ fn xhtml_fragment_errors(text: &str, namespace: &str) -> Vec<String> {
         if !is_allowed_xhtml_element(name) {
             errors.push(format!("unsupported xhtml element {name}"));
             continue;
+        }
+        if matches!(name, "ul" | "ol") {
+            for child in node.children().filter(|child| child.is_element()) {
+                if child.tag_name().name() != "li" {
+                    errors.push(format!(
+                        "unsupported xhtml element {} under {name}",
+                        child.tag_name().name()
+                    ));
+                }
+            }
         }
 
         for attribute in node.attributes() {
@@ -10884,6 +11318,24 @@ fn json_scalar_string(value: &Value) -> Option<String> {
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
+}
+
+fn json_distinct_value_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Number(value) => value
+            .as_f64()
+            .map(canonical_numeric_string)
+            .or_else(|| Some(value.to_string())),
+        _ => json_scalar_string(value),
+    }
+}
+
+fn canonical_numeric_string(value: f64) -> String {
+    let formatted = format!("{value:.12}");
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
 }
 
 fn operation_input_datasets(
@@ -11212,6 +11664,64 @@ fn missing_tpt_relationship_pp_dataset_result(
         message,
         error_count: 1,
         errors: vec![issue],
+    })
+}
+
+fn missing_scoped_dataset_presence_result(
+    rule: &ExecutableRule,
+    execution_datasets: &[LoadedDataset],
+) -> Option<RuleValidationResult> {
+    if !execution_datasets.is_empty()
+        || !engine_semantics::uses_missing_scoped_dataset_presence_result(rule)
+        || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
+        || rule.rule_type != RuleType::RecordData
+        || !contains_presence_operator(&rule.conditions)
+    {
+        return None;
+    }
+
+    let includes = scope_values(rule.domains.as_ref(), "Include");
+    let excludes = scope_values(rule.domains.as_ref(), "Exclude");
+    let [domain] = includes.as_slice() else {
+        return None;
+    };
+    if !excludes.is_empty() || scope_contains_all(&includes) || domain.contains("--") {
+        return None;
+    }
+    let output_variables = rule
+        .output_variables
+        .iter()
+        .filter(|variable| !variable.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    if output_variables.is_empty() {
+        return None;
+    }
+
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let errors = output_variables
+        .into_iter()
+        .map(|variable| ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: domain.clone(),
+            domain: Some(domain.clone()),
+            row: None,
+            variables: vec![variable],
+            message: message.clone(),
+            usubjid: None,
+            seq: None,
+        })
+        .collect::<Vec<_>>();
+
+    Some(RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Failed,
+        skipped_reason: None,
+        dataset: domain.clone(),
+        domain: Some(domain.clone()),
+        message,
+        error_count: errors.len(),
+        errors,
     })
 }
 

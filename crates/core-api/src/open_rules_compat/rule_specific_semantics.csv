@@ -47,6 +47,8 @@ CORE-000187,engine_semantics,csv_line_record_number,official Record uses CSV lin
 CORE-000223,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000224,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000228,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000269,engine_semantics,match_dataset_target_scope,planned visit reference check also evaluates SV match dataset rows,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000270,engine_semantics,match_dataset_target_scope,planned visit reference check also evaluates SV match dataset rows,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000242,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000245,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000246,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
@@ -141,8 +143,10 @@ CORE-000711,engine_semantics,date_result_postprocess,date issue variable expansi
 CORE-000714,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000744,engine_semantics,result_postprocess,RELREC FAOBJ oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000757,engine_semantics,result_postprocess,intervention RELREC FAOBJ handling passes when parent FA data is absent,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000750,engine_semantics,split_domain_unique_set,split-domain uniqueness compares --SEQ across parent and split-domain datasets,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000770,compatibility_policy,standard_filter,SENDIG 3.1 operation oracle gap,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000783,engine_semantics,operation_adapter,operation report variable override,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000786,engine_semantics,missing_scoped_dataset_presence_result,missing scoped dataset presence is emitted as dataset-level output-variable issues,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000793,engine_semantics,dataset_level_existing_day_date_variable_result,missing study-day column is reported once with the existing date variable,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000794,engine_semantics,metadata_adapter,forbidden SEND domain-placeholder variable scan uses dataset metadata across domains,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000847,engine_semantics,metadata_adapter,forbidden SEND domain-placeholder variable scan uses dataset metadata across domains,core-api,full-upstream-baseline,open-rules-oracle-harness
@@ -154,6 +158,7 @@ CORE-000864,engine_semantics,dataset_level_existing_study_day_variable_result,mi
 CORE-000866,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000867,engine_semantics,metadata_adapter,value level metadata support exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000884,engine_semantics,operation_adapter,TS AGE AGEU AGETXT parameter counts are reported as dataset-level findings,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000878,engine_semantics,usdm_condition_context,invalid condition context reports all invalid context references from USDM datasets,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000893,engine_semantics,result_postprocess,TX distinct group findings are reported once per offending SETCD group,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000890,engine_semantics,metadata_adapter,value level metadata support exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000896,engine_semantics,operation_adapter,POOLDEF POOLID mismatch adapter shared with CORE-000677,core-api,full-upstream-baseline,open-rules-oracle-harness

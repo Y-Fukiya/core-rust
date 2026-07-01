@@ -289,11 +289,11 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
     let variables = open_rules_variable_descriptors(&variable_records, &variable_rows, &datasets)?;
 
     let mut variables_by_dataset = BTreeMap::<String, Vec<OpenRulesVariable>>::new();
-    for variable in variables {
+    for variable in &variables {
         variables_by_dataset
             .entry(variable.dataset.clone())
             .or_default()
-            .push(variable);
+            .push(variable.clone());
     }
 
     let mut loaded = Vec::new();
@@ -309,6 +309,7 @@ fn load_open_rules_data_dir_impl(data_dir: &Path) -> Result<LoadDataResult> {
             data_dir,
             dataset,
             variables,
+            &variables_by_dataset,
             &mut warnings,
         )?);
     }
@@ -7452,11 +7453,16 @@ fn is_open_rules_auxiliary_csv(filename: &str) -> bool {
 fn load_open_rules_dataset(
     data_dir: &Path,
     dataset: OpenRulesDataset,
-    variables: Vec<OpenRulesVariable>,
+    mut variables: Vec<OpenRulesVariable>,
+    variables_by_dataset: &BTreeMap<String, Vec<OpenRulesVariable>>,
     warnings: &mut Vec<LoadDataWarning>,
 ) -> Result<LoadedDataset> {
     let path = resolve_open_rules_dataset_path(data_dir, &dataset.filename)?;
-    let rows = read_csv_records(&path)?;
+    let raw_rows = read_csv_records(&path)?;
+    if variables.is_empty() {
+        variables =
+            infer_open_rules_embedded_metadata_variables(&dataset, &raw_rows, variables_by_dataset);
+    }
     let declared = variables
         .iter()
         .map(|variable| {
@@ -7467,6 +7473,7 @@ fn load_open_rules_dataset(
         })
         .collect::<BTreeMap<_, _>>();
     let label_columns = open_rules_label_column_map(&variables);
+    let rows = normalize_open_rules_embedded_metadata_records(raw_rows, &declared, &label_columns);
     let mut seen_columns = BTreeSet::new();
     let csv_columns = rows
         .headers
@@ -7548,6 +7555,85 @@ fn load_open_rules_dataset(
     Ok(LoadedDataset::new(metadata, frame))
 }
 
+fn infer_open_rules_embedded_metadata_variables(
+    dataset: &OpenRulesDataset,
+    rows: &CsvRecords,
+    variables_by_dataset: &BTreeMap<String, Vec<OpenRulesVariable>>,
+) -> Vec<OpenRulesVariable> {
+    if !rows.headers.iter().all(|header| header.trim().is_empty()) {
+        return Vec::new();
+    }
+    let Some(labels) = rows.records.first() else {
+        return Vec::new();
+    };
+    let types = rows.records.get(1);
+    let lengths = rows.records.get(2);
+    labels
+        .iter()
+        .enumerate()
+        .filter_map(|(index, label)| {
+            let name = infer_open_rules_embedded_metadata_variable_name(
+                &dataset.name,
+                label,
+                variables_by_dataset,
+            )?;
+            Some(OpenRulesVariable {
+                dataset: dataset.name.clone(),
+                variable: DatasetVariable {
+                    name,
+                    label: Some(label.clone()),
+                    variable_type: types
+                        .and_then(|row| row.get(index))
+                        .map(|value| value.trim().to_owned())
+                        .filter(|value| !value.is_empty()),
+                    length: lengths
+                        .and_then(|row| row.get(index))
+                        .and_then(|value| value.trim().parse::<usize>().ok()),
+                    extra: BTreeMap::new(),
+                },
+            })
+        })
+        .collect()
+}
+
+fn infer_open_rules_embedded_metadata_variable_name(
+    dataset: &str,
+    label: &str,
+    variables_by_dataset: &BTreeMap<String, Vec<OpenRulesVariable>>,
+) -> Option<String> {
+    let label = normalize_open_rules_header_label(label);
+    if label.is_empty() {
+        return None;
+    }
+    let dataset = dataset.to_ascii_uppercase();
+    let suffixes = variables_by_dataset
+        .values()
+        .flatten()
+        .filter(|variable| {
+            variable
+                .variable
+                .label
+                .as_deref()
+                .map(normalize_open_rules_header_label)
+                .as_deref()
+                == Some(label.as_str())
+        })
+        .filter_map(|variable| {
+            let name = variable.variable.name.to_ascii_uppercase();
+            let source_dataset = variable.dataset.to_ascii_uppercase();
+            if matches!(name.as_str(), "STUDYID" | "DOMAIN" | "USUBJID" | "POOLID") {
+                return Some(name);
+            }
+            name.strip_prefix(&source_dataset)
+                .filter(|suffix| !suffix.is_empty())
+                .map(|suffix| format!("{dataset}{suffix}"))
+        })
+        .collect::<BTreeSet<_>>();
+    (suffixes.len() == 1)
+        .then(|| suffixes.into_iter().next())
+        .flatten()
+}
+
 fn open_rules_label_column_map(
     variables: &[OpenRulesVariable],
 ) -> BTreeMap<String, Option<String>> {
@@ -7586,6 +7672,53 @@ fn open_rules_csv_column_name(
         .get(&normalize_open_rules_header_label(header))
         .and_then(|name| name.clone())
         .unwrap_or(name)
+}
+
+fn normalize_open_rules_embedded_metadata_records(
+    mut rows: CsvRecords,
+    declared: &BTreeMap<String, OpenRulesVariable>,
+    label_columns: &BTreeMap<String, Option<String>>,
+) -> CsvRecords {
+    if !rows.headers.iter().all(|header| header.trim().is_empty()) {
+        return rows;
+    }
+
+    let Some(header_row) = rows.records.first() else {
+        return rows;
+    };
+    let mapped_columns = header_row
+        .iter()
+        .map(|header| open_rules_csv_column_name(header, declared, label_columns))
+        .filter(|name| declared.contains_key(name))
+        .count();
+    if mapped_columns == 0 {
+        return rows;
+    }
+
+    rows.headers = rows.records.remove(0);
+    while rows
+        .records
+        .first()
+        .is_some_and(|row| is_open_rules_embedded_metadata_row(row))
+    {
+        rows.records.remove(0);
+    }
+    rows
+}
+
+fn is_open_rules_embedded_metadata_row(row: &[String]) -> bool {
+    let values = row
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    !values.is_empty()
+        && (values.iter().all(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "char" | "character" | "num" | "numeric" | "integer" | "float" | "double"
+            )
+        }) || values.iter().all(|value| value.parse::<usize>().is_ok()))
 }
 
 fn normalize_open_rules_header_label(value: &str) -> String {
@@ -8987,6 +9120,13 @@ fn aggregate_value(accumulator: &GroupAccumulator, statistic: &str) -> Value {
 }
 
 fn number_value(value: f64) -> Value {
+    if value.is_finite()
+        && value.fract() == 0.0
+        && value >= i64::MIN as f64
+        && value <= i64::MAX as f64
+    {
+        return Value::Number(serde_json::Number::from(value as i64));
+    }
     serde_json::Number::from_f64(value)
         .map(Value::Number)
         .unwrap_or(Value::Null)
@@ -9309,6 +9449,11 @@ fn cell_to_json_value(frame: &DataFrame, column_name: &str, row: usize) -> Resul
     if let Some(value) = value.extract_str() {
         return Ok(Value::String(value.to_owned()));
     }
+    match value {
+        AnyValue::Float64(value) => return Ok(number_value(value)),
+        AnyValue::Float32(value) => return Ok(number_value(value as f64)),
+        _ => {}
+    }
     if let Some(value) = value.extract::<i64>() {
         return Ok(Value::Number(serde_json::Number::from(value)));
     }
@@ -9434,6 +9579,44 @@ mod tests {
     }
 
     #[test]
+    fn load_open_rules_data_dir_preserves_declared_variable_name_case_for_metadata_rules() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\ndm,Demographics\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+dm,STUDYID,Study Identifier,Char,50\n\
+dm,aDOMAIN,Domain Abbreviation,Char,50\n\
+dm,ARM_NRS,Reason Arm and/or Actual Arm is Null,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("dm.csv"),
+            "STUDYID,aDOMAIN,ARM_NRS\nABC,DM,SCREEN FAILURE\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        let variable_names = result.datasets[0]
+            .metadata
+            .variables
+            .iter()
+            .map(|variable| variable.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(variable_names, vec!["STUDYID", "aDOMAIN", "ARM_NRS"]);
+        assert_eq!(
+            dataset_column_values(&result.datasets[0], "ADOMAIN").expect("canonical data column"),
+            vec![serde_json::json!("DM")]
+        );
+    }
+
+    #[test]
     fn load_open_rules_data_dir_maps_csv_label_headers_to_variable_names() {
         let dir = tempdir().expect("tempdir");
         fs::write(
@@ -9472,6 +9655,108 @@ ABC,EC,ABC2001,2,2,2-3\n",
         assert_eq!(
             dataset_column_values(dataset, "ECDOSTXT").expect("ECDOSTXT values"),
             vec![serde_json::json!(""), serde_json::json!("2-3")]
+        );
+        assert!(dataset.frame().column("Dose").is_err());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_skips_leading_metadata_rows_before_label_headers() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\nec,Exposure as Collected\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+ec,STUDYID,Study Identifier,Char,50\n\
+ec,DOMAIN,Domain Abbreviation,Char,50\n\
+ec,USUBJID,Unique Subject Identifier,Char,50\n\
+ec,ECSEQ,Sequence Number,Num,8\n\
+ec,ECDOSE,Dose,Num,8\n\
+ec,ECDOSTXT,Dose Description,Char,50\n\
+ec,ECDOSU,Dose Units,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("ec.csv"),
+            ",,,,,,\n\
+Study Identifier,Domain Abbreviation,Unique Subject Identifier,Sequence Number,Dose,Dose Description,Dose Units\n\
+Char,Char,Char,Num,Num,Char,Char\n\
+50,50,50,8,8,50,50\n\
+ABC,EC,ABC2001,1,2,,\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert!(result.warnings.is_empty());
+        let dataset = &result.datasets[0];
+        assert_eq!(dataset.frame().height(), 1);
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSE").expect("ECDOSE values"),
+            vec![serde_json::json!(2)]
+        );
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSU").expect("ECDOSU values"),
+            vec![serde_json::json!("")]
+        );
+        assert!(dataset.frame().column("Dose").is_err());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_infers_missing_dataset_schema_from_embedded_metadata_rows() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\nec,Exposure as Collected\nex,Exposure\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+ex,STUDYID,Study Identifier,Char,50\n\
+ex,DOMAIN,Domain Abbreviation,Char,50\n\
+ex,USUBJID,Unique Subject Identifier,Char,50\n\
+ex,EXSEQ,Sequence Number,Num,8\n\
+ex,EXDOSE,Dose,Num,8\n\
+ex,EXDOSTXT,Dose Description,Char,50\n\
+ex,EXDOSU,Dose Units,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("ec.csv"),
+            ",,,,,,\n\
+Study Identifier,Domain Abbreviation,Unique Subject Identifier,Sequence Number,Dose,Dose Description,Dose Units\n\
+Char,Char,Char,Num,Num,Char,Char\n\
+50,50,50,8,8,50,50\n\
+ABC,EC,ABC2001,1,2,,\n",
+        )
+        .expect("write ec dataset csv");
+        fs::write(
+            dir.path().join("ex.csv"),
+            "STUDYID,DOMAIN,USUBJID,EXSEQ,EXDOSE,EXDOSTXT,EXDOSU\n\
+ABC,EX,ABC1001,1,2,,TABLET\n",
+        )
+        .expect("write ex dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        let dataset = result
+            .datasets
+            .iter()
+            .find(|dataset| dataset.metadata.name == "EC")
+            .expect("EC dataset");
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSE").expect("ECDOSE values"),
+            vec![serde_json::json!(2)]
+        );
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSU").expect("ECDOSU values"),
+            vec![serde_json::json!("")]
         );
         assert!(dataset.frame().column("Dose").is_err());
     }
