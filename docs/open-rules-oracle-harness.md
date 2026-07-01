@@ -70,13 +70,16 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 |---|---|---|
 | `supported_match` | Candidate ran and normalized issue keys match the official oracle. | zero |
 | `supported_mismatch` | Candidate ran but normalized issue keys differ. | non-zero |
+| `deferred_oracle_gap_mismatch` | Candidate ran and differs from the official oracle, but the rule family is explicitly deferred as an oracle-semantics gap pending native verification. It is not a skipped execution and is excluded from supported accuracy. | zero for score, review-required in baseline when newly introduced |
 | `skipped_unsupported` | Candidate output contains skipped rows. | zero |
 | `mixed_skipped_and_issues` | Candidate output mixes skipped rows and issue rows for the same case. | non-zero |
 | `no_official_oracle` | The case has no official `results.csv`; it is excluded from supported accuracy and fails the score gate until explicitly resolved. | non-zero |
 | `harness_error` | Official or candidate report is missing, malformed, or cannot be scored. | non-zero |
 
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
-mismatches are correctness problems.
+mismatches are correctness problems. Deferred oracle-gap mismatches are a third
+state: they preserve the mismatch evidence without counting it as unsupported
+skip coverage.
 
 ## Missing Official Oracle Policy
 
@@ -92,6 +95,9 @@ Read these fields together:
   `results.csv`.
 - `supported_mismatch`: official-oracle-backed cases where structural issue keys
   differ.
+- `deferred_oracle_gap_mismatch`: official-oracle-backed mismatches deferred by
+  an explicit oracle-gap policy; treat increases as review-required, not as
+  coverage improvement.
 - `native_engine_coverage`: share of all discovered cases covered by supported
   native engine execution.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
@@ -138,11 +144,45 @@ Rust `matches!` list. Treat that manifest as an Open Rules oracle-harness
 compatibility policy file: entries should be reviewed like coverage exceptions,
 not like generic engine semantics.
 
+Open Rules oracle-gap rule-id membership is similarly driven by
+`crates/core-api/src/open_rules_compat/oracle_gap_rule_ids.csv`. Each row carries
+the rule id, gap category, reason, owner, evidence source, and scope. The Rust
+loader validates the header, exact row count, CORE id format, category, reason,
+owner, evidence, scope, duplicate headers, and duplicate rule ids within the
+same category. The engine code should keep semantic predicates in Rust and use
+this manifest only for reviewed rule-id membership.
+
+Remaining hard-coded `CORE-xxxxxx` references in `core-api` are inventoried in
+`crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`. That file
+does not make the rules generic; it classifies why each rule-specific reference
+still exists, such as USDM JSONata hand-port semantics, metadata adapters,
+standard-filter compatibility, or result post-processing. Unit tests scan the
+core API source files and fail when a new hard-coded CORE id appears without a
+classification row.
+
+USDM JSONata hand-port semantics are isolated in
+`crates/core-api/src/usdm_jsonata.rs`. `core-api/src/lib.rs` should call that
+module, not carry inline USDM rule-family lists.
+
+Remaining Open Rules engine-semantics rule-id membership is isolated in
+`crates/core-api/src/engine_semantics.rs`. `core-api/src/lib.rs` should use
+those classification helpers instead of inline `CORE-xxxxxx` literals.
+
+The full upstream regression baseline lives in
+`tests/open_rules/upstream-baseline.json`. It is generated from the pinned
+upstream SHA in `tests/open_rules/upstream.lock`, with local filesystem paths
+normalized and per-case issue diff arrays stripped so the baseline remains
+portable. The upstream regression workflow treats scoreboard generation failure
+as an infrastructure failure, then lets the baseline comparison decide whether
+known compatibility gaps have regressed.
+
 A supported case moving from `rule_id_hand_port` provenance to `native_engine`
 provenance is not counted as an automatic baseline improvement. The baseline
 command reports that transition as `review-required` so reviewers can confirm
 that the rule-specific execution path was actually retired or replaced by
-generic engine semantics.
+generic engine semantics. `review-required` differences fail the baseline gate
+until the transition is explicitly reviewed and the accepted baseline is
+updated.
 
 ## Normalization
 
@@ -190,7 +230,8 @@ Improvements to `supported_match` are allowed and printed as improvements.
 Supported matches moving from `rule_id_hand_port` provenance to
 `native_engine` provenance are reported as `review-required`, not automatic
 improvements, because manifest removal alone is not evidence that generic
-engine semantics replaced rule-specific behavior.
+engine semantics replaced rule-specific behavior. `review-required` entries
+make the baseline command exit non-zero in CI.
 Unknown provenance transitions are reported neutrally unless they also change
 the score bucket. Provenance-related differences include the old and new
 provenance values in the baseline report output.
@@ -209,6 +250,13 @@ The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 also runs weekly. That workflow checks out the pinned SHA from
 `tests/open_rules/upstream.lock`, runs `xtask open-rules run-score` with
 `--strict-lock`, and uploads the upstream scoreboard artifacts.
+
+The committed full upstream baseline is a default-engine regression baseline.
+`ValidateRequest::open_rules_oracle_compat` remains an explicit API/test-only
+compatibility switch; the upstream workflow does not silently enable it. Treat
+`tests/open_rules/upstream-baseline.json` as a "do not get worse" guard for the
+default engine plus tracked hand-port provenance, not as a full conformance
+certificate.
 
 ## Full Upstream Workflow
 

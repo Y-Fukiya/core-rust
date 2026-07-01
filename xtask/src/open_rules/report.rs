@@ -49,6 +49,10 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             summary.unverified_synthetic_oracle_match
         ),
         format!("| Supported mismatch | {} |", summary.supported_mismatch),
+        format!(
+            "| Deferred oracle-gap mismatch | {} |",
+            summary.deferred_oracle_gap_mismatch
+        ),
         format!("| Skipped unsupported | {} |", summary.skipped_unsupported),
         format!(
             "| Mixed skipped and issues | {} |",
@@ -182,6 +186,13 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         "Supported Mismatches",
         scoreboard,
         ScoreBucket::SupportedMismatch,
+        50,
+    );
+    push_case_section(
+        &mut lines,
+        "Deferred Oracle-Gap Mismatches",
+        scoreboard,
+        ScoreBucket::DeferredOracleGapMismatch,
         50,
     );
     push_case_section(
@@ -411,6 +422,26 @@ mod tests {
                 },
                 ScoredCase {
                     scope: "Published".to_owned(),
+                    rule_id: "CORE-000008".to_owned(),
+                    case_kind: "negative".to_owned(),
+                    case_id: "02".to_owned(),
+                    case_dir: "case".into(),
+                    official_results_csv: "official.csv".into(),
+                    candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::NativeEngine,
+                    bucket: ScoreBucket::DeferredOracleGapMismatch,
+                    reason: Some(
+                        "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
+                            .to_owned(),
+                    ),
+                    skipped_reasons: Vec::new(),
+                    official_issue_count: Some(1),
+                    candidate_issue_count: Some(1),
+                    missing: Vec::new(),
+                    extra: Vec::new(),
+                },
+                ScoredCase {
+                    scope: "Published".to_owned(),
                     rule_id: "CORE-000007".to_owned(),
                     case_kind: "positive".to_owned(),
                     case_id: "01".to_owned(),
@@ -438,15 +469,17 @@ mod tests {
         let markdown = fs::read_to_string(dir.path().join("summary.md")).expect("read markdown");
 
         assert!(json.contains("\"supported_mismatch\": 1"));
+        assert!(json.contains("\"deferred_oracle_gap_mismatch\": 1"));
         assert!(markdown.contains("# CDISC Open Rules Oracle Compatibility"));
         assert!(markdown.contains("CORE-000005"));
         assert!(markdown.contains("| Official oracle match | 0 |"));
         assert!(markdown.contains("| Synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
+        assert!(markdown.contains("| Deferred oracle-gap mismatch | 1 |"));
         assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
         assert!(markdown.contains("## Execution Provenance"));
-        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 33.33% |"));
-        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 33.33% |"));
+        assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 25.00% |"));
+        assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 25.00% |"));
         assert!(markdown.contains(
             "Aggregate coverage includes both native engine and rule-id hand-port supported cases."
         ));
@@ -464,6 +497,8 @@ mod tests {
         }
         assert!(markdown.contains("## Synthetic Oracle Notice"));
         assert!(markdown.contains("## Synthetic Oracle Reasons"));
+        assert!(markdown.contains("## Deferred Oracle-Gap Mismatches"));
+        assert!(markdown.contains("CORE-000008"));
         assert!(markdown.contains("## Skipped Unsupported Reasons"));
         assert!(markdown.contains("- `unsupported_operator`: 1 case(s)"));
         assert!(markdown.contains("warning text"));
