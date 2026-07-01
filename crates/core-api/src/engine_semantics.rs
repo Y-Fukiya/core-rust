@@ -186,6 +186,7 @@ pub(crate) fn is_dataset_level_presence_result_rule(rule: &ExecutableRule) -> bo
             | "CORE-000635"
             | "CORE-000636"
             | "CORE-000637"
+            | "CORE-000638"
             | "CORE-000639"
             | "CORE-000640"
             | "CORE-000641"

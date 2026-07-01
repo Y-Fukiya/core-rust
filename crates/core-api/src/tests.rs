@@ -5074,6 +5074,53 @@ CDISC-TEST,AE,SUBJ2,2,Y\n",
 }
 
 #[test]
+fn run_validation_core_000638_reports_dataset_level_forbidden_send_variable() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        data_dir.join("dm.csv"),
+        "STUDYID,DOMAIN,USUBJID,DTHDTC\n\
+CDISC-TEST,DM,SUBJ1,\n\
+CDISC-TEST,DM,SUBJ2,\n\
+CDISC-TEST,DM,SUBJ3,\n",
+    )
+    .expect("write data");
+    fs::write(
+        rules_dir.join("CORE-000638.json"),
+        r#"{
+  "Core": { "Id": "CORE-000638", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM"] }, "Classes": { "Include": ["SPECIAL PURPOSE"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": { "name": "DTHDTC", "operator": "exists" },
+  "Outcome": {
+    "Message": "DTHDTC must not be present in SEND dataset",
+    "Output Variables": ["DTHDTC"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir.join("dm.csv")],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["DTHDTC"]);
+    assert_eq!(result.errors[0].usubjid, None);
+}
+
+#[test]
 fn run_validation_executes_dataset_metadata_record_count_rule() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

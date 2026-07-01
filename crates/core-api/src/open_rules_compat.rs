@@ -79,7 +79,7 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,scope";
 #[cfg(test)]
-const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 262;
+const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 263;
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =
     LazyLock::new(load_hand_port_rule_ids);

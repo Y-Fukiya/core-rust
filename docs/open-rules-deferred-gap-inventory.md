@@ -1,20 +1,23 @@
 # Open Rules Deferred Gap Inventory
 
-Snapshot: `target/open-rules-scoreboard-upstream-engine-semantics-v22/scoreboard.json`
+Snapshot: `target/open-rules-scoreboard-upstream-v25/scoreboard.json`
 
 This inventory tracks the remaining `deferred_oracle_gap_skipped` cases after
 the default-engine upstream run reached:
 
 | Metric | Count |
 |---|---:|
-| `supported_match` | 2055 |
+| `total_cases` | 2296 |
+| `supported_match` | 2057 |
 | `supported_mismatch` | 0 |
 | `deferred_oracle_gap_mismatch` | 0 |
 | `deferred_oracle_gap_skipped` | 57 |
 | `skipped_unsupported` | 0 |
+| `mixed_skipped_and_issues` | 0 |
 | `harness_error` | 0 |
-| `coverage` | 89.43% |
-| `native_engine_coverage` | 75.02% |
+| `no_official_oracle` | 182 |
+| `coverage` | 89.59% |
+| `native_engine_coverage` | 75.17% |
 
 `deferred_oracle_gap_skipped` is not a correctness failure. These cases are
 excluded from supported accuracy and should be reviewed as coverage/oracle
