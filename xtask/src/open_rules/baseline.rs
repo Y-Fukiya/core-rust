@@ -36,6 +36,26 @@ pub struct BaselineDifference {
     pub baseline_execution_provenance: Option<ExecutionProvenance>,
     #[serde(default)]
     pub current_execution_provenance: Option<ExecutionProvenance>,
+    #[serde(default)]
+    pub baseline_official_issue_count: Option<usize>,
+    #[serde(default)]
+    pub current_official_issue_count: Option<usize>,
+    #[serde(default)]
+    pub baseline_candidate_issue_count: Option<usize>,
+    #[serde(default)]
+    pub current_candidate_issue_count: Option<usize>,
+    #[serde(default)]
+    pub baseline_missing_count: Option<usize>,
+    #[serde(default)]
+    pub current_missing_count: Option<usize>,
+    #[serde(default)]
+    pub baseline_extra_count: Option<usize>,
+    #[serde(default)]
+    pub current_extra_count: Option<usize>,
+    #[serde(default)]
+    pub baseline_issue_fingerprint: Option<String>,
+    #[serde(default)]
+    pub current_issue_fingerprint: Option<String>,
     pub message: String,
 }
 
@@ -146,6 +166,20 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(baseline_case),
                         Some(current_case),
                         "execution provenance regressed",
+                    ));
+                } else if same_bucket_issue_details_regressed(baseline_case, current_case) {
+                    regressions.push(difference(
+                        key,
+                        Some(baseline_case),
+                        Some(current_case),
+                        "case issue details regressed within the same bucket",
+                    ));
+                } else if same_bucket_issue_fingerprints_changed(baseline_case, current_case) {
+                    regressions.push(difference(
+                        key,
+                        Some(baseline_case),
+                        Some(current_case),
+                        "case issue fingerprints changed within the same bucket",
                     ));
                 }
             }
@@ -283,6 +317,79 @@ fn supported_match_provenance_changed(baseline: &ScoredCase, current: &ScoredCas
     baseline.execution_provenance != current.execution_provenance
 }
 
+fn same_bucket_issue_details_regressed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    if baseline.bucket != current.bucket || baseline.bucket == ScoreBucket::SupportedMatch {
+        return false;
+    }
+    if current.missing.len() > baseline.missing.len() || current.extra.len() > baseline.extra.len()
+    {
+        return true;
+    }
+    issue_count_distance(current) > issue_count_distance(baseline)
+}
+
+fn issue_count_distance(case: &ScoredCase) -> usize {
+    match (case.official_issue_count, case.candidate_issue_count) {
+        (Some(official), Some(candidate)) => official.abs_diff(candidate),
+        _ => 0,
+    }
+}
+
+fn same_bucket_issue_fingerprints_changed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    if baseline.bucket != current.bucket || baseline.bucket == ScoreBucket::SupportedMatch {
+        return false;
+    }
+    if baseline.missing.len() != current.missing.len()
+        || baseline.extra.len() != current.extra.len()
+        || issue_count_distance(baseline) != issue_count_distance(current)
+    {
+        return false;
+    }
+    issue_fingerprint(baseline) != issue_fingerprint(current)
+}
+
+fn issue_fingerprint(case: &ScoredCase) -> String {
+    let mut entries = BTreeSet::new();
+    for issue in &case.missing {
+        entries.insert(format!(
+            "missing\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            issue.rule_id,
+            issue.dataset,
+            issue.domain,
+            issue.row,
+            issue.variables.join("|"),
+            issue.usubjid,
+            issue.seq
+        ));
+    }
+    for issue in &case.extra {
+        entries.insert(format!(
+            "extra\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            issue.rule_id,
+            issue.dataset,
+            issue.domain,
+            issue.row,
+            issue.variables.join("|"),
+            issue.usubjid,
+            issue.seq
+        ));
+    }
+
+    let mut hash = 0xcbf29ce484222325u64;
+    for entry in entries {
+        fnv1a_update(&mut hash, entry.as_bytes());
+        fnv1a_update(&mut hash, b"\n");
+    }
+    format!("{hash:016x}")
+}
+
+fn fnv1a_update(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(0x100000001b3);
+    }
+}
+
 fn difference(
     case_key: String,
     baseline_case: Option<&ScoredCase>,
@@ -295,6 +402,16 @@ fn difference(
         current_bucket: current_case.map(|case| case.bucket.clone()),
         baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance.clone()),
         current_execution_provenance: current_case.map(|case| case.execution_provenance.clone()),
+        baseline_official_issue_count: baseline_case.and_then(|case| case.official_issue_count),
+        current_official_issue_count: current_case.and_then(|case| case.official_issue_count),
+        baseline_candidate_issue_count: baseline_case.and_then(|case| case.candidate_issue_count),
+        current_candidate_issue_count: current_case.and_then(|case| case.candidate_issue_count),
+        baseline_missing_count: baseline_case.map(|case| case.missing.len()),
+        current_missing_count: current_case.map(|case| case.missing.len()),
+        baseline_extra_count: baseline_case.map(|case| case.extra.len()),
+        current_extra_count: current_case.map(|case| case.extra.len()),
+        baseline_issue_fingerprint: baseline_case.map(issue_fingerprint),
+        current_issue_fingerprint: current_case.map(issue_fingerprint),
         message: message.to_owned(),
     }
 }
@@ -334,6 +451,7 @@ fn provenance_name(provenance: &ExecutionProvenance) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::open_rules::normalize::IssueKey;
     use crate::open_rules::upstream::UpstreamInfo;
 
     use super::*;
@@ -375,6 +493,18 @@ mod tests {
         scoreboard.cases[0].execution_provenance = execution_provenance;
         scoreboard.summary = crate::open_rules::score::ScoreSummary::from_cases(&scoreboard.cases);
         scoreboard
+    }
+
+    fn issue(row: &str) -> IssueKey {
+        IssueKey {
+            rule_id: "CORE-OPEN-0001".to_owned(),
+            dataset: "AE".to_owned(),
+            domain: "AE".to_owned(),
+            row: row.to_owned(),
+            variables: vec!["AESEQ".to_owned()],
+            usubjid: String::new(),
+            seq: String::new(),
+        }
     }
 
     #[test]
@@ -555,5 +685,48 @@ mod tests {
             .regressions
             .iter()
             .any(|regression| regression.case_key == "summary/skipped_unsupported"));
+    }
+
+    #[test]
+    fn baseline_fails_when_supported_mismatch_issue_details_worsen() {
+        let mut baseline = scoreboard(ScoreBucket::SupportedMismatch);
+        baseline.cases[0].official_issue_count = Some(2);
+        baseline.cases[0].candidate_issue_count = Some(1);
+        baseline.cases[0].missing = vec![issue("2")];
+
+        let mut current = baseline.clone();
+        current.cases[0].candidate_issue_count = Some(0);
+        current.cases[0].missing = vec![issue("1"), issue("2")];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        let regression = report
+            .regressions
+            .iter()
+            .find(|regression| {
+                regression.message == "case issue details regressed within the same bucket"
+            })
+            .expect("same-bucket issue regression");
+        assert_eq!(regression.baseline_missing_count, Some(1));
+        assert_eq!(regression.current_missing_count, Some(2));
+        assert_eq!(regression.baseline_candidate_issue_count, Some(1));
+        assert_eq!(regression.current_candidate_issue_count, Some(0));
+    }
+
+    #[test]
+    fn baseline_fails_when_same_bucket_issue_fingerprint_changes() {
+        let mut baseline = scoreboard(ScoreBucket::SupportedMismatch);
+        baseline.cases[0].missing = vec![issue("1")];
+
+        let mut current = baseline.clone();
+        current.cases[0].missing = vec![issue("2")];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.regressions.iter().any(|regression| {
+            regression.message == "case issue fingerprints changed within the same bucket"
+        }));
     }
 }

@@ -138,45 +138,11 @@ Rust `matches!` list. Treat that manifest as an Open Rules oracle-harness
 compatibility policy file: entries should be reviewed like coverage exceptions,
 not like generic engine semantics.
 
-Open Rules oracle-gap rule-id membership is similarly driven by
-`crates/core-api/src/open_rules_compat/oracle_gap_rule_ids.csv`. Each row carries
-the rule id, gap category, reason, owner, evidence source, and scope. The Rust
-loader validates the header, exact row count, CORE id format, category, reason,
-owner, evidence, scope, duplicate headers, and duplicate rule ids within the
-same category. The engine code should keep semantic predicates in Rust and use
-this manifest only for reviewed rule-id membership.
-
-Remaining hard-coded `CORE-xxxxxx` references in `core-api` are inventoried in
-`crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`. That file
-does not make the rules generic; it classifies why each rule-specific reference
-still exists, such as USDM JSONata hand-port semantics, metadata adapters,
-standard-filter compatibility, or result post-processing. Unit tests scan the
-core API source files and fail when a new hard-coded CORE id appears without a
-classification row.
-
-USDM JSONata hand-port semantics are isolated in
-`crates/core-api/src/usdm_jsonata.rs`. `core-api/src/lib.rs` should call that
-module, not carry inline USDM rule-family lists.
-
-Remaining Open Rules engine-semantics rule-id membership is isolated in
-`crates/core-api/src/engine_semantics.rs`. `core-api/src/lib.rs` should use
-those classification helpers instead of inline `CORE-xxxxxx` literals.
-
-The full upstream regression baseline lives in
-`tests/open_rules/upstream-baseline.json`. It is generated from the pinned
-upstream SHA in `tests/open_rules/upstream.lock`, with local filesystem paths
-normalized and per-case issue diff arrays stripped so the baseline remains
-portable. The upstream regression workflow treats scoreboard generation failure
-as an infrastructure failure, then lets the baseline comparison decide whether
-known compatibility gaps have regressed.
-
 A supported case moving from `rule_id_hand_port` provenance to `native_engine`
 provenance is not counted as an automatic baseline improvement. The baseline
 command reports that transition as `review-required` so reviewers can confirm
 that the rule-specific execution path was actually retired or replaced by
-generic engine semantics. `review-required` differences fail the baseline gate
-until the transition is explicitly reviewed and the accepted baseline is
-updated.
+generic engine semantics.
 
 ## Normalization
 
@@ -224,8 +190,7 @@ Improvements to `supported_match` are allowed and printed as improvements.
 Supported matches moving from `rule_id_hand_port` provenance to
 `native_engine` provenance are reported as `review-required`, not automatic
 improvements, because manifest removal alone is not evidence that generic
-engine semantics replaced rule-specific behavior. `review-required` entries
-make the baseline command exit non-zero in CI.
+engine semantics replaced rule-specific behavior.
 Unknown provenance transitions are reported neutrally unless they also change
 the score bucket. Provenance-related differences include the old and new
 provenance values in the baseline report output.

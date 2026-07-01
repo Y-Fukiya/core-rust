@@ -115,6 +115,10 @@ pub(crate) fn usdm_jsonata_execution_datasets(
         ));
     }
 
+    if is_usdm_timeline_jsonata_rule(rule) {
+        return Some(required_dataset(rule, datasets, "StudyDesign"));
+    }
+
     if is_usdm_governance_date_jsonata_rule(rule) {
         return Some(required_dataset(rule, datasets, "GovernanceDate"));
     }
@@ -161,7 +165,15 @@ pub(crate) fn usdm_jsonata_execution_datasets(
 
     if matches!(
         rule.core_id.as_str(),
-        "CORE-000998" | "CORE-001004" | "CORE-001005" | "CORE-001017" | "CORE-001065"
+        "CORE-000407"
+            | "CORE-000998"
+            | "CORE-000961"
+            | "CORE-001004"
+            | "CORE-001005"
+            | "CORE-001017"
+            | "CORE-001036"
+            | "CORE-001048"
+            | "CORE-001065"
     ) {
         return Some(required_dataset(rule, datasets, "StudyDesign"));
     }
@@ -247,6 +259,12 @@ fn apply_usdm_planned_number_jsonata_semantics(rule: &mut ExecutableRule) {
         return;
     };
 
+    let incomplete_cohort_condition = if quantity == "plannedEnrollmentNumber" {
+        bool_condition(format!("cohorts.{quantity}.any_missing"), true)
+    } else {
+        bool_condition(format!("cohorts.{quantity}.all_present"), false)
+    };
+
     rule.conditions = ConditionGroup::Any(vec![
         ConditionGroup::All(vec![
             bool_condition(format!("{quantity}.present"), true),
@@ -255,7 +273,7 @@ fn apply_usdm_planned_number_jsonata_semantics(rule: &mut ExecutableRule) {
         ConditionGroup::All(vec![
             bool_condition(format!("{quantity}.present"), false),
             bool_condition(format!("cohorts.{quantity}.any_present"), true),
-            bool_condition(format!("cohorts.{quantity}.all_present"), false),
+            incomplete_cohort_condition,
         ]),
     ]);
 }
@@ -672,7 +690,7 @@ fn apply_usdm_simple_recursive_jsonata_semantics(rule: &mut ExecutableRule) {
             rule.conditions = bool_condition("product_role_missing_valid_target".to_owned(), true);
         }
         "CORE-001022" => {
-            rule.conditions = bool_condition("product_role_missing_valid_target".to_owned(), true);
+            rule.conditions = bool_condition("product_role_invalid_target".to_owned(), true);
         }
         "CORE-001006" => {
             rule.conditions =

@@ -1,7 +1,6 @@
+use crate::RuleSelection;
 use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::{ExecutableRule, StandardRef};
-
-use crate::RuleSelection;
 
 pub(crate) fn apply_standard_filter(
     selection: &mut RuleSelection,

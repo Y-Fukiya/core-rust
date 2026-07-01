@@ -6,7 +6,7 @@ mod open_rules_compat;
 mod standard_filter;
 mod usdm_jsonata;
 
-pub use open_rules_compat::rule_id_uses_hand_port;
+pub use open_rules_compat::{rule_id_has_oracle_gap_category, rule_id_uses_hand_port};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,7 +22,7 @@ use core_data::{
     drop_dataset_columns, filter_dataset_by_mask, group_stat_dataset, inner_join_dataset_on,
     left_join_dataset_on, load_datasets_from_paths, load_open_rules_data_dir, metadata_row_dataset,
     metadata_rows_dataset, rename_dataset_columns, row_number_dataset, select_dataset_columns,
-    semi_join_dataset_on, sort_dataset_by_columns, DataError, LoadedDataset,
+    semi_join_dataset_on, sort_dataset_by_columns, DataError, DatasetSourceFormat, LoadedDataset,
 };
 use core_engine::{
     evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
@@ -40,13 +40,15 @@ use core_rule_model::{
 use serde_json::Value;
 use thiserror::Error;
 
-use open_rules_compat::{oracle_gap_rule_id_matches, post_execution_oracle_gap_result};
+use open_rules_compat::post_execution_oracle_gap_result;
 use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
 use usdm_jsonata::{
     apply_usdm_jsonata_semantics, has_usdm_jsonata_semantics, usdm_jsonata_execution_datasets,
 };
 
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+const SOURCE_ROW_COLUMN: &str = "__core_source_row";
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -167,8 +169,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             .as_ref()
             .ok_or_else(|| ApiError::Internal("missing CDISC context".to_owned()))?;
         let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
-        if open_rules_compat {
-            if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
+        if !open_rules_compat {
+            if let Some(result) = core_000206_idvarval_rdomain_result(&rule, &datasets) {
                 results.push(result);
                 continue;
             }
@@ -176,6 +178,18 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 results.push(result);
                 continue;
             }
+            if let Some(result) = core_000757_intervention_relrec_faobj_result(&rule, &datasets) {
+                results.push(result);
+                continue;
+            }
+        }
+        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
+            results.push(result);
+            continue;
+        }
+        if let Some(result) = core_000884_ts_age_parameter_count_result(&rule, &datasets) {
+            results.push(result);
+            continue;
         }
         let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
             Ok(datasets) => datasets,
@@ -187,11 +201,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
 
         let rule_result_start = results.len();
         for dataset in &execution_datasets {
-            let dataset = if open_rules_compat {
-                add_core_000324_missing_cm_dtc(dataset, &rule)?
-            } else {
-                dataset.clone()
-            };
+            let dataset = add_core_000324_missing_cm_dtc(dataset, &rule)?;
+            let dataset = add_core_000039_missing_svpresp(&dataset, &rule)?;
 
             if open_rules_compat
                 && is_missing_column_oracle_gap_rule(&rule)
@@ -248,7 +259,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                     results.push(result);
                 }
                 Err(source) => {
-                    if should_ignore_evaluation_error(&rule, &source, execution_datasets.len()) {
+                    if should_ignore_evaluation_error(
+                        &rule,
+                        &source,
+                        execution_datasets.len(),
+                        open_rules_compat,
+                    ) {
                         continue;
                     }
                     results.push(skipped_result_for_evaluation_error(
@@ -345,8 +361,7 @@ fn normalize_validation_result(
         return result;
     }
 
-    if open_rules_compat
-        && engine_semantics::is_date_issue_variable_expansion_rule(rule)
+    if engine_semantics::is_date_issue_variable_expansion_rule(rule)
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
     {
@@ -412,6 +427,108 @@ fn normalize_validation_result(
         return result;
     }
 
+    if engine_semantics::is_cv_unique_evaluation_interval_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+    {
+        result
+            .errors
+            .retain(|issue| core_000390_issue_has_overlapping_interval(dataset, issue));
+        result.error_count = result.errors.len();
+        if result.errors.is_empty() {
+            result.execution_status = core_engine::ExecutionStatus::Passed;
+        }
+        return result;
+    }
+
+    if engine_semantics::is_elapsed_time_consistency_precondition_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+        && has_elapsed_time_consistency_preconditions(rule, dataset)
+    {
+        let issue_variables = elapsed_time_consistency_issue_variables(dataset);
+        result.errors = result
+            .errors
+            .into_iter()
+            .filter(|issue| core_000142_issue_has_precondition_peer(dataset, issue))
+            .map(|mut issue| {
+                if let Some(issue_variables) = &issue_variables {
+                    issue.variables = issue_variables.clone();
+                }
+                issue
+            })
+            .collect();
+        result.error_count = result.errors.len();
+        if result.errors.is_empty() {
+            result.execution_status = core_engine::ExecutionStatus::Passed;
+        }
+        return result;
+    }
+
+    if engine_semantics::is_group_level_distinct_result_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+    {
+        let mut issue = result.errors[0].clone();
+        issue.row = None;
+        issue.usubjid = None;
+        issue.seq = None;
+        if !rule.output_variables.is_empty() {
+            issue.variables = rule.output_variables.clone();
+        }
+        result.errors = vec![issue];
+        result.error_count = 1;
+        return result;
+    }
+
+    if engine_semantics::is_duplicate_intent_type_group_result_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+    {
+        let group_counts =
+            dataset_column_values(dataset, "intentTypes.duplicate_group_count").unwrap_or_default();
+        result.errors = result
+            .errors
+            .into_iter()
+            .flat_map(|issue| {
+                let repeat = issue
+                    .row
+                    .and_then(|row| row.checked_sub(1))
+                    .and_then(|row| group_counts.get(row))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1) as usize;
+                std::iter::repeat_n(issue, repeat).collect::<Vec<_>>()
+            })
+            .collect();
+        result.error_count = result.errors.len();
+        return result;
+    }
+
+    if engine_semantics::is_study_arm_invalid_population_result_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+        && !result.errors.is_empty()
+    {
+        let invalid_counts =
+            dataset_column_values(dataset, "populationId.invalid_count").unwrap_or_default();
+        result.errors = result
+            .errors
+            .into_iter()
+            .flat_map(|issue| {
+                let repeat = issue
+                    .row
+                    .and_then(|row| row.checked_sub(1))
+                    .and_then(|row| invalid_counts.get(row))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1) as usize;
+                std::iter::repeat_n(issue, repeat).collect::<Vec<_>>()
+            })
+            .collect();
+        result.error_count = result.errors.len();
+        return result;
+    }
+
     if engine_semantics::is_dataset_level_presence_result_rule(rule)
         && result.execution_status == core_engine::ExecutionStatus::Failed
         && !result.errors.is_empty()
@@ -424,6 +541,26 @@ fn normalize_validation_result(
         result.error_count = 1;
         return result;
     }
+
+    if engine_semantics::is_forbidden_send_domain_placeholder_variable_rule(rule)
+        && result.execution_status == core_engine::ExecutionStatus::Failed
+    {
+        for issue in &mut result.errors {
+            issue.row = None;
+            issue.usubjid = None;
+            issue.seq = None;
+        }
+    }
+
+    narrow_simple_any_issue_variables(rule, dataset, &mut result);
+    omit_unique_set_group_locator_variables(rule, dataset, &mut result);
+    include_unique_set_subject_locator_variable(rule, &mut result);
+    report_missing_column_zero_record_result(rule, dataset, &mut result);
+    report_dataset_level_existing_study_day_variable_result(rule, dataset, &mut result);
+    report_missing_dataset_column_once_for_dataset_presence_rules(rule, dataset, &mut result);
+    report_first_row_dataset_presence_result(rule, &mut result);
+    report_csv_line_record_numbers(rule, dataset, &mut result);
+    report_previous_record_numbers(rule, dataset, &mut result);
 
     if !has_variable_count_operation(rule) && !has_dataset_level_record_count_operation(rule)
         || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
@@ -440,6 +577,645 @@ fn normalize_validation_result(
     result.errors = vec![issue];
     result.error_count = 1;
     result
+}
+
+fn has_elapsed_time_consistency_preconditions(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> bool {
+    ["--TPT", "--TPTNUM", "--ELTM"].into_iter().all(|target| {
+        let expanded = expand_domain_placeholder_for_dataset(dataset, target);
+        contains_non_empty_target(&rule.conditions, target)
+            || contains_non_empty_target(&rule.conditions, &expanded)
+    })
+}
+
+fn contains_non_empty_target(group: &ConditionGroup, target: &str) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .any(|group| contains_non_empty_target(group, target)),
+        ConditionGroup::Not(group) => contains_non_empty_target(group, target),
+        ConditionGroup::Leaf(condition) => {
+            condition.operator == Operator::IsNotEmpty
+                && condition
+                    .target
+                    .as_deref()
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(target))
+        }
+    }
+}
+
+fn core_000142_issue_has_precondition_peer(
+    dataset: &LoadedDataset,
+    issue: &ValidationIssue,
+) -> bool {
+    let Some(row) = issue.row.and_then(|row| row.checked_sub(1)) else {
+        return true;
+    };
+    let domain = dataset_column_values(dataset, "DOMAIN").unwrap_or_default();
+    let visit = dataset_column_values(dataset, "VISITNUM").unwrap_or_default();
+    let tptref_column = expand_domain_placeholder_for_dataset(dataset, "--TPTREF");
+    let tptnum_column = expand_domain_placeholder_for_dataset(dataset, "--TPTNUM");
+    let tpt_column = expand_domain_placeholder_for_dataset(dataset, "--TPT");
+    let eltm_column = expand_domain_placeholder_for_dataset(dataset, "--ELTM");
+    let tptref = dataset_column_values(dataset, &tptref_column).unwrap_or_default();
+    let tptnum = dataset_column_values(dataset, &tptnum_column).unwrap_or_default();
+    let tpt = dataset_column_values(dataset, &tpt_column).unwrap_or_default();
+    let eltm = dataset_column_values(dataset, &eltm_column).unwrap_or_default();
+
+    if !core_000142_row_satisfies_preconditions(row, &tpt, &tptnum, &eltm) {
+        return false;
+    }
+    let key = (
+        dataset_cell_string(&domain, row),
+        dataset_cell_string(&visit, row),
+        dataset_cell_string(&tptref, row),
+        dataset_cell_string(&tptnum, row),
+    );
+    let value = dataset_cell_string(&eltm, row);
+
+    (0..dataset.summary().row_count).any(|other| {
+        other != row
+            && core_000142_row_satisfies_preconditions(other, &tpt, &tptnum, &eltm)
+            && key.0 == dataset_cell_string(&domain, other)
+            && key.1 == dataset_cell_string(&visit, other)
+            && key.2 == dataset_cell_string(&tptref, other)
+            && key.3 == dataset_cell_string(&tptnum, other)
+            && value != dataset_cell_string(&eltm, other)
+    })
+}
+
+fn core_000142_row_satisfies_preconditions(
+    row: usize,
+    tpt: &[Value],
+    tptnum: &[Value],
+    eltm: &[Value],
+) -> bool {
+    !dataset_cell_string(tpt, row).is_empty()
+        && !dataset_cell_string(tptnum, row).is_empty()
+        && !dataset_cell_string(eltm, row).is_empty()
+}
+
+fn elapsed_time_consistency_issue_variables(dataset: &LoadedDataset) -> Option<Vec<String>> {
+    dataset_domain_value(dataset)
+        .eq_ignore_ascii_case("FT")
+        .then(|| {
+            [
+                expand_domain_placeholder_for_dataset(dataset, "--TPT"),
+                expand_domain_placeholder_for_dataset(dataset, "--TPTNUM"),
+                expand_domain_placeholder_for_dataset(dataset, "--ELTM"),
+            ]
+            .into_iter()
+            .collect()
+        })
+}
+
+fn core_000390_issue_has_overlapping_interval(
+    dataset: &LoadedDataset,
+    issue: &ValidationIssue,
+) -> bool {
+    let Some(row) = issue.row.and_then(|row| row.checked_sub(1)) else {
+        return true;
+    };
+    let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
+    let tests = dataset_column_values(dataset, "CVTESTCD").unwrap_or_default();
+    let dates = dataset_column_values(dataset, "CVDTC").unwrap_or_default();
+    let starts = dataset_column_values(dataset, "CVSTINT").unwrap_or_default();
+    let ends = dataset_column_values(dataset, "CVENINT").unwrap_or_default();
+
+    let key = (
+        dataset_cell_string(&usubjids, row),
+        dataset_cell_string(&tests, row),
+        dataset_cell_string(&dates, row),
+    );
+    if key.0.is_empty() || key.1.is_empty() || key.2.is_empty() {
+        return true;
+    }
+
+    (0..dataset.summary().row_count).any(|other| {
+        other != row
+            && key.0 == dataset_cell_string(&usubjids, other)
+            && key.1 == dataset_cell_string(&tests, other)
+            && key.2 == dataset_cell_string(&dates, other)
+            && core_000390_intervals_overlap(row, other, &starts, &ends)
+    })
+}
+
+fn core_000390_intervals_overlap(
+    left: usize,
+    right: usize,
+    starts: &[Value],
+    ends: &[Value],
+) -> bool {
+    let Some((left_start, left_end)) = core_000390_interval_minutes(left, starts, ends) else {
+        return true;
+    };
+    let Some((right_start, right_end)) = core_000390_interval_minutes(right, starts, ends) else {
+        return true;
+    };
+    if left_start > left_end || right_start > right_end {
+        return true;
+    }
+    left_start <= right_end && right_start <= left_end
+}
+
+fn core_000390_interval_minutes(
+    row: usize,
+    starts: &[Value],
+    ends: &[Value],
+) -> Option<(i64, i64)> {
+    let start = dataset_cell_string(starts, row);
+    let end = dataset_cell_string(ends, row);
+    if start.is_empty() && end.is_empty() {
+        return None;
+    }
+    Some((
+        parse_iso8601_time_offset_minutes(&start)?,
+        parse_iso8601_time_offset_minutes(&end)?,
+    ))
+}
+
+fn parse_iso8601_time_offset_minutes(value: &str) -> Option<i64> {
+    let mut rest = value.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let sign = if let Some(stripped) = rest.strip_prefix('-') {
+        rest = stripped;
+        -1
+    } else if let Some(stripped) = rest.strip_prefix('+') {
+        rest = stripped;
+        1
+    } else {
+        1
+    };
+    rest = rest.strip_prefix("PT")?;
+    let mut number = String::new();
+    let mut minutes = 0_i64;
+    let mut saw_component = false;
+    for character in rest.chars() {
+        if character.is_ascii_digit() {
+            number.push(character);
+            continue;
+        }
+        let value = number.parse::<i64>().ok()?;
+        number.clear();
+        match character {
+            'H' => minutes += value * 60,
+            'M' => minutes += value,
+            _ => return None,
+        }
+        saw_component = true;
+    }
+    if !number.is_empty() || !saw_component {
+        return None;
+    }
+    Some(sign * minutes)
+}
+
+fn dataset_cell_string(values: &[Value], row: usize) -> String {
+    values
+        .get(row)
+        .and_then(json_scalar_string)
+        .unwrap_or_default()
+}
+
+fn report_first_row_dataset_presence_result(
+    rule: &ExecutableRule,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.len() <= 1
+        || !engine_semantics::uses_first_row_dataset_presence_result(rule)
+        || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
+        || rule.rule_type != RuleType::RecordData
+    {
+        return;
+    }
+
+    result.errors.truncate(1);
+    result.error_count = 1;
+}
+
+fn report_csv_line_record_numbers(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !matches!(dataset.metadata().source_format, DatasetSourceFormat::Csv)
+        || !engine_semantics::uses_csv_line_record_numbers(rule)
+    {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        if let Some(row) = issue.row.and_then(|row| row.checked_add(1)) {
+            issue.row = Some(row);
+        }
+    }
+}
+
+fn report_previous_record_numbers(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !matches!(dataset.metadata().source_format, DatasetSourceFormat::Csv)
+        || !engine_semantics::uses_previous_record_numbers(rule)
+    {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        if let Some(row) = issue
+            .row
+            .and_then(|row| row.checked_sub(1))
+            .filter(|row| *row > 0)
+        {
+            issue.row = Some(row);
+        }
+    }
+}
+
+fn narrow_simple_any_issue_variables(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed || result.errors.is_empty() {
+        return;
+    }
+    if engine_semantics::preserves_simple_any_study_day_output_variables(rule) {
+        return;
+    }
+    let ConditionGroup::Any(groups) = &rule.conditions else {
+        return;
+    };
+    let conditions = groups
+        .iter()
+        .map(|group| match group {
+            ConditionGroup::Leaf(condition) => Some(condition),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(conditions) = conditions else {
+        return;
+    };
+    if !conditions.iter().all(|condition| {
+        condition
+            .target
+            .as_deref()
+            .is_some_and(is_study_day_issue_target)
+    }) {
+        return;
+    }
+
+    let masks = conditions
+        .iter()
+        .filter_map(|condition| {
+            evaluate_condition_group(&ConditionGroup::Leaf((*condition).clone()), dataset)
+                .ok()
+                .map(|mask| (condition, mask))
+        })
+        .collect::<Vec<_>>();
+    if masks.is_empty() {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        if issue.variables.len() <= 1 {
+            continue;
+        }
+        let Some(row) = issue.row.and_then(|row| row.checked_sub(1)) else {
+            continue;
+        };
+        let mut variables = Vec::new();
+        for (condition, mask) in &masks {
+            if mask.get(row).copied().unwrap_or(false) {
+                if let Some(target) = condition.target.as_deref() {
+                    let variable = expand_domain_placeholder_for_dataset(dataset, target);
+                    push_unique_string(&mut variables, &variable);
+                }
+            }
+        }
+        if !variables.is_empty() {
+            issue.variables = variables;
+        }
+    }
+}
+
+fn is_study_day_issue_target(target: &str) -> bool {
+    let target = target
+        .trim()
+        .strip_prefix("--")
+        .unwrap_or_else(|| target.trim())
+        .to_ascii_uppercase();
+    matches!(target.as_str(), "DY" | "STDY" | "ENDY" | "VISITDY")
+}
+
+fn omit_unique_set_group_locator_variables(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !engine_semantics::omits_unique_set_group_locator_variables(rule)
+    {
+        return;
+    }
+
+    let group_variables = unique_set_group_variables(rule, dataset);
+    if group_variables.is_empty() {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        issue
+            .variables
+            .retain(|variable| !group_variables.contains(variable));
+    }
+}
+
+fn unique_set_group_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> BTreeSet<String> {
+    let mut variables = BTreeSet::new();
+    collect_unique_set_group_variables(&rule.conditions, dataset, &mut variables);
+    variables
+}
+
+fn collect_unique_set_group_variables(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    variables: &mut BTreeSet<String>,
+) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                collect_unique_set_group_variables(group, dataset, variables);
+            }
+        }
+        ConditionGroup::Not(group) => collect_unique_set_group_variables(group, dataset, variables),
+        ConditionGroup::Leaf(condition)
+            if matches!(
+                condition.operator,
+                Operator::IsNotUniqueSet | Operator::IsUniqueSet
+            ) =>
+        {
+            if let ValueExpr::List(values) = &condition.comparator {
+                for value in values {
+                    if let Some(variable) = value
+                        .as_str()
+                        .filter(|variable| variable.trim().eq_ignore_ascii_case("USUBJID"))
+                    {
+                        variables.insert(expand_domain_placeholder_for_dataset(dataset, variable));
+                    }
+                }
+            }
+        }
+        ConditionGroup::Leaf(_) => {}
+    }
+}
+
+fn include_unique_set_subject_locator_variable(
+    rule: &ExecutableRule,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !engine_semantics::includes_unique_set_subject_locator_variable(rule)
+    {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        push_unique_string(&mut issue.variables, "USUBJID");
+    }
+}
+
+fn report_missing_column_zero_record_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !engine_semantics::uses_missing_column_zero_record_result(rule)
+        || !matches!(
+            rule.sensitivity,
+            Some(Sensitivity::Record) | Some(Sensitivity::Dataset)
+        )
+        || rule.rule_type != RuleType::RecordData
+    {
+        return;
+    }
+
+    let missing_variables = missing_not_exists_output_variables(rule, dataset);
+    if missing_variables.is_empty() {
+        return;
+    }
+
+    for issue in &mut result.errors {
+        issue
+            .variables
+            .retain(|variable| !missing_variables.contains(variable));
+    }
+    result.errors.retain(|issue| !issue.variables.is_empty());
+
+    let template = result
+        .errors
+        .first()
+        .cloned()
+        .unwrap_or_else(|| ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: dataset.metadata().name.clone(),
+            domain: dataset.metadata().domain.clone(),
+            row: Some(0),
+            variables: Vec::new(),
+            message: result.message.clone(),
+            usubjid: None,
+            seq: None,
+        });
+    for variable in missing_variables {
+        result.errors.push(ValidationIssue {
+            row: Some(0),
+            variables: vec![variable],
+            usubjid: None,
+            seq: None,
+            ..template.clone()
+        });
+    }
+    result.error_count = result.errors.len();
+}
+
+fn report_missing_dataset_column_once_for_dataset_presence_rules(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.len() <= 1
+        || !engine_semantics::uses_missing_column_once_result(rule)
+        || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
+        || rule.rule_type != RuleType::RecordData
+    {
+        return;
+    }
+
+    let missing_variables = missing_not_exists_output_variables(rule, dataset);
+    if missing_variables.is_empty() {
+        return;
+    }
+
+    let mut seen = BTreeSet::new();
+    for issue in &mut result.errors {
+        issue.variables.retain(|variable| {
+            if !missing_variables.contains(variable) {
+                return true;
+            }
+            seen.insert(variable.clone())
+        });
+    }
+}
+
+fn report_dataset_level_existing_study_day_variable_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if result.execution_status != core_engine::ExecutionStatus::Failed
+        || result.errors.is_empty()
+        || !engine_semantics::uses_dataset_level_existing_study_day_variable_result(rule)
+        || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
+        || rule.rule_type != RuleType::RecordData
+    {
+        return;
+    }
+
+    let Some(variable) = existing_study_day_variable(rule, dataset) else {
+        return;
+    };
+    if is_all_empty_sm_endy_dataset_result(rule, dataset, &variable) {
+        result.execution_status = core_engine::ExecutionStatus::Passed;
+        result.error_count = 0;
+        result.errors.clear();
+        return;
+    }
+    let mut issue = result.errors[0].clone();
+    issue.row = None;
+    issue.variables = vec![variable];
+    issue.usubjid = None;
+    issue.seq = None;
+    result.errors = vec![issue];
+    result.error_count = 1;
+}
+
+fn is_all_empty_sm_endy_dataset_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    variable: &str,
+) -> bool {
+    rule.core_id == engine_semantics::CORE_000864
+        && dataset_domain_value(dataset).eq_ignore_ascii_case("SM")
+        && variable.eq_ignore_ascii_case("SMENDY")
+        && !dataset_column_has_non_empty_value(dataset, variable)
+}
+
+fn dataset_column_has_non_empty_value(dataset: &LoadedDataset, column: &str) -> bool {
+    dataset_column_values(dataset, column).is_ok_and(|values| {
+        values
+            .iter()
+            .any(|value| json_scalar_string(value).is_some_and(|value| !value.trim().is_empty()))
+    })
+}
+
+fn existing_study_day_variable(rule: &ExecutableRule, dataset: &LoadedDataset) -> Option<String> {
+    find_existing_dataset_level_variable(&rule.conditions, dataset)
+}
+
+fn find_existing_dataset_level_variable(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+) -> Option<String> {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
+            .iter()
+            .find_map(|group| find_existing_dataset_level_variable(group, dataset)),
+        ConditionGroup::Not(group) => find_existing_dataset_level_variable(group, dataset),
+        ConditionGroup::Leaf(condition)
+            if matches!(
+                condition.operator,
+                Operator::Exists | Operator::IsNotEmpty | Operator::IsCompleteDate
+            ) =>
+        {
+            condition
+                .target
+                .as_deref()
+                .map(|target| expand_domain_placeholder_for_dataset(dataset, target))
+                .filter(|variable| dataset_has_column(dataset, variable))
+        }
+        ConditionGroup::Leaf(_) => None,
+    }
+}
+
+fn missing_not_exists_output_variables(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> BTreeSet<String> {
+    let output_variables = rule
+        .output_variables
+        .iter()
+        .map(|variable| expand_domain_placeholder_for_dataset(dataset, variable))
+        .collect::<BTreeSet<_>>();
+    let mut variables = BTreeSet::new();
+    collect_missing_not_exists_output_variables(
+        &rule.conditions,
+        dataset,
+        &output_variables,
+        &mut variables,
+    );
+    variables
+}
+
+fn collect_missing_not_exists_output_variables(
+    group: &ConditionGroup,
+    dataset: &LoadedDataset,
+    output_variables: &BTreeSet<String>,
+    variables: &mut BTreeSet<String>,
+) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                collect_missing_not_exists_output_variables(
+                    group,
+                    dataset,
+                    output_variables,
+                    variables,
+                );
+            }
+        }
+        ConditionGroup::Not(group) => {
+            collect_missing_not_exists_output_variables(
+                group,
+                dataset,
+                output_variables,
+                variables,
+            );
+        }
+        ConditionGroup::Leaf(condition) if condition.operator == Operator::NotExists => {
+            if let Some(target) = condition.target.as_deref() {
+                let variable = expand_domain_placeholder_for_dataset(dataset, target);
+                if output_variables.contains(&variable) && !dataset_has_column(dataset, &variable) {
+                    variables.insert(variable);
+                }
+            }
+        }
+        ConditionGroup::Leaf(_) => {}
+    }
 }
 
 fn is_core_000595_missing_casno_oracle_issue(
@@ -462,6 +1238,169 @@ fn is_core_000595_missing_casno_oracle_issue(
         })
 }
 
+fn core_000206_idvarval_rdomain_result(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Option<RuleValidationResult> {
+    if !engine_semantics::is_idvarval_rdomain_reference_rule(rule) {
+        return None;
+    }
+
+    let source_datasets = datasets
+        .iter()
+        .filter(|dataset| core_000206_is_source_dataset(dataset))
+        .collect::<Vec<_>>();
+    let Some(result_dataset) = source_datasets
+        .first()
+        .copied()
+        .or_else(|| datasets.first())
+    else {
+        return Some(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::EvaluationError,
+            format!("Rule {} requires source datasets", rule.core_id),
+        ));
+    };
+
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let mut errors = Vec::new();
+    for dataset in source_datasets {
+        let source_is_supp = core_000206_is_supp_dataset(dataset);
+        let rdomains = dataset_column_values(dataset, "RDOMAIN").unwrap_or_default();
+        let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
+        let idvars = dataset_column_values(dataset, "IDVAR").unwrap_or_default();
+        let idvarvals = dataset_column_values(dataset, "IDVARVAL").unwrap_or_default();
+
+        for row in 0..dataset.summary().row_count {
+            let idvar = core_000206_cell(&idvars, row);
+            let idvarval = core_000206_cell(&idvarvals, row);
+            if idvar.is_empty() || idvarval.is_empty() {
+                continue;
+            }
+            let rdomain = core_000206_cell(&rdomains, row);
+            if rdomain.is_empty() {
+                continue;
+            }
+            let usubjid = core_000206_cell(&usubjids, row);
+            if source_is_supp
+                && !core_000206_parent_has_idvarval_any_subject(
+                    datasets, &rdomain, &idvar, &idvarval,
+                )
+            {
+                continue;
+            }
+            if core_000206_parent_has_idvarval(datasets, &rdomain, &usubjid, &idvar, &idvarval) {
+                continue;
+            }
+            errors.push(ValidationIssue {
+                rule_id: rule.core_id.clone(),
+                dataset: dataset.metadata.name.clone(),
+                domain: dataset.metadata.domain.clone(),
+                row: Some(row + 1),
+                variables: vec![
+                    "RDOMAIN".to_owned(),
+                    "USUBJID".to_owned(),
+                    "IDVAR".to_owned(),
+                    "IDVARVAL".to_owned(),
+                ],
+                message: message.clone(),
+                usubjid: (!usubjid.is_empty()).then_some(usubjid),
+                seq: None,
+            });
+        }
+    }
+
+    if errors.is_empty() {
+        return Some(RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Passed,
+            skipped_reason: None,
+            dataset: result_dataset.metadata.name.clone(),
+            domain: result_dataset.metadata.domain.clone(),
+            message,
+            error_count: 0,
+            errors,
+        });
+    }
+
+    Some(RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Failed,
+        skipped_reason: None,
+        dataset: errors
+            .first()
+            .map(|issue| issue.dataset.clone())
+            .unwrap_or_else(|| result_dataset.metadata.name.clone()),
+        domain: errors
+            .first()
+            .and_then(|issue| issue.domain.clone())
+            .or_else(|| result_dataset.metadata.domain.clone()),
+        message,
+        error_count: errors.len(),
+        errors,
+    })
+}
+
+fn core_000206_is_source_dataset(dataset: &LoadedDataset) -> bool {
+    let name = dataset_metadata_name(dataset).to_ascii_uppercase();
+    name == "CO" || name == "RELREC" || name.starts_with("SUPP")
+}
+
+fn core_000206_is_supp_dataset(dataset: &LoadedDataset) -> bool {
+    dataset_metadata_name(dataset)
+        .to_ascii_uppercase()
+        .starts_with("SUPP")
+}
+
+fn core_000206_parent_has_idvarval_any_subject(
+    datasets: &[LoadedDataset],
+    rdomain: &str,
+    idvar: &str,
+    idvarval: &str,
+) -> bool {
+    let Some(parent) = find_dataset(datasets, rdomain) else {
+        return false;
+    };
+    let Ok(parent_values) = dataset_column_values(parent, idvar) else {
+        return false;
+    };
+    (0..parent.summary().row_count).any(|row| core_000206_cell(&parent_values, row) == idvarval)
+}
+
+fn core_000206_parent_has_idvarval(
+    datasets: &[LoadedDataset],
+    rdomain: &str,
+    usubjid: &str,
+    idvar: &str,
+    idvarval: &str,
+) -> bool {
+    let Some(parent) = find_dataset(datasets, rdomain) else {
+        return false;
+    };
+    let Ok(parent_values) = dataset_column_values(parent, idvar) else {
+        return false;
+    };
+    let parent_usubjids = dataset_column_values(parent, "USUBJID").unwrap_or_default();
+    for row in 0..parent.summary().row_count {
+        if !usubjid.is_empty() && core_000206_cell(&parent_usubjids, row) != usubjid {
+            continue;
+        }
+        if core_000206_cell(&parent_values, row) == idvarval {
+            return true;
+        }
+    }
+    false
+}
+
+fn core_000206_cell(values: &[Value], row: usize) -> String {
+    values
+        .get(row)
+        .and_then(json_scalar_string)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+}
+
 fn core_000677_pooldef_poolid_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
@@ -471,7 +1410,15 @@ fn core_000677_pooldef_poolid_result(
     }
 
     let pooldef = find_dataset(datasets, "POOLDEF");
-    let Some(vs) = find_dataset(datasets, "VS").or_else(|| datasets.first()) else {
+    let Some(source) = datasets
+        .iter()
+        .find(|dataset| {
+            !dataset.metadata.name.eq_ignore_ascii_case("POOLDEF")
+                && dataset_has_column(dataset, "POOLID")
+        })
+        .or_else(|| find_dataset(datasets, "VS"))
+        .or_else(|| datasets.first())
+    else {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::EvaluationError,
@@ -479,43 +1426,182 @@ fn core_000677_pooldef_poolid_result(
         ));
     };
 
-    let pooldef_poolids = pooldef
-        .and_then(|dataset| dataset_column_values(dataset, "POOLID").ok())
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id));
+    let passed = || RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Passed,
+        skipped_reason: None,
+        dataset: source.metadata.name.clone(),
+        domain: source.metadata.domain.clone(),
+        message: message.clone(),
+        error_count: 0,
+        errors: Vec::new(),
+    };
+
+    let Some(pooldef) = pooldef else {
+        return Some(passed());
+    };
+
+    let pooldef_poolids = dataset_column_values(pooldef, "POOLID")
+        .ok()
         .unwrap_or_default()
         .into_iter()
         .filter_map(|value| value.as_str().map(str::trim).map(str::to_owned))
         .filter(|value| !value.is_empty())
         .collect::<BTreeSet<_>>();
 
-    let has_missing_pooldef_poolid = pooldef.is_some()
-        && dataset_column_values(vs, "POOLID")
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| value.as_str().map(str::trim).map(str::to_owned))
-            .filter(|value| !value.is_empty())
-            .any(|poolid| !pooldef_poolids.contains(&poolid));
+    let mut errors = Vec::new();
+    for dataset in datasets
+        .iter()
+        .filter(|dataset| !dataset.metadata.name.eq_ignore_ascii_case("POOLDEF"))
+        .filter(|dataset| dataset_has_column(dataset, "POOLID"))
+    {
+        let poolids = dataset_column_values(dataset, "POOLID").unwrap_or_default();
+        let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
+        let seq_column = core_000677_sequence_column(dataset);
+        let seq_values = seq_column
+            .as_deref()
+            .and_then(|column| dataset_column_values(dataset, column).ok())
+            .unwrap_or_default();
 
-    if has_missing_pooldef_poolid {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses POOLDEF.POOLID oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
+        for row in 0..dataset.summary().row_count {
+            let poolid = poolids
+                .get(row)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .unwrap_or_default();
+            if poolid.is_empty() || pooldef_poolids.contains(poolid) {
+                continue;
+            }
+            let usubjid = usubjids
+                .get(row)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let seq = seq_values
+                .get(row)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            errors.push(ValidationIssue {
+                rule_id: rule.core_id.clone(),
+                dataset: dataset.metadata.name.clone(),
+                domain: dataset.metadata.domain.clone(),
+                row: Some(row + 1),
+                variables: vec!["$pooldef_poolid".to_owned(), "POOLID".to_owned()],
+                message: message.clone(),
+                usubjid,
+                seq,
+            });
+        }
+    }
+
+    if errors.is_empty() {
+        return Some(passed());
+    }
+
+    Some(RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Failed,
+        skipped_reason: None,
+        dataset: errors
+            .first()
+            .map(|issue| issue.dataset.clone())
+            .unwrap_or_else(|| source.metadata.name.clone()),
+        domain: errors
+            .first()
+            .and_then(|issue| issue.domain.clone())
+            .or_else(|| source.metadata.domain.clone()),
+        message,
+        error_count: errors.len(),
+        errors,
+    })
+}
+
+fn core_000677_sequence_column(dataset: &LoadedDataset) -> Option<String> {
+    let domain = dataset
+        .metadata
+        .domain
+        .as_deref()
+        .unwrap_or(dataset.metadata.name.as_str())
+        .to_ascii_uppercase();
+    let domain_seq = format!("{domain}SEQ");
+    dataset_column_name(dataset, &domain_seq)
+        .or_else(|| dataset_column_name(dataset, "SEQ"))
+        .or_else(|| {
+            dataset
+                .summary()
+                .columns
+                .into_iter()
+                .find(|column| column.to_ascii_uppercase().ends_with("SEQ"))
+        })
+}
+
+fn core_000884_ts_age_parameter_count_result(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Option<RuleValidationResult> {
+    if rule.core_id != engine_semantics::CORE_000884 {
+        return None;
+    }
+
+    let ts = find_dataset(datasets, "TS")?;
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let age_count = ts_parameter_count(ts, "AGE");
+    let agetxt_count = ts_parameter_count(ts, "AGETXT");
+    let ageu_count = ts_parameter_count(ts, "AGEU");
+
+    if (age_count > 0 || agetxt_count > 0) && ageu_count == 0 {
+        let issue = ValidationIssue {
+            rule_id: rule.core_id.clone(),
+            dataset: ts.metadata.name.clone(),
+            domain: ts.metadata.domain.clone(),
+            row: None,
+            variables: vec![
+                "$age_count".to_owned(),
+                "DOMAIN".to_owned(),
+                "$ageu_count".to_owned(),
+                "$agetxt_count".to_owned(),
+            ],
+            message: message.clone(),
+            usubjid: None,
+            seq: None,
+        };
+        return Some(RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset: ts.metadata.name.clone(),
+            domain: ts.metadata.domain.clone(),
+            message,
+            error_count: 1,
+            errors: vec![issue],
+        });
     }
 
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
         skipped_reason: None,
-        dataset: vs.metadata.name.clone(),
-        domain: vs.metadata.domain.clone(),
-        message: outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id)),
+        dataset: ts.metadata.name.clone(),
+        domain: ts.metadata.domain.clone(),
+        message,
         error_count: 0,
         errors: Vec::new(),
     })
+}
+
+fn ts_parameter_count(dataset: &LoadedDataset, parameter: &str) -> usize {
+    let parameters = dataset_column_values(dataset, "TSPARMCD").unwrap_or_default();
+    let values = dataset_column_values(dataset, "TSVAL").unwrap_or_default();
+    (0..dataset.summary().row_count)
+        .filter(|row| {
+            dataset_cell_string(&parameters, *row).eq_ignore_ascii_case(parameter)
+                && !dataset_cell_string(&values, *row).trim().is_empty()
+        })
+        .count()
 }
 
 fn core_000744_relrec_faobj_result(
@@ -540,7 +1626,8 @@ fn core_000744_relrec_faobj_result(
     let fa_lnkid = dataset_column_values(fa, "FALNKID").unwrap_or_default();
     let fa_lnkgrp = dataset_column_values(fa, "FALNKGRP").unwrap_or_default();
     let fa_spid = dataset_column_values(fa, "FASPID").unwrap_or_default();
-    let mut has_violation = false;
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let mut errors = Vec::new();
 
     for row in 0..fa.summary().row_count {
         let Some(faobj) = faobj
@@ -574,15 +1661,27 @@ fn core_000744_relrec_faobj_result(
         ];
 
         let mut related_values = BTreeSet::new();
-        for parent in datasets.iter().filter(|dataset| {
-            !dataset_matches_name(dataset, "FA") && !dataset_matches_name(dataset, "RELREC")
-        }) {
-            collect_core_000744_parent_values(
-                parent,
-                subject,
-                &link_candidates,
-                &mut related_values,
-            );
+        let mut related_domains = BTreeSet::new();
+        let used_specific_relrec = collect_core_000744_relrec_parent_values(
+            datasets,
+            fa,
+            row,
+            subject,
+            &mut related_values,
+            &mut related_domains,
+        );
+        if !used_specific_relrec {
+            for parent in datasets.iter().filter(|dataset| {
+                !dataset_matches_name(dataset, "FA") && !dataset_matches_name(dataset, "RELREC")
+            }) {
+                collect_core_000744_parent_values(
+                    parent,
+                    subject,
+                    &link_candidates,
+                    &mut related_values,
+                    &mut related_domains,
+                );
+            }
         }
 
         if !related_values.is_empty()
@@ -590,20 +1689,30 @@ fn core_000744_relrec_faobj_result(
                 .iter()
                 .any(|value| value.eq_ignore_ascii_case(faobj))
         {
-            has_violation = true;
-            break;
+            errors.push(ValidationIssue {
+                rule_id: rule.core_id.clone(),
+                dataset: fa.metadata.name.clone(),
+                domain: fa.metadata.domain.clone(),
+                row: Some(row + 1),
+                variables: core_000744_issue_variables(&related_domains),
+                message: message.clone(),
+                usubjid: (!subject.is_empty()).then(|| subject.to_owned()),
+                seq: None,
+            });
         }
     }
 
-    if has_violation {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            format!(
-                "Rule {} uses RELREC parent value oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
+    if !errors.is_empty() {
+        return Some(RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset: fa.metadata.name.clone(),
+            domain: fa.metadata.domain.clone(),
+            message,
+            error_count: errors.len(),
+            errors,
+        });
     }
 
     Some(RuleValidationResult {
@@ -612,10 +1721,142 @@ fn core_000744_relrec_faobj_result(
         skipped_reason: None,
         dataset: fa.metadata.name.clone(),
         domain: fa.metadata.domain.clone(),
-        message: outcome_message(rule).unwrap_or_else(|| format!("Rule {} passed", rule.core_id)),
+        message,
         error_count: 0,
         errors: Vec::new(),
     })
+}
+
+fn core_000744_issue_variables(related_domains: &BTreeSet<String>) -> Vec<String> {
+    let placeholder = if related_domains
+        .iter()
+        .any(|domain| domain.eq_ignore_ascii_case("EX"))
+    {
+        "__"
+    } else {
+        "**"
+    };
+    vec![
+        "FAOBJ".to_owned(),
+        format!("RELREC.{placeholder}TERM"),
+        format!("RELREC.{placeholder}TRT"),
+        format!("RELREC.{placeholder}DECOD"),
+    ]
+}
+
+fn collect_core_000744_relrec_parent_values(
+    datasets: &[LoadedDataset],
+    fa: &LoadedDataset,
+    fa_row: usize,
+    subject: &str,
+    related_values: &mut BTreeSet<String>,
+    related_domains: &mut BTreeSet<String>,
+) -> bool {
+    let Some(relrec) = find_dataset(datasets, "RELREC") else {
+        return false;
+    };
+    let rdomains = dataset_column_values(relrec, "RDOMAIN").unwrap_or_default();
+    let usubjids = dataset_column_values(relrec, "USUBJID").unwrap_or_default();
+    let idvars = dataset_column_values(relrec, "IDVAR").unwrap_or_default();
+    let idvarvals = dataset_column_values(relrec, "IDVARVAL").unwrap_or_default();
+    let relids = dataset_column_values(relrec, "RELID").unwrap_or_default();
+
+    let mut has_specific_fa_links = false;
+    let mut fa_relids = BTreeSet::new();
+    for row in 0..relrec.summary().row_count {
+        if !core_000744_cell(&rdomains, row).eq_ignore_ascii_case("FA") {
+            continue;
+        }
+        if !subject.is_empty() {
+            let relrec_subject = core_000744_cell(&usubjids, row);
+            if !relrec_subject.is_empty() && relrec_subject != subject {
+                continue;
+            }
+        }
+        let idvar = core_000744_cell(&idvars, row);
+        let idvarval = core_000744_cell(&idvarvals, row);
+        let relid = core_000744_cell(&relids, row);
+        if idvar.is_empty() || idvarval.is_empty() || relid.is_empty() {
+            continue;
+        }
+        has_specific_fa_links = true;
+        let fa_value = dataset_column_values(fa, &idvar)
+            .ok()
+            .and_then(|values| values.get(fa_row).and_then(json_scalar_string));
+        if fa_value
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| value == idvarval)
+        {
+            fa_relids.insert(relid);
+        }
+    }
+
+    if fa_relids.is_empty() {
+        return has_specific_fa_links;
+    }
+
+    for row in 0..relrec.summary().row_count {
+        let relid = core_000744_cell(&relids, row);
+        if !fa_relids.contains(&relid) {
+            continue;
+        }
+        let rdomain = core_000744_cell(&rdomains, row);
+        if rdomain.is_empty() || rdomain.eq_ignore_ascii_case("FA") {
+            continue;
+        }
+        let idvar = core_000744_cell(&idvars, row);
+        let idvarval = core_000744_cell(&idvarvals, row);
+        if idvar.is_empty() || idvarval.is_empty() {
+            continue;
+        }
+        let relrec_subject = core_000744_cell(&usubjids, row);
+        let Some(parent) = find_dataset(datasets, &rdomain) else {
+            continue;
+        };
+        collect_core_000744_parent_row_values(
+            parent,
+            &idvar,
+            &idvarval,
+            if relrec_subject.is_empty() {
+                subject
+            } else {
+                &relrec_subject
+            },
+            related_values,
+            related_domains,
+        );
+    }
+
+    true
+}
+
+fn collect_core_000744_parent_row_values(
+    parent: &LoadedDataset,
+    idvar: &str,
+    idvarval: &str,
+    subject: &str,
+    related_values: &mut BTreeSet<String>,
+    related_domains: &mut BTreeSet<String>,
+) {
+    let Ok(id_values) = dataset_column_values(parent, idvar) else {
+        return;
+    };
+    let subject_values = dataset_column_values(parent, "USUBJID").unwrap_or_default();
+    let domain = dataset_domain_value(parent);
+    for row in 0..parent.summary().row_count {
+        if core_000744_cell(&id_values, row) != idvarval {
+            continue;
+        }
+        if !subject.is_empty() {
+            let parent_subject = core_000744_cell(&subject_values, row);
+            if !parent_subject.is_empty() && parent_subject != subject {
+                continue;
+            }
+        }
+        related_domains.insert(domain.clone());
+        collect_core_000744_parent_row_term_values(parent, row, &domain, related_values);
+    }
 }
 
 fn collect_core_000744_parent_values(
@@ -623,6 +1864,7 @@ fn collect_core_000744_parent_values(
     subject: &str,
     link_candidates: &[Option<&str>; 3],
     related_values: &mut BTreeSet<String>,
+    related_domains: &mut BTreeSet<String>,
 ) {
     let domain = dataset_domain_value(dataset);
     let subject_values = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
@@ -665,21 +1907,307 @@ fn collect_core_000744_parent_values(
             continue;
         }
 
-        for column in [
-            format!("{domain}TERM"),
-            format!("{domain}TRT"),
-            format!("{domain}DECOD"),
-        ] {
-            if let Ok(values) = dataset_column_values(dataset, &column) {
-                if let Some(value) = values.get(row).and_then(|value| value.as_str()) {
-                    let value = value.trim();
-                    if !value.is_empty() {
-                        related_values.insert(value.to_owned());
-                    }
+        related_domains.insert(domain.clone());
+        collect_core_000744_parent_row_term_values(dataset, row, &domain, related_values);
+    }
+}
+
+fn collect_core_000744_parent_row_term_values(
+    dataset: &LoadedDataset,
+    row: usize,
+    domain: &str,
+    related_values: &mut BTreeSet<String>,
+) {
+    for column in [
+        format!("{domain}TERM"),
+        format!("{domain}TRT"),
+        format!("{domain}DECOD"),
+    ] {
+        if let Ok(values) = dataset_column_values(dataset, &column) {
+            if let Some(value) = values.get(row).and_then(json_scalar_string) {
+                let value = value.trim();
+                if !value.is_empty() {
+                    related_values.insert(value.to_owned());
                 }
             }
         }
     }
+}
+
+fn core_000744_cell(values: &[Value], row: usize) -> String {
+    values
+        .get(row)
+        .and_then(json_scalar_string)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+}
+
+#[derive(Debug, Clone)]
+struct Core000757RelrecEndpoint {
+    domain: String,
+    idvar: String,
+    idvarval: Option<String>,
+    relid: String,
+    subject: Option<String>,
+}
+
+fn core_000757_intervention_relrec_faobj_result(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Option<RuleValidationResult> {
+    if !engine_semantics::is_intervention_relrec_faobj_rule(rule) {
+        return None;
+    }
+
+    let result_dataset = datasets
+        .iter()
+        .find(|dataset| !dataset_matches_name(dataset, "RELREC"))
+        .or_else(|| datasets.first())?;
+    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let Some(fa) = find_dataset(datasets, "FA") else {
+        return Some(core_000757_passed_result(rule, result_dataset, message));
+    };
+    let Some(relrec) = find_dataset(datasets, "RELREC") else {
+        return Some(core_000757_passed_result(rule, result_dataset, message));
+    };
+    let endpoints = core_000757_relrec_endpoints(relrec);
+    let fa_endpoints = endpoints
+        .iter()
+        .filter(|endpoint| endpoint.domain.eq_ignore_ascii_case("FA"))
+        .collect::<Vec<_>>();
+    if fa_endpoints.is_empty() {
+        return Some(core_000757_passed_result(rule, result_dataset, message));
+    }
+
+    let faobj_values = dataset_column_values(fa, "FAOBJ").ok()?;
+    let fa_subjects = dataset_column_values(fa, "USUBJID").unwrap_or_default();
+    let mut errors = Vec::new();
+    let mut reported_rows = BTreeSet::<(String, usize)>::new();
+
+    for parent in datasets.iter().filter(|dataset| {
+        !dataset_matches_name(dataset, "FA") && !dataset_matches_name(dataset, "RELREC")
+    }) {
+        let domain = dataset_domain_value(parent);
+        let parent_endpoints = endpoints
+            .iter()
+            .filter(|endpoint| endpoint.domain.eq_ignore_ascii_case(&domain))
+            .collect::<Vec<_>>();
+        if parent_endpoints.is_empty() {
+            continue;
+        }
+        let Some(trt_column) = dataset_column_name(parent, &format!("{domain}TRT")) else {
+            continue;
+        };
+        let Some(decod_column) = dataset_column_name(parent, &format!("{domain}DECOD")) else {
+            continue;
+        };
+        let Ok(trt_values) = dataset_column_values(parent, &trt_column) else {
+            continue;
+        };
+        let Ok(decod_values) = dataset_column_values(parent, &decod_column) else {
+            continue;
+        };
+        let parent_subjects = dataset_column_values(parent, "USUBJID").unwrap_or_default();
+        let seq_column = core_000677_sequence_column(parent);
+        let seq_values = seq_column
+            .as_deref()
+            .and_then(|column| dataset_column_values(parent, column).ok())
+            .unwrap_or_default();
+
+        for row in 0..parent.summary().row_count {
+            if !core_000744_cell(&decod_values, row).is_empty() {
+                continue;
+            }
+            let trt = core_000744_cell(&trt_values, row);
+            let parent_subject = core_000744_cell(&parent_subjects, row);
+            let mut has_mismatch = false;
+
+            for parent_endpoint in &parent_endpoints {
+                let Some(parent_key) = core_000757_endpoint_row_key(parent, parent_endpoint, row)
+                else {
+                    continue;
+                };
+                if !core_000757_endpoint_subject_allows(parent_endpoint, &parent_subject) {
+                    continue;
+                }
+                for fa_endpoint in fa_endpoints
+                    .iter()
+                    .filter(|fa_endpoint| fa_endpoint.relid == parent_endpoint.relid)
+                {
+                    for fa_row in 0..fa.summary().row_count {
+                        let Some(fa_key) = core_000757_endpoint_row_key(fa, fa_endpoint, fa_row)
+                        else {
+                            continue;
+                        };
+                        if !core_000757_relrec_keys_match(
+                            parent_endpoint,
+                            &parent_key,
+                            fa_endpoint,
+                            &fa_key,
+                        ) {
+                            continue;
+                        }
+                        let fa_subject = core_000744_cell(&fa_subjects, fa_row);
+                        if !core_000757_endpoint_subject_allows(fa_endpoint, &fa_subject)
+                            || !core_000757_subjects_match(&parent_subject, &fa_subject)
+                        {
+                            continue;
+                        }
+                        let faobj = core_000744_cell(&faobj_values, fa_row);
+                        if !faobj.is_empty() && trt != faobj {
+                            has_mismatch = true;
+                            break;
+                        }
+                    }
+                    if has_mismatch {
+                        break;
+                    }
+                }
+                if has_mismatch {
+                    break;
+                }
+            }
+
+            if has_mismatch && reported_rows.insert((parent.metadata.name.clone(), row)) {
+                let usubjid = (!parent_subject.is_empty()).then(|| parent_subject.clone());
+                let seq = core_000744_cell(&seq_values, row);
+                errors.push(ValidationIssue {
+                    rule_id: rule.core_id.clone(),
+                    dataset: parent.metadata.name.clone(),
+                    domain: parent.metadata.domain.clone(),
+                    row: Some(row + 1),
+                    variables: vec![
+                        trt_column.clone(),
+                        decod_column.clone(),
+                        "RELREC.FAOBJ".to_owned(),
+                    ],
+                    message: message.clone(),
+                    usubjid,
+                    seq: (!seq.is_empty()).then_some(seq),
+                });
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Some(RuleValidationResult {
+            rule_id: rule.core_id.clone(),
+            execution_status: core_engine::ExecutionStatus::Failed,
+            skipped_reason: None,
+            dataset: errors
+                .first()
+                .map(|issue| issue.dataset.clone())
+                .unwrap_or_else(|| fa.metadata.name.clone()),
+            domain: errors
+                .first()
+                .and_then(|issue| issue.domain.clone())
+                .or_else(|| fa.metadata.domain.clone()),
+            message,
+            error_count: errors.len(),
+            errors,
+        });
+    }
+
+    Some(RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Passed,
+        skipped_reason: None,
+        dataset: fa.metadata.name.clone(),
+        domain: fa.metadata.domain.clone(),
+        message,
+        error_count: 0,
+        errors: Vec::new(),
+    })
+}
+
+fn core_000757_passed_result(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    message: String,
+) -> RuleValidationResult {
+    RuleValidationResult {
+        rule_id: rule.core_id.clone(),
+        execution_status: core_engine::ExecutionStatus::Passed,
+        skipped_reason: None,
+        dataset: dataset.metadata.name.clone(),
+        domain: dataset.metadata.domain.clone(),
+        message,
+        error_count: 0,
+        errors: Vec::new(),
+    }
+}
+
+fn core_000757_relrec_endpoints(relrec: &LoadedDataset) -> Vec<Core000757RelrecEndpoint> {
+    let rdomains = dataset_column_values(relrec, "RDOMAIN").unwrap_or_default();
+    let subjects = dataset_column_values(relrec, "USUBJID").unwrap_or_default();
+    let idvars = dataset_column_values(relrec, "IDVAR").unwrap_or_default();
+    let idvarvals = dataset_column_values(relrec, "IDVARVAL").unwrap_or_default();
+    let relids = dataset_column_values(relrec, "RELID").unwrap_or_default();
+
+    (0..relrec.summary().row_count)
+        .filter_map(|row| {
+            let domain = core_000744_cell(&rdomains, row);
+            let idvar = core_000744_cell(&idvars, row);
+            let relid = core_000744_cell(&relids, row);
+            if domain.is_empty() || idvar.is_empty() || relid.is_empty() {
+                return None;
+            }
+            let subject = core_000744_cell(&subjects, row);
+            let idvarval = core_000744_cell(&idvarvals, row);
+            Some(Core000757RelrecEndpoint {
+                domain: domain.to_ascii_uppercase(),
+                idvar,
+                idvarval: (!idvarval.is_empty()).then_some(idvarval),
+                relid,
+                subject: (!subject.is_empty()).then_some(subject),
+            })
+        })
+        .collect()
+}
+
+fn core_000757_endpoint_row_key(
+    dataset: &LoadedDataset,
+    endpoint: &Core000757RelrecEndpoint,
+    row: usize,
+) -> Option<String> {
+    let values = dataset_column_values(dataset, &endpoint.idvar).ok()?;
+    let value = core_000744_cell(&values, row);
+    if value.is_empty() {
+        return None;
+    }
+    match &endpoint.idvarval {
+        Some(expected) if value == *expected => Some(value),
+        Some(_) => None,
+        None => Some(value),
+    }
+}
+
+fn core_000757_relrec_keys_match(
+    parent_endpoint: &Core000757RelrecEndpoint,
+    parent_key: &str,
+    fa_endpoint: &Core000757RelrecEndpoint,
+    fa_key: &str,
+) -> bool {
+    match (&parent_endpoint.idvarval, &fa_endpoint.idvarval) {
+        (Some(_), Some(_)) => true,
+        (None, None) => parent_key == fa_key,
+        _ => false,
+    }
+}
+
+fn core_000757_endpoint_subject_allows(
+    endpoint: &Core000757RelrecEndpoint,
+    row_subject: &str,
+) -> bool {
+    endpoint
+        .subject
+        .as_deref()
+        .is_none_or(|subject| row_subject.is_empty() || subject == row_subject)
+}
+
+fn core_000757_subjects_match(left: &str, right: &str) -> bool {
+    left.is_empty() || right.is_empty() || left == right
 }
 
 fn load_request_datasets(request: &ValidateRequest) -> Result<Vec<LoadedDataset>> {
@@ -1064,7 +2592,7 @@ fn is_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 }
 
 fn has_oracle_gap_rule_id(rule: &ExecutableRule, category: &str) -> bool {
-    oracle_gap_rule_id_matches(&rule.core_id, category)
+    rule_id_has_oracle_gap_category(&rule.core_id, category)
 }
 
 fn is_distinct_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
@@ -1496,6 +3024,40 @@ fn add_core_000324_missing_cm_dtc(
     derive_column_from_column(dataset, "CMDTC", "CMENTPT")
 }
 
+fn add_core_000039_missing_svpresp(
+    dataset: &LoadedDataset,
+    rule: &ExecutableRule,
+) -> core_data::Result<LoadedDataset> {
+    if !engine_semantics::assumes_missing_svpresp_is_planned(rule)
+        || !dataset_domain_value(dataset).eq_ignore_ascii_case("SV")
+        || dataset_has_column(dataset, "SVPRESP")
+        || !dataset_has_column(dataset, "VISITNUM")
+        || !dataset_has_column(dataset, "VISITDY")
+    {
+        return Ok(dataset.clone());
+    }
+
+    let values = dataset_column_values(dataset, "VISITDY")?
+        .into_iter()
+        .map(|value| {
+            if value_is_blank(&value) {
+                Value::String("Y".to_owned())
+            } else {
+                Value::Null
+            }
+        })
+        .collect::<Vec<_>>();
+    derive_column_from_values(dataset, "SVPRESP", &values)
+}
+
+fn value_is_blank(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(value) => value.trim().is_empty(),
+        _ => false,
+    }
+}
+
 fn should_treat_missing_condition_columns_as_null(rule: &ExecutableRule) -> bool {
     has_oracle_gap_rule_id(rule, "missing_condition_columns_as_null")
 }
@@ -1749,11 +3311,59 @@ fn prepare_rule_for_execution(
     apply_usdm_jsonata_semantics(&mut rule);
     apply_open_rules_relationship_semantics(&mut rule);
     apply_trial_summary_value_null_flavor_semantics(&mut rule);
+    apply_unscheduled_death_ds_flag_semantics(&mut rule);
     apply_requested_standard_operation_semantics(&mut rule, standard);
     apply_entity_instance_type_literals(&mut rule);
     apply_metadata_report_variables(&mut rule);
     apply_operation_report_variables(&mut rule);
+    apply_alphanumeric_fa_split_dataset_name_regex(&mut rule);
     rule
+}
+
+fn apply_alphanumeric_fa_split_dataset_name_regex(rule: &mut ExecutableRule) {
+    if !engine_semantics::uses_alphanumeric_fa_split_dataset_name_regex(rule) {
+        return;
+    }
+
+    rewrite_dataset_name_matches_regex(&mut rule.conditions, "(?i)^[a-z]{2}[a-z0-9]{1,2}");
+}
+
+fn rewrite_dataset_name_matches_regex(group: &mut ConditionGroup, pattern: &str) {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            for group in groups {
+                rewrite_dataset_name_matches_regex(group, pattern);
+            }
+        }
+        ConditionGroup::Not(group) => rewrite_dataset_name_matches_regex(group, pattern),
+        ConditionGroup::Leaf(condition) => {
+            if condition
+                .target
+                .as_deref()
+                .is_some_and(|target| target.eq_ignore_ascii_case("dataset_name"))
+                && condition.operator == Operator::MatchesRegex
+            {
+                condition.comparator = ValueExpr::Literal(Value::String(pattern.to_owned()));
+            }
+        }
+    }
+}
+
+fn apply_unscheduled_death_ds_flag_semantics(rule: &mut ExecutableRule) {
+    if !engine_semantics::is_unscheduled_death_ds_flag_rule(rule) {
+        return;
+    }
+
+    rule.conditions = ConditionGroup::All(vec![
+        non_empty_condition("DDTESTCD"),
+        ConditionGroup::Leaf(Condition {
+            target: Some("DSUSCHFL".to_owned()),
+            operator: Operator::IsEmpty,
+            comparator: ValueExpr::Null,
+            options: Default::default(),
+        }),
+    ]);
+    rule.output_variables = vec!["DDTESTCD".to_owned(), "DSUSCHFL".to_owned()];
 }
 
 fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
@@ -1768,8 +3378,8 @@ fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
 }
 
 fn apply_open_rules_relationship_semantics(rule: &mut ExecutableRule) {
-    if engine_semantics::is_open_rules_relationship_direction_rule(rule) {
-        set_not_unique_relationship_direction(&mut rule.conditions, "target_to_comparator");
+    if let Some(direction) = engine_semantics::open_rules_relationship_direction(rule) {
+        set_not_unique_relationship_direction(&mut rule.conditions, direction);
     }
 }
 
@@ -1811,6 +3421,16 @@ fn prepare_rule_with_cdisc_context(
 }
 
 fn apply_operation_report_variables(rule: &mut ExecutableRule) {
+    if engine_semantics::uses_check_target_report_variable_for_ex_end_rule(rule)
+        && condition_targets_column(&rule.conditions, "RFXENDTC")
+    {
+        for variable in &mut rule.output_variables {
+            if variable.eq_ignore_ascii_case("RFXSTDTC") {
+                *variable = "RFXENDTC".to_owned();
+            }
+        }
+    }
+
     if engine_semantics::is_operation_report_variable_override_rule(rule) {
         push_unique_string(&mut rule.output_variables, "USUBJID");
         push_unique_string(&mut rule.output_variables, "STUDYID");
@@ -2111,6 +3731,15 @@ fn has_match_dataset_prefixed_column_reference(rule: &ExecutableRule) -> bool {
         .any(|name| rule_references_match_dataset_prefixed_column(rule, &name))
 }
 
+fn has_match_dataset_suffixed_column_reference(rule: &ExecutableRule) -> bool {
+    rule.datasets
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(match_dataset_name)
+        .any(|name| !rule_referenced_columns_with_suffix(rule, &name).is_empty())
+}
+
 fn has_group_aliases(operation: &OperationSpec) -> bool {
     string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
         .is_some_and(|aliases| !aliases.is_empty())
@@ -2345,7 +3974,15 @@ fn execution_datasets_for_rule(
         return domain_presence_execution_datasets(rule, datasets);
     }
 
+    if engine_semantics::is_forbidden_send_domain_placeholder_variable_rule(rule) {
+        return forbidden_send_domain_placeholder_variable_execution_datasets(rule, datasets);
+    }
+
     let scoped_datasets = filter_datasets_by_rule_scope(rule, datasets);
+    if engine_semantics::is_suppae_aesosp_parent_record_rule(rule) {
+        return suppae_aesosp_parent_record_execution_datasets(rule, &scoped_datasets, datasets);
+    }
+
     if rule.operations.is_empty() {
         if rule
             .datasets
@@ -2360,7 +3997,8 @@ fn execution_datasets_for_rule(
     let mut execution_datasets = if (has_dy_operation(rule)
         || has_group_date_operation(rule)
         || has_match_dataset_dependent_operation(rule)
-        || has_match_dataset_prefixed_column_reference(rule))
+        || has_match_dataset_prefixed_column_reference(rule)
+        || has_match_dataset_suffixed_column_reference(rule))
         && rule
             .datasets
             .as_ref()
@@ -2381,6 +4019,131 @@ fn execution_datasets_for_rule(
     }
 
     Ok(execution_datasets)
+}
+
+fn suppae_aesosp_parent_record_execution_datasets(
+    rule: &ExecutableRule,
+    scoped_datasets: &[LoadedDataset],
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let Some(parent) = scoped_datasets
+        .iter()
+        .find(|dataset| dataset_matches_name(dataset, "AE"))
+    else {
+        return Ok(scoped_datasets.to_vec());
+    };
+    let parent_with_source = add_source_row_column(parent)
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
+    let Some(suppae) = find_dataset(datasets, "SUPPAE") else {
+        return metadata_rows_dataset(parent, &[])
+            .map(|dataset| vec![dataset])
+            .map_err(|source| operation_skipped_result(rule, source.to_string()));
+    };
+
+    let qnams = dataset_column_values(suppae, "QNAM").unwrap_or_default();
+    let rdomains = dataset_column_values(suppae, "RDOMAIN").unwrap_or_default();
+    let usubjids = dataset_column_values(suppae, "USUBJID").unwrap_or_default();
+    let idvars = dataset_column_values(suppae, "IDVAR").unwrap_or_default();
+    let idvarvals = dataset_column_values(suppae, "IDVARVAL").unwrap_or_default();
+
+    let mut rows = Vec::new();
+    for supp_row in 0..suppae.summary().row_count {
+        if !dataset_cell_string(&qnams, supp_row).eq_ignore_ascii_case("AESOSP") {
+            continue;
+        }
+        let rdomain = dataset_cell_string(&rdomains, supp_row);
+        if !rdomain.trim().is_empty() && !rdomain.eq_ignore_ascii_case("AE") {
+            continue;
+        }
+        let usubjid = dataset_cell_string(&usubjids, supp_row);
+        let idvar = dataset_cell_string(&idvars, supp_row);
+        let idvarval = dataset_cell_string(&idvarvals, supp_row);
+        let Some(parent_row) =
+            supp_parent_record_row(&parent_with_source, &usubjid, &idvar, &idvarval)
+        else {
+            continue;
+        };
+        let mut row = dataset_row_values(&parent_with_source, parent_row);
+        row.insert("QNAM".to_owned(), Value::String("AESOSP".to_owned()));
+        rows.push(row);
+    }
+
+    metadata_rows_dataset(&parent_with_source, &rows)
+        .map(|dataset| vec![dataset])
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))
+}
+
+fn supp_parent_record_row(
+    parent: &LoadedDataset,
+    usubjid: &str,
+    idvar: &str,
+    idvarval: &str,
+) -> Option<usize> {
+    if usubjid.trim().is_empty() || idvar.trim().is_empty() || idvarval.trim().is_empty() {
+        return None;
+    }
+    let parent_subjects = dataset_column_values(parent, "USUBJID").ok()?;
+    let parent_values = dataset_column_values(parent, idvar.trim()).ok()?;
+    (0..parent.summary().row_count).find(|row| {
+        dataset_cell_string(&parent_subjects, *row).trim() == usubjid.trim()
+            && dataset_cell_string(&parent_values, *row).trim() == idvarval.trim()
+    })
+}
+
+fn dataset_row_values(dataset: &LoadedDataset, row: usize) -> BTreeMap<String, Value> {
+    let mut values = BTreeMap::new();
+    for column in dataset.summary().columns {
+        let value = dataset_column_values(dataset, &column)
+            .ok()
+            .and_then(|column_values| column_values.get(row).cloned())
+            .unwrap_or(Value::Null);
+        values.insert(column, value);
+    }
+    values
+}
+
+fn forbidden_send_domain_placeholder_variable_execution_datasets(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let Some(target) = forbidden_send_domain_placeholder_target(rule) else {
+        return Ok(Vec::new());
+    };
+
+    let mut execution_datasets = Vec::new();
+    for dataset in datasets {
+        let variable = expand_domain_placeholder_for_dataset(dataset, target);
+        if !dataset_has_metadata_variable(dataset, &variable)
+            && !dataset_has_column(dataset, &variable)
+        {
+            continue;
+        }
+
+        let mut row = BTreeMap::new();
+        row.insert(variable, Value::String(String::new()));
+        execution_datasets.push(
+            metadata_rows_dataset(dataset, &[row])
+                .map_err(|source| operation_skipped_result(rule, source.to_string()))?,
+        );
+    }
+    Ok(execution_datasets)
+}
+
+fn forbidden_send_domain_placeholder_target(rule: &ExecutableRule) -> Option<&'static str> {
+    match rule.core_id.as_str() {
+        engine_semantics::CORE_000794 => Some("--PTCD"),
+        engine_semantics::CORE_000847 => Some("--SCAN"),
+        engine_semantics::CORE_000848 => Some("--SCONG"),
+        _ => None,
+    }
+}
+
+fn dataset_has_metadata_variable(dataset: &LoadedDataset, variable: &str) -> bool {
+    dataset
+        .metadata
+        .variables
+        .iter()
+        .any(|metadata| metadata.name.eq_ignore_ascii_case(variable))
 }
 
 fn dataset_metadata_execution_datasets(
@@ -2963,11 +4726,17 @@ fn core_000929_domain_library_codes(dataset: &LoadedDataset) -> String {
     let mut codes = vec![
         "C49562", "C49568", "C95087", "C49587", "C85442", "C61536", "C49602", "C49603", "C49604",
         "C49606", "C49608", "C49609", "C49610", "C49615", "C49616", "C49617", "C49618", "C49619",
-        "C49620", "C49621", "C49622",
+        "C49620", "C49621", "C49622", "C49592",
     ];
-    if open_rules_env_value(dataset, "VERSION").as_deref() == Some("3-3") {
-        codes.push("C00003");
-        codes.push("C49563");
+    match open_rules_env_value(dataset, "VERSION").as_deref() {
+        Some("3-3") => {
+            codes.push("C00003");
+            codes.push("C49563");
+        }
+        Some("3-4") => {
+            codes.push("C00003");
+        }
+        _ => {}
     }
     codes.join("|")
 }
@@ -3556,7 +5325,7 @@ fn required_model_variables(dataset: &LoadedDataset) -> Vec<String> {
         .unwrap_or(dataset.metadata.name.as_str())
         .to_ascii_uppercase();
     let mut variables = vec!["STUDYID", "DOMAIN"];
-    if domain != "DM" {
+    if domain != "DM" && !is_trial_design_domain_without_subject(&domain) {
         variables.push("USUBJID");
     }
     match domain.as_str() {
@@ -3569,6 +5338,10 @@ fn required_model_variables(dataset: &LoadedDataset) -> Vec<String> {
         _ => {}
     }
     variables.into_iter().map(str::to_owned).collect()
+}
+
+fn is_trial_design_domain_without_subject(domain: &str) -> bool {
+    matches!(domain, "TA" | "TE" | "TI" | "TS" | "TV")
 }
 
 fn domain_presence_execution_datasets(
@@ -4097,7 +5870,10 @@ fn execute_single_match_dataset(
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     let scoped_bases = scoped_datasets
         .iter()
-        .filter(|dataset| !dataset_matches_name(dataset, match_name))
+        .filter(|dataset| {
+            engine_semantics::includes_single_match_dataset_as_target(rule)
+                || !dataset_matches_name(dataset, match_name)
+        })
         .collect::<Vec<_>>();
     if scoped_bases.is_empty() {
         let Some(dataset) = find_dataset(scoped_datasets, match_name) else {
@@ -4128,18 +5904,78 @@ fn execute_single_match_dataset(
         .unwrap_or_else(|| default_single_match_dataset_prefix(rule, match_name));
     let mut joined_datasets = Vec::with_capacity(scoped_bases.len());
     for scoped_base in scoped_bases {
-        joined_datasets.push(
-            left_join_dataset_on(
-                scoped_base,
+        let scoped_base = add_source_row_column(scoped_base)
+            .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+        let lookup_dataset = if prefix.is_empty() {
+            suffix_conflicting_match_columns(
+                &scoped_base,
                 lookup_dataset,
-                &keys.left,
+                &keys.right,
+                match_name,
+                rule,
+            )
+            .map_err(|source| join_skipped_result(rule, source.to_string()))?
+        } else {
+            lookup_dataset.clone()
+        };
+        let mut joined = left_join_dataset_on(
+            &scoped_base,
+            &lookup_dataset,
+            &keys.left,
+            &keys.right,
+            &prefix,
+        )
+        .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+        if !prefix.is_empty() {
+            joined = add_unprefixed_match_aliases(
+                &joined,
+                &scoped_base,
+                &lookup_dataset,
                 &keys.right,
                 &prefix,
+                rule,
             )
-            .map_err(|source| join_skipped_result(rule, source.to_string()))?,
-        );
+            .map_err(|source| join_skipped_result(rule, source.to_string()))?;
+        }
+        joined_datasets.push(joined);
     }
     Ok(joined_datasets)
+}
+
+fn add_source_row_column(dataset: &LoadedDataset) -> core_data::Result<LoadedDataset> {
+    if dataset_has_column(dataset, SOURCE_ROW_COLUMN) {
+        return Ok(dataset.clone());
+    }
+    row_number_dataset(dataset, SOURCE_ROW_COLUMN, &[])
+}
+
+fn add_unprefixed_match_aliases(
+    joined: &LoadedDataset,
+    left: &LoadedDataset,
+    right: &LoadedDataset,
+    right_keys: &[String],
+    prefix: &str,
+    rule: &ExecutableRule,
+) -> core_data::Result<LoadedDataset> {
+    let mut joined = joined.clone();
+    for column in right.frame().get_column_names() {
+        let column = column.as_str();
+        if right_keys
+            .iter()
+            .any(|key| key.eq_ignore_ascii_case(column))
+            || dataset_has_column(left, column)
+            || dataset_has_column(&joined, column)
+            || !rule_references_column(rule, column)
+        {
+            continue;
+        }
+        let prefixed_column = format!("{prefix}{column}");
+        if !dataset_has_column(&joined, &prefixed_column) {
+            continue;
+        }
+        joined = derive_column_from_column(&joined, column, &prefixed_column)?;
+    }
+    Ok(joined)
 }
 
 fn default_single_match_dataset_prefix(rule: &ExecutableRule, match_name: &str) -> String {
@@ -4818,12 +6654,16 @@ fn execute_dataset_operation(
                         })
                         .collect()
                 } else {
+                    let aliases =
+                        string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
+                            .unwrap_or_default();
                     input
                         .iter()
                         .map(|dataset| {
                             group_distinct_values_dataset_with_aliases(
                                 dataset,
                                 &keys,
+                                &aliases,
                                 &source_column,
                                 &output,
                             )
@@ -4954,7 +6794,7 @@ fn execute_dataset_operation(
             input
                 .iter()
                 .map(|dataset| {
-                    derive_valid_codelist_dates_dataset(dataset, &column)
+                    derive_valid_codelist_dates_dataset(dataset, operation, &column)
                         .map_err(|source| operation_skipped_result(rule, source.to_string()))
                 })
                 .collect()
@@ -5820,6 +7660,7 @@ fn normalize_operation_group_key_value(value: &str, regex: Option<&regex::Regex>
 fn group_distinct_values_dataset_with_aliases(
     dataset: &LoadedDataset,
     keys: &[String],
+    aliases: &[String],
     source_column: &str,
     column_name: &str,
 ) -> std::result::Result<LoadedDataset, DataError> {
@@ -5833,8 +7674,22 @@ fn group_distinct_values_dataset_with_aliases(
             "distinct values operation requires an output column".to_owned(),
         ));
     }
+    if !aliases.is_empty() && aliases.len() != keys.len() {
+        return Err(DataError::InvalidDatasetPackage(
+            "distinct values operation requires matching group and group_aliases".to_owned(),
+        ));
+    }
 
-    let key_columns = keys
+    let source_key_columns = keys
+        .iter()
+        .map(|key| {
+            operation_column_values(dataset, key).map_err(|_source| {
+                DataError::InvalidDatasetPackage(format!("distinct values key not found: {key}"))
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let target_keys = if aliases.is_empty() { keys } else { aliases };
+    let target_key_columns = target_keys
         .iter()
         .map(|key| {
             operation_column_values(dataset, key).map_err(|_source| {
@@ -5852,7 +7707,7 @@ fn group_distinct_values_dataset_with_aliases(
     for row in 0..dataset.frame().height() {
         if let Some(value) = source_values.get(row).and_then(json_scalar_string) {
             groups
-                .entry(filtered_group_count_key(&key_columns, row, None))
+                .entry(filtered_group_count_key(&source_key_columns, row, None))
                 .or_default()
                 .insert(value);
         }
@@ -5861,7 +7716,7 @@ fn group_distinct_values_dataset_with_aliases(
     let values = (0..dataset.frame().height())
         .map(|row| {
             let joined = groups
-                .get(&filtered_group_count_key(&key_columns, row, None))
+                .get(&filtered_group_count_key(&target_key_columns, row, None))
                 .map(|values| values.iter().cloned().collect::<Vec<_>>().join("|"))
                 .unwrap_or_default();
             Value::String(joined)
@@ -5970,8 +7825,7 @@ fn execute_reference_distinct_operation(
                 datasets
                     .iter()
                     .map(|dataset| {
-                        derive_external_distinct_values_dataset(
-                            dataset,
+                        derive_external_distinct_values_dataset_allow_missing_source(
                             dataset,
                             &source_column,
                             &output,
@@ -5987,6 +7841,61 @@ fn execute_reference_distinct_operation(
             format!("dataset {source_name} was not loaded"),
         )));
     };
+
+    let group_keys = string_list_field(
+        operation,
+        &["by", "keys", "group", "group_by", "group_keys"],
+    )
+    .unwrap_or_default();
+    let group_aliases = string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
+        .unwrap_or_default();
+    if !group_keys.is_empty() && (scope_wide || !group_aliases.is_empty()) {
+        let source_mask = match operation_inline_filter_mask(rule, operation, source_dataset) {
+            Ok(mask) => mask,
+            Err(skipped) => return Some(Err(skipped)),
+        };
+        let source_keys = if rule.entities.is_some()
+            && !group_aliases.is_empty()
+            && group_aliases.len() < group_keys.len()
+        {
+            group_keys
+                .iter()
+                .take(group_aliases.len())
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            group_keys.clone()
+        };
+        let target_keys = if group_aliases.is_empty() {
+            source_keys.clone()
+        } else {
+            group_aliases.clone()
+        };
+        if source_keys.len() != target_keys.len() {
+            return Some(Err(operation_skipped_result(
+                rule,
+                "grouped reference distinct operation requires matching group and group_aliases",
+            )));
+        }
+        return Some(
+            datasets
+                .iter()
+                .filter(|dataset| !scope_wide || !dataset_matches_name(dataset, &source_name))
+                .map(|dataset| {
+                    derive_external_group_distinct_values_dataset(
+                        source_dataset,
+                        dataset,
+                        &source_mask,
+                        &source_keys,
+                        &target_keys,
+                        &source_column,
+                        &output,
+                    )
+                    .map_err(|source| operation_skipped_result(rule, source.to_string()))
+                })
+                .collect(),
+        );
+    }
 
     Some(
         datasets
@@ -6010,6 +7919,26 @@ fn is_absent_reference_distinct_source_pass_through_rule(
     source_name: &str,
 ) -> bool {
     engine_semantics::is_absent_reference_distinct_source_pass_through_rule(rule, source_name)
+}
+
+fn derive_external_distinct_values_dataset_allow_missing_source(
+    dataset: &LoadedDataset,
+    source_column: &str,
+    column_name: &str,
+) -> std::result::Result<LoadedDataset, DataError> {
+    if dataset_has_column(dataset, source_column) {
+        return derive_external_distinct_values_dataset(
+            dataset,
+            dataset,
+            source_column,
+            column_name,
+        );
+    }
+
+    let values = (0..dataset.summary().row_count)
+        .map(|_| Value::String(String::new()))
+        .collect::<Vec<_>>();
+    derive_column_from_values_with_aliases(dataset, column_name, &values)
 }
 
 fn derive_external_distinct_values_dataset(
@@ -6043,10 +7972,66 @@ fn derive_external_distinct_values_dataset(
     derive_column_from_values_with_aliases(dataset, column_name, &values)
 }
 
+fn derive_external_group_distinct_values_dataset(
+    source_dataset: &LoadedDataset,
+    target_dataset: &LoadedDataset,
+    source_mask: &[bool],
+    source_keys: &[String],
+    target_keys: &[String],
+    source_column: &str,
+    column_name: &str,
+) -> std::result::Result<LoadedDataset, DataError> {
+    if source_column.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "grouped reference distinct operation requires a source column".to_owned(),
+        ));
+    }
+    if column_name.trim().is_empty() {
+        return Err(DataError::InvalidDatasetPackage(
+            "grouped reference distinct operation requires an output column".to_owned(),
+        ));
+    }
+    if source_mask.len() != source_dataset.frame().height() {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "filter mask length {} does not match row count {}",
+            source_mask.len(),
+            source_dataset.frame().height()
+        )));
+    }
+
+    let source_key_columns = operation_group_key_columns(source_dataset, source_keys)?;
+    let source_values = operation_column_values(source_dataset, source_column)?;
+    let mut groups = BTreeMap::<Vec<String>, BTreeSet<String>>::new();
+    for row in 0..source_dataset.frame().height() {
+        if !source_mask.get(row).copied().unwrap_or(false) {
+            continue;
+        }
+        if let Some(value) = source_values.get(row).and_then(json_scalar_string) {
+            groups
+                .entry(filtered_group_count_key(&source_key_columns, row, None))
+                .or_default()
+                .insert(value);
+        }
+    }
+
+    let target_key_columns = operation_group_key_columns(target_dataset, target_keys)?;
+    let values = (0..target_dataset.frame().height())
+        .map(|row| {
+            let joined = groups
+                .get(&filtered_group_count_key(&target_key_columns, row, None))
+                .map(|values| values.iter().cloned().collect::<Vec<_>>().join("|"))
+                .unwrap_or_default();
+            Value::String(joined)
+        })
+        .collect::<Vec<_>>();
+
+    derive_column_from_values_with_aliases(target_dataset, column_name, &values)
+}
+
 fn derive_reference_distinct_values_dataset(
     dataset: &LoadedDataset,
     all_datasets: &[LoadedDataset],
-    source_column: &str,
+    _source_column: &str,
     column_name: &str,
 ) -> std::result::Result<LoadedDataset, DataError> {
     if column_name.trim().is_empty() {
@@ -6076,17 +8061,6 @@ fn derive_reference_distinct_values_dataset(
             Value::String(variable_names.join("|"))
         })
         .collect::<Vec<_>>();
-
-    if !source_column.trim().is_empty()
-        && dataset.frame().column(source_column).is_err()
-        && reference_domains
-            .iter()
-            .any(|value| json_scalar_string(value).is_some_and(|domain| !domain.trim().is_empty()))
-    {
-        return Err(DataError::InvalidDatasetPackage(format!(
-            "reference distinct source column not found: {source_column}"
-        )));
-    }
 
     derive_column_from_values_with_aliases(dataset, column_name, &values)
 }
@@ -6306,14 +8280,31 @@ fn derive_metadata_dataset(
 
 fn derive_valid_codelist_dates_dataset(
     dataset: &LoadedDataset,
+    operation: &OperationSpec,
     column_name: &str,
 ) -> std::result::Result<LoadedDataset, DataError> {
-    let joined = valid_codelist_dates().join("|");
+    let joined = valid_codelist_dates_for_operation(operation).join("|");
     let values = (0..dataset.summary().row_count)
         .map(|_| Value::String(joined.clone()))
         .collect::<Vec<_>>();
 
     derive_column_from_values_with_aliases(dataset, column_name, &values)
+}
+
+fn valid_codelist_dates_for_operation(operation: &OperationSpec) -> &'static [&'static str] {
+    let package_types =
+        string_list_field(operation, &["ct_package_types", "ct_package_type"]).unwrap_or_default();
+    if package_types
+        .iter()
+        .any(|package_type| package_type.eq_ignore_ascii_case("DDF"))
+    {
+        return ddf_valid_codelist_dates();
+    }
+    valid_codelist_dates()
+}
+
+fn ddf_valid_codelist_dates() -> &'static [&'static str] {
+    valid_codelist_dates()
 }
 
 fn valid_codelist_dates() -> &'static [&'static str] {
@@ -6414,14 +8405,23 @@ fn derive_codelist_extensible_dataset(
     column_name: &str,
 ) -> std::result::Result<LoadedDataset, DataError> {
     let codelist_codes = operation_reference_values(dataset, operation, "codelist_code")?;
+    let codelist_versions = optional_operation_reference_values(dataset, operation, "version")?;
     let values = codelist_codes
         .iter()
-        .map(
-            |code| match static_codelist(code).map(|codelist| codelist.extensible) {
+        .enumerate()
+        .map(|(row, code)| {
+            let version = codelist_versions
+                .as_ref()
+                .and_then(|values| values.get(row))
+                .map(String::as_str);
+            if !static_codelist_matches_version(code, version) {
+                return Value::Null;
+            }
+            match static_codelist(code).map(|codelist| codelist.extensible) {
                 Some(value) => Value::Bool(value),
                 None => Value::Null,
-            },
-        )
+            }
+        })
         .collect::<Vec<_>>();
 
     derive_column_from_values_with_aliases(dataset, column_name, &values)
@@ -6445,19 +8445,27 @@ fn derive_codelist_terms_dataset(
     let term_code = optional_operation_reference_values(dataset, operation, "term_code")?;
     let term_pref_term = optional_operation_reference_values(dataset, operation, "term_pref_term")?;
     let term_value = optional_operation_reference_values(dataset, operation, "term_value")?;
+    let term_version = optional_operation_reference_values(dataset, operation, "version")?;
 
     let values = (0..dataset.summary().row_count)
         .map(|row| {
-            let Some(codelist) = codelist_codes
-                .get(row)
-                .and_then(|code| static_codelist(code))
-            else {
+            let Some(codelist_code) = codelist_codes.get(row) else {
                 return Value::String(String::new());
             };
+            let Some(codelist) = static_codelist(codelist_code) else {
+                return Value::String(String::new());
+            };
+            let version = term_version
+                .as_ref()
+                .and_then(|values| values.get(row))
+                .map(String::as_str);
             if term_code.is_none() && term_pref_term.is_none() && term_value.is_none() {
                 let values = codelist
                     .terms
                     .iter()
+                    .filter(|term| {
+                        static_codelist_term_matches_version(codelist_code, term, version)
+                    })
                     .map(|term| term.value)
                     .collect::<Vec<_>>()
                     .join("|");
@@ -6466,22 +8474,36 @@ fn derive_codelist_terms_dataset(
             let term = term_code
                 .as_ref()
                 .and_then(|values| values.get(row))
-                .and_then(|code| codelist.find_by_code(code))
+                .and_then(|code| {
+                    static_codelist_term_by_code(codelist_code, &codelist, code, version)
+                })
                 .or_else(|| {
                     term_pref_term
                         .as_ref()
                         .and_then(|values| values.get(row))
-                        .and_then(|pref_term| codelist.find_by_pref_term(pref_term))
+                        .and_then(|pref_term| {
+                            static_codelist_term_by_pref_term(
+                                codelist_code,
+                                &codelist,
+                                pref_term,
+                                version,
+                            )
+                        })
                 })
                 .or_else(|| {
                     term_value
                         .as_ref()
                         .and_then(|values| values.get(row))
-                        .and_then(|value| codelist.find_by_value(value))
+                        .and_then(|value| {
+                            static_codelist_term_by_value(codelist_code, &codelist, value, version)
+                        })
                 });
             let Some(term) = term else {
                 return Value::String(String::new());
             };
+            if !static_codelist_term_matches_version(codelist_code, term, version) {
+                return Value::String(String::new());
+            }
             let value = match normalize_operation_key(&return_type).as_str() {
                 "code" => term.code,
                 "pref_term" | "preferred_term" => term.pref_term,
@@ -6604,6 +8626,7 @@ struct StaticCodelist {
     terms: &'static [StaticTerm],
 }
 
+#[cfg(test)]
 impl StaticCodelist {
     fn find_by_code(&self, code: &str) -> Option<&'static StaticTerm> {
         self.terms
@@ -6624,11 +8647,205 @@ impl StaticCodelist {
     }
 }
 
+fn static_codelist_term_by_code(
+    codelist_code: &str,
+    codelist: &StaticCodelist,
+    code: &str,
+    version: Option<&str>,
+) -> Option<&'static StaticTerm> {
+    codelist.terms.iter().find(|term| {
+        term.code.eq_ignore_ascii_case(code.trim())
+            && static_codelist_term_matches_version(codelist_code, term, version)
+    })
+}
+
+fn static_codelist_term_by_pref_term(
+    codelist_code: &str,
+    codelist: &StaticCodelist,
+    pref_term: &str,
+    version: Option<&str>,
+) -> Option<&'static StaticTerm> {
+    codelist.terms.iter().find(|term| {
+        term.pref_term.eq_ignore_ascii_case(pref_term.trim())
+            && static_codelist_term_matches_version(codelist_code, term, version)
+    })
+}
+
+fn static_codelist_term_by_value(
+    codelist_code: &str,
+    codelist: &StaticCodelist,
+    value: &str,
+    version: Option<&str>,
+) -> Option<&'static StaticTerm> {
+    codelist.terms.iter().find(|term| {
+        term.value.eq_ignore_ascii_case(value.trim())
+            && static_codelist_term_matches_version(codelist_code, term, version)
+    })
+}
+
 #[derive(Clone, Copy)]
 struct StaticTerm {
     code: &'static str,
     value: &'static str,
     pref_term: &'static str,
+}
+
+fn static_codelist_term_matches_version(
+    codelist_code: &str,
+    term: &StaticTerm,
+    version: Option<&str>,
+) -> bool {
+    if !static_codelist_matches_version(codelist_code, version) {
+        return false;
+    }
+    let Some(version) = version.map(str::trim).filter(|value| !value.is_empty()) else {
+        return true;
+    };
+    match codelist_code.trim().to_ascii_uppercase().as_str() {
+        "C207415" => match term.code {
+            "C17649" | "C48660" | "C0031X" => version >= "2025-09-26",
+            _ => version >= "2024-09-27",
+        },
+        "C207416" => match term.code {
+            "C98704" | "C207613" | "C46079" => version >= "2024-09-27",
+            _ => version >= "2025-09-26",
+        },
+        "C207417" => match term.code {
+            "C68609" => version >= "2025-09-26",
+            _ => version >= "2024-09-27",
+        },
+        "C171445" => match term.code {
+            "C177933" | "C171533" => version >= "2024-03-29",
+            _ => version >= "2023-12-15",
+        },
+        "C99078" => match term.code {
+            "C15184" | "C307" | "C1909" => version >= "2023-12-15",
+            "C17649" => version == "2023-12-15",
+            "C54696" | "C16830" | "C18020" | "C1505" => version >= "2024-03-29",
+            "C15238" | "C98769" | "C15313" => version >= "2024-09-27",
+            "C218507" | "C15329" | "C923" => version >= "2025-09-26",
+            _ => true,
+        },
+        "C127259" => match term.code {
+            "C15197" | "C127779" => version >= "2023-12-15",
+            "C15362" | "C15208" => version >= "2024-03-29",
+            "C127780" | "C15407" => version >= "2024-09-27",
+            _ => true,
+        },
+        "C71620" => match term.code {
+            "C105499" => version >= "2024-09-27",
+            "C176378" => version >= "2025-09-26",
+            _ => true,
+        },
+        "C66735" => match term.code {
+            "C28233" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C99076" => match term.code {
+            "C82640" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C207418" => match term.code {
+            "C202579" => version >= "2024-09-27",
+            "C156473" => match term.value {
+                "NIMP (AxMP)" => ("2024-09-27".."2025-09-26").contains(&version),
+                "NIMP" => version >= "2025-09-26",
+                _ => version >= "2024-09-27",
+            },
+            _ => true,
+        },
+        "C66737" => match term.code {
+            "C198366" => match term.value {
+                "PHASE I/II/III STUDY" => version < "2023-12-15",
+                "PHASE I/II/III TRIAL" => version >= "2023-12-15",
+                _ => true,
+            },
+            "C54721" => match term.value {
+                "PHASE 0 TRIAL" => ("2023-12-15".."2024-09-27").contains(&version),
+                "EARLY PHASE I" => version >= "2024-09-27",
+                _ => true,
+            },
+            "C199989" | "C15602" => version >= "2024-03-29",
+            _ => version >= "2023-12-15",
+        },
+        "C188725" => match term.code {
+            "C85827" => version >= "2024-09-27",
+            "C163559" => version >= "2025-09-26",
+            _ => version >= "2023-12-15",
+        },
+        "C188726" => match term.code {
+            "C139173" | "C170559" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C207412" => version >= "2024-09-27",
+        "C127260" => match term.code {
+            "C71517" => version >= "2024-03-29",
+            _ => version >= "2023-12-15",
+        },
+        "C127261" => match term.code {
+            "C15273" => version >= "2024-03-29",
+            "C53312" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C201264" => match term.code {
+            "C201356" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C201265" => version >= "2023-12-15",
+        "C207413" => match term.code {
+            "C215663" | "C215664" | "C71476" => version >= "2025-09-26",
+            _ => version >= "2024-09-27",
+        },
+        "C207414" => version == "2024-09-27",
+        "C207419" => version >= "2024-09-27",
+        "C215477" | "C215478" | "C215479" | "C215481" | "C215482" | "C215483" | "C215484" => {
+            version >= "2025-09-26"
+        }
+        "C66726" => match term.code {
+            "C42968" | "C48624" => version >= "2024-03-29",
+            "C42998" => version >= "2024-09-27",
+            _ => version >= "2023-12-15",
+        },
+        "C188724" => match term.code {
+            "C70793" => match term.value {
+                "Clinical Study Sponsor" => version == "2024-09-27",
+                "Study Sponsor" => version >= "2025-09-26",
+                _ => true,
+            },
+            _ => true,
+        },
+        "C188727" => match term.code {
+            "C165830" => match term.value {
+                "Real World Data" => ("2024-09-27".."2025-09-26").contains(&version),
+                "Real-world Data" => version >= "2025-09-26",
+                _ => true,
+            },
+            _ => true,
+        },
+        _ => true,
+    }
+}
+
+fn static_codelist_matches_version(codelist_code: &str, version: Option<&str>) -> bool {
+    let Some(version) = version.map(str::trim).filter(|value| !value.is_empty()) else {
+        return true;
+    };
+    match codelist_code.trim().to_ascii_uppercase().as_str() {
+        "C127259" => version >= "2023-12-15",
+        "C127260" | "C127261" => version >= "2023-12-15",
+        "C207416" => version >= "2024-09-27",
+        "C207418" => version >= "2024-09-27",
+        "C207412" => version >= "2024-09-27",
+        "C207413" => version >= "2024-09-27",
+        "C207414" => version == "2024-09-27",
+        "C207419" => version >= "2024-09-27",
+        "C215477" | "C215478" | "C215479" | "C215481" | "C215482" | "C215483" | "C215484" => {
+            version >= "2025-09-26"
+        }
+        "C215486" => version >= "2025-09-26",
+        "C215480" => version >= "2025-09-26",
+        _ => true,
+    }
 }
 
 fn static_codelist(code: &str) -> Option<StaticCodelist> {
@@ -6650,6 +8867,1440 @@ fn static_codelist(code: &str) -> Option<StaticCodelist> {
                     code: "C49636",
                     value: "BOTH",
                     pref_term: "Both",
+                },
+            ],
+        }),
+        "C66736" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C15714",
+                    value: "BASIC SCIENCE",
+                    pref_term: "Basic Research",
+                },
+                StaticTerm {
+                    code: "C49654",
+                    value: "CURE",
+                    pref_term: "Cure Study",
+                },
+                StaticTerm {
+                    code: "C139174",
+                    value: "DEVICE FEASIBILITY",
+                    pref_term: "Device Feasibility Study",
+                },
+                StaticTerm {
+                    code: "C49653",
+                    value: "DIAGNOSIS",
+                    pref_term: "Diagnosis Study",
+                },
+                StaticTerm {
+                    code: "C170629",
+                    value: "DISEASE MODIFYING",
+                    pref_term: "Disease Modifying Treatment Study",
+                },
+                StaticTerm {
+                    code: "C15245",
+                    value: "HEALTH SERVICES RESEARCH",
+                    pref_term: "Health Services Research",
+                },
+                StaticTerm {
+                    code: "C49655",
+                    value: "MITIGATION",
+                    pref_term: "Adverse Effect Mitigation Study",
+                },
+                StaticTerm {
+                    code: "C49657",
+                    value: "PREVENTION",
+                    pref_term: "Prevention Study",
+                },
+                StaticTerm {
+                    code: "C71485",
+                    value: "SCREENING",
+                    pref_term: "Screening Study",
+                },
+                StaticTerm {
+                    code: "C71486",
+                    value: "SUPPORTIVE CARE",
+                    pref_term: "Supportive Care Study",
+                },
+                StaticTerm {
+                    code: "C49656",
+                    value: "TREATMENT",
+                    pref_term: "Treatment Study",
+                },
+            ],
+        }),
+        "C66735" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C15228",
+                    value: "DOUBLE BLIND",
+                    pref_term: "Double Blind Study",
+                },
+                StaticTerm {
+                    code: "C187674",
+                    value: "OBSERVER BLIND",
+                    pref_term: "Observer Blind Study",
+                },
+                StaticTerm {
+                    code: "C156592",
+                    value: "OPEN LABEL TO TREATMENT AND DOUBLE BLIND TO IMP DOSE",
+                    pref_term: "Open Label for Treatment And Double Blind to Dose",
+                },
+                StaticTerm {
+                    code: "C49659",
+                    value: "OPEN LABEL",
+                    pref_term: "Open Label Study",
+                },
+                StaticTerm {
+                    code: "C28233",
+                    value: "SINGLE BLIND",
+                    pref_term: "Single Blind Study",
+                },
+            ],
+        }),
+        "C99076" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C82637",
+                    value: "CROSS-OVER",
+                    pref_term: "Crossover Study",
+                },
+                StaticTerm {
+                    code: "C82638",
+                    value: "FACTORIAL",
+                    pref_term: "Factorial Study",
+                },
+                StaticTerm {
+                    code: "C82639",
+                    value: "PARALLEL",
+                    pref_term: "Parallel Study",
+                },
+                StaticTerm {
+                    code: "C142568",
+                    value: "SEQUENTIAL",
+                    pref_term: "Group Sequential Design",
+                },
+                StaticTerm {
+                    code: "C82640",
+                    value: "SINGLE GROUP",
+                    pref_term: "Single Group Study",
+                },
+            ],
+        }),
+        "C99077" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C98388",
+                    value: "INTERVENTIONAL",
+                    pref_term: "Interventional Study",
+                },
+                StaticTerm {
+                    code: "C16084",
+                    value: "OBSERVATIONAL",
+                    pref_term: "Observational Study",
+                },
+                StaticTerm {
+                    code: "C98722",
+                    value: "EXPANDED ACCESS",
+                    pref_term: "Expanded Access Study",
+                },
+                StaticTerm {
+                    code: "C129000",
+                    value: "PATIENT REGISTRY",
+                    pref_term: "Patient Registry Study",
+                },
+            ],
+        }),
+        "C66729" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C188189",
+                    value: "NASODUODENAL",
+                    pref_term: "Nasoduodenal Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38215",
+                    value: "INFILTRATION",
+                    pref_term: "Infiltration Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38217",
+                    value: "INTRACORONAL, DENTAL",
+                    pref_term: "Intracoronal Dental Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38257",
+                    value: "INTRAPERICARDIAL",
+                    pref_term: "Intrapericardial Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38288",
+                    value: "ORAL",
+                    pref_term: "Oral Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38305",
+                    value: "TRANSDERMAL",
+                    pref_term: "Transdermal Route of Administration",
+                },
+                StaticTerm {
+                    code: "C38311",
+                    value: "UNKNOWN",
+                    pref_term: "Unknown Route of Administration",
+                },
+                StaticTerm {
+                    code: "C48623",
+                    value: "NOT APPLICABLE",
+                    pref_term: "Route of Administration Not Applicable",
+                },
+            ],
+        }),
+        "C71113" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C17998",
+                    value: "UNKNOWN",
+                    pref_term: "Unknown",
+                },
+                StaticTerm {
+                    code: "C64508",
+                    value: "Q18H",
+                    pref_term: "Every Eighteen Hours",
+                },
+                StaticTerm {
+                    code: "C64525",
+                    value: "QOD",
+                    pref_term: "Every Other Day",
+                },
+                StaticTerm {
+                    code: "C64528",
+                    value: "3 TIMES PER WEEK",
+                    pref_term: "Three Times Weekly",
+                },
+                StaticTerm {
+                    code: "C64954",
+                    value: "OCCASIONAL",
+                    pref_term: "Infrequent",
+                },
+                StaticTerm {
+                    code: "C71129",
+                    value: "BIM",
+                    pref_term: "Twice Per Month",
+                },
+                StaticTerm {
+                    code: "C89791",
+                    value: "Q36H",
+                    pref_term: "Every Thirty-six Hours",
+                },
+                StaticTerm {
+                    code: "C98860",
+                    value: "3 TIMES PER YEAR",
+                    pref_term: "Three Times Yearly",
+                },
+            ],
+        }),
+        "C188723" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C25425",
+                    value: "Approval",
+                    pref_term: "Approved",
+                },
+                StaticTerm {
+                    code: "C25508",
+                    value: "Final",
+                    pref_term: "Final",
+                },
+                StaticTerm {
+                    code: "C63553",
+                    value: "Obsolete",
+                    pref_term: "Obsolete",
+                },
+                StaticTerm {
+                    code: "C85255",
+                    value: "Draft",
+                    pref_term: "Draft",
+                },
+                StaticTerm {
+                    code: "C188862",
+                    value: "Pending Review",
+                    pref_term: "Pending Review",
+                },
+            ],
+        }),
+        "C207418" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C202579",
+                    value: "IMP",
+                    pref_term: "Investigational Medicinal Product",
+                },
+                StaticTerm {
+                    code: "C156473",
+                    value: "NIMP (AxMP)",
+                    pref_term: "Auxiliary Medicinal Product",
+                },
+                StaticTerm {
+                    code: "C156473",
+                    value: "NIMP",
+                    pref_term: "Auxiliary Medicinal Product",
+                },
+            ],
+        }),
+        "C66737" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C15600",
+                    value: "PHASE I TRIAL",
+                    pref_term: "Phase I Trial",
+                },
+                StaticTerm {
+                    code: "C15601",
+                    value: "PHASE II TRIAL",
+                    pref_term: "Phase II Trial",
+                },
+                StaticTerm {
+                    code: "C15602",
+                    value: "PHASE III TRIAL",
+                    pref_term: "Phase III Trial",
+                },
+                StaticTerm {
+                    code: "C48660",
+                    value: "NOT APPLICABLE",
+                    pref_term: "Not Applicable",
+                },
+                StaticTerm {
+                    code: "C198366",
+                    value: "PHASE I/II/III STUDY",
+                    pref_term: "Phase I/II/III Study",
+                },
+                StaticTerm {
+                    code: "C198366",
+                    value: "PHASE I/II/III TRIAL",
+                    pref_term: "Phase I/II/III Trial",
+                },
+                StaticTerm {
+                    code: "C199989",
+                    value: "PHASE IB TRIAL",
+                    pref_term: "Phase Ib Trial",
+                },
+                StaticTerm {
+                    code: "C54721",
+                    value: "PHASE 0 TRIAL",
+                    pref_term: "Phase 0 Trial",
+                },
+                StaticTerm {
+                    code: "C54721",
+                    value: "EARLY PHASE I",
+                    pref_term: "Early Phase 1 Trial",
+                },
+            ],
+        }),
+        "C188725" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C85826",
+                    value: "Study Primary Objective",
+                    pref_term: "Trial Primary Objective",
+                },
+                StaticTerm {
+                    code: "C85827",
+                    value: "Study Secondary Objective",
+                    pref_term: "Trial Secondary Objective",
+                },
+                StaticTerm {
+                    code: "C163559",
+                    value: "Exploratory Objective",
+                    pref_term: "Trial Exploratory Objective",
+                },
+            ],
+        }),
+        "C188726" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C94496",
+                    value: "Primary Endpoint",
+                    pref_term: "Primary Endpoint",
+                },
+                StaticTerm {
+                    code: "C139173",
+                    value: "Secondary Endpoint",
+                    pref_term: "Secondary Endpoint",
+                },
+                StaticTerm {
+                    code: "C170559",
+                    value: "Exploratory Endpoint",
+                    pref_term: "Exploratory Endpoint",
+                },
+            ],
+        }),
+        "C188728" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[StaticTerm {
+                code: "C25716",
+                value: "Visit",
+                pref_term: "Visit",
+            }],
+        }),
+        "C207412" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C25464",
+                    value: "Country",
+                    pref_term: "Country",
+                },
+                StaticTerm {
+                    code: "C41129",
+                    value: "Region",
+                    pref_term: "Region",
+                },
+                StaticTerm {
+                    code: "C68846",
+                    value: "Global",
+                    pref_term: "Global",
+                },
+            ],
+        }),
+        "C66797" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C25370",
+                    value: "EXCLUSION",
+                    pref_term: "Exclusion Criteria",
+                },
+                StaticTerm {
+                    code: "C25532",
+                    value: "INCLUSION",
+                    pref_term: "Inclusion Criteria",
+                },
+            ],
+        }),
+        "C127260" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C127781",
+                    value: "NON-PROBABILITY SAMPLE",
+                    pref_term: "Non-Probability Sampling Method",
+                },
+                StaticTerm {
+                    code: "C71517",
+                    value: "PROBABILITY SAMPLE",
+                    pref_term: "Equal Probability Sampling Method",
+                },
+            ],
+        }),
+        "C127261" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C15273",
+                    value: "PROSPECTIVE",
+                    pref_term: "Longitudinal Study",
+                },
+                StaticTerm {
+                    code: "C53310",
+                    value: "CROSS SECTIONAL",
+                    pref_term: "Cross-Sectional Study",
+                },
+                StaticTerm {
+                    code: "C53312",
+                    value: "RETROSPECTIVE",
+                    pref_term: "Retrospective Study",
+                },
+            ],
+        }),
+        "C201264" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C201356",
+                    value: "After",
+                    pref_term: "After Timing Type",
+                },
+                StaticTerm {
+                    code: "C201357",
+                    value: "Before",
+                    pref_term: "Before Timing Type",
+                },
+                StaticTerm {
+                    code: "C201358",
+                    value: "Fixed Reference",
+                    pref_term: "Fixed Reference Timing Type",
+                },
+            ],
+        }),
+        "C207413" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C132352",
+                    value: "Sponsor Approval Date",
+                    pref_term: "Protocol Approval by Sponsor Date",
+                },
+                StaticTerm {
+                    code: "C207598",
+                    value: "Protocol Effective Date",
+                    pref_term: "Protocol Effective Date",
+                },
+                StaticTerm {
+                    code: "C215663",
+                    value: "Effective Date",
+                    pref_term: "Effective Date",
+                },
+                StaticTerm {
+                    code: "C215664",
+                    value: "Issued Date",
+                    pref_term: "Issued Date",
+                },
+                StaticTerm {
+                    code: "C71476",
+                    value: "Approval Date",
+                    pref_term: "Approval Date",
+                },
+            ],
+        }),
+        "C207419" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C207615",
+                    value: "Brief Study Title",
+                    pref_term: "Brief Study Title",
+                },
+                StaticTerm {
+                    code: "C207616",
+                    value: "Official Study Title",
+                    pref_term: "Official Study Title",
+                },
+                StaticTerm {
+                    code: "C207617",
+                    value: "Public Study Title",
+                    pref_term: "Public Study Title",
+                },
+                StaticTerm {
+                    code: "C207618",
+                    value: "Scientific Study Title",
+                    pref_term: "Scientific Study Title",
+                },
+                StaticTerm {
+                    code: "C207646",
+                    value: "Study Acronym",
+                    pref_term: "Study Acronym",
+                },
+            ],
+        }),
+        "C215477" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[StaticTerm {
+                code: "C70817",
+                value: "Protocol",
+                pref_term: "Study Protocol",
+            }],
+        }),
+        "C215478" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C142424",
+                    value: "Clinical Development Plan",
+                    pref_term: "Clinical Development Plan",
+                },
+                StaticTerm {
+                    code: "C215674",
+                    value: "Pediatric Investigation Clinical Development Plan",
+                    pref_term: "Pediatric Investigation Plan",
+                },
+            ],
+        }),
+        "C215479" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[StaticTerm {
+                code: "C45997",
+                value: "pH",
+                pref_term: "pH",
+            }],
+        }),
+        "C215481" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C215665",
+                    value: "Study Subject Safety",
+                    pref_term: "Study Subject Safety",
+                },
+                StaticTerm {
+                    code: "C215666",
+                    value: "Study Subject Rights",
+                    pref_term: "Study Subject Rights",
+                },
+                StaticTerm {
+                    code: "C215667",
+                    value: "Study Data Reliability",
+                    pref_term: "Study Data Reliability",
+                },
+                StaticTerm {
+                    code: "C215668",
+                    value: "Study Data Robustness",
+                    pref_term: "Study Data Robustness",
+                },
+            ],
+        }),
+        "C215482" | "C215483" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C215659",
+                    value: "Centrally Sourced",
+                    pref_term: "Centrally Sourced Indicator",
+                },
+                StaticTerm {
+                    code: "C215660",
+                    value: "Locally Sourced",
+                    pref_term: "Locally Sourced Indicator",
+                },
+            ],
+        }),
+        "C215484" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C104504",
+                    value: "Batch Number",
+                    pref_term: "Batch Number",
+                },
+                StaticTerm {
+                    code: "C112279",
+                    value: "FDA Unique Device Identification",
+                    pref_term: "FDA Unique Device Identifier",
+                },
+                StaticTerm {
+                    code: "C70848",
+                    value: "Lot Number",
+                    pref_term: "Lot Number",
+                },
+                StaticTerm {
+                    code: "C99285",
+                    value: "Model Number",
+                    pref_term: "Model Number",
+                },
+            ],
+        }),
+        "C66726" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C158215",
+                    value: "CAPSULE, SOFTGEL, EXTENDED RELEASE",
+                    pref_term: "Extended Release Capsule, Softgel Dosage Form",
+                },
+                StaticTerm {
+                    code: "C42968",
+                    value: "PATCH",
+                    pref_term: "Patch Dosage Form",
+                },
+                StaticTerm {
+                    code: "C42998",
+                    value: "TABLET",
+                    pref_term: "Tablet Dosage Form",
+                },
+                StaticTerm {
+                    code: "C48624",
+                    value: "NOT APPLICABLE",
+                    pref_term: "Dosage Form Not Applicable",
+                },
+            ],
+        }),
+        "C201265" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C201352",
+                    value: "End to End",
+                    pref_term: "End to End",
+                },
+                StaticTerm {
+                    code: "C201353",
+                    value: "End to Start",
+                    pref_term: "End to Start",
+                },
+                StaticTerm {
+                    code: "C201354",
+                    value: "Start to End",
+                    pref_term: "Start to End",
+                },
+                StaticTerm {
+                    code: "C201355",
+                    value: "Start to Start",
+                    pref_term: "Start to Start",
+                },
+            ],
+        }),
+        "C207414" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C17445",
+                    value: "Caregiver",
+                    pref_term: "Care Provider",
+                },
+                StaticTerm {
+                    code: "C207599",
+                    value: "Outcomes Assessor",
+                    pref_term: "Outcomes Assessor",
+                },
+                StaticTerm {
+                    code: "C25936",
+                    value: "Investigator",
+                    pref_term: "Investigator",
+                },
+                StaticTerm {
+                    code: "C41189",
+                    value: "Study Subject",
+                    pref_term: "Study Subject",
+                },
+                StaticTerm {
+                    code: "C70793",
+                    value: "Sponsor",
+                    pref_term: "Clinical Study Sponsor",
+                },
+            ],
+        }),
+        "C127259" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C15197",
+                    value: "CASE CONTROL",
+                    pref_term: "Case-Control Study",
+                },
+                StaticTerm {
+                    code: "C127779",
+                    value: "CASE CROSSOVER",
+                    pref_term: "Observational Case-Crossover Study",
+                },
+                StaticTerm {
+                    code: "C15362",
+                    value: "CASE ONLY",
+                    pref_term: "Case Study",
+                },
+                StaticTerm {
+                    code: "C15208",
+                    value: "COHORT",
+                    pref_term: "Cohort Study",
+                },
+                StaticTerm {
+                    code: "C127780",
+                    value: "ECOLOGIC OR COMMUNITY",
+                    pref_term: "Ecologic or Community Based Study",
+                },
+                StaticTerm {
+                    code: "C15407",
+                    value: "FAMILY BASED",
+                    pref_term: "Family Study",
+                },
+            ],
+        }),
+        "C66781" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C25529",
+                    value: "HOURS",
+                    pref_term: "Hour",
+                },
+                StaticTerm {
+                    code: "C25301",
+                    value: "DAYS",
+                    pref_term: "Day",
+                },
+                StaticTerm {
+                    code: "C29844",
+                    value: "WEEKS",
+                    pref_term: "Week",
+                },
+                StaticTerm {
+                    code: "C29846",
+                    value: "MONTHS",
+                    pref_term: "Month",
+                },
+                StaticTerm {
+                    code: "C29848",
+                    value: "YEARS",
+                    pref_term: "Year",
+                },
+            ],
+        }),
+        "C71620" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C25301",
+                    value: "DAYS",
+                    pref_term: "Day",
+                },
+                StaticTerm {
+                    code: "C28253",
+                    value: "mg",
+                    pref_term: "Milligram",
+                },
+                StaticTerm {
+                    code: "C29844",
+                    value: "WEEKS",
+                    pref_term: "Week",
+                },
+                StaticTerm {
+                    code: "C29846",
+                    value: "MONTHS",
+                    pref_term: "Month",
+                },
+                StaticTerm {
+                    code: "C29848",
+                    value: "YEARS",
+                    pref_term: "Year",
+                },
+                StaticTerm {
+                    code: "C176378",
+                    value: "mg/mL/day",
+                    pref_term: "Gram per Liter per Day",
+                },
+                StaticTerm {
+                    code: "C25613",
+                    value: "%",
+                    pref_term: "Percentage",
+                },
+                StaticTerm {
+                    code: "C198376",
+                    value: "10^4 IU/mL",
+                    pref_term: "Ten Thousand International Units per Milliliter",
+                },
+                StaticTerm {
+                    code: "C44278",
+                    value: "U",
+                    pref_term: "Unit",
+                },
+                StaticTerm {
+                    code: "C105499",
+                    value: "uV*s",
+                    pref_term: "Microvolt Second",
+                },
+            ],
+        }),
+        "C127262" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C127785",
+                    value: "CHILD CARE CENTER",
+                    pref_term: "Childcare Center",
+                },
+                StaticTerm {
+                    code: "C51282",
+                    value: "CLINIC",
+                    pref_term: "Clinic",
+                },
+                StaticTerm {
+                    code: "C48953",
+                    value: "FARM",
+                    pref_term: "Farm",
+                },
+                StaticTerm {
+                    code: "C102650",
+                    value: "FIELD",
+                    pref_term: "In the Field",
+                },
+                StaticTerm {
+                    code: "C21541",
+                    value: "HEALTH FACILITY",
+                    pref_term: "Healthcare Facility",
+                },
+                StaticTerm {
+                    code: "C18002",
+                    value: "HOME",
+                    pref_term: "Home",
+                },
+                StaticTerm {
+                    code: "C16696",
+                    value: "HOSPITAL",
+                    pref_term: "Hospital",
+                },
+                StaticTerm {
+                    code: "C102647",
+                    value: "HOUSEHOLD ENVIRONMENT",
+                    pref_term: "Household Environment",
+                },
+                StaticTerm {
+                    code: "C41206",
+                    value: "INSTITUTION",
+                    pref_term: "Institution",
+                },
+                StaticTerm {
+                    code: "C181529",
+                    value: "MOTOR VEHICLE",
+                    pref_term: "Motor Vehicle",
+                },
+                StaticTerm {
+                    code: "C102679",
+                    value: "NON-HOUSEHOLD ENVIRONMENT",
+                    pref_term: "Non-household Environment",
+                },
+                StaticTerm {
+                    code: "C181530",
+                    value: "NOT IN CLINIC",
+                    pref_term: "Not In Clinic",
+                },
+                StaticTerm {
+                    code: "C16281",
+                    value: "OUTPATIENT CLINIC",
+                    pref_term: "Ambulatory Care Facility",
+                },
+                StaticTerm {
+                    code: "C85862",
+                    value: "PRISON",
+                    pref_term: "Correctional Institution",
+                },
+                StaticTerm {
+                    code: "C17118",
+                    value: "SCHOOL",
+                    pref_term: "School",
+                },
+                StaticTerm {
+                    code: "C85863",
+                    value: "SHELTER",
+                    pref_term: "Shelter",
+                },
+                StaticTerm {
+                    code: "C102712",
+                    value: "SOCIAL SETTING",
+                    pref_term: "Social Setting",
+                },
+                StaticTerm {
+                    code: "C17556",
+                    value: "WORKSITE",
+                    pref_term: "Worksite",
+                },
+            ],
+        }),
+        "C171445" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C25170",
+                    value: "E-MAIL",
+                    pref_term: "E-mail",
+                },
+                StaticTerm {
+                    code: "C175574",
+                    value: "IN PERSON",
+                    pref_term: "In Person",
+                },
+                StaticTerm {
+                    code: "C177933",
+                    value: "IVRS",
+                    pref_term: "Interactive Voice Response System",
+                },
+                StaticTerm {
+                    code: "C70805",
+                    value: "LETTER",
+                    pref_term: "Letter",
+                },
+                StaticTerm {
+                    code: "C171525",
+                    value: "REMOTE AUDIO VIDEO",
+                    pref_term: "Audio-Videoconferencing",
+                },
+                StaticTerm {
+                    code: "C171524",
+                    value: "REMOTE AUDIO",
+                    pref_term: "Audioconferencing",
+                },
+                StaticTerm {
+                    code: "C171533",
+                    value: "SHIPMENT CONFIRMED BY SIGNATURE",
+                    pref_term: "Shipment Confirmed by Signature",
+                },
+                StaticTerm {
+                    code: "C171537",
+                    value: "TELEPHONE CALL",
+                    pref_term: "Telephone Call",
+                },
+                StaticTerm {
+                    code: "C157352",
+                    value: "TEXT MESSAGE",
+                    pref_term: "Text Message",
+                },
+            ],
+        }),
+        "C99078" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C15184",
+                    value: "BEHAVIORAL THERAPY",
+                    pref_term: "Behavioral Intervention",
+                },
+                StaticTerm {
+                    code: "C307",
+                    value: "BIOLOGIC",
+                    pref_term: "Biological Agent",
+                },
+                StaticTerm {
+                    code: "C54696",
+                    value: "COMBINATION PRODUCT",
+                    pref_term: "Combination Product",
+                },
+                StaticTerm {
+                    code: "C16830",
+                    value: "DEVICE",
+                    pref_term: "Medical Device",
+                },
+                StaticTerm {
+                    code: "C18020",
+                    value: "DIAGNOSTIC TEST",
+                    pref_term: "Diagnostic Procedure",
+                },
+                StaticTerm {
+                    code: "C1505",
+                    value: "DIETARY SUPPLEMENT",
+                    pref_term: "Dietary Supplement",
+                },
+                StaticTerm {
+                    code: "C1909",
+                    value: "DRUG",
+                    pref_term: "Pharmacologic Substance",
+                },
+                StaticTerm {
+                    code: "C15238",
+                    value: "GENETIC",
+                    pref_term: "Gene Therapy",
+                },
+                StaticTerm {
+                    code: "C218507",
+                    value: "NON-SURGICAL PROCEDURE",
+                    pref_term: "Non-Surgical Procedure",
+                },
+                StaticTerm {
+                    code: "C98769",
+                    value: "PROCEDURE",
+                    pref_term: "Physical Medical Procedure",
+                },
+                StaticTerm {
+                    code: "C15313",
+                    value: "RADIATION",
+                    pref_term: "Radiation Therapy",
+                },
+                StaticTerm {
+                    code: "C15329",
+                    value: "SURGERY",
+                    pref_term: "Surgical Procedure",
+                },
+                StaticTerm {
+                    code: "C923",
+                    value: "VACCINE",
+                    pref_term: "Vaccine",
+                },
+                StaticTerm {
+                    code: "C17649",
+                    value: "OTHER",
+                    pref_term: "Other",
+                },
+            ],
+        }),
+        "C66739" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C158283",
+                    value: "ADHESION PERFORMANCE",
+                    pref_term: "Adhesion Performance Study",
+                },
+                StaticTerm {
+                    code: "C158284",
+                    value: "ALCOHOL EFFECT",
+                    pref_term: "Alcohol Effect Study",
+                },
+                StaticTerm {
+                    code: "C49664",
+                    value: "BIO-AVAILABILITY",
+                    pref_term: "Bioavailability Study",
+                },
+                StaticTerm {
+                    code: "C49665",
+                    value: "BIO-EQUIVALENCE",
+                    pref_term: "Therapeutic Equivalency Study",
+                },
+                StaticTerm {
+                    code: "C158288",
+                    value: "BIOSIMILARITY",
+                    pref_term: "Biosimilarity Study",
+                },
+                StaticTerm {
+                    code: "C158285",
+                    value: "DEVICE-DRUG INTERACTION",
+                    pref_term: "Device-Drug Interaction Study",
+                },
+                StaticTerm {
+                    code: "C49653",
+                    value: "DIAGNOSIS",
+                    pref_term: "Diagnosis Study",
+                },
+                StaticTerm {
+                    code: "C158289",
+                    value: "DOSE FINDING",
+                    pref_term: "Dose Finding Study",
+                },
+                StaticTerm {
+                    code: "C158290",
+                    value: "DOSE PROPORTIONALITY",
+                    pref_term: "Dose Proportionality Study",
+                },
+                StaticTerm {
+                    code: "C127803",
+                    value: "DOSE RESPONSE",
+                    pref_term: "Dose Response Study",
+                },
+                StaticTerm {
+                    code: "C158286",
+                    value: "DRUG-DRUG INTERACTION",
+                    pref_term: "Drug-Drug Interaction Study",
+                },
+                StaticTerm {
+                    code: "C178057",
+                    value: "ECG",
+                    pref_term: "Electrocardiographic Study",
+                },
+                StaticTerm {
+                    code: "C49666",
+                    value: "EFFICACY",
+                    pref_term: "Efficacy Study",
+                },
+                StaticTerm {
+                    code: "C98729",
+                    value: "FOOD EFFECT",
+                    pref_term: "Food Effect Study",
+                },
+                StaticTerm {
+                    code: "C120842",
+                    value: "IMMUNOGENICITY",
+                    pref_term: "Immunogenicity Study",
+                },
+                StaticTerm {
+                    code: "C201484",
+                    value: "MASS BALANCE",
+                    pref_term: "Mass Balance Study",
+                },
+                StaticTerm {
+                    code: "C49662",
+                    value: "PHARMACODYNAMIC",
+                    pref_term: "Pharmacodynamic Study",
+                },
+                StaticTerm {
+                    code: "C39493",
+                    value: "PHARMACOECONOMIC",
+                    pref_term: "Pharmacoeconomic Study",
+                },
+                StaticTerm {
+                    code: "C129001",
+                    value: "PHARMACOGENETIC",
+                    pref_term: "Pharmacogenetic Study",
+                },
+                StaticTerm {
+                    code: "C49661",
+                    value: "PHARMACOGENOMIC",
+                    pref_term: "Pharmacogenomic Study",
+                },
+                StaticTerm {
+                    code: "C49663",
+                    value: "PHARMACOKINETIC",
+                    pref_term: "Pharmacokinetic Study",
+                },
+                StaticTerm {
+                    code: "C161477",
+                    value: "POSITION EFFECT",
+                    pref_term: "Position Effect Trial",
+                },
+                StaticTerm {
+                    code: "C49657",
+                    value: "PREVENTION",
+                    pref_term: "Prevention Study",
+                },
+                StaticTerm {
+                    code: "C174366",
+                    value: "REACTOGENICITY",
+                    pref_term: "Reactogenicity Study",
+                },
+                StaticTerm {
+                    code: "C49667",
+                    value: "SAFETY",
+                    pref_term: "Safety Study",
+                },
+                StaticTerm {
+                    code: "C161478",
+                    value: "SWALLOWING FUNCTION",
+                    pref_term: "Swallowing Function Trial",
+                },
+                StaticTerm {
+                    code: "C158287",
+                    value: "THOROUGH QT",
+                    pref_term: "Thorough QT Study",
+                },
+                StaticTerm {
+                    code: "C98791",
+                    value: "TOLERABILITY",
+                    pref_term: "Tolerability Study",
+                },
+                StaticTerm {
+                    code: "C49656",
+                    value: "TREATMENT",
+                    pref_term: "Treatment Study",
+                },
+                StaticTerm {
+                    code: "C161479",
+                    value: "USABILITY TESTING",
+                    pref_term: "Usability Testing Study",
+                },
+                StaticTerm {
+                    code: "C161480",
+                    value: "WATER EFFECT",
+                    pref_term: "Water Effect Trial",
+                },
+            ],
+        }),
+        "C207415" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C207600",
+                    value: "Change In Standard Of Care",
+                    pref_term: "Change In Standard Of Care",
+                },
+                StaticTerm {
+                    code: "C207601",
+                    value: "Change In Strategy",
+                    pref_term: "Change In Strategy",
+                },
+                StaticTerm {
+                    code: "C207602",
+                    value: "IMP Addition",
+                    pref_term: "IMP Addition",
+                },
+                StaticTerm {
+                    code: "C207603",
+                    value: "Inconsistency And/or Error In The Protocol",
+                    pref_term: "Inconsistency and/or Error In The Protocol",
+                },
+                StaticTerm {
+                    code: "C207604",
+                    value: "Investigator/Site Feedback",
+                    pref_term: "Investigator/Site Feedback",
+                },
+                StaticTerm {
+                    code: "C207605",
+                    value: "IRB/IEC Feedback",
+                    pref_term: "IRB/IEC Feedback",
+                },
+                StaticTerm {
+                    code: "C207606",
+                    value: "Manufacturing Change",
+                    pref_term: "Manufacturing Change",
+                },
+                StaticTerm {
+                    code: "C207607",
+                    value: "New Data Available (Other Than Safety Data)",
+                    pref_term: "New Data Available (Other Than Safety Data)",
+                },
+                StaticTerm {
+                    code: "C207608",
+                    value: "New Regulatory Guidance",
+                    pref_term: "New Regulatory Guidance",
+                },
+                StaticTerm {
+                    code: "C207609",
+                    value: "New Safety Information Available",
+                    pref_term: "New Safety Information Available",
+                },
+                StaticTerm {
+                    code: "C207610",
+                    value: "Protocol Design Error",
+                    pref_term: "Protocol Design Error",
+                },
+                StaticTerm {
+                    code: "C207611",
+                    value: "Recruitment Difficulty",
+                    pref_term: "Recruitment Difficulty",
+                },
+                StaticTerm {
+                    code: "C207612",
+                    value: "Regulatory Agency Request To Amend",
+                    pref_term: "Regulatory Agency Request To Amend",
+                },
+                StaticTerm {
+                    code: "C17649",
+                    value: "OTHER",
+                    pref_term: "Other",
+                },
+                StaticTerm {
+                    code: "C48660",
+                    value: "NOT APPLICABLE",
+                    pref_term: "Not Applicable",
+                },
+                StaticTerm {
+                    code: "C0031X",
+                    value: "Extension",
+                    pref_term: "Extension",
+                },
+            ],
+        }),
+        "C207416" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C98704",
+                    value: "Adaptive",
+                    pref_term: "Adaptive Design",
+                },
+                StaticTerm {
+                    code: "C207613",
+                    value: "Extension",
+                    pref_term: "Extension Study Design",
+                },
+                StaticTerm {
+                    code: "C46079",
+                    value: "Randomized",
+                    pref_term: "Randomized Controlled Clinical Trial",
+                },
+                StaticTerm {
+                    code: "C217004",
+                    value: "Single-Centre",
+                    pref_term: "Single-Center Study",
+                },
+                StaticTerm {
+                    code: "C217005",
+                    value: "Multicentre",
+                    pref_term: "Multicenter Study",
+                },
+                StaticTerm {
+                    code: "C217006",
+                    value: "Single Country",
+                    pref_term: "Single Country Study",
+                },
+                StaticTerm {
+                    code: "C217007",
+                    value: "Multiple Countries",
+                    pref_term: "Multiple Country Study",
+                },
+                StaticTerm {
+                    code: "C25689",
+                    value: "Stratification",
+                    pref_term: "Stratification",
+                },
+                StaticTerm {
+                    code: "C147145",
+                    value: "Stratified Randomisation",
+                    pref_term: "Stratified Randomization",
+                },
+            ],
+        }),
+        "C207417" => Some(StaticCodelist {
+            extensible: false,
+            terms: &[
+                StaticTerm {
+                    code: "C207614",
+                    value: "Additional Required Treatment",
+                    pref_term: "Additional Required Medicinal Product",
+                },
+                StaticTerm {
+                    code: "C165822",
+                    value: "Background Treatment",
+                    pref_term: "Background Treatment",
+                },
+                StaticTerm {
+                    code: "C158128",
+                    value: "Challenge Agent",
+                    pref_term: "Challenge Agent",
+                },
+                StaticTerm {
+                    code: "C18020",
+                    value: "Diagnostic",
+                    pref_term: "Diagnostic Procedure",
+                },
+                StaticTerm {
+                    code: "C41161",
+                    value: "Experimental Intervention",
+                    pref_term: "Protocol Agent",
+                },
+                StaticTerm {
+                    code: "C753",
+                    value: "Placebo",
+                    pref_term: "Placebo",
+                },
+                StaticTerm {
+                    code: "C165835",
+                    value: "Rescue Medicine",
+                    pref_term: "Rescue Medications",
+                },
+                StaticTerm {
+                    code: "C68609",
+                    value: "Active Comparator",
+                    pref_term: "Active Comparator",
+                },
+            ],
+        }),
+        "C215486" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C215657",
+                    value: "Clinical Education",
+                    pref_term: "Clinical Education Study",
+                },
+                StaticTerm {
+                    code: "C215654",
+                    value: "Disease Determinants",
+                    pref_term: "Disease Determinants Study",
+                },
+                StaticTerm {
+                    code: "C215658",
+                    value: "Disease Etiology",
+                    pref_term: "Disease Etiology Study",
+                },
+                StaticTerm {
+                    code: "C215653",
+                    value: "Disease Incidence",
+                    pref_term: "Disease Incidence Study",
+                },
+                StaticTerm {
+                    code: "C215675",
+                    value: "Disease Prevalence",
+                    pref_term: "Disease Prevalence Study",
+                },
+                StaticTerm {
+                    code: "C215655",
+                    value: "Disease Prognosis",
+                    pref_term: "Disease Prognosis Study",
+                },
+                StaticTerm {
+                    code: "C215656",
+                    value: "Drug Utilization",
+                    pref_term: "Drug Utilization Study",
+                },
+                StaticTerm {
+                    code: "C49667",
+                    value: "Safety",
+                    pref_term: "Safety Study",
                 },
             ],
         }),
@@ -6698,6 +10349,11 @@ fn static_codelist(code: &str) -> Option<StaticCodelist> {
                 },
                 StaticTerm {
                     code: "C70793",
+                    value: "Clinical Study Sponsor",
+                    pref_term: "Clinical Study Sponsor",
+                },
+                StaticTerm {
+                    code: "C70793",
                     value: "Study Sponsor",
                     pref_term: "Clinical Study Sponsor",
                 },
@@ -6710,6 +10366,41 @@ fn static_codelist(code: &str) -> Option<StaticCodelist> {
                     code: "C93448",
                     value: "Research Organization",
                     pref_term: "Research Organization",
+                },
+            ],
+        }),
+        "C188727" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C165830",
+                    value: "Real World Data",
+                    pref_term: "Real World Data",
+                },
+                StaticTerm {
+                    code: "C165830",
+                    value: "Real-world Data",
+                    pref_term: "Real-world Data",
+                },
+                StaticTerm {
+                    code: "C176263",
+                    value: "Synthetic Data",
+                    pref_term: "Synthetic Data",
+                },
+                StaticTerm {
+                    code: "C188864",
+                    value: "Historical Data",
+                    pref_term: "Historical Data",
+                },
+                StaticTerm {
+                    code: "C188865",
+                    value: "Virtual Data",
+                    pref_term: "Virtual Data",
+                },
+                StaticTerm {
+                    code: "C188866",
+                    value: "Data Generated Within Study",
+                    pref_term: "Data Generated Within Study",
                 },
             ],
         }),
@@ -6730,6 +10421,121 @@ fn static_codelist(code: &str) -> Option<StaticCodelist> {
                     code: "",
                     value: "AIR SAC",
                     pref_term: "Air Sac",
+                },
+            ],
+        }),
+        "C215480" => Some(StaticCodelist {
+            extensible: true,
+            terms: &[
+                StaticTerm {
+                    code: "C78726",
+                    value: "Adjudication Committee",
+                    pref_term: "Adjudication Committee",
+                },
+                StaticTerm {
+                    code: "C17445",
+                    value: "Care Provider",
+                    pref_term: "Caregiver",
+                },
+                StaticTerm {
+                    code: "C215672",
+                    value: "Clinical Trial Physician",
+                    pref_term: "Clinical Trial Physician",
+                },
+                StaticTerm {
+                    code: "C215669",
+                    value: "Co-Sponsor",
+                    pref_term: "Study Co-Sponsor",
+                },
+                StaticTerm {
+                    code: "C215662",
+                    value: "Contract Research",
+                    pref_term: "Contract Research",
+                },
+                StaticTerm {
+                    code: "C142489",
+                    value: "Data Safety Monitoring Board",
+                    pref_term: "Data Monitoring Committee",
+                },
+                StaticTerm {
+                    code: "C215671",
+                    value: "Dose Escalation Committee",
+                    pref_term: "Dose Escalation Committee",
+                },
+                StaticTerm {
+                    code: "C142578",
+                    value: "Independent Data Monitoring Committee",
+                    pref_term: "Independent Data Monitoring Committee",
+                },
+                StaticTerm {
+                    code: "C25936",
+                    value: "Investigator",
+                    pref_term: "Investigator",
+                },
+                StaticTerm {
+                    code: "C37984",
+                    value: "Laboratory",
+                    pref_term: "Laboratory",
+                },
+                StaticTerm {
+                    code: "C215670",
+                    value: "Local Sponsor",
+                    pref_term: "Local Legal Sponsor",
+                },
+                StaticTerm {
+                    code: "C25392",
+                    value: "Manufacturer",
+                    pref_term: "Manufacturer",
+                },
+                StaticTerm {
+                    code: "C51876",
+                    value: "Medical Expert",
+                    pref_term: "Sponsor Medical Expert",
+                },
+                StaticTerm {
+                    code: "C207599",
+                    value: "Outcomes Assessor",
+                    pref_term: "Outcomes Assessor",
+                },
+                StaticTerm {
+                    code: "C215673",
+                    value: "Pharmacovigilance",
+                    pref_term: "Pharmacovigilance Group",
+                },
+                StaticTerm {
+                    code: "C19924",
+                    value: "Principal investigator",
+                    pref_term: "Principal Investigator",
+                },
+                StaticTerm {
+                    code: "C51851",
+                    value: "Project Manager",
+                    pref_term: "Project Coordinator",
+                },
+                StaticTerm {
+                    code: "C188863",
+                    value: "Regulatory Agency",
+                    pref_term: "Regulatory Agency",
+                },
+                StaticTerm {
+                    code: "C70793",
+                    value: "Sponsor",
+                    pref_term: "Clinical Study Sponsor",
+                },
+                StaticTerm {
+                    code: "C51877",
+                    value: "Statistician",
+                    pref_term: "Statistician",
+                },
+                StaticTerm {
+                    code: "C80403",
+                    value: "Study Site",
+                    pref_term: "Study Site",
+                },
+                StaticTerm {
+                    code: "C41189",
+                    value: "Study Subject",
+                    pref_term: "Study Subject",
                 },
             ],
         }),
@@ -7608,10 +11414,11 @@ fn should_ignore_evaluation_error(
     rule: &ExecutableRule,
     source: &EngineError,
     execution_dataset_count: usize,
+    open_rules_compat: bool,
 ) -> bool {
     execution_dataset_count > 1
         && matches!(source, EngineError::MissingColumn(_))
-        && !is_missing_column_oracle_gap_rule(rule)
+        && (!open_rules_compat || !is_missing_column_oracle_gap_rule(rule))
 }
 
 fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {

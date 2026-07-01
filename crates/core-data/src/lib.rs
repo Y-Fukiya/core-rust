@@ -2997,6 +2997,7 @@ fn usdm_design_row(
         .cloned()
         .unwrap_or_default();
     let duplicate_intent_types = duplicate_code_values(&intent_types);
+    let duplicate_intent_type_group_count = duplicate_code_group_count(&intent_types);
     let intervention_model = design.get("interventionModel");
     let intervention_model_code = intervention_model
         .and_then(|model| model.get("code"))
@@ -3092,6 +3093,10 @@ fn usdm_design_row(
     row.insert(
         "intentTypes".to_owned(),
         Value::String(format_duplicate_code_values(&duplicate_intent_types)),
+    );
+    row.insert(
+        "intentTypes.duplicate_group_count".to_owned(),
+        Value::Number(serde_json::Number::from(duplicate_intent_type_group_count)),
     );
     row.insert(
         "study_design_duplicate_document_version_ids".to_owned(),
@@ -4172,6 +4177,7 @@ fn usdm_product_organization_role_row(
     let applies_to_ids = string_array(role.get("appliesToIds"));
     let valid_reference =
         !applies_to_ids.is_empty() && applies_to_ids.iter().any(|id| valid_ids.contains(id));
+    let invalid_reference = applies_to_ids.iter().any(|id| !valid_ids.contains(id));
     let mut row = BTreeMap::new();
     row.insert("path".to_owned(), Value::String(path.to_owned()));
     row.insert("name".to_owned(), json_string(role.get("name")));
@@ -4186,6 +4192,10 @@ fn usdm_product_organization_role_row(
     row.insert(
         "product_role_missing_valid_target".to_owned(),
         Value::Bool(!valid_reference),
+    );
+    row.insert(
+        "product_role_invalid_target".to_owned(),
+        Value::Bool(invalid_reference),
     );
     row
 }
@@ -4741,6 +4751,10 @@ fn usdm_study_arm_row(
             .first()
             .map(|id| Value::String(id.clone()))
             .unwrap_or(Value::Null),
+    );
+    row.insert(
+        "populationId.invalid_count".to_owned(),
+        Value::Number(serde_json::Number::from(invalid.len())),
     );
     row.insert(
         "study_arm_invalid_population".to_owned(),
@@ -5758,14 +5772,19 @@ fn push_usdm_json_schema_issues(
                 ),
             ));
         }
-        if object.get("plannedSex").is_some_and(Value::is_array) {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "maxItems",
-                "plannedSex",
-                "[Value of plannedSex] is too long",
-            ));
-        }
+    }
+
+    if object
+        .get("plannedSex")
+        .and_then(Value::as_array)
+        .is_some_and(|values| values.len() > 1)
+    {
+        rows.push(usdm_json_schema_issue_row(
+            path,
+            "maxItems",
+            "plannedSex",
+            "[Value of plannedSex] is too long",
+        ));
     }
 
     if path.ends_with("/geographicScopes/0") {
@@ -5965,7 +5984,8 @@ fn syntax_template_text_target_entity(object: &serde_json::Map<String, Value>) -
         .is_some_and(|instance_type| {
             matches!(
                 instance_type,
-                "EligibilityCriterionItem"
+                "EligibilityCriterion"
+                    | "EligibilityCriterionItem"
                     | "Characteristic"
                     | "Condition"
                     | "Objective"
@@ -6389,6 +6409,14 @@ fn insert_quantity_columns(
         .iter()
         .map(|cohort| cohort.get(name).is_some_and(quantity_present))
         .collect::<Vec<_>>();
+    let cohort_missing = cohorts
+        .iter()
+        .map(|cohort| {
+            !cohort
+                .as_object()
+                .is_some_and(|object| object.contains_key(name))
+        })
+        .collect::<Vec<_>>();
     row.insert(
         format!("cohorts.{name}.any_present"),
         Value::Bool(cohort_present.iter().any(|present| *present)),
@@ -6396,6 +6424,10 @@ fn insert_quantity_columns(
     row.insert(
         format!("cohorts.{name}.all_present"),
         Value::Bool(!cohorts.is_empty() && cohort_present.iter().all(|present| *present)),
+    );
+    row.insert(
+        format!("cohorts.{name}.any_missing"),
+        Value::Bool(cohort_missing.iter().any(|missing| *missing)),
     );
     row.insert(
         format!("cohorts.{name}.has_unit"),
@@ -6812,6 +6844,16 @@ fn duplicate_code_values(values: &[Value]) -> Vec<&Value> {
                 .is_some_and(|code| counts.get(&code).is_some_and(|count| *count > 1))
         })
         .collect()
+}
+
+fn duplicate_code_group_count(values: &[Value]) -> usize {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for value in values {
+        if let Some(code) = value.get("code").and_then(value_string) {
+            *counts.entry(code).or_insert(0) += 1;
+        }
+    }
+    counts.values().filter(|count| **count > 1).count()
 }
 
 fn format_duplicate_code_values(values: &[&Value]) -> String {
@@ -7424,13 +7466,14 @@ fn load_open_rules_dataset(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let label_columns = open_rules_label_column_map(&variables);
     let mut seen_columns = BTreeSet::new();
     let csv_columns = rows
         .headers
         .iter()
         .enumerate()
         .filter_map(|(index, name)| {
-            let name = name.to_ascii_uppercase();
+            let name = open_rules_csv_column_name(name, &declared, &label_columns);
             (!name.is_empty() && seen_columns.insert(name.clone())).then_some((index, name))
         })
         .collect::<Vec<_>>();
@@ -7503,6 +7546,54 @@ fn load_open_rules_dataset(
     };
 
     Ok(LoadedDataset::new(metadata, frame))
+}
+
+fn open_rules_label_column_map(
+    variables: &[OpenRulesVariable],
+) -> BTreeMap<String, Option<String>> {
+    let mut labels = BTreeMap::<String, Option<String>>::new();
+    for variable in variables {
+        let Some(label) = variable.variable.label.as_deref() else {
+            continue;
+        };
+        let key = normalize_open_rules_header_label(label);
+        if key.is_empty() {
+            continue;
+        }
+        let name = variable.variable.name.to_ascii_uppercase();
+        labels
+            .entry(key)
+            .and_modify(|existing| {
+                if existing.as_deref() != Some(name.as_str()) {
+                    *existing = None;
+                }
+            })
+            .or_insert_with(|| Some(name));
+    }
+    labels
+}
+
+fn open_rules_csv_column_name(
+    header: &str,
+    declared: &BTreeMap<String, OpenRulesVariable>,
+    label_columns: &BTreeMap<String, Option<String>>,
+) -> String {
+    let name = header.trim().to_ascii_uppercase();
+    if declared.contains_key(&name) {
+        return name;
+    }
+    label_columns
+        .get(&normalize_open_rules_header_label(header))
+        .and_then(|name| name.clone())
+        .unwrap_or(name)
+}
+
+fn normalize_open_rules_header_label(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_uppercase()
 }
 
 fn open_rules_cell_value(
@@ -9343,6 +9434,75 @@ mod tests {
     }
 
     #[test]
+    fn load_open_rules_data_dir_maps_csv_label_headers_to_variable_names() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\nec,Exposure as Collected\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+ec,STUDYID,Study Identifier,Char,50\n\
+ec,DOMAIN,Domain Abbreviation,Char,50\n\
+ec,USUBJID,Unique Subject Identifier,Char,50\n\
+ec,ECSEQ,Sequence Number,Num,8\n\
+ec,ECDOSE,Dose,Num,8\n\
+ec,ECDOSTXT,Dose Description,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            dir.path().join("ec.csv"),
+            "Study Identifier,Domain Abbreviation,Unique Subject Identifier,Sequence Number,Dose,Dose Description\n\
+ABC,EC,ABC1001,1,2,\n\
+ABC,EC,ABC2001,2,2,2-3\n",
+        )
+        .expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        assert!(result.warnings.is_empty());
+        let dataset = &result.datasets[0];
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSE").expect("ECDOSE values"),
+            vec![serde_json::json!(2), serde_json::json!(2)]
+        );
+        assert_eq!(
+            dataset_column_values(dataset, "ECDOSTXT").expect("ECDOSTXT values"),
+            vec![serde_json::json!(""), serde_json::json!("2-3")]
+        );
+        assert!(dataset.frame().column("Dose").is_err());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_preserves_variable_label_trailing_space() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("_datasets.csv"),
+            "Filename,Label\nml,Meals\n",
+        )
+        .expect("write datasets csv");
+        fs::write(
+            dir.path().join("_variables.csv"),
+            "dataset,variable,label,type,length\nml,USUBJID,Unique Subject Identifier Unique Subject ,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(dir.path().join("ml.csv"), "USUBJID\nSUBJ1\n").expect("write dataset csv");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+
+        let label = result.datasets[0].metadata.variables[0]
+            .label
+            .as_deref()
+            .expect("variable label");
+        assert_eq!(label, "Unique Subject Identifier Unique Subject ");
+        assert_eq!(label.chars().count(), 41);
+    }
+
+    #[test]
     fn load_open_rules_data_dir_uses_horizontal_variables_schema() {
         let dir = tempdir().expect("tempdir");
         fs::write(
@@ -9611,6 +9771,57 @@ CDISCPILOT01,VS,CDISC001,1,DIABP_1\n",
         assert_eq!(result.datasets[0].metadata.name, "JSONSchemaIssue");
         assert_eq!(result.datasets[0].frame().height(), 0);
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn load_open_rules_data_dir_records_usdm_planned_sex_max_items_schema_issue() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("usdm.json"),
+            r#"{
+  "study": {
+    "versions": [
+      {
+        "studyDesigns": [
+          {
+            "population": {
+              "plannedSex": [
+                { "id": "Code_1", "code": "C49636" },
+                { "id": "Code_2", "code": "C20197" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+        )
+        .expect("write json");
+
+        let result =
+            load_open_rules_data_dir_with_warnings(dir.path()).expect("load open rules data");
+        let dataset = result
+            .datasets
+            .iter()
+            .find(|dataset| dataset.metadata().name == "JSONSchemaIssue")
+            .expect("JSONSchemaIssue dataset");
+
+        assert_eq!(dataset.summary().row_count, 1);
+        assert_eq!(
+            dataset_column_values(dataset, "path").expect("path values"),
+            vec![serde_json::json!(
+                "/study/versions/0/studyDesigns/0/population"
+            )]
+        );
+        assert_eq!(
+            dataset_column_values(dataset, "validator").expect("validator values"),
+            vec![serde_json::json!("maxItems")]
+        );
+        assert_eq!(
+            dataset_column_values(dataset, "error_attribute").expect("attribute values"),
+            vec![serde_json::json!("plannedSex")]
+        );
     }
 
     #[test]

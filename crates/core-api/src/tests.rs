@@ -115,6 +115,129 @@ Outcome:
 }
 
 #[test]
+fn run_validation_reports_csv_line_record_for_selected_open_rules_row_scope_rules() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("create rules dir");
+    fs::create_dir_all(&data_dir).expect("create data dir");
+    fs::write(
+        rules_dir.join("CORE-000025.yml"),
+        r#"Core:
+  Id: CORE-000025
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - IE
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  all:
+    - name: IESTRESC
+      operator: not_equal_to
+      value: IEORRES
+Outcome:
+  Message: IESTRESC is not equal to IEORRES
+  Output Variables:
+    - IEORRES
+    - IESTRESC
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nie,Inclusion Exclusion Criteria Not Met\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nIE,USUBJID,Unique Subject Identifier,Char,40\nIE,IESEQ,Sequence Number,Num,8\nIE,IEORRES,Original Result,Char,40\nIE,IESTRESC,Standardized Result,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("ie.csv"),
+        "USUBJID,IESEQ,IEORRES,IESTRESC\nSUBJ1,1,Y,Yup\n",
+    )
+    .expect("write dataset csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(2));
+}
+
+#[test]
+fn run_validation_reports_previous_record_for_selected_open_rules_row_scope_rules() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("create rules dir");
+    fs::create_dir_all(&data_dir).expect("create data dir");
+    fs::write(
+        rules_dir.join("CORE-000223.yml"),
+        r#"Core:
+  Id: CORE-000223
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - DM
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  all:
+    - name: ACTARMCD
+      operator: empty
+    - name: ARMNRS
+      operator: empty
+Outcome:
+  Message: ACTARMCD is empty, but ARMNRS is not completed.
+  Output Variables:
+    - ACTARMCD
+    - ARMNRS
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\ndm,Demographics\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nDM,USUBJID,Unique Subject Identifier,Char,40\nDM,ACTARMCD,Actual Arm Code,Char,40\nDM,ARMNRS,Reason Arm and/or Actual Arm is Null,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("dm.csv"),
+        "USUBJID,ACTARMCD,ARMNRS\nSUBJ1,ZAN_LOW,\nSUBJ2,,\n",
+    )
+    .expect("write dataset csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+}
+
+#[test]
 fn select_rules_includes_only_requested_ids_and_skips_missing_ids() {
     let dir = tempdir().expect("tempdir");
     write_rule(dir.path(), "CORE-TEST-0001", "AE");
@@ -392,6 +515,83 @@ fn run_validation_filters_execution_datasets_by_class_scope() {
         "{:?}",
         outcome.results[1]
     );
+}
+
+#[test]
+fn run_validation_scans_forbidden_send_domain_placeholder_variables_across_datasets() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000794.json"),
+        r#"{
+  "Core": { "Id": "CORE-000794", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"] }, "Classes": { "Include": ["EVENTS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": { "name": "--PTCD", "operator": "exists" },
+  "Outcome": { "Message": "--PTCD must not be present" }
+}"#,
+    )
+    .expect("write rule");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "variables": [
+        { "name": "STUDYID" },
+        { "name": "DMPTCD" }
+      ],
+      "records": { "STUDYID": ["S1"], "DMPTCD": ["1"] }
+    },
+    {
+      "filename": "vs.xpt",
+      "domain": "VS",
+      "variables": [
+        { "name": "STUDYID" },
+        { "name": "VSPTCD" }
+      ],
+      "records": { "STUDYID": ["S1"], "VSPTCD": ["1"] }
+    },
+    {
+      "filename": "tx.xpt",
+      "domain": "TX",
+      "variables": [
+        { "name": "STUDYID" },
+        { "name": "TXSEQ" }
+      ],
+      "records": { "STUDYID": ["S1"], "TXSEQ": [1] }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+
+    assert_eq!(failed.len(), 2, "{failed:#?}");
+    assert_eq!(failed[0].dataset, "DM");
+    assert_eq!(failed[0].errors[0].row, None);
+    assert_eq!(failed[0].errors[0].variables, vec!["DMPTCD"]);
+    assert_eq!(failed[1].dataset, "VS");
+    assert_eq!(failed[1].errors[0].row, None);
+    assert_eq!(failed[1].errors[0].variables, vec!["VSPTCD"]);
 }
 
 #[test]
@@ -1099,7 +1299,6 @@ fn run_validation_executes_open_rules_date_operators() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
-        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1167,7 +1366,6 @@ fn run_validation_executes_core_000653_date_end_before_start() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
-        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -1499,7 +1697,6 @@ fn run_validation_executes_core_000324_invalid_end_relative_timing() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
-        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -2379,6 +2576,756 @@ fn run_validation_executes_is_not_unique_set_operator() {
 }
 
 #[test]
+fn run_validation_core_000495_omits_unique_set_group_locator_from_variables() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000495.json"),
+        r#"{
+  "Core": { "Id": "CORE-000495", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["MA"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "MAORRES", "operator": "non_empty" },
+      { "name": "MASPEC", "operator": "non_empty" },
+      {
+        "name": "MAORRES",
+        "operator": "is_not_unique_set",
+        "value": ["USUBJID", "MATESTCD", "MASPEC"]
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "The Macroscopic Finding test result is not unique for this subject and test.",
+    "Output Variables": ["USUBJID", "MATESTCD", "MAORRES", "MASPEC"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ma.xpt",
+      "domain": "MA",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["MA", "MA"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "MASEQ": [1, 2],
+        "MATESTCD": ["GROSPATH", "GROSPATH"],
+        "MAORRES": ["Discoloration dark, mucosal", "Discoloration dark, mucosal"],
+        "MASPEC": ["SKIN", "SKIN"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    for issue in &result.errors {
+        assert_eq!(issue.variables, vec!["MATESTCD", "MAORRES", "MASPEC"]);
+        assert_eq!(issue.usubjid.as_deref(), Some("SUBJ1"));
+    }
+}
+
+#[test]
+fn run_validation_core_000526_includes_subject_locator_in_unique_set_variables() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000526.json"),
+        r#"{
+  "Core": { "Id": "CORE-000526", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["PP"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "any": [
+      {
+        "name": "PPTESTCD",
+        "operator": "is_not_unique_set",
+        "value": ["USUBJID", "PPCAT", "PPSPEC", "PPTPTREF"]
+      },
+      {
+        "name": "PPTESTCD",
+        "operator": "is_not_unique_set",
+        "value": ["POOLID", "PPCAT", "PPSPEC", "PPTPTREF"]
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "The combination of POOLID or USUBJID, PPTESTCD, PPCAT, PPSPEC, and PPTPTREF is not unique",
+    "Output Variables": ["POOLID", "PPTESTCD", "PPCAT", "PPSPEC", "PPTPTREF"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "pp.xpt",
+      "domain": "PP",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["PP", "PP"],
+        "USUBJID": ["123101", "123101"],
+        "POOLID": ["", ""],
+        "PPSEQ": [1, 2],
+        "PPTESTCD": ["AUCINT", "AUCINT"],
+        "PPCAT": ["XYZ-123", "XYZ-123"],
+        "PPSPEC": ["PLASMA", "PLASMA"],
+        "PPTPTREF": ["Day 1 dose", "Day 1 dose"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    for issue in &result.errors {
+        assert!(issue.variables.contains(&"USUBJID".to_owned()));
+        assert_eq!(issue.usubjid.as_deref(), Some("123101"));
+    }
+}
+
+#[test]
+fn run_validation_core_000516_reports_both_study_day_variables_when_either_is_negative() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000516.json"),
+        r#"{
+  "Core": { "Id": "CORE-000516", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["EC"] }, "Classes": { "Include": ["INTERVENTIONS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "any": [
+      { "name": "--STDY", "operator": "less_than", "value": 0 },
+      { "name": "--ENDY", "operator": "less_than", "value": 0 }
+    ]
+  },
+  "Outcome": {
+    "Message": "Negative value of Study Day variable.",
+    "Output Variables": ["--STDY", "--ENDY"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ec.xpt",
+      "domain": "EC",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["EC", "EC"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "ECSEQ": [1, 2],
+        "ECSTDY": [-1, 2],
+        "ECENDY": [0, -2]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].variables, vec!["ECSTDY", "ECENDY"]);
+    assert_eq!(result.errors[1].row, Some(2));
+    assert_eq!(result.errors[1].variables, vec!["ECSTDY", "ECENDY"]);
+}
+
+#[test]
+fn run_validation_core_000862_reports_dataset_level_existing_study_day_variable_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000862.json"),
+        r#"{
+  "Core": { "Id": "CORE-000862", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CM"] }, "Classes": { "Include": ["INTERVENTIONS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--STDY", "operator": "exists" },
+      { "name": "--STDTC", "operator": "not_exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Start Date/Time of Observation (--STDTC) variable is missing when Study Day of Start of Observation (--STDY) is present."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["CM", "CM"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "CMSEQ": [1, 2],
+        "CMSTDY": [3, 4]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["CMSTDY"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
+}
+
+#[test]
+fn run_validation_core_000700_reports_dataset_level_existing_day_variable_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000700.json"),
+        r#"{
+  "Core": { "Id": "CORE-000700", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CE"] }, "Classes": { "Include": ["EVENTS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--DY", "operator": "exists" },
+      { "name": "--DTC", "operator": "not_exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Date/Time of Collection (--DTC) variable is missing when Study Day of Visit/Collection/Exam (--DY) is present."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ce.xpt",
+      "domain": "CE",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["CE", "CE"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "CESEQ": [1, 2],
+        "CEDY": [3, 4]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["CEDY"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
+}
+
+#[test]
+fn run_validation_core_000793_reports_dataset_level_existing_date_variable_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000793.json"),
+        r#"{
+  "Core": { "Id": "CORE-000793", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CE"] }, "Classes": { "Include": ["EVENTS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--DTC", "operator": "non_empty" },
+      { "name": "--DTC", "operator": "is_complete_date" },
+      { "name": "--DY", "operator": "not_exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Collection study day (--DY) is missing when date/time of collection (--DTC) is populated."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ce.xpt",
+      "domain": "CE",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["CE", "CE"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "CESEQ": [1, 2],
+        "CEDTC": ["2012-11-23", "2012-11-24"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["CEDTC"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
+}
+
+#[test]
+fn run_validation_core_000321_reports_dataset_level_existing_date_variable_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000321.json"),
+        r#"{
+  "Core": { "Id": "CORE-000321", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CE"] }, "Classes": { "Include": ["EVENTS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--DY", "operator": "not_exists" },
+      { "name": "--DTC", "operator": "exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Study Day of Visit/Collection/Exam (--DY) variable is missing when Date/Time of Collection (--DTC) is present."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ce.xpt",
+      "domain": "CE",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["CE", "CE"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "CESEQ": [1, 2],
+        "CEDTC": ["", "2012-11-24"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["CEDTC"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
+}
+
+#[test]
+fn run_validation_core_000328_reports_dataset_level_existing_start_date_variable_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000328.json"),
+        r#"{
+  "Core": { "Id": "CORE-000328", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CE"] }, "Classes": { "Include": ["EVENTS"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--STDY", "operator": "not_exists" },
+      { "name": "--STDTC", "operator": "exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "The Study Day of Start of Observation (--STDY) is not present in the dataset when Start Date/Time of Observation (--STDTC) is present."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ce.xpt",
+      "domain": "CE",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["CE", "CE"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "CESEQ": [1, 2],
+        "CESTDTC": ["", "2012-11-24"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["CESTDTC"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
+}
+
+#[test]
+fn run_validation_core_000864_treats_all_empty_smendy_as_not_present() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000864.json"),
+        r#"{
+  "Core": { "Id": "CORE-000864", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SM"] }, "Classes": { "Include": ["SPECIAL PURPOSE"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--ENDY", "operator": "exists" },
+      { "name": "--ENDTC", "operator": "not_exists" }
+    ]
+  },
+  "Outcome": {
+    "Message": "End Date/Time of Observation (--ENDTC) variable is missing when Study Day of End of Observation (--ENDY) is present."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "sm.xpt",
+      "domain": "SM",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["SM", "SM"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "SMSEQ": [1, 2],
+        "SMENDY": ["", ""]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Passed);
+    assert_eq!(result.error_count, 0);
+    assert!(result.errors.is_empty());
+}
+
+#[test]
+fn run_validation_core_000853_evaluates_dm_when_dm_is_the_match_dataset() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000853.json"),
+        r#"{
+  "Core": { "Id": "CORE-000853", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM", "CM"] }, "Classes": { "Include": ["SPECIAL PURPOSE", "INTERVENTIONS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "DM", "Keys": ["USUBJID"] }
+  ],
+  "Check": {
+    "all": [
+      { "name": "--DTC", "operator": "non_empty" },
+      { "name": "--DTC", "operator": "is_complete_date" },
+      { "name": "RFSTDTC", "operator": "non_empty" },
+      { "name": "RFSTDTC", "operator": "is_complete_date" },
+      { "name": "--DY", "operator": "empty" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Collection study day (--DY) is not populated when date/time of collection (--DTC) is populated."
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S"],
+        "DOMAIN": ["DM"],
+        "USUBJID": ["SUBJ1"],
+        "RFSTDTC": ["2024-01-01"],
+        "DMDTC": ["2024-01-02"],
+        "DMDY": [null]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "STUDYID": ["S"],
+        "DOMAIN": ["CM"],
+        "USUBJID": ["SUBJ1"],
+        "CMSEQ": [1],
+        "CMDTC": ["2024-01-03"],
+        "CMDY": [null]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 2);
+    assert!(failed.iter().any(|result| result.dataset == "DM"));
+    assert!(failed.iter().any(|result| result.dataset == "CM"));
+}
+
+#[test]
+fn run_validation_core_000390_uses_overlapping_evaluation_interval_uniqueness() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000390.json"),
+        r#"{
+  "Core": { "Id": "CORE-000390", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["CV"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "CVTESTCD",
+    "operator": "is_not_unique_set",
+    "value": ["USUBJID", "CVDTC"]
+  },
+  "Outcome": {
+    "Message": "The cardiovascular test is not unique for this subject and measurement datetime.",
+    "Output Variables": ["USUBJID", "CVTESTCD", "CVDTC"]
+  }
+}"#,
+    )
+    .expect("write rule");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "cv.xpt",
+      "domain": "CV",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ2", "SUBJ2"],
+        "CVSEQ": [1, 2, 1, 2],
+        "CVTESTCD": ["SYSBP", "SYSBP", "DIABP", "DIABP"],
+        "CVDTC": ["2024-01-01", "2024-01-01", "2024-01-01", "2024-01-01"],
+        "CVTPTREF": ["", "", "Dose 1", "Dose 1"],
+        "CVSTINT": ["", "", "-PT60M", "PT60M"],
+        "CVENINT": ["", "", "PT0M", "PT120M"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 2);
+    assert_eq!(
+        outcome.results[0]
+            .errors
+            .iter()
+            .filter_map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
+#[test]
 fn run_validation_executes_is_inconsistent_across_dataset_operator() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -2432,6 +3379,85 @@ fn run_validation_executes_is_inconsistent_across_dataset_operator() {
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].skipped_reason, None);
     assert_eq!(outcome.results[0].error_count, 3);
+}
+
+#[test]
+fn run_validation_core_000142_scopes_elapsed_time_consistency_to_precondition_rows() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000142.json"),
+        r#"{
+  "Core": { "Id": "CORE-000142", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["FT"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--TPT", "operator": "non_empty" },
+      { "name": "--TPTNUM", "operator": "non_empty" },
+      { "name": "--ELTM", "operator": "non_empty" },
+      {
+        "name": "--ELTM",
+        "operator": "is_inconsistent_across_dataset",
+        "value": ["DOMAIN", "VISITNUM", "--TPTREF", "--TPTNUM"]
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "--ELTM is not the same value across records with the same values of DOMAIN, VISITNUM, --TPTREF, and --TPTNUM.",
+    "Output Variables": ["--TPT", "--TPTNUM", "--ELTM", "VISITNUM", "DOMAIN"]
+  }
+}"#,
+    )
+    .expect("write rule");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ft.xpt",
+      "domain": "FT",
+      "records": {
+        "DOMAIN": ["FT", "FT", "FT", "FT"],
+        "FTSEQ": [1, 2, 3, 4],
+        "VISITNUM": [1, 1, 2, 2],
+        "FTTPTREF": ["DOSE", "DOSE", "BREAKFAST", "BREAKFAST"],
+        "FTTPTNUM": [1, 1, 2, 2],
+        "FTTPT": ["30 MIN POST", "30 MIN POST", "90 MIN POST", ""],
+        "FTELTM": ["PT30M", "PT03M", "PT1H", "PT2H"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 2);
+    assert_eq!(
+        outcome.results[0]
+            .errors
+            .iter()
+            .filter_map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    for issue in &outcome.results[0].errors {
+        assert_eq!(issue.variables, vec!["FTTPT", "FTTPTNUM", "FTELTM"]);
+    }
 }
 
 #[test]
@@ -2932,6 +3958,317 @@ fn run_validation_executes_domain_presence_variable_exists_operation() {
 }
 
 #[test]
+fn run_validation_reports_core_000677_poolid_values_missing_from_pooldef() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000677.yml"),
+        r#"
+Core:
+  Id: CORE-000677
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Domain Presence Check
+Operations:
+  - id: $poolid_exists
+    name: POOLID
+    operator: variable_exists
+Check:
+  all:
+    - name: $poolid_exists
+      operator: equal_to
+      value: true
+    - name: POOLDEF
+      operator: not_exists
+Outcome:
+  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
+  Output Variables:
+    - $pooldef_poolid
+    - POOLID
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "pooldef.csv",
+      "domain": "POOLDEF",
+      "records": {
+        "POOLID": ["POOL1", "POOL2"]
+      }
+    },
+    {
+      "filename": "vs.csv",
+      "domain": "VS",
+      "records": {
+        "DOMAIN": ["VS", "VS", "VS"],
+        "POOLID": ["POOL1", "POOL3", ""],
+        "VSSEQ": [1, 2, 3]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write datasets");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].dataset, "VS");
+    assert_eq!(result.errors[0].row, Some(2));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["$pooldef_poolid", "POOLID"]
+    );
+}
+
+#[test]
+fn run_validation_passes_core_000677_when_pooldef_is_absent() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000677.yml"),
+        r#"
+Core:
+  Id: CORE-000677
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Domain Presence Check
+Operations:
+  - id: $poolid_exists
+    name: POOLID
+    operator: variable_exists
+Check:
+  all:
+    - name: $poolid_exists
+      operator: equal_to
+      value: true
+    - name: POOLDEF
+      operator: not_exists
+Outcome:
+  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
+  Output Variables:
+    - $pooldef_poolid
+    - POOLID
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "vs.csv",
+      "domain": "VS",
+      "records": {
+        "DOMAIN": ["VS"],
+        "POOLID": ["POOL3"],
+        "VSSEQ": [1]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write datasets");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_reports_core_000677_open_rules_data_dir_poolid_mismatches() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000677.yml"),
+        r#"
+Core:
+  Id: CORE-000677
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Domain Presence Check
+Operations:
+  - id: $poolid_exists
+    name: POOLID
+    operator: variable_exists
+Check:
+  all:
+    - name: $poolid_exists
+      operator: equal_to
+      value: true
+    - name: POOLDEF
+      operator: not_exists
+Outcome:
+  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
+  Output Variables:
+    - $pooldef_poolid
+    - POOLID
+"#,
+    )
+    .expect("write rule");
+
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nvs,Vital Signs\npooldef,Pool Definition\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nvs,STUDYID,Study Identifier,Char,12\nvs,DOMAIN,Domain Abbreviation,Char,2\nvs,USUBJID,Unique Subject Identifier,Char,8\nvs,POOLID,Pool Identifier,Char,8\nvs,VSSEQ,Sequence Number,Num,8\npooldef,STUDYID,Study Identifier,Char,12\npooldef,POOLID,Pool Identifier,Char,8\npooldef,USUBJID,Unique Subject Identifier,Char,8\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("pooldef.csv"),
+        "STUDYID,POOLID,USUBJID\nCDISCPILOT01,POOL1,\nCDISCPILOT01,POOL2,\n",
+    )
+    .expect("write pooldef csv");
+    fs::write(
+        data_dir.join("vs.csv"),
+        "STUDYID,DOMAIN,USUBJID,POOLID,VSSEQ\nCDISCPILOT01,VS,SUBJ1,POOL4,1\nCDISCPILOT01,VS,SUBJ2,POOL2,2\n",
+    )
+    .expect("write vs csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.dataset, "VS");
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["$pooldef_poolid", "POOLID"]
+    );
+}
+
+#[test]
+fn run_validation_reports_core_000896_poolid_values_missing_from_pooldef() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000896.yml"),
+        r#"
+Core:
+  Id: CORE-000896
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: POOLDEF
+    id: $pooldef_poolid
+    name: POOLID
+    operator: distinct
+Check:
+  all:
+    - name: POOLID
+      operator: non_empty
+    - name: POOLID
+      operator: is_not_contained_by
+      value: $pooldef_poolid
+Outcome:
+  Message: POOLID value does not match a POOLID value in the POOLDEF dataset.
+  Output Variables:
+    - $pooldef_poolid
+    - POOLID
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "pooldef.csv",
+      "domain": "POOLDEF",
+      "records": {
+        "POOLID": ["POOL1", "POOL2", "POOL3"]
+      }
+    },
+    {
+      "filename": "vs.csv",
+      "domain": "VS",
+      "records": {
+        "STUDYID": ["S1", "S1", "S1", "S1", "S1", "S1", "S1"],
+        "DOMAIN": ["VS", "VS", "VS", "VS", "VS", "VS", "VS"],
+        "USUBJID": ["SUBJ1", "SUBJ2", "SUBJ3", "SUBJ4", "SUBJ5", "SUBJ6", "SUBJ7"],
+        "POOLID": ["POOL1", "POOL1", "POOL1", "POOL3", "POOL2", "POOL2", "POOL99"],
+        "VSSEQ": [1, 2, 3, 4, 6, 7, 8]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write datasets");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.dataset, "VS");
+    assert_eq!(result.errors[0].row, Some(7));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["$pooldef_poolid", "POOLID"]
+    );
+}
+
+#[test]
 fn run_validation_keeps_record_scoped_dataset_presence_when_oracle_expects_rows() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -3209,6 +4546,80 @@ fn run_validation_executes_dataset_metadata_dataset_names_rule() {
 }
 
 #[test]
+fn run_validation_core_000540_treats_alphanumeric_fa_split_dataset_names_as_candidates() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.csv",
+      "domain": "FA",
+      "label": "Findings About",
+      "records": { "DOMAIN": ["FA"] }
+    },
+    {
+      "filename": "facm.csv",
+      "domain": "FACM",
+      "label": "Findings About CM Records",
+      "records": { "DOMAIN": ["FA"] }
+    },
+    {
+      "filename": "fa1.csv",
+      "domain": "FA1",
+      "label": "Findings About Medical History",
+      "records": { "DOMAIN": ["FA"] }
+    }
+  ]
+}"#,
+    )
+    .expect("write datasets");
+    fs::write(
+        rules_dir.join("CORE-000540.json"),
+        r#"{
+  "Core": { "Id": "CORE-000540", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"], "include_split_datasets": true }, "Classes": {} },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Dataset Metadata Check",
+  "Operations": [{ "id": "$list_dataset_names", "operator": "dataset_names" }],
+  "Check": {
+    "all": [
+      { "name": "dataset_name", "operator": "matches_regex", "value": "^[a-z(?-i)]{2}[a-z(?-i)]{1,2}" },
+      { "name": "dataset_name", "operator": "prefix_equal_to", "prefix": 2, "value": "FA" },
+      { "name": "dataset_name", "operator": "suffix_is_not_contained_by", "suffix": 2, "value": "$list_dataset_names" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Parent domain referenced in Findings About dataset name is not present in the study",
+    "Output Variables": ["dataset_name", "$list_dataset_names"]
+  }
+}"#,
+    )
+    .expect("write metadata rule");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+
+    assert_eq!(failed.len(), 2, "{failed:#?}");
+    assert_eq!(failed[0].errors[0].dataset, "FACM");
+    assert_eq!(failed[1].errors[0].dataset, "FA1");
+}
+
+#[test]
 fn run_validation_executes_variable_metadata_label_length_rule() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -3414,6 +4825,80 @@ fn run_validation_executes_variable_metadata_required_variables_rule() {
         outcome.results[0].errors[0].variables,
         vec!["$dataset_variables", "$required_variables"]
     );
+}
+
+#[test]
+fn run_validation_does_not_require_usubjid_for_trial_design_required_variables() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ta.xpt",
+      "domain": "TA",
+      "variables": [
+        { "name": "STUDYID", "label": "Study Identifier", "type": "Char", "length": 10 },
+        { "name": "DOMAIN", "label": "Domain Abbreviation", "type": "Char", "length": 2 },
+        { "name": "ARMCD", "label": "Planned Arm Code", "type": "Char", "length": 20 },
+        { "name": "ARM", "label": "Description of Planned Arm", "type": "Char", "length": 200 },
+        { "name": "TAETORD", "label": "Planned Order of Element within Arm", "type": "Num", "length": 8 },
+        { "name": "ETCD", "label": "Element Code", "type": "Char", "length": 8 },
+        { "name": "ELEMENT", "label": "Description of Element", "type": "Char", "length": 200 }
+      ],
+      "records": {
+        "STUDYID": ["CDISC-TEST"],
+        "DOMAIN": ["TA"],
+        "ARMCD": ["A"],
+        "ARM": ["Active"],
+        "TAETORD": [1],
+        "ETCD": ["E1"],
+        "ELEMENT": ["Treatment"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write datasets");
+    fs::write(
+        rules_dir.join("CORE-000355.json"),
+        r#"{
+  "Core": { "Id": "CORE-000355", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Variable Metadata Check",
+  "Operations": [
+    { "id": "$required_variables", "operator": "required_variables" },
+    { "id": "$dataset_variables", "operator": "get_column_order_from_dataset" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "variable_name", "operator": "not_contains_all", "value": ["$required_variables"] }
+    ]
+  },
+  "Outcome": {
+    "Message": "At least one required variable is missing from dataset",
+    "Output Variables": ["$dataset_variables", "$required_variables"]
+  }
+}"#,
+    )
+    .expect("write metadata rule");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].error_count, 0);
 }
 
 #[test]
@@ -4118,7 +5603,7 @@ fn run_validation_executes_core_000929_domain_codelist_metadata_rule() {
     <Alias Context="nci:ExtCodeID" Name="C66734"/>
   </CodeList>
   <CodeList OID="CL.DOMAIN_ZB">
-    <CodeListItem CodedValue="ZB"><Alias Context="nci:ExtCodeID" Name="C00003"/></CodeListItem>
+    <CodeListItem CodedValue="ZB"><Alias Context="nci:ExtCodeID" Name="C49592"/></CodeListItem>
     <Alias Context="nci:ExtCodeID" Name="C66734"/>
   </CodeList>
 </ODM>
@@ -5532,11 +7017,17 @@ fn static_codelist_resolves_ddf_organization_type_terms() {
     let codelist = static_codelist("C188724").expect("organization type codelist");
     assert!(codelist.extensible);
 
-    let sponsor = codelist
-        .find_by_code("C70793")
-        .expect("clinical study sponsor");
-    assert_eq!(sponsor.value, "Study Sponsor");
-    assert_eq!(sponsor.pref_term, "Clinical Study Sponsor");
+    let sponsor_2024 =
+        static_codelist_term_by_code("C188724", &codelist, "C70793", Some("2024-09-27"))
+            .expect("2024 clinical study sponsor");
+    assert_eq!(sponsor_2024.value, "Clinical Study Sponsor");
+    assert_eq!(sponsor_2024.pref_term, "Clinical Study Sponsor");
+
+    let sponsor_2025 =
+        static_codelist_term_by_code("C188724", &codelist, "C70793", Some("2025-09-26"))
+            .expect("2025 clinical study sponsor");
+    assert_eq!(sponsor_2025.value, "Study Sponsor");
+    assert_eq!(sponsor_2025.pref_term, "Clinical Study Sponsor");
 
     let registry = codelist
         .find_by_pref_term("Study Registry")
@@ -5549,6 +7040,1100 @@ fn static_codelist_resolves_ddf_organization_type_terms() {
         .expect("drug company submission value");
     assert_eq!(drug_company.code, "C54149");
     assert_eq!(drug_company.pref_term, "Pharmaceutical Company");
+}
+
+#[test]
+fn ddf_valid_codelist_dates_include_ddf_package_versions() {
+    let operation = OperationSpec {
+        fields: std::collections::BTreeMap::from([(
+            "ct_package_types".to_owned(),
+            serde_json::Value::Array(vec![serde_json::Value::String("DDF".to_owned())]),
+        )]),
+    };
+
+    let dates = valid_codelist_dates_for_operation(&operation);
+
+    assert!(dates.contains(&"2025-09-26"));
+    assert!(dates.contains(&"2024-09-27"));
+    assert!(dates.contains(&"2023-12-15"));
+}
+
+#[test]
+fn ddf_study_role_terms_are_scoped_by_package_version() {
+    let term = static_codelist("C215480")
+        .expect("study role codelist")
+        .find_by_code("C78726")
+        .expect("adjudication committee");
+
+    assert!(!static_codelist_term_matches_version(
+        "C215480",
+        term,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C215480",
+        term,
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn ddf_study_role_codelist_is_scoped_by_package_version() {
+    assert!(!static_codelist_matches_version(
+        "C215480",
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_matches_version(
+        "C215480",
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_trial_type_terms() {
+    let codelist = static_codelist("C66739").expect("trial type codelist");
+    assert!(codelist.extensible);
+
+    let alcohol_effect = codelist
+        .find_by_code("C158284")
+        .expect("alcohol effect term");
+    assert_eq!(alcohol_effect.value, "ALCOHOL EFFECT");
+    assert_eq!(alcohol_effect.pref_term, "Alcohol Effect Study");
+
+    let water_effect = codelist
+        .find_by_value("WATER EFFECT")
+        .expect("water effect submission value");
+    assert_eq!(water_effect.code, "C161480");
+    assert_eq!(water_effect.pref_term, "Water Effect Trial");
+
+    let dose_response = codelist
+        .find_by_pref_term("Dose Response Study")
+        .expect("dose response preferred term");
+    assert_eq!(dose_response.code, "C127803");
+    assert_eq!(dose_response.value, "DOSE RESPONSE");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_trial_intent_type_terms() {
+    let codelist = static_codelist("C66736").expect("trial intent type codelist");
+    assert!(codelist.extensible);
+
+    let basic = codelist.find_by_code("C15714").expect("basic science");
+    assert_eq!(basic.value, "BASIC SCIENCE");
+    assert_eq!(basic.pref_term, "Basic Research");
+
+    let mitigation = codelist
+        .find_by_value("MITIGATION")
+        .expect("mitigation submission value");
+    assert_eq!(mitigation.code, "C49655");
+    assert_eq!(mitigation.pref_term, "Adverse Effect Mitigation Study");
+
+    let supportive = codelist
+        .find_by_pref_term("Supportive Care Study")
+        .expect("supportive care preferred term");
+    assert_eq!(supportive.code, "C71486");
+    assert_eq!(supportive.value, "SUPPORTIVE CARE");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_blinding_schema_terms() {
+    let codelist = static_codelist("C66735").expect("blinding schema codelist");
+    assert!(codelist.extensible);
+
+    let double_blind = codelist.find_by_code("C15228").expect("double blind");
+    assert_eq!(double_blind.value, "DOUBLE BLIND");
+    assert_eq!(double_blind.pref_term, "Double Blind Study");
+
+    let open_label = codelist
+        .find_by_value("OPEN LABEL")
+        .expect("open label submission value");
+    assert_eq!(open_label.code, "C49659");
+    assert_eq!(open_label.pref_term, "Open Label Study");
+
+    let single_blind = codelist
+        .find_by_pref_term("Single Blind Study")
+        .expect("single blind");
+    assert_eq!(single_blind.code, "C28233");
+    assert_eq!(single_blind.value, "SINGLE BLIND");
+}
+
+#[test]
+fn sdtm_blinding_schema_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C66735").expect("blinding schema codelist");
+    let double_blind = codelist.find_by_code("C15228").expect("double blind");
+    let single_blind = codelist.find_by_code("C28233").expect("single blind");
+
+    assert!(static_codelist_term_matches_version(
+        "C66735",
+        double_blind,
+        Some("2023-12-15")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C66735",
+        single_blind,
+        Some("2024-03-29")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C66735",
+        single_blind,
+        Some("2024-09-27")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_intervention_model_terms() {
+    let codelist = static_codelist("C99076").expect("intervention model codelist");
+    assert!(codelist.extensible);
+
+    let crossover = codelist.find_by_code("C82637").expect("crossover");
+    assert_eq!(crossover.value, "CROSS-OVER");
+    assert_eq!(crossover.pref_term, "Crossover Study");
+
+    let parallel = codelist
+        .find_by_value("PARALLEL")
+        .expect("parallel submission value");
+    assert_eq!(parallel.code, "C82639");
+    assert_eq!(parallel.pref_term, "Parallel Study");
+
+    let sequential = codelist
+        .find_by_pref_term("Group Sequential Design")
+        .expect("sequential preferred term");
+    assert_eq!(sequential.code, "C142568");
+    assert_eq!(sequential.value, "SEQUENTIAL");
+}
+
+#[test]
+fn sdtm_intervention_model_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C99076").expect("intervention model codelist");
+    let crossover = codelist.find_by_code("C82637").expect("crossover");
+    let single_group = codelist.find_by_code("C82640").expect("single group");
+
+    assert!(static_codelist_term_matches_version(
+        "C99076",
+        crossover,
+        Some("2023-12-15")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C99076",
+        single_group,
+        Some("2024-03-29")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C99076",
+        single_group,
+        Some("2024-09-27")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_study_type_terms() {
+    let codelist = static_codelist("C99077").expect("study type codelist");
+    assert!(!codelist.extensible);
+
+    let interventional = codelist.find_by_code("C98388").expect("interventional");
+    assert_eq!(interventional.value, "INTERVENTIONAL");
+    assert_eq!(interventional.pref_term, "Interventional Study");
+
+    let expanded_access = codelist
+        .find_by_value("EXPANDED ACCESS")
+        .expect("expanded access submission value");
+    assert_eq!(expanded_access.code, "C98722");
+    assert_eq!(expanded_access.pref_term, "Expanded Access Study");
+
+    let patient_registry = codelist
+        .find_by_pref_term("Patient Registry Study")
+        .expect("patient registry preferred term");
+    assert_eq!(patient_registry.code, "C129000");
+    assert_eq!(patient_registry.value, "PATIENT REGISTRY");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_route_terms() {
+    let codelist = static_codelist("C66729").expect("route codelist");
+    assert!(codelist.extensible);
+
+    let oral = codelist.find_by_code("C38288").expect("oral");
+    assert_eq!(oral.value, "ORAL");
+    assert_eq!(oral.pref_term, "Oral Route of Administration");
+
+    let transdermal = codelist
+        .find_by_value("TRANSDERMAL")
+        .expect("transdermal submission value");
+    assert_eq!(transdermal.code, "C38305");
+    assert_eq!(transdermal.pref_term, "Transdermal Route of Administration");
+
+    let nasoduodenal = codelist
+        .find_by_pref_term("Nasoduodenal Route of Administration")
+        .expect("nasoduodenal preferred term");
+    assert_eq!(nasoduodenal.code, "C188189");
+    assert_eq!(nasoduodenal.value, "NASODUODENAL");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_frequency_terms() {
+    let codelist = static_codelist("C71113").expect("frequency codelist");
+    assert!(codelist.extensible);
+
+    let every_eighteen_hours = codelist.find_by_code("C64508").expect("q18h");
+    assert_eq!(every_eighteen_hours.value, "Q18H");
+    assert_eq!(every_eighteen_hours.pref_term, "Every Eighteen Hours");
+
+    let every_other_day = codelist
+        .find_by_value("QOD")
+        .expect("every other day submission value");
+    assert_eq!(every_other_day.code, "C64525");
+    assert_eq!(every_other_day.pref_term, "Every Other Day");
+
+    let three_times_weekly = codelist
+        .find_by_pref_term("Three Times Weekly")
+        .expect("three times weekly preferred term");
+    assert_eq!(three_times_weekly.code, "C64528");
+    assert_eq!(three_times_weekly.value, "3 TIMES PER WEEK");
+}
+
+#[test]
+fn static_codelist_resolves_ddf_protocol_status_terms() {
+    let codelist = static_codelist("C188723").expect("protocol status codelist");
+    assert!(!codelist.extensible);
+
+    let approved = codelist.find_by_code("C25425").expect("approved");
+    assert_eq!(approved.value, "Approval");
+    assert_eq!(approved.pref_term, "Approved");
+
+    let final_status = codelist
+        .find_by_value("Final")
+        .expect("final submission value");
+    assert_eq!(final_status.code, "C25508");
+    assert_eq!(final_status.pref_term, "Final");
+
+    let pending_review = codelist
+        .find_by_pref_term("Pending Review")
+        .expect("pending review preferred term");
+    assert_eq!(pending_review.code, "C188862");
+    assert_eq!(pending_review.value, "Pending Review");
+}
+
+#[test]
+fn static_codelist_resolves_ddf_product_designation_terms_by_version() {
+    let codelist = static_codelist("C207418").expect("product designation codelist");
+    assert!(!codelist.extensible);
+
+    let investigational =
+        static_codelist_term_by_code("C207418", &codelist, "C202579", Some("2024-09-27"))
+            .expect("investigational product");
+    assert_eq!(investigational.value, "IMP");
+    assert_eq!(
+        investigational.pref_term,
+        "Investigational Medicinal Product"
+    );
+
+    let auxiliary_2024 =
+        static_codelist_term_by_code("C207418", &codelist, "C156473", Some("2024-09-27"))
+            .expect("2024 auxiliary product");
+    assert_eq!(auxiliary_2024.value, "NIMP (AxMP)");
+    assert_eq!(auxiliary_2024.pref_term, "Auxiliary Medicinal Product");
+
+    let auxiliary_2025 =
+        static_codelist_term_by_code("C207418", &codelist, "C156473", Some("2025-09-26"))
+            .expect("2025 auxiliary product");
+    assert_eq!(auxiliary_2025.value, "NIMP");
+    assert_eq!(auxiliary_2025.pref_term, "Auxiliary Medicinal Product");
+
+    assert!(
+        static_codelist_term_by_value("C207418", &codelist, "NIMP", Some("2024-09-27"),).is_none()
+    );
+    assert_eq!(
+        static_codelist_term_by_value("C207418", &codelist, "NIMP", Some("2025-09-26"))
+            .expect("2025 NIMP value")
+            .code,
+        "C156473"
+    );
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_trial_phase_terms_by_version() {
+    let codelist = static_codelist("C66737").expect("trial phase codelist");
+    assert!(codelist.extensible);
+
+    let phase_i_ii_iii_2022 =
+        static_codelist_term_by_code("C66737", &codelist, "C198366", Some("2022-12-16"))
+            .expect("2022 phase I/II/III");
+    assert_eq!(phase_i_ii_iii_2022.value, "PHASE I/II/III STUDY");
+    assert_eq!(phase_i_ii_iii_2022.pref_term, "Phase I/II/III Study");
+
+    let phase_i_ii_iii_2023 =
+        static_codelist_term_by_code("C66737", &codelist, "C198366", Some("2023-12-15"))
+            .expect("2023 phase I/II/III");
+    assert_eq!(phase_i_ii_iii_2023.value, "PHASE I/II/III TRIAL");
+    assert_eq!(phase_i_ii_iii_2023.pref_term, "Phase I/II/III Trial");
+
+    let early_phase_2023 =
+        static_codelist_term_by_code("C66737", &codelist, "C54721", Some("2023-12-15"))
+            .expect("2023 early phase");
+    assert_eq!(early_phase_2023.value, "PHASE 0 TRIAL");
+
+    let early_phase_2024 =
+        static_codelist_term_by_code("C66737", &codelist, "C54721", Some("2024-09-27"))
+            .expect("2024 early phase");
+    assert_eq!(early_phase_2024.value, "EARLY PHASE I");
+    assert_eq!(early_phase_2024.pref_term, "Early Phase 1 Trial");
+
+    assert!(static_codelist_term_by_value(
+        "C66737",
+        &codelist,
+        "PHASE 0 TRIAL",
+        Some("2025-09-26"),
+    )
+    .is_none());
+}
+
+#[test]
+fn static_codelist_resolves_small_oracle_value_sets() {
+    let objective = static_codelist("C188725").expect("objective level codelist");
+    assert!(!objective.extensible);
+    assert_eq!(
+        objective
+            .find_by_code("C85826")
+            .expect("primary objective")
+            .value,
+        "Study Primary Objective"
+    );
+    assert_eq!(
+        objective
+            .find_by_value("Exploratory Objective")
+            .expect("exploratory objective")
+            .pref_term,
+        "Trial Exploratory Objective"
+    );
+
+    let endpoint = static_codelist("C188726").expect("endpoint level codelist");
+    assert!(!endpoint.extensible);
+    assert_eq!(
+        endpoint
+            .find_by_code("C94496")
+            .expect("primary endpoint")
+            .value,
+        "Primary Endpoint"
+    );
+    assert_eq!(
+        endpoint
+            .find_by_pref_term("Exploratory Endpoint")
+            .expect("exploratory endpoint")
+            .code,
+        "C170559"
+    );
+
+    let geographic_scope = static_codelist("C207412").expect("geographic scope codelist");
+    assert!(!geographic_scope.extensible);
+    assert_eq!(
+        geographic_scope
+            .find_by_code("C25464")
+            .expect("country")
+            .value,
+        "Country"
+    );
+    assert_eq!(
+        geographic_scope
+            .find_by_value("Global")
+            .expect("global")
+            .code,
+        "C68846"
+    );
+
+    let eligibility_category = static_codelist("C66797").expect("eligibility category codelist");
+    assert!(!eligibility_category.extensible);
+    assert_eq!(
+        eligibility_category
+            .find_by_value("EXCLUSION")
+            .expect("exclusion")
+            .pref_term,
+        "Exclusion Criteria"
+    );
+
+    let encounter_type = static_codelist("C188728").expect("encounter type codelist");
+    assert!(encounter_type.extensible);
+    assert_eq!(
+        encounter_type.find_by_code("C25716").expect("visit").value,
+        "Visit"
+    );
+}
+
+#[test]
+fn static_codelist_resolves_additional_oracle_value_sets() {
+    let sampling = static_codelist("C127260").expect("sampling method codelist");
+    assert!(sampling.extensible);
+    assert!(!static_codelist_matches_version(
+        "C127260",
+        Some("2016-03-25")
+    ));
+    assert!(static_codelist_matches_version(
+        "C127260",
+        Some("2024-09-27")
+    ));
+    assert_eq!(
+        sampling
+            .find_by_value("NON-PROBABILITY SAMPLE")
+            .expect("non-probability sample")
+            .pref_term,
+        "Non-Probability Sampling Method"
+    );
+
+    let perspective = static_codelist("C127261").expect("time perspective codelist");
+    assert!(perspective.extensible);
+    assert!(!static_codelist_matches_version(
+        "C127261",
+        Some("2016-03-25")
+    ));
+    assert!(static_codelist_matches_version(
+        "C127261",
+        Some("2024-09-27")
+    ));
+    assert_eq!(
+        perspective
+            .find_by_value("RETROSPECTIVE")
+            .expect("retrospective")
+            .pref_term,
+        "Retrospective Study"
+    );
+
+    let timing_type = static_codelist("C201264").expect("timing type codelist");
+    assert!(!timing_type.extensible);
+    assert_eq!(
+        timing_type
+            .find_by_pref_term("Fixed Reference Timing Type")
+            .expect("fixed reference")
+            .value,
+        "Fixed Reference"
+    );
+
+    let governance_date = static_codelist("C207413").expect("governance date codelist");
+    assert!(governance_date.extensible);
+    assert_eq!(
+        governance_date
+            .find_by_value("Sponsor Approval Date")
+            .expect("sponsor approval")
+            .pref_term,
+        "Protocol Approval by Sponsor Date"
+    );
+
+    let title_type = static_codelist("C207419").expect("study title type codelist");
+    assert!(!title_type.extensible);
+    assert_eq!(
+        title_type
+            .find_by_pref_term("Scientific Study Title")
+            .expect("scientific title")
+            .code,
+        "C207618"
+    );
+
+    let definition_document =
+        static_codelist("C215477").expect("study definition document type codelist");
+    assert!(definition_document.extensible);
+    assert_eq!(
+        definition_document
+            .find_by_value("Protocol")
+            .expect("protocol")
+            .pref_term,
+        "Study Protocol"
+    );
+
+    let reference_identifier =
+        static_codelist("C215478").expect("reference identifier type codelist");
+    assert!(reference_identifier.extensible);
+    assert_eq!(
+        reference_identifier
+            .find_by_pref_term("Pediatric Investigation Plan")
+            .expect("pediatric investigation plan")
+            .value,
+        "Pediatric Investigation Clinical Development Plan"
+    );
+
+    let product_property = static_codelist("C215479").expect("product property type codelist");
+    assert!(product_property.extensible);
+    assert_eq!(
+        product_property.find_by_code("C45997").expect("ph").value,
+        "pH"
+    );
+
+    let amendment_impact = static_codelist("C215481").expect("amendment impact codelist");
+    assert!(amendment_impact.extensible);
+    assert_eq!(
+        amendment_impact
+            .find_by_value("Study Data Robustness")
+            .expect("robustness")
+            .code,
+        "C215668"
+    );
+
+    let medical_device_sourcing =
+        static_codelist("C215482").expect("medical device sourcing codelist");
+    assert!(medical_device_sourcing.extensible);
+    assert_eq!(
+        medical_device_sourcing
+            .find_by_value("Locally Sourced")
+            .expect("locally sourced")
+            .pref_term,
+        "Locally Sourced Indicator"
+    );
+    let product_sourcing = static_codelist("C215483").expect("product sourcing codelist");
+    assert!(product_sourcing.extensible);
+    assert_eq!(
+        product_sourcing
+            .find_by_pref_term("Centrally Sourced Indicator")
+            .expect("centrally sourced")
+            .value,
+        "Centrally Sourced"
+    );
+
+    let device_identifier = static_codelist("C215484").expect("device identifier type codelist");
+    assert!(device_identifier.extensible);
+    assert_eq!(
+        device_identifier
+            .find_by_value("FDA Unique Device Identification")
+            .expect("fda udi")
+            .pref_term,
+        "FDA Unique Device Identifier"
+    );
+
+    let dosage_form = static_codelist("C66726").expect("dosage form codelist");
+    assert!(dosage_form.extensible);
+    assert_eq!(
+        dosage_form
+            .find_by_value("TABLET")
+            .expect("tablet")
+            .pref_term,
+        "Tablet Dosage Form"
+    );
+
+    let timing_relative = static_codelist("C201265").expect("timing relative codelist");
+    assert!(!timing_relative.extensible);
+    assert_eq!(
+        timing_relative
+            .find_by_value("End to Start")
+            .expect("end to start")
+            .code,
+        "C201353"
+    );
+
+    let masking_role = static_codelist("C207414").expect("masking role codelist");
+    assert!(masking_role.extensible);
+    assert!(static_codelist_matches_version(
+        "C207414",
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_matches_version(
+        "C207414",
+        Some("2025-09-26")
+    ));
+    assert_eq!(
+        masking_role
+            .find_by_pref_term("Clinical Study Sponsor")
+            .expect("clinical sponsor")
+            .value,
+        "Sponsor"
+    );
+
+    let data_origin = static_codelist("C188727").expect("data origin type codelist");
+    assert!(data_origin.extensible);
+    assert_eq!(
+        data_origin
+            .find_by_pref_term("Synthetic Data")
+            .expect("synthetic data")
+            .code,
+        "C176263"
+    );
+    let real_world_2024 =
+        static_codelist_term_by_code("C188727", &data_origin, "C165830", Some("2024-09-27"))
+            .expect("2024 real world data");
+    assert_eq!(real_world_2024.value, "Real World Data");
+    let real_world_2025 =
+        static_codelist_term_by_code("C188727", &data_origin, "C165830", Some("2025-09-26"))
+            .expect("2025 real-world data");
+    assert_eq!(real_world_2025.value, "Real-world Data");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_environmental_setting_terms() {
+    let codelist = static_codelist("C127262").expect("environmental setting codelist");
+    assert!(codelist.extensible);
+
+    let childcare = codelist
+        .find_by_code("C127785")
+        .expect("childcare center term");
+    assert_eq!(childcare.value, "CHILD CARE CENTER");
+    assert_eq!(childcare.pref_term, "Childcare Center");
+
+    let outpatient = codelist
+        .find_by_value("OUTPATIENT CLINIC")
+        .expect("outpatient clinic submission value");
+    assert_eq!(outpatient.code, "C16281");
+    assert_eq!(outpatient.pref_term, "Ambulatory Care Facility");
+
+    let correctional = codelist
+        .find_by_pref_term("Correctional Institution")
+        .expect("correctional institution preferred term");
+    assert_eq!(correctional.code, "C85862");
+    assert_eq!(correctional.value, "PRISON");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_contact_mode_terms() {
+    let codelist = static_codelist("C171445").expect("contact mode codelist");
+    assert!(codelist.extensible);
+
+    let email = codelist.find_by_code("C25170").expect("email");
+    assert_eq!(email.value, "E-MAIL");
+    assert_eq!(email.pref_term, "E-mail");
+
+    let remote_audio_video = codelist
+        .find_by_value("REMOTE AUDIO VIDEO")
+        .expect("remote audio video submission value");
+    assert_eq!(remote_audio_video.code, "C171525");
+    assert_eq!(remote_audio_video.pref_term, "Audio-Videoconferencing");
+
+    let ivrs = codelist
+        .find_by_pref_term("Interactive Voice Response System")
+        .expect("ivrs preferred term");
+    assert_eq!(ivrs.code, "C177933");
+    assert_eq!(ivrs.value, "IVRS");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_age_unit_terms() {
+    let codelist = static_codelist("C66781").expect("age unit codelist");
+    assert!(!codelist.extensible);
+
+    let hour = codelist.find_by_code("C25529").expect("hour");
+    assert_eq!(hour.value, "HOURS");
+    assert_eq!(hour.pref_term, "Hour");
+
+    let year = codelist
+        .find_by_value("YEARS")
+        .expect("years submission value");
+    assert_eq!(year.code, "C29848");
+    assert_eq!(year.pref_term, "Year");
+
+    let month = codelist.find_by_pref_term("Month").expect("month");
+    assert_eq!(month.code, "C29846");
+    assert_eq!(month.value, "MONTHS");
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_unit_terms() {
+    let codelist = static_codelist("C71620").expect("unit codelist");
+    assert!(codelist.extensible);
+
+    let day = codelist.find_by_code("C25301").expect("day");
+    assert_eq!(day.value, "DAYS");
+    assert_eq!(day.pref_term, "Day");
+
+    let milligram = codelist.find_by_value("mg").expect("milligram");
+    assert_eq!(milligram.code, "C28253");
+    assert_eq!(milligram.pref_term, "Milligram");
+
+    let microvolt_second = codelist
+        .find_by_pref_term("Microvolt Second")
+        .expect("microvolt second");
+    assert_eq!(microvolt_second.code, "C105499");
+    assert_eq!(microvolt_second.value, "uV*s");
+}
+
+#[test]
+fn sdtm_unit_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C71620").expect("unit codelist");
+    let day = codelist.find_by_code("C25301").expect("day");
+    let microvolt_second = codelist.find_by_code("C105499").expect("microvolt second");
+    let per_day = codelist.find_by_code("C176378").expect("per day");
+
+    assert!(static_codelist_term_matches_version(
+        "C71620",
+        day,
+        Some("2024-03-29")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C71620",
+        microvolt_second,
+        Some("2024-03-29")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C71620",
+        microvolt_second,
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C71620",
+        per_day,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C71620",
+        per_day,
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn sdtm_contact_mode_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C171445").expect("contact mode codelist");
+    let email = codelist.find_by_code("C25170").expect("email");
+    let ivrs = codelist.find_by_code("C177933").expect("ivrs");
+
+    assert!(static_codelist_term_matches_version(
+        "C171445",
+        email,
+        Some("2023-12-15")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C171445",
+        ivrs,
+        Some("2023-12-15")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C171445",
+        ivrs,
+        Some("2024-03-29")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_intervention_type_terms() {
+    let codelist = static_codelist("C99078").expect("intervention type codelist");
+    assert!(!codelist.extensible);
+
+    let behavioral = codelist.find_by_code("C15184").expect("behavioral");
+    assert_eq!(behavioral.value, "BEHAVIORAL THERAPY");
+    assert_eq!(behavioral.pref_term, "Behavioral Intervention");
+
+    let device = codelist
+        .find_by_value("DEVICE")
+        .expect("device submission value");
+    assert_eq!(device.code, "C16830");
+    assert_eq!(device.pref_term, "Medical Device");
+
+    let procedure = codelist
+        .find_by_pref_term("Physical Medical Procedure")
+        .expect("procedure preferred term");
+    assert_eq!(procedure.code, "C98769");
+    assert_eq!(procedure.value, "PROCEDURE");
+}
+
+#[test]
+fn sdtm_intervention_type_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C99078").expect("intervention type codelist");
+    let combination = codelist
+        .find_by_code("C54696")
+        .expect("combination product");
+    let non_surgical = codelist
+        .find_by_code("C218507")
+        .expect("non-surgical procedure");
+    let other = codelist.find_by_code("C17649").expect("other");
+
+    assert!(!static_codelist_term_matches_version(
+        "C99078",
+        combination,
+        Some("2023-12-15")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C99078",
+        combination,
+        Some("2024-03-29")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C99078",
+        non_surgical,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C99078",
+        non_surgical,
+        Some("2025-09-26")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C99078",
+        other,
+        Some("2023-12-15")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C99078",
+        other,
+        Some("2025-03-28")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_sdtm_observational_model_terms() {
+    let codelist = static_codelist("C127259").expect("observational model codelist");
+    assert!(codelist.extensible);
+
+    let case_control = codelist.find_by_code("C15197").expect("case control");
+    assert_eq!(case_control.value, "CASE CONTROL");
+    assert_eq!(case_control.pref_term, "Case-Control Study");
+
+    let cohort = codelist
+        .find_by_value("COHORT")
+        .expect("cohort submission value");
+    assert_eq!(cohort.code, "C15208");
+    assert_eq!(cohort.pref_term, "Cohort Study");
+
+    let family = codelist.find_by_pref_term("Family Study").expect("family");
+    assert_eq!(family.code, "C15407");
+    assert_eq!(family.value, "FAMILY BASED");
+}
+
+#[test]
+fn sdtm_observational_model_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C127259").expect("observational model codelist");
+    let case_control = codelist.find_by_code("C15197").expect("case control");
+    let cohort = codelist.find_by_code("C15208").expect("cohort");
+    let ecologic = codelist.find_by_code("C127780").expect("ecologic");
+
+    assert!(!static_codelist_matches_version(
+        "C127259",
+        Some("2016-03-25")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C127259",
+        case_control,
+        Some("2023-12-15")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C127259",
+        cohort,
+        Some("2023-12-15")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C127259",
+        cohort,
+        Some("2024-03-29")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C127259",
+        ecologic,
+        Some("2024-03-29")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C127259",
+        ecologic,
+        Some("2024-09-27")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_ddf_study_role_terms() {
+    let codelist = static_codelist("C215480").expect("study role codelist");
+    assert!(codelist.extensible);
+
+    let care_provider = codelist.find_by_code("C17445").expect("care provider term");
+    assert_eq!(care_provider.value, "Care Provider");
+    assert_eq!(care_provider.pref_term, "Caregiver");
+
+    let co_sponsor = codelist
+        .find_by_value("Co-Sponsor")
+        .expect("co-sponsor submission value");
+    assert_eq!(co_sponsor.code, "C215669");
+    assert_eq!(co_sponsor.pref_term, "Study Co-Sponsor");
+
+    let clinical_sponsor = codelist
+        .find_by_pref_term("Clinical Study Sponsor")
+        .expect("clinical study sponsor preferred term");
+    assert_eq!(clinical_sponsor.code, "C70793");
+    assert_eq!(clinical_sponsor.value, "Sponsor");
+}
+
+#[test]
+fn static_codelist_resolves_ddf_study_amendment_reason_terms() {
+    let codelist = static_codelist("C207415").expect("study amendment reason codelist");
+    assert!(!codelist.extensible);
+
+    let standard_of_care = codelist
+        .find_by_code("C207600")
+        .expect("change in standard of care");
+    assert_eq!(standard_of_care.value, "Change In Standard Of Care");
+    assert_eq!(standard_of_care.pref_term, "Change In Standard Of Care");
+
+    let other = codelist
+        .find_by_value("OTHER")
+        .expect("other submission value");
+    assert_eq!(other.code, "C17649");
+    assert_eq!(other.pref_term, "Other");
+
+    let extension = codelist
+        .find_by_pref_term("Extension")
+        .expect("extension preferred term");
+    assert_eq!(extension.code, "C0031X");
+    assert_eq!(extension.value, "Extension");
+}
+
+#[test]
+fn ddf_study_amendment_reason_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C207415").expect("study amendment reason codelist");
+    let standard_of_care = codelist
+        .find_by_code("C207600")
+        .expect("change in standard of care");
+    let other = codelist.find_by_code("C17649").expect("other");
+
+    assert!(static_codelist_term_matches_version(
+        "C207415",
+        standard_of_care,
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C207415",
+        other,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C207415",
+        other,
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_ddf_study_design_characteristic_terms() {
+    let codelist = static_codelist("C207416").expect("study design characteristic codelist");
+    assert!(codelist.extensible);
+
+    let randomized = codelist.find_by_code("C46079").expect("randomized");
+    assert_eq!(randomized.value, "Randomized");
+    assert_eq!(randomized.pref_term, "Randomized Controlled Clinical Trial");
+
+    let single_centre = codelist
+        .find_by_value("Single-Centre")
+        .expect("single-centre submission value");
+    assert_eq!(single_centre.code, "C217004");
+    assert_eq!(single_centre.pref_term, "Single-Center Study");
+
+    let stratified = codelist
+        .find_by_pref_term("Stratified Randomization")
+        .expect("stratified randomization preferred term");
+    assert_eq!(stratified.code, "C147145");
+    assert_eq!(stratified.value, "Stratified Randomisation");
+}
+
+#[test]
+fn ddf_study_design_characteristic_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C207416").expect("study design characteristic codelist");
+    let randomized = codelist.find_by_code("C46079").expect("randomized");
+    let single_centre = codelist.find_by_code("C217004").expect("single-centre");
+
+    assert!(!static_codelist_matches_version(
+        "C207416",
+        Some("2023-12-15")
+    ));
+    assert!(static_codelist_matches_version(
+        "C207416",
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C207416",
+        randomized,
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C207416",
+        single_centre,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C207416",
+        single_centre,
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_ddf_study_intervention_role_terms() {
+    let codelist = static_codelist("C207417").expect("study intervention role codelist");
+    assert!(!codelist.extensible);
+
+    let required = codelist
+        .find_by_code("C207614")
+        .expect("additional required treatment");
+    assert_eq!(required.value, "Additional Required Treatment");
+    assert_eq!(required.pref_term, "Additional Required Medicinal Product");
+
+    let diagnostic = codelist
+        .find_by_value("Diagnostic")
+        .expect("diagnostic submission value");
+    assert_eq!(diagnostic.code, "C18020");
+    assert_eq!(diagnostic.pref_term, "Diagnostic Procedure");
+
+    let rescue = codelist
+        .find_by_pref_term("Rescue Medications")
+        .expect("rescue preferred term");
+    assert_eq!(rescue.code, "C165835");
+    assert_eq!(rescue.value, "Rescue Medicine");
+}
+
+#[test]
+fn ddf_study_intervention_role_terms_are_scoped_by_package_version() {
+    let codelist = static_codelist("C207417").expect("study intervention role codelist");
+    let placebo = codelist.find_by_code("C753").expect("placebo");
+    let active = codelist.find_by_code("C68609").expect("active comparator");
+
+    assert!(static_codelist_term_matches_version(
+        "C207417",
+        placebo,
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C207417",
+        active,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C207417",
+        active,
+        Some("2025-09-26")
+    ));
+}
+
+#[test]
+fn static_codelist_resolves_ddf_observational_study_subtype_terms() {
+    let codelist = static_codelist("C215486").expect("observational subtype codelist");
+    assert!(codelist.extensible);
+
+    let education = codelist
+        .find_by_code("C215657")
+        .expect("clinical education");
+    assert_eq!(education.value, "Clinical Education");
+    assert_eq!(education.pref_term, "Clinical Education Study");
+
+    let prevalence = codelist
+        .find_by_value("Disease Prevalence")
+        .expect("disease prevalence submission value");
+    assert_eq!(prevalence.code, "C215675");
+    assert_eq!(prevalence.pref_term, "Disease Prevalence Study");
+
+    let safety = codelist
+        .find_by_pref_term("Safety Study")
+        .expect("safety preferred term");
+    assert_eq!(safety.code, "C49667");
+    assert_eq!(safety.value, "Safety");
+}
+
+#[test]
+fn ddf_observational_study_subtype_codelist_is_scoped_by_package_version() {
+    let term = static_codelist("C215486")
+        .expect("observational subtype codelist")
+        .find_by_code("C215657")
+        .expect("clinical education");
+
+    assert!(!static_codelist_matches_version(
+        "C215486",
+        Some("2024-09-27")
+    ));
+    assert!(!static_codelist_term_matches_version(
+        "C215486",
+        term,
+        Some("2024-09-27")
+    ));
+    assert!(static_codelist_term_matches_version(
+        "C215486",
+        term,
+        Some("2025-09-26")
+    ));
 }
 
 #[test]
@@ -6027,6 +8612,328 @@ fn run_validation_joins_single_match_dataset_to_scoped_dataset() {
     assert_eq!(outcome.results[0].error_count, 1);
     assert_eq!(outcome.results[0].errors[0].row, Some(2));
     assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+}
+
+#[test]
+fn run_validation_joins_single_match_dataset_with_suffix_condition_column() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-SINGLE-MATCH-SUFFIX.json"),
+        r#"{
+  "Core": { "Id": "CORE-SINGLE-MATCH-SUFFIX", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyDesignPopulation"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "StudyArm",
+      "Keys": [
+        { "Left": "parent_id", "Right": "id" }
+      ]
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "rel_type", "operator": "equal_to", "value": "reference" },
+      { "name": "rel_type.StudyArm", "operator": "equal_to", "value": "definition" },
+      { "name": "parent_id.StudyArm", "operator": "is_not_contained_by", "value": "StudyDesign_2" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Population and arm parents must match",
+    "Output Variables": ["parent_id", "parent_id.StudyArm", "rel_type.StudyArm"]
+  }
+}"#,
+    )
+    .expect("write suffix match dataset rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "StudyDesignPopulation.csv",
+      "domain": "StudyDesignPopulation",
+      "records": {
+        "parent_id": ["StudyArm_1"],
+        "parent_rel": ["populationIds"],
+        "rel_type": ["reference"],
+        "id": ["StudyDesignPopulation_1"],
+        "name": ["POP1"],
+        "instanceType": ["StudyDesignPopulation"]
+      }
+    },
+    {
+      "filename": "StudyArm.csv",
+      "domain": "StudyArm",
+      "records": {
+        "parent_id": ["StudyDesign_1"],
+        "parent_rel": ["arms"],
+        "rel_type": ["definition"],
+        "id": ["StudyArm_1"],
+        "name": ["Placebo"],
+        "instanceType": ["StudyArm"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write suffix match dataset data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Failed,
+        "{:?}",
+        outcome.results[0]
+    );
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(
+        outcome.results[0].errors[0].variables,
+        vec![
+            "parent_id".to_owned(),
+            "parent_id.StudyArm".to_owned(),
+            "rel_type.StudyArm".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn run_validation_joins_single_match_dataset_before_suffix_group_alias_operation() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000799.json"),
+        r#"{
+  "Core": { "Id": "CORE-000799", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyDesignPopulation"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "StudyArm",
+      "Keys": [
+        { "Left": "parent_id", "Right": "id" }
+      ]
+    }
+  ],
+  "Operations": [
+    {
+      "group": ["id", "rel_type"],
+      "group_aliases": ["id", "rel_type.StudyArm"],
+      "id": "$parent_of_population",
+      "name": "parent_id",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "StudyDesignPopulation" },
+      { "name": "rel_type", "operator": "equal_to", "value": "reference" },
+      { "name": "parent_rel", "operator": "equal_to", "value": "populationIds", "value_is_literal": true },
+      { "name": "rel_type.StudyArm", "operator": "equal_to", "value": "definition" },
+      { "name": "parent_id.StudyArm", "operator": "is_not_contained_by", "value": "$parent_of_population" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Population and arm parents must match",
+    "Output Variables": [
+      "parent_entity",
+      "parent_id",
+      "parent_rel",
+      "id",
+      "name",
+      "parent_id.StudyArm",
+      "$parent_of_population"
+    ]
+  }
+}"#,
+    )
+    .expect("write suffix group-alias rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "StudyDesignPopulation.csv",
+      "domain": "StudyDesignPopulation",
+      "records": {
+        "parent_entity": ["StudyDesign", "StudyArm"],
+        "parent_id": ["StudyDesign_2", "StudyArm_1"],
+        "parent_rel": ["population", "populationIds"],
+        "rel_type": ["definition", "reference"],
+        "id": ["StudyDesignPopulation_1", "StudyDesignPopulation_1"],
+        "name": ["POP1", "POP1"],
+        "instanceType": ["StudyDesignPopulation", "StudyDesignPopulation"]
+      }
+    },
+    {
+      "filename": "StudyArm.csv",
+      "domain": "StudyArm",
+      "records": {
+        "parent_id": ["StudyDesign_1"],
+        "parent_rel": ["arms"],
+        "rel_type": ["definition"],
+        "id": ["StudyArm_1"],
+        "name": ["Placebo"],
+        "instanceType": ["StudyArm"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write suffix group-alias data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Failed,
+        "{:?}",
+        outcome.results[0]
+    );
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    assert!(outcome.results[0].errors[0]
+        .variables
+        .contains(&"parent_id.StudyArm".to_owned()));
+    assert!(outcome.results[0].errors[0]
+        .variables
+        .contains(&"$parent_of_population".to_owned()));
+}
+
+#[test]
+fn run_validation_passes_single_match_dataset_suffix_group_alias_operation_when_parent_matches() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000799.json"),
+        r#"{
+  "Core": { "Id": "CORE-000799", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyDesignPopulation"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "StudyArm",
+      "Keys": [
+        { "Left": "parent_id", "Right": "id" }
+      ]
+    }
+  ],
+  "Operations": [
+    {
+      "group": ["id", "rel_type"],
+      "group_aliases": ["id", "rel_type.StudyArm"],
+      "id": "$parent_of_population",
+      "name": "parent_id",
+      "operator": "distinct"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "StudyDesignPopulation" },
+      { "name": "rel_type", "operator": "equal_to", "value": "reference" },
+      { "name": "parent_rel", "operator": "equal_to", "value": "populationIds", "value_is_literal": true },
+      { "name": "rel_type.StudyArm", "operator": "equal_to", "value": "definition" },
+      { "name": "parent_id.StudyArm", "operator": "is_not_contained_by", "value": "$parent_of_population" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Population and arm parents must match",
+    "Output Variables": [
+      "parent_entity",
+      "parent_id",
+      "parent_rel",
+      "id",
+      "name",
+      "parent_id.StudyArm",
+      "$parent_of_population"
+    ]
+  }
+}"#,
+    )
+    .expect("write suffix group-alias rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "StudyDesignPopulation.csv",
+      "domain": "StudyDesignPopulation",
+      "records": {
+        "parent_entity": ["StudyDesign", "StudyArm"],
+        "parent_id": ["StudyDesign_1", "StudyArm_1"],
+        "parent_rel": ["population", "populationIds"],
+        "rel_type": ["definition", "reference"],
+        "id": ["StudyDesignPopulation_1", "StudyDesignPopulation_1"],
+        "name": ["POP1", "POP1"],
+        "instanceType": ["StudyDesignPopulation", "StudyDesignPopulation"]
+      }
+    },
+    {
+      "filename": "StudyArm.csv",
+      "domain": "StudyArm",
+      "records": {
+        "parent_id": ["StudyDesign_1"],
+        "parent_rel": ["arms"],
+        "rel_type": ["definition"],
+        "id": ["StudyArm_1"],
+        "name": ["Placebo"],
+        "instanceType": ["StudyArm"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write suffix group-alias data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Passed,
+        "{:?}",
+        outcome.results[0]
+    );
+    assert_eq!(outcome.results[0].error_count, 0);
 }
 
 #[test]
@@ -8289,6 +11196,412 @@ fn run_validation_fans_out_single_match_dataset_with_duplicate_lookup_keys() {
 }
 
 #[test]
+fn run_validation_core_000597_matches_suppae_aesosp_to_parent_ae_record() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let fail_data_dir = dir.path().join("fail-data");
+    let pass_data_dir = dir.path().join("pass-data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&fail_data_dir).expect("fail data dir");
+    fs::create_dir_all(&pass_data_dir).expect("pass data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000597.json"),
+        r#"{
+  "Core": { "Id": "CORE-000597", "Status": "Published" },
+  "Scope": { "Classes": { "Include": ["EVENTS"] }, "Domains": { "Include": ["AE"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SUPPAE", "Keys": ["USUBJID"] }
+  ],
+  "Check": { "all": [
+    { "name": "QNAM", "operator": "equal_to", "value": "AESOSP", "value_is_literal": true },
+    { "name": "AESMIE", "operator": "not_equal_to", "value": "Y" }
+  ] },
+  "Outcome": {
+    "Message": "Missing AESMIE=Y where SUPPAE.QNAM=AESOSP",
+    "Output Variables": ["QNAM", "AESMIE"]
+  }
+}"#,
+    )
+    .expect("write CORE-000597 rule");
+
+    let fail_dataset_path = fail_data_dir.join("datasets.json");
+    fs::write(
+        &fail_dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "STUDYID": ["S", "S", "S"],
+        "DOMAIN": ["AE", "AE", "AE"],
+        "USUBJID": ["S1", "S1", "S1"],
+        "AESEQ": [1, 2, 3],
+        "AESMIE": ["Y", "N", "N"]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "STUDYID": ["S"],
+        "RDOMAIN": ["AE"],
+        "USUBJID": ["S1"],
+        "IDVAR": ["AESEQ"],
+        "IDVARVAL": ["2"],
+        "QNAM": ["AESOSP"],
+        "QVAL": ["QUALIFIER"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write failing data");
+
+    let fail_outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![fail_dataset_path],
+        ..Default::default()
+    })
+    .expect("run failing validation");
+
+    assert_eq!(fail_outcome.results.len(), 1);
+    assert_eq!(
+        fail_outcome.results[0].execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(fail_outcome.results[0].error_count, 1);
+    assert_eq!(fail_outcome.results[0].errors[0].row, Some(2));
+    assert_eq!(fail_outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+    assert_eq!(
+        fail_outcome.results[0].errors[0].variables,
+        vec!["QNAM", "AESMIE"]
+    );
+
+    let pass_dataset_path = pass_data_dir.join("datasets.json");
+    fs::write(
+        &pass_dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "STUDYID": ["S", "S", "S"],
+        "DOMAIN": ["AE", "AE", "AE"],
+        "USUBJID": ["S1", "S1", "S1"],
+        "AESEQ": [1, 2, 3],
+        "AESMIE": ["N", "Y", "N"]
+      }
+    },
+    {
+      "filename": "suppae.xpt",
+      "domain": "SUPPAE",
+      "records": {
+        "STUDYID": ["S"],
+        "RDOMAIN": ["AE"],
+        "USUBJID": ["S1"],
+        "IDVAR": ["AESEQ"],
+        "IDVARVAL": ["2"],
+        "QNAM": ["AESOSP"],
+        "QVAL": ["QUALIFIER"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write passing data");
+
+    let pass_outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![pass_dataset_path],
+        ..Default::default()
+    })
+    .expect("run passing validation");
+
+    assert_eq!(pass_outcome.results.len(), 1);
+    assert_eq!(
+        pass_outcome.results[0].execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(pass_outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_executes_core_000670_ds_unscheduled_flag_semantics() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000670.json"),
+        r#"{
+  "Core": { "Id": "CORE-000670", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DD"] }, "Classes": { "Include": ["FINDINGS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "DS", "Keys": ["USUBJID"] }
+  ],
+  "Check": { "all": [
+    { "name": "DDTESTCD", "operator": "non_empty" },
+    { "name": "DSDECOD", "operator": "not_equal_to", "value": "ACCIDENTAL DEATH" },
+    { "name": "DSDECOD", "operator": "not_equal_to", "value": "FOUND DEAD" }
+  ] },
+  "Outcome": {
+    "Message": "DD record is not linked to an unscheduled death disposition",
+    "Output Variables": ["DDTESTCD", "DSDECOD"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "dd.xpt",
+      "domain": "DD",
+      "records": {
+        "STUDYID": ["S", "S"],
+        "DOMAIN": ["DD", "DD"],
+        "USUBJID": ["S1", "S2"],
+        "DDSEQ": [1, 1],
+        "DDTESTCD": ["DEATHD", "DEATHD"]
+      }
+    },
+    {
+      "filename": "ds.xpt",
+      "domain": "DS",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "DSDECOD": ["ACCIDENTAL DEATH ", "ACCIDENTAL DEATH "],
+        "DSUSCHFL": ["Y", ""]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    assert_eq!(
+        outcome.results[0].errors[0].variables,
+        vec!["DDTESTCD", "DSUSCHFL"]
+    );
+}
+
+#[test]
+fn run_validation_core_000884_reports_ts_age_parameter_counts() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let fail_data_dir = dir.path().join("fail-data");
+    let pass_data_dir = dir.path().join("pass-data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&fail_data_dir).expect("fail data dir");
+    fs::create_dir_all(&pass_data_dir).expect("pass data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000884.json"),
+        r#"{
+  "Core": { "Id": "CORE-000884", "Status": "Published" },
+  "Scope": { "Classes": { "Include": ["SPECIAL PURPOSE", "TRIAL DESIGN"] }, "Domains": { "Include": ["DM", "TS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    { "id": "$ageu_count", "operator": "record_count", "domain": "TS", "name": "TSVAL", "filter": { "TSPARMCD": "AGEU" } }
+  ],
+  "Check": { "any": [
+    { "all": [
+      { "name": "DOMAIN", "operator": "equal_to", "value": "DM" },
+      { "name": "AGEU", "operator": "empty" },
+      { "any": [
+        { "name": "AGETXT", "operator": "non_empty" },
+        { "name": "AGE", "operator": "non_empty" }
+      ] }
+    ] },
+    { "all": [
+      { "name": "DOMAIN", "operator": "equal_to", "value": "TS" },
+      { "name": "$ageu_count", "operator": "equal_to", "value": 0 }
+    ] }
+  ] },
+  "Outcome": {
+    "Message": "AGE or AGETXT is populated, but AGEU is not populated",
+    "Output Variables": ["DOMAIN", "$ageu_count"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let fail_dataset_path = fail_data_dir.join("datasets.json");
+    fs::write(
+        &fail_dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "DOMAIN": ["DM", "DM"],
+        "USUBJID": ["S1", "S2"],
+        "AGE": [14, null],
+        "AGETXT": ["", "20-30"],
+        "AGEU": ["YEARS", ""]
+      }
+    },
+    {
+      "filename": "ts.xpt",
+      "domain": "TS",
+      "records": {
+        "DOMAIN": ["TS", "TS", "TS"],
+        "TSSEQ": [1, 2, 3],
+        "TSPARMCD": ["AGE", "AGETXT", "AGEUnitsIsNotAParameter"],
+        "TSVAL": ["22", "20-25", "DAYS"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write failing data");
+
+    let fail_outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![fail_dataset_path],
+        ..Default::default()
+    })
+    .expect("run failing validation");
+
+    assert_eq!(fail_outcome.results.len(), 1);
+    assert_eq!(
+        fail_outcome.results[0].execution_status,
+        ExecutionStatus::Failed
+    );
+    assert_eq!(fail_outcome.results[0].dataset, "TS");
+    assert_eq!(fail_outcome.results[0].error_count, 1);
+    assert_eq!(fail_outcome.results[0].errors[0].row, None);
+    assert_eq!(
+        fail_outcome.results[0].errors[0].variables,
+        vec!["$age_count", "DOMAIN", "$ageu_count", "$agetxt_count"]
+    );
+
+    let pass_dataset_path = pass_data_dir.join("datasets.json");
+    fs::write(
+        &pass_dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ts.xpt",
+      "domain": "TS",
+      "records": {
+        "DOMAIN": ["TS", "TS", "TS"],
+        "TSSEQ": [1, 2, 3],
+        "TSPARMCD": ["AGE", "AGETXT", "AGEU"],
+        "TSVAL": ["22", "20-25", "DAYS"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write passing data");
+
+    let pass_outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![pass_dataset_path],
+        ..Default::default()
+    })
+    .expect("run passing validation");
+
+    assert_eq!(pass_outcome.results.len(), 1);
+    assert_eq!(
+        pass_outcome.results[0].execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(pass_outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_core_000893_reports_one_group_level_distinct_issue() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000893.json"),
+        r#"{
+  "Core": { "Id": "CORE-000893", "Status": "Published" },
+  "Scope": { "Classes": { "Include": ["TRIAL DESIGN"] }, "Domains": { "Include": ["TX"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    { "id": "$txparmcd", "operator": "distinct", "domain": "TX", "name": "TXPARMCD", "group": ["SETCD"] }
+  ],
+  "Check": {
+    "name": "$txparmcd",
+    "operator": "does_not_contain",
+    "value": "GRPLBL"
+  },
+  "Outcome": {
+    "Message": "TX dataset should include exactly one TXPARMCD = GRPLBL record per SETCD.",
+    "Output Variables": ["$txparmcd"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "tx.xpt",
+      "domain": "TX",
+      "records": {
+        "DOMAIN": ["TX", "TX", "TX"],
+        "TXSEQ": [1, 2, 3],
+        "SETCD": ["A", "A", "A"],
+        "TXPARMCD": ["TCNTRL", "ARMCD", "SPGRPCD"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, None);
+    assert_eq!(outcome.results[0].errors[0].variables, vec!["$txparmcd"]);
+}
+
+#[test]
 fn run_validation_reports_duplicate_match_dataset_oracle_gap_failures() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -8453,6 +11766,1173 @@ fn run_validation_skips_relrec_and_supp_match_dataset_rules() {
         result.skipped_reason,
         Some(SkippedReason::OracleSemanticsGap | SkippedReason::DatasetJoinNotSupported)
     )));
+}
+
+#[test]
+fn run_validation_reports_core_000744_faobj_not_matching_related_ae_term() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000744_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1"],
+        "FASEQ": [1],
+        "FALNKGRP": ["L1"],
+        "FAOBJ": ["WRONG"]
+      }
+    },
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1"],
+        "AELNKID": ["L1"],
+        "AETERM": ["FATIGUE"]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["AE"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["FAOBJ", "RELREC.**TERM", "RELREC.**TRT", "RELREC.**DECOD"]
+    );
+}
+
+#[test]
+fn run_validation_reports_core_000744_ex_parent_variables_with_double_underscore_names() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000744_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1"],
+        "FASEQ": [1],
+        "FALNKID": ["T1"],
+        "FAOBJ": ["WRONG"]
+      }
+    },
+    {
+      "filename": "ex.xpt",
+      "domain": "EX",
+      "records": {
+        "USUBJID": ["S1"],
+        "EXLNKID": ["T1"],
+        "EXTRT": ["DRUG Z"]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["EX"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["FAOBJ", "RELREC.__TERM", "RELREC.__TRT", "RELREC.__DECOD"]
+    );
+}
+
+#[test]
+fn run_validation_core_000744_prefers_specific_relrec_links_over_direct_ids() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000744_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "FASEQ": [1, 2],
+        "FASPID": ["1", "2"],
+        "FAOBJ": ["WRONG", "WRONG"]
+      }
+    },
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "AESEQ": [1, 2],
+        "AESPID": ["1", "2"],
+        "AETERM": ["HEADACHE", "FATIGUE"]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["AE", "FA"],
+        "USUBJID": ["S1", "S1"],
+        "IDVAR": ["AESEQ", "FASEQ"],
+        "IDVARVAL": [2, 2],
+        "RELID": ["R1", "R1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(2));
+}
+
+fn write_core_000744_rule(rules_dir: &std::path::Path) {
+    fs::write(
+        rules_dir.join("CORE-000744.yml"),
+        r#"
+Core:
+  Id: CORE-000744
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - FA
+Match Datasets:
+  - Name: RELREC
+Check:
+  all:
+    - name: FAOBJ
+      operator: not_equal_to
+      value: RELREC.**TERM
+    - name: FAOBJ
+      operator: not_equal_to
+      value: RELREC.**TRT
+    - name: FAOBJ
+      operator: not_equal_to_case_insensitive
+      value: RELREC.**DECOD
+Outcome:
+  Message: Related record is present in the parent domain dataset but FAOBJ is not equal to the parent value.
+  Output Variables:
+    - FAOBJ
+    - RELREC.**TERM
+    - RELREC.**TRT
+    - RELREC.**DECOD
+"#,
+    )
+    .expect("write CORE-000744 rule");
+}
+
+#[test]
+fn run_validation_reports_core_000757_group_key_relrec_parent_trt_mismatch() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000757_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "FASEQ": [1, 2],
+        "FAGRPID": [3, 2],
+        "FAOBJ": ["ERYTHEMA", "ASPIRIN"]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "CMSEQ": [1, 2],
+        "CMGRPID": [3, 2],
+        "CMTRT": ["HYDROCORTISONE, TOPICAL", "ASPIRIN"],
+        "CMDECOD": ["", ""]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["FA", "CM"],
+        "IDVAR": ["FAGRPID", "CMGRPID"],
+        "IDVARVAL": ["", ""],
+        "RELID": ["CMFA-1", "CMFA-1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].dataset, "CM");
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["CMTRT", "CMDECOD", "RELREC.FAOBJ"]
+    );
+}
+
+#[test]
+fn run_validation_reports_core_000757_explicit_relrec_parent_trt_mismatch() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000757_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1"],
+        "FASEQ": [3],
+        "FAOBJ": ["ASPIRINA"]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S1"],
+        "CMSEQ": [1],
+        "CMTRT": ["ASPIRIN"],
+        "CMDECOD": [""]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["FA", "CM"],
+        "IDVAR": ["FASEQ", "CMSEQ"],
+        "IDVARVAL": [3, 1],
+        "RELID": ["CMFA-1", "CMFA-1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].dataset, "CM");
+    assert_eq!(result.errors[0].row, Some(1));
+}
+
+#[test]
+fn run_validation_passes_core_000757_when_parent_decod_is_present() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000757_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "fa.xpt",
+      "domain": "FA",
+      "records": {
+        "USUBJID": ["S1"],
+        "FASEQ": [1],
+        "FAGRPID": [1],
+        "FAOBJ": ["ERYTHEMA"]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S1"],
+        "CMSEQ": [1],
+        "CMGRPID": [1],
+        "CMTRT": ["HYDROCORTISONE, TOPICAL"],
+        "CMDECOD": ["CORTISONE"]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["FA", "CM"],
+        "IDVAR": ["FAGRPID", "CMGRPID"],
+        "IDVARVAL": ["", ""],
+        "RELID": ["CMFA-1", "CMFA-1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Passed);
+    assert_eq!(result.error_count, 0);
+}
+
+#[test]
+fn run_validation_passes_core_000757_when_fa_parent_dataset_is_absent() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000757_rule(&rules_dir);
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S1"],
+        "CMSEQ": [1],
+        "CMTRT": ["ASPIRIN"],
+        "CMDECOD": [""]
+      }
+    },
+    {
+      "filename": "relrec.xpt",
+      "domain": "RELREC",
+      "records": {
+        "RDOMAIN": ["CM"],
+        "RELID": ["CMFA-1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Passed);
+    assert_eq!(result.error_count, 0);
+}
+
+fn write_core_000757_rule(rules_dir: &std::path::Path) {
+    fs::write(
+        rules_dir.join("CORE-000757.yml"),
+        r#"
+Core:
+  Id: CORE-000757
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Scope:
+  Classes:
+    Include:
+      - INTERVENTIONS
+Match Datasets:
+  - Name: RELREC
+    Wildcard: FA
+Check:
+  all:
+    - name: --DECOD
+      operator: empty
+    - name: RELREC.FAOBJ
+      operator: non_empty
+    - name: --TRT
+      operator: not_equal_to
+      value: RELREC.FAOBJ
+Outcome:
+  Message: Interventions parent record exists and --DECOD = null, but FAOBJ is not equal to --TRT.
+  Output Variables:
+    - RELREC.FAOBJ
+    - --TRT
+    - --DECOD
+"#,
+    )
+    .expect("write CORE-000757 rule");
+}
+
+#[test]
+fn run_validation_does_not_mix_default_missing_column_skips_with_supported_issues() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000481.yml"),
+        r#"
+Core:
+  Id: CORE-000481
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - ALL
+Check:
+  all:
+    - name: --EXCLFL
+      operator: not_equal_to
+      value: Y
+    - name: --REASEX
+      operator: non_empty
+Outcome:
+  Message: --REASEX may only be present when --EXCLFL is 'Y'
+  Output Variables:
+    - --EXCLFL
+    - --REASEX
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "vs.xpt",
+      "domain": "VS",
+      "records": {
+        "USUBJID": ["S1"],
+        "VSSEQ": [3],
+        "VSEXCLFL": [""],
+        "VSREASEX": ["Reason exclusion"]
+      }
+    },
+    {
+      "filename": "sc.xpt",
+      "domain": "SC",
+      "records": {
+        "USUBJID": ["S1"],
+        "SCSEQ": [1],
+        "SCREASEX": ["Reason exclusion"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.dataset, "VS");
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].variables, vec!["VSEXCLFL", "VSREASEX"]);
+}
+
+#[test]
+fn run_validation_narrows_simple_any_issue_variables_to_failing_targets() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000558.yml"),
+        r#"
+Core:
+  Id: CORE-000558
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - DS
+Check:
+  any:
+    - name: --DY
+      operator: not_matches_regex
+      value: ^-?[1-9]{1}\d*$
+    - name: VISITDY
+      operator: not_matches_regex
+      value: ^-?[1-9]{1}\d*$
+Outcome:
+  Message: Study day variable is not a non-zero integer
+  Output Variables:
+    - --DY
+    - VISITDY
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ds.xpt",
+      "domain": "DS",
+        "records": {
+        "USUBJID": ["S1"],
+        "DSSEQ": [1],
+        "DSDY": [0]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].variables, vec!["DSDY"]);
+}
+
+#[test]
+fn run_validation_reports_missing_dataset_column_once_for_dataset_presence_rules() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000096.yml"),
+        r#"
+Core:
+  Id: CORE-000096
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - AE
+Check:
+  all:
+    - name: --LOC
+      operator: not_exists
+    - name: --PORTOT
+      operator: exists
+Outcome:
+  Message: --PORTOT variable is present, when --LOC variable does not exist in a dataset.
+  Output Variables:
+    - --LOC
+    - --PORTOT
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "AESEQ": [1, 2],
+        "AEPORTOT": ["PARTIAL", "HEMI"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].variables, vec!["AELOC", "AEPORTOT"]);
+    assert_eq!(result.errors[1].row, Some(2));
+    assert_eq!(result.errors[1].variables, vec!["AEPORTOT"]);
+}
+
+#[test]
+fn run_validation_keeps_missing_dataset_column_per_row_for_timepoint_presence_rules() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000171.yml"),
+        r#"
+Core:
+  Id: CORE-000171
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - CM
+Check:
+  all:
+    - name: --ENRTPT
+      operator: exists
+    - name: --ENTPT
+      operator: not_exists
+Outcome:
+  Message: --ENTPT should be present when --ENRTPT is present in a dataset
+  Output Variables:
+    - --ENRTPT
+    - --ENTPT
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "CMSEQ": [1, 2],
+        "CMENRTPT": ["", "ONGOING"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 2);
+    assert_eq!(result.errors[0].variables, vec!["CMENRTPT", "CMENTPT"]);
+    assert_eq!(result.errors[1].variables, vec!["CMENRTPT", "CMENTPT"]);
+}
+
+#[test]
+fn run_validation_core_000165_reports_missing_timepoint_reference_column_once() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000165.yml"),
+        r#"
+Core:
+  Id: CORE-000165
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - VS
+Check:
+  all:
+    - name: --RFTDTC
+      operator: exists
+    - name: --TPTREF
+      operator: not_exists
+Outcome:
+  Message: TPTREF is missing when RFTDTC is present.
+  Output Variables:
+    - --RFTDTC
+    - --TPTREF
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "vs.xpt",
+      "domain": "VS",
+      "records": {
+        "STUDYID": ["S", "S", "S"],
+        "DOMAIN": ["VS", "VS", "VS"],
+        "USUBJID": ["S1", "S1", "S1"],
+        "VSSEQ": [1, 2, 3],
+        "VSRFTDTC": ["2012-12-01T08:00", "2012-12-01T08:00", "2012-12-01T08:00"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 4);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].variables, vec!["VSRFTDTC"]);
+    assert_eq!(result.errors[1].row, Some(2));
+    assert_eq!(result.errors[1].variables, vec!["VSRFTDTC"]);
+    assert_eq!(result.errors[2].row, Some(3));
+    assert_eq!(result.errors[2].variables, vec!["VSRFTDTC"]);
+    assert_eq!(result.errors[3].row, Some(0));
+    assert_eq!(result.errors[3].variables, vec!["VSTPTREF"]);
+}
+
+#[test]
+fn run_validation_reports_first_row_only_for_elapsed_timepoint_presence_rule() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000167.yml"),
+        r#"
+Core:
+  Id: CORE-000167
+  Status: Published
+Sensitivity: Dataset
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - VS
+Check:
+  all:
+    - name: --ELTM
+      operator: exists
+    - name: --TPTREF
+      operator: not_exists
+Outcome:
+  Message: --TPTREF must be present when --ELTM is present in a dataset
+  Output Variables:
+    - --ELTM
+    - --TPTREF
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "vs.xpt",
+      "domain": "VS",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "VSSEQ": [1, 2],
+        "VSELTM": ["PT30M", "PT1H"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].variables, vec!["VSELTM", "VSTPTREF"]);
+}
+
+#[test]
+fn run_validation_reports_core_000206_idvarval_values_missing_from_rdomain_records() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000206_rule(&rules_dir);
+    write_core_000206_open_rules_metadata(&data_dir);
+    fs::write(
+        data_dir.join("co.csv"),
+        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\nS,CO,LB,S001,1,LBGRPID,20\n",
+    )
+    .expect("write co csv");
+    fs::write(
+        data_dir.join("relrec.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\nS,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,2,ONE,2\n",
+    )
+    .expect("write relrec csv");
+    fs::write(
+        data_dir.join("supplb.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\n",
+    )
+    .expect("write supplb csv");
+    fs::write(
+        data_dir.join("lb.csv"),
+        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,321,21\nS,LB,S002,320,20\n",
+    )
+    .expect("write lb csv");
+    fs::write(
+        data_dir.join("ae.csv"),
+        "STUDYID,DOMAIN,USUBJID,AESEQ\nS,AE,S001,1\n",
+    )
+    .expect("write ae csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 4);
+    let issues = result
+        .errors
+        .iter()
+        .map(|issue| (issue.dataset.as_str(), issue.row, issue.usubjid.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        issues,
+        vec![
+            ("CO", Some(1), Some("S001")),
+            ("RELREC", Some(1), Some("S001")),
+            ("RELREC", Some(2), Some("S001")),
+            ("SUPPLB", Some(1), Some("S001")),
+        ]
+    );
+    assert!(result
+        .errors
+        .iter()
+        .all(|issue| issue.variables == vec!["RDOMAIN", "USUBJID", "IDVAR", "IDVARVAL"]));
+}
+
+#[test]
+fn run_validation_passes_core_000206_when_idvarval_values_exist_in_rdomain_records() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000206_rule(&rules_dir);
+    write_core_000206_open_rules_metadata(&data_dir);
+    fs::write(
+        data_dir.join("co.csv"),
+        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\nS,CO,LB,S001,1,LBGRPID,20\nS,CO,LB,S002,2,LBSEQ,321\n",
+    )
+    .expect("write co csv");
+    fs::write(
+        data_dir.join("relrec.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\nS,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,1,ONE,2\n",
+    )
+    .expect("write relrec csv");
+    fs::write(
+        data_dir.join("supplb.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\n",
+    )
+    .expect("write supplb csv");
+    fs::write(
+        data_dir.join("lb.csv"),
+        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,320,20\nS,LB,S002,321,30\n",
+    )
+    .expect("write lb csv");
+    fs::write(
+        data_dir.join("ae.csv"),
+        "STUDYID,DOMAIN,USUBJID,AESEQ\nS,AE,S001,1\n",
+    )
+    .expect("write ae csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_core_000206_supp_rows_follow_domain_level_oracle_boundary() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_core_000206_rule(&rules_dir);
+    write_core_000206_open_rules_metadata(&data_dir);
+    fs::write(
+        data_dir.join("co.csv"),
+        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\n",
+    )
+    .expect("write co csv");
+    fs::write(
+        data_dir.join("relrec.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\n",
+    )
+    .expect("write relrec csv");
+    fs::write(
+        data_dir.join("supplb.csv"),
+        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\nS,LB,S001,LBGRPID,20,LBCLSIG,Y\n",
+    )
+    .expect("write supplb csv");
+    fs::write(
+        data_dir.join("lb.csv"),
+        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,299,21\nS,LB,S002,319,20\n",
+    )
+    .expect("write lb csv");
+    fs::write(data_dir.join("ae.csv"), "STUDYID,DOMAIN,USUBJID,AESEQ\n").expect("write ae csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].dataset, "SUPPLB");
+    assert_eq!(result.errors[0].row, Some(2));
+}
+
+fn write_core_000206_rule(rules_dir: &std::path::Path) {
+    fs::write(
+        rules_dir.join("CORE-000206.yml"),
+        r#"
+Core:
+  Id: CORE-000206
+  Status: Published
+Sensitivity: Record
+Rule Type: Record Data
+Scope:
+  Domains:
+    Include:
+      - CO
+      - SUPP--
+      - RELREC
+Match Datasets:
+  - Child: true
+    Keys:
+      - USUBJID
+      - IDVAR
+      - IDVARVAL
+    Name: SUPP--
+  - Child: true
+    Keys:
+      - USUBJID
+      - IDVAR
+      - IDVARVAL
+    Name: CO
+  - Child: true
+    Keys:
+      - USUBJID
+      - IDVAR
+      - IDVARVAL
+    Name: RELREC
+Check:
+  all:
+    - name: IDVAR
+      operator: non_empty
+    - name: IDVARVAL
+      operator: non_empty
+    - name: IDVARVAL
+      operator: not_equal_to
+      type_insensitive: true
+      value: IDVAR
+      value_is_reference: true
+Outcome:
+  Message: IDVARVAL does not equal a value of the variable referenced by IDVAR in domain = RDOMAIN.
+  Output Variables:
+    - RDOMAIN
+    - USUBJID
+    - IDVAR
+    - IDVARVAL
+"#,
+    )
+    .expect("write CORE-000206 rule");
+}
+
+fn write_core_000206_open_rules_metadata(data_dir: &std::path::Path) {
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nco,Comments\nrelrec,Related Records\nsupplb,Supplemental Qualifiers for LB\nlb,Laboratory Test Results\nae,Adverse Events\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nco,STUDYID,Study Identifier,Char,12\nco,DOMAIN,Domain Abbreviation,Char,2\nco,RDOMAIN,Related Domain,Char,2\nco,USUBJID,Unique Subject Identifier,Char,8\nco,COSEQ,Sequence Number,Num,8\nco,IDVAR,Identifying Variable,Char,8\nco,IDVARVAL,Identifying Variable Value,Char,8\nrelrec,STUDYID,Study Identifier,Char,12\nrelrec,RDOMAIN,Related Domain,Char,2\nrelrec,USUBJID,Unique Subject Identifier,Char,8\nrelrec,IDVAR,Identifying Variable,Char,8\nrelrec,IDVARVAL,Identifying Variable Value,Char,8\nrelrec,RELTYPE,Relationship Type,Char,8\nrelrec,RELID,Relationship Identifier,Char,8\nsupplb,STUDYID,Study Identifier,Char,12\nsupplb,RDOMAIN,Related Domain,Char,2\nsupplb,USUBJID,Unique Subject Identifier,Char,8\nsupplb,IDVAR,Identifying Variable,Char,8\nsupplb,IDVARVAL,Identifying Variable Value,Char,8\nsupplb,QNAM,Qualifier Variable Name,Char,8\nsupplb,QVAL,Data Value,Char,8\nlb,STUDYID,Study Identifier,Char,12\nlb,DOMAIN,Domain Abbreviation,Char,2\nlb,USUBJID,Unique Subject Identifier,Char,8\nlb,LBSEQ,Sequence Number,Num,8\nlb,LBGRPID,Group ID,Char,8\nae,STUDYID,Study Identifier,Char,12\nae,DOMAIN,Domain Abbreviation,Char,2\nae,USUBJID,Unique Subject Identifier,Char,8\nae,AESEQ,Sequence Number,Num,8\n",
+    )
+    .expect("write variables csv");
 }
 
 #[test]
@@ -9001,6 +13481,105 @@ fn run_validation_executes_core_000238_external_max_date_operations() {
 }
 
 #[test]
+fn run_validation_reports_core_000454_rfxendtc_when_outcome_lists_rfxstdtc() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000454.json"),
+        r#"{
+  "Core": { "Id": "CORE-000454", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    {
+      "domain": "EX",
+      "id": "$ex_usubjid",
+      "name": "USUBJID",
+      "operator": "distinct"
+    },
+    {
+      "domain": "EX",
+      "group": ["USUBJID"],
+      "id": "$max_ex_exstdtc",
+      "name": "EXSTDTC",
+      "operator": "max_date"
+    },
+    {
+      "domain": "EX",
+      "group": ["USUBJID"],
+      "id": "$max_ex_exendtc",
+      "name": "EXENDTC",
+      "operator": "max_date"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "USUBJID", "operator": "is_contained_by", "value": "$ex_usubjid" },
+      { "name": "RFXENDTC", "operator": "not_equal_to", "value": "$max_ex_exendtc" },
+      { "name": "RFXENDTC", "operator": "not_equal_to", "value": "$max_ex_exstdtc" }
+    ]
+  },
+  "Outcome": {
+    "Message": "RFXSTDTC does not equal the latest value of EX.EXENDTC or the latest value of EX.EXSTDTC if EX.EXENDTC is not present or not populated.",
+    "Output Variables": ["RFXSTDTC", "$max_ex_exendtc", "$max_ex_exstdtc"]
+  }
+}"#,
+    )
+    .expect("write CORE-000454 rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "STUDYID": ["S1"],
+        "USUBJID": ["SUBJ1"],
+        "RFXSTDTC": ["2020-01-01"],
+        "RFXENDTC": ["2020-01-04"]
+      }
+    },
+    {
+      "filename": "ex.xpt",
+      "domain": "EX",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "EXSTDTC": ["2020-01-03", "2020-01-05"],
+        "EXENDTC": ["2020-01-03", "2020-01-05"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write CORE-000454 data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+    assert_eq!(
+        outcome.results[0].errors[0].variables,
+        vec!["RFXENDTC", "$max_ex_exendtc", "$max_ex_exstdtc"]
+    );
+}
+
+#[test]
 fn run_validation_executes_grouped_min_operation() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -9539,6 +14118,83 @@ fn run_validation_executes_core_000361_one_way_relationship_semantics() {
     assert_eq!(outcome.results[0].rule_id, "CORE-000361");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
     assert_eq!(outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_executes_core_000690_label_uniqueness_direction() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000690.json"),
+        r#"{
+  "Core": { "Id": "CORE-000690", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["ALL"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Variable Metadata Check",
+  "Check": { "name": "variable_name", "operator": "is_not_unique_relationship", "value": "variable_label" },
+  "Outcome": {
+    "Message": "Variable label is not unique for each variable in the dataset.",
+    "Output Variables": ["variable_label", "variable_name"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "gt.xpt",
+      "domain": "GT",
+      "variables": [
+        { "name": "GTREFID", "label": "Reference ID", "type": "Char", "length": 8 },
+        { "name": "GTREFID", "label": "Lab Test or Examination Short Name", "type": "Char", "length": 50 }
+      ],
+      "records": { "GTREFID": ["A"] }
+    },
+    {
+      "filename": "relref.xpt",
+      "domain": "RELREF",
+      "variables": [
+        { "name": "LEVEL", "label": "Reference ID Generation Level", "type": "Num", "length": 8 },
+        { "name": "LVLDESC", "label": "Reference ID Generation Level", "type": "Char", "length": 50 }
+      ],
+      "records": { "LEVEL": [1], "LVLDESC": ["Level 1"] }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 1, "{failed:#?}");
+    assert_eq!(failed[0].dataset, "RELREF");
+    assert_eq!(failed[0].error_count, 2);
+    assert_eq!(
+        failed[0]
+            .errors
+            .iter()
+            .filter_map(|error| error.row)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
 }
 
 #[test]
@@ -10265,6 +14921,94 @@ fn run_validation_joins_single_match_dataset_with_prefixed_condition_column() {
     assert_eq!(
         result.errors[0].variables,
         vec!["VISITDY".to_owned(), "VISITNUM".to_owned()]
+    );
+}
+
+#[test]
+fn run_validation_keeps_unprefixed_match_columns_for_prefixed_conflicts() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000784.json"),
+        r#"{
+  "Core": { "Id": "CORE-000784", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SV"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SE", "Keys": ["USUBJID"] }
+  ],
+  "Check": { "all": [
+    { "name": "TAETORD", "operator": "exists" },
+    { "name": "SVSTDTC", "operator": "date_greater_than_or_equal_to", "value": "SESTDTC" },
+    { "name": "SVSTDTC", "operator": "date_less_than_or_equal_to", "value": "SEENDTC" },
+    { "name": "TAETORD", "operator": "not_equal_to", "value": "SE.TAETORD" }
+  ] },
+  "Outcome": {
+    "Message": "SV TAETORD does not match the active SE element",
+    "Output Variables": ["SESTDTC", "SEENDTC", "SVSTDTC", "TAETORD", "SE.TAETORD"]
+  }
+}"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "sv.xpt",
+      "domain": "SV",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "DOMAIN": ["SV", "SV"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "VISITNUM": [1, 2],
+        "SVSTDTC": ["2020-01-05", "2020-01-06"],
+        "TAETORD": [1, 9]
+      }
+    },
+    {
+      "filename": "se.xpt",
+      "domain": "SE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "SESTDTC": ["2020-01-01", "2020-02-01"],
+        "SEENDTC": ["2020-01-31", "2020-02-28"],
+        "TAETORD": [1, 2]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1, "{result:?}");
+    assert_eq!(result.errors[0].row, Some(2));
+    assert_eq!(
+        result.errors[0].variables,
+        vec![
+            "SESTDTC".to_owned(),
+            "SEENDTC".to_owned(),
+            "SVSTDTC".to_owned(),
+            "TAETORD".to_owned(),
+            "SE.TAETORD".to_owned(),
+        ]
     );
 }
 
@@ -11058,6 +15802,27 @@ fn run_validation_executes_usdm_planned_enrollment_cohort_consistency_jsonata_ru
                 { "id": "StudyCohort_2", "name": "COHORT2" }
               ]
             }
+          },
+          {
+            "id": "StudyDesign_2",
+            "name": "Explicit null cohort quantity",
+            "population": {
+              "id": "Population_2",
+              "name": "POP2",
+              "instanceType": "StudyDesignPopulation",
+              "cohorts": [
+                {
+                  "id": "StudyCohort_3",
+                  "name": "COHORT3",
+                  "plannedEnrollmentNumber": { "id": "Quantity_2", "value": 10 }
+                },
+                {
+                  "id": "StudyCohort_4",
+                  "name": "COHORT4",
+                  "plannedEnrollmentNumber": null
+                }
+              ]
+            }
           }
         ]
       }
@@ -11082,6 +15847,104 @@ fn run_validation_executes_usdm_planned_enrollment_cohort_consistency_jsonata_ru
         outcome.results[0].errors[0].dataset,
         "StudyDesignPopulation"
     );
+}
+
+#[test]
+fn run_validation_executes_usdm_planned_completion_null_cohort_consistency_jsonata_rule() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000962.json"),
+        r#"{
+  "Core": { "Id": "CORE-000962", "Status": "Published" },
+  "Rule Type": "JSONata",
+  "Sensitivity": "Record",
+  "Scope": { "Entities": { "Include": ["StudyDesignPopulation"] } },
+  "Check": "($.**.studyDesigns)@$sd.$sd.population@$p.$p[( $InCohort:=$boolean(cohorts.plannedCompletionNumber); $InPop:=($type(plannedCompletionNumber) != \"null\" and $exists(plannedCompletionNumber)); {\"check\": (($InPop=true and $InCohort=true) or ($InPop=false and $InCohort=true))} )][check=true]",
+  "Outcome": {
+    "Message": "A planned completion number has been specified for both the study population and one or more cohorts, or it has been specified for only a subset of the cohorts.",
+    "Output Variables": [
+      "StudyDesign.id",
+      "StudyDesign.name",
+      "name",
+      "plannedCompletionNumber.id",
+      "plannedCompletionNumber(value/range)",
+      "cohorts.name",
+      "cohorts.plannedCompletionNumber.id",
+      "cohorts.plannedCompletionNumber(value/range)"
+    ]
+  }
+}"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("usdm.json"),
+        r#"{
+  "study": {
+    "versions": [
+      {
+        "studyDesigns": [
+          {
+            "id": "StudyDesign_1",
+            "name": "Missing cohort quantity",
+            "population": {
+              "id": "Population_1",
+              "name": "POP1",
+              "instanceType": "StudyDesignPopulation",
+              "cohorts": [
+                {
+                  "id": "StudyCohort_1",
+                  "name": "COHORT1",
+                  "plannedCompletionNumber": { "id": "Quantity_1", "value": 10 }
+                },
+                { "id": "StudyCohort_2", "name": "COHORT2" }
+              ]
+            }
+          },
+          {
+            "id": "StudyDesign_2",
+            "name": "Explicit null cohort quantity",
+            "population": {
+              "id": "Population_2",
+              "name": "POP2",
+              "instanceType": "StudyDesignPopulation",
+              "cohorts": [
+                {
+                  "id": "StudyCohort_3",
+                  "name": "COHORT3",
+                  "plannedCompletionNumber": { "id": "Quantity_2", "value": 10 }
+                },
+                {
+                  "id": "StudyCohort_4",
+                  "name": "COHORT4",
+                  "plannedCompletionNumber": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .expect("write json");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 2);
 }
 
 #[test]
@@ -11158,7 +16021,7 @@ fn run_validation_executes_usdm_main_timeline_count_jsonata_rule() {
   "Core": { "Id": "CORE-000407", "Status": "Published" },
   "Rule Type": "JSONata",
   "Sensitivity": "Record",
-  "Scope": { "Entities": { "Include": ["StudyDesign"] } },
+  "Scope": { "Entities": { "Include": ["StudyDesign", "InterventionalStudyDesign", "ObservationalStudyDesign"] } },
   "Check": "$.study.versions.studyDesigns.{\"check\": true}[`# Main timelines` != 1][]",
   "Outcome": {
     "Message": "The study design does not have exactly one main timeline.",
@@ -11209,6 +16072,7 @@ fn run_validation_executes_usdm_timeline_order_consistency_rules() {
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("rules dir");
     fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(data_dir.join(".env"), "PRODUCT=USDM\nVERSION=4-0\n").expect("write env");
 
     for (rule_id, previous_next, timeline_refs) in [
         (
@@ -11229,7 +16093,7 @@ fn run_validation_executes_usdm_timeline_order_consistency_rules() {
   "Core": {{ "Id": "{rule_id}", "Status": "Published" }},
   "Rule Type": "JSONata",
   "Sensitivity": "Record",
-  "Scope": {{ "Entities": {{ "Include": ["StudyDesign"] }} }},
+  "Scope": {{ "Entities": {{ "Include": ["StudyDesign", "InterventionalStudyDesign", "ObservationalStudyDesign"] }} }},
   "Check": "$.study.versions.studyDesigns.{{\"check\": true}}",
   "Outcome": {{
     "Message": "Timeline order is inconsistent.",
@@ -11642,6 +16506,7 @@ fn run_validation_executes_usdm_primary_endpoint_count_jsonata_rule() {
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("rules dir");
     fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(data_dir.join(".env"), "PRODUCT=USDM\nVERSION=4-0\n").expect("write env");
 
     fs::write(
             rules_dir.join("CORE-001036.json"),
@@ -11649,7 +16514,7 @@ fn run_validation_executes_usdm_primary_endpoint_count_jsonata_rule() {
   "Core": { "Id": "CORE-001036", "Status": "Published" },
   "Rule Type": "JSONata",
   "Sensitivity": "Record",
-  "Scope": { "Entities": { "Include": ["StudyDesign"] } },
+  "Scope": { "Entities": { "Include": ["StudyDesign", "InterventionalStudyDesign", "ObservationalStudyDesign"] } },
   "Check": "$.study.versions.studyDesigns.{\"check\": true}[`# Primary endpoints` = 0][]",
   "Outcome": {
     "Message": "There is not at least one endpoint with a level of primary within the study design.",
@@ -12614,7 +17479,7 @@ fn run_validation_executes_usdm_tag_parameter_dictionary_jsonata_rule() {
   "Core": { "Id": "CORE-001074", "Status": "Published" },
   "Rule Type": "JSONata",
   "Sensitivity": "Record",
-  "Scope": { "Entities": { "Include": ["Condition", "Endpoint"] } },
+  "Scope": { "Entities": { "Include": ["Condition", "Endpoint", "EligibilityCriterion"] } },
   "Check": "$.study.versions.**[$contains(text,/usdm:tag/)].{\"check\": true}",
   "Outcome": {
     "Message": "The parameter name referenced in the text is not specified in the data dictionary parameter map.",
@@ -12629,7 +17494,7 @@ fn run_validation_executes_usdm_tag_parameter_dictionary_jsonata_rule() {
   "Core": { "Id": "CORE-001037", "Status": "Published" },
   "Rule Type": "JSONata",
   "Sensitivity": "Record",
-  "Scope": { "Entities": { "Include": ["Condition", "Endpoint"] } },
+  "Scope": { "Entities": { "Include": ["Condition", "Endpoint", "EligibilityCriterion"] } },
   "Check": "$.study.versions.**[$contains(text,/usdm:tag/)].{\"check\": true}",
   "Outcome": {
     "Message": "The parameter name referenced in the text is not specified in the data dictionary parameter map.",
@@ -12682,6 +17547,20 @@ fn run_validation_executes_usdm_tag_parameter_dictionary_jsonata_rule() {
             "dictionaryId": "SyntaxTemplateDictionary_1",
             "text": "Use <usdm:tag name=\"valid_tag\"/>"
           }
+        ],
+        "studyDesigns": [
+          {
+            "population": {
+              "criteria": [
+                {
+                  "id": "EligibilityCriterion_1",
+                  "name": "Criterion with missing dictionary",
+                  "instanceType": "EligibilityCriterion",
+                  "text": "Use <usdm:tag name=\"criterion_missing_dict\"/>"
+                }
+              ]
+            }
+          }
         ]
       }
     ]
@@ -12706,7 +17585,7 @@ fn run_validation_executes_usdm_tag_parameter_dictionary_jsonata_rule() {
             .find(|result| result.rule_id == id)
             .expect("result by id");
         assert_eq!(result.execution_status, ExecutionStatus::Failed);
-        assert_eq!(result.error_count, 3);
+        assert_eq!(result.error_count, 4);
         assert_eq!(result.errors[0].dataset, "SyntaxTemplateText");
         assert_eq!(
             result.errors[0].variables,
@@ -14627,6 +19506,70 @@ fn run_validation_executes_usdm_simple_recursive_entity_rules() {
 }
 
 #[test]
+fn run_validation_executes_usdm_product_role_invalid_target_jsonata_rule() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-001022.json"),
+        r#"{
+  "Core": { "Id": "CORE-001022", "Status": "Published" },
+  "Rule Type": "JSONata",
+  "Sensitivity": "Record",
+  "Scope": { "Entities": { "Include": ["ProductOrganizationRole"] } },
+  "Check": "$.study.versions.productOrganizationRoles.{\"check\": true}",
+  "Outcome": {
+    "Message": "At least one of the appliesTo specifications does not apply to medical devices or administrable products.",
+    "Output Variables": ["name", "appliesToIds", "appliesTo name"]
+  }
+}"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("usdm.json"),
+        r#"{
+  "study": {
+    "versions": [
+      {
+        "administrableProducts": [
+          { "id": "AdmProd_1", "name": "Product" }
+        ],
+        "productOrganizationRoles": [
+          {
+            "id": "Role_1",
+            "name": "Mixed valid and invalid target",
+            "instanceType": "ProductOrganizationRole",
+            "appliesToIds": ["AdmProd_1", "Missing_1"]
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .expect("write json");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(
+        outcome.results[0].errors[0].variables,
+        vec!["name", "appliesToIds", "appliesTo name"]
+    );
+}
+
+#[test]
 fn run_validation_executes_usdm_administration_rules() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -15269,7 +20212,7 @@ fn run_validation_executes_usdm_reference_and_duplicate_jsonata_rules() {
                 "id": "StudyArm_1",
                 "name": "Arm",
                 "instanceType": "StudyArm",
-                "populationIds": ["Population_bad"]
+                "populationIds": ["Population_bad", "Population_worse"]
               }
             ]
           },
@@ -15293,7 +20236,9 @@ fn run_validation_executes_usdm_reference_and_duplicate_jsonata_rules() {
             ],
             "intentTypes": [
               { "id": "IntentType_1", "code": "C123", "decode": "Intent" },
-              { "id": "IntentType_2", "code": "C123", "decode": "Intent duplicate" }
+              { "id": "IntentType_2", "code": "C123", "decode": "Intent duplicate" },
+              { "id": "IntentType_3", "code": "C456", "decode": "Other intent" },
+              { "id": "IntentType_4", "code": "C456", "decode": "Other intent duplicate" }
             ]
           }
         ],
@@ -15372,11 +20317,11 @@ fn run_validation_executes_usdm_reference_and_duplicate_jsonata_rules() {
         ("CORE-001029", "StudyCohort", 1),
         ("CORE-001030", "StudyElement", 1),
         ("CORE-001040", "StudyElement", 2),
-        ("CORE-001045", "StudyArm", 1),
+        ("CORE-001045", "StudyArm", 2),
         ("CORE-001042", "GeographicScope", 1),
         ("CORE-001051", "NarrativeContent", 1),
         ("CORE-001050", "NarrativeContent", 1),
-        ("CORE-001023", "InterventionalStudyDesign", 1),
+        ("CORE-001023", "InterventionalStudyDesign", 2),
         ("CORE-001046", "StudyDesign", 1),
         ("CORE-001013", "USDMObject", 2),
         ("CORE-001015", "USDMObject", 2),
@@ -16845,6 +21790,707 @@ Outcome:
     assert_eq!(outcome.results[0].error_count, 2);
     assert_eq!(outcome.results[0].errors[0].row, Some(1));
     assert_eq!(outcome.results[0].errors[1].row, Some(2));
+}
+
+#[test]
+fn run_validation_reference_distinct_rdomain_variables_allows_missing_source_column() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-RDOMAIN-VARS.yml"),
+        r#"Core:
+  Id: CORE-RDOMAIN-VARS
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - RELREC
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: RELREC
+    id: $rdomain_variables
+    name: IDVAR
+    operator: distinct
+    value_is_reference: true
+Check:
+  all:
+    - name: RDOMAIN
+      operator: exists
+    - name: IDVAR
+      operator: non_empty
+    - name: IDVAR
+      operator: is_not_contained_by
+      value: $rdomain_variables
+Outcome:
+  Message: IDVAR must be present in RDOMAIN
+  Output Variables:
+    - IDVAR
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nrelrec,Related Records\nlb,Laboratory Test Results\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nrelrec,RDOMAIN,Related Domain,Char,8\nrelrec,USUBJID,Subject,Char,8\nlb,LBSEQ,Sequence,Num,8\n",
+    )
+    .expect("write variables csv");
+    fs::write(data_dir.join("relrec.csv"), "RDOMAIN,USUBJID\nLB,S001\n").expect("write relrec csv");
+    fs::write(data_dir.join("lb.csv"), "LBSEQ\n1\n").expect("write lb csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].error_count, 0);
+}
+
+#[test]
+fn run_validation_core_000039_assumes_missing_svpresp_is_planned() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000039.yml"),
+        r#"Core:
+  Id: CORE-000039
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - SV
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TV
+    id: $tv_visitnum
+    name: VISITNUM
+    operator: distinct
+Check:
+  all:
+    - name: SVPRESP
+      operator: equal_to
+      value: Y
+    - name: VISITNUM
+      operator: is_not_contained_by
+      value: $tv_visitnum
+Outcome:
+  Message: VISITNUM for planned visit is not in TV.
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "sv.xpt",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "VISITNUM": [5.01, 12.0],
+        "VISITDY": [null, -28]
+      }
+    },
+    {
+      "filename": "tv.xpt",
+      "domain": "TV",
+      "records": {
+        "VISITNUM": [5.0]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].variables, vec!["SVPRESP", "VISITNUM"]);
+}
+
+#[test]
+fn run_validation_core_000660_passes_absent_to_reference_distinct_from_scoped_values() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000660.yml"),
+        r#"Core:
+  Id: CORE-000660
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - ALL
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TO
+    id: $to_sptobid
+    name: SPTOBID
+    operator: distinct
+Check:
+  all:
+    - name: SPTOBID
+      operator: is_not_contained_by
+      value: $to_sptobid
+Outcome:
+  Message: SPTOBID must be represented in TO
+  Output Variables:
+    - SPTOBID
+    - $to_sptobid
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\npd,Product Design\nem,Device Events\ntx,Trial Sets\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\npd,SPTOBID,Product,Char,16\nem,SPTOBID,Product,Char,16\ntx,TXPARMCD,Parameter,Char,16\ntx,TXVAL,Value,Char,16\n",
+    )
+    .expect("write variables csv");
+    fs::write(data_dir.join("pd.csv"), "SPTOBID\nCIG01a\nVAPE-Z27\n").expect("write pd csv");
+    fs::write(data_dir.join("em.csv"), "SPTOBID\nVAPE-Z01\n").expect("write em csv");
+    fs::write(data_dir.join("tx.csv"), "TXPARMCD,TXVAL\nMETACTFL,Y\n").expect("write tx csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 3);
+    assert!(outcome
+        .results
+        .iter()
+        .all(|result| result.execution_status == ExecutionStatus::Passed));
+}
+
+#[test]
+fn run_validation_core_000660_applies_to_non_to_datasets_when_to_is_loaded() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000660.yml"),
+        r#"Core:
+  Id: CORE-000660
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - ALL
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TO
+    id: $to_sptobid
+    name: SPTOBID
+    operator: distinct
+Check:
+  all:
+    - name: SPTOBID
+      operator: is_not_contained_by
+      value: $to_sptobid
+Outcome:
+  Message: SPTOBID must be represented in TO
+  Output Variables:
+    - SPTOBID
+    - $to_sptobid
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\npd,Product Design\nem,Device Events\nto,Tobacco Products\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\npd,SPTOBID,Product,Char,16\npd,PDSEQ,Sequence,Num,8\nem,SPTOBID,Product,Char,16\nem,EMSEQ,Sequence,Num,8\nto,SPTOBID,Product,Char,16\nto,TOSEQ,Sequence,Num,8\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("pd.csv"),
+        "SPTOBID,PDSEQ\nCIG01b,1\nCIG01a,2\n",
+    )
+    .expect("write pd csv");
+    fs::write(data_dir.join("em.csv"), "SPTOBID,EMSEQ\nAPE-Z01,1\n").expect("write em csv");
+    fs::write(
+        data_dir.join("to.csv"),
+        "SPTOBID,TOSEQ\nCIG01a,1\nVAPE-Z01,2\n",
+    )
+    .expect("write to csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 2);
+    assert_eq!(failed[0].dataset, "PD");
+    assert_eq!(failed[0].errors[0].row, Some(1));
+    assert_eq!(
+        failed[0].errors[0].variables,
+        vec!["SPTOBID", "$to_sptobid"]
+    );
+    assert_eq!(failed[1].dataset, "EM");
+    assert_eq!(failed[1].errors[0].row, Some(1));
+    assert_eq!(
+        failed[1].errors[0].variables,
+        vec!["SPTOBID", "$to_sptobid"]
+    );
+}
+
+#[test]
+fn run_validation_core_000840_uses_grouped_external_distinct_values() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000840.yml"),
+        r#"Core:
+  Id: CORE-000840
+  Status: Published
+Scope:
+  Entities:
+    Include:
+      - Activity
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: ScheduleTimeline
+    group:
+      - parent_id
+      - rel_type
+    id: $timeline_ids_for_study_design
+    name: id
+    operator: distinct
+Check:
+  all:
+    - name: instanceType
+      operator: equal_to
+      value: Activity
+      value_is_literal: true
+    - name: rel_type
+      operator: equal_to
+      value: definition
+      value_is_literal: true
+    - name: timelineId
+      operator: exists
+    - name: timelineId
+      operator: non_empty
+    - name: timelineId
+      operator: is_not_contained_by
+      value: $timeline_ids_for_study_design
+Outcome:
+  Message: Activity references a timeline outside its study design
+  Output Variables:
+    - parent_entity
+    - parent_id
+    - parent_rel
+    - id
+    - name
+    - timelineId
+    - $timeline_ids_for_study_design
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nActivity,Activity\nScheduleTimeline,Schedule Timeline\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nActivity,parent_entity,Parent,Char,40\nActivity,parent_id,Parent ID,Char,40\nActivity,parent_rel,Parent Rel,Char,40\nActivity,rel_type,Rel Type,Char,40\nActivity,id,ID,Char,40\nActivity,name,Name,Char,40\nActivity,instanceType,Type,Char,40\nActivity,timelineId,Timeline,Char,40\nScheduleTimeline,parent_id,Parent ID,Char,40\nScheduleTimeline,rel_type,Rel Type,Char,40\nScheduleTimeline,id,ID,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("Activity.csv"),
+        "parent_entity,parent_id,parent_rel,rel_type,id,name,instanceType,timelineId\nStudyDesign,StudyDesign_1,activities,definition,Activity_1,Informed consent,Activity,ScheduleTimeline_2\n",
+    )
+    .expect("write activity csv");
+    fs::write(
+        data_dir.join("ScheduleTimeline.csv"),
+        "parent_id,rel_type,id\nStudyDesign_1,definition,ScheduleTimeline_1\nStudyDesign_2,definition,ScheduleTimeline_2\n",
+    )
+    .expect("write timeline csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec![
+            "parent_entity",
+            "parent_id",
+            "parent_rel",
+            "id",
+            "name",
+            "timelineId",
+            "$timeline_ids_for_study_design",
+        ]
+    );
+}
+
+#[test]
+fn run_validation_core_000877_uses_group_aliases_for_external_distinct_values() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000877.yml"),
+        r#"Core:
+  Id: CORE-000877
+  Status: Published
+Scope:
+  Entities:
+    Include:
+      - ScheduledActivityInstance
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: ScheduleTimeline
+    group:
+      - id
+      - rel_type
+    group_aliases:
+      - parent_id
+    id: $study_design_id_for_scheduled_instance
+    name: parent_id
+    operator: distinct
+  - domain: ScheduleTimeline
+    group:
+      - id
+      - rel_type
+    group_aliases:
+      - timelineId
+    id: $study_design_id_for_subtimeline
+    name: parent_id
+    operator: distinct
+Check:
+  all:
+    - name: instanceType
+      operator: equal_to
+      value: ScheduledActivityInstance
+      value_is_literal: true
+    - name: rel_type
+      operator: equal_to
+      value: definition
+      value_is_literal: true
+    - name: timelineId
+      operator: non_empty
+    - name: $study_design_id_for_subtimeline
+      operator: not_equal_to
+      value: $study_design_id_for_scheduled_instance
+Outcome:
+  Message: Scheduled activity instance references a sub-timeline outside its study design
+  Output Variables:
+    - parent_entity
+    - parent_id
+    - parent_rel
+    - id
+    - name
+    - timelineId
+    - $study_design_id_for_scheduled_instance
+    - $study_design_id_for_subtimeline
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nScheduledActivityInstance,Scheduled Activity Instance\nScheduleTimeline,Schedule Timeline\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nScheduledActivityInstance,parent_entity,Parent,Char,40\nScheduledActivityInstance,parent_id,Parent ID,Char,40\nScheduledActivityInstance,parent_rel,Parent Rel,Char,40\nScheduledActivityInstance,rel_type,Rel Type,Char,40\nScheduledActivityInstance,id,ID,Char,40\nScheduledActivityInstance,name,Name,Char,40\nScheduledActivityInstance,instanceType,Type,Char,40\nScheduledActivityInstance,timelineId,Timeline,Char,40\nScheduleTimeline,parent_id,Parent ID,Char,40\nScheduleTimeline,rel_type,Rel Type,Char,40\nScheduleTimeline,id,ID,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("ScheduledActivityInstance.csv"),
+        "parent_entity,parent_id,parent_rel,rel_type,id,name,instanceType,timelineId\nScheduleTimeline,ScheduleTimeline_4,instances,definition,ScheduledActivityInstance_11,DOSE-1,ScheduledActivityInstance,ScheduleTimeline_14\n",
+    )
+    .expect("write scheduled activity instance csv");
+    fs::write(
+        data_dir.join("ScheduleTimeline.csv"),
+        "parent_id,rel_type,id\nStudyDesign_1,definition,ScheduleTimeline_4\nStudyDesign_2,definition,ScheduleTimeline_14\n",
+    )
+    .expect("write schedule timeline csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec![
+            "parent_entity",
+            "parent_id",
+            "parent_rel",
+            "id",
+            "name",
+            "timelineId",
+            "$study_design_id_for_scheduled_instance",
+            "$study_design_id_for_subtimeline",
+        ]
+    );
+}
+
+#[test]
+fn run_validation_core_000868_filters_grouped_external_distinct_source_rows() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000868.yml"),
+        r#"Core:
+  Id: CORE-000868
+  Status: Published
+Scope:
+  Entities:
+    Include:
+      - ScheduleTimeline
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: Timing
+    filter:
+      rel_type: definition
+      type.code: C201358
+    group:
+      - parent_id
+    group_aliases:
+      - id
+    id: $fixed_ref_sched_ins
+    name: relativeFromScheduledInstanceId
+    operator: distinct
+  - domain: ScheduledActivityInstance
+    filter:
+      rel_type: definition
+    group:
+      - parent_id
+    group_aliases:
+      - id
+    id: $instances
+    name: id
+    operator: distinct
+Check:
+  all:
+    - name: instanceType
+      operator: equal_to
+      value: ScheduleTimeline
+      value_is_literal: true
+    - name: rel_type
+      operator: equal_to
+      value: definition
+      value_is_literal: true
+    - any:
+        - name: $fixed_ref_sched_ins
+          operator: empty
+        - name: $instances
+          operator: empty
+        - name: $fixed_ref_sched_ins
+          operator: shares_no_elements_with
+          value: $instances
+Outcome:
+  Message: Schedule timeline does not contain a fixed reference anchor
+  Output Variables:
+    - parent_entity
+    - parent_id
+    - parent_rel
+    - id
+    - name
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nScheduleTimeline,Schedule Timeline\nScheduledActivityInstance,Scheduled Activity Instance\nTiming,Timing\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nScheduleTimeline,parent_entity,Parent,Char,40\nScheduleTimeline,parent_id,Parent ID,Char,40\nScheduleTimeline,parent_rel,Parent Rel,Char,40\nScheduleTimeline,rel_type,Rel Type,Char,40\nScheduleTimeline,id,ID,Char,40\nScheduleTimeline,name,Name,Char,40\nScheduleTimeline,instanceType,Type,Char,40\nScheduledActivityInstance,parent_id,Parent ID,Char,40\nScheduledActivityInstance,rel_type,Rel Type,Char,40\nScheduledActivityInstance,id,ID,Char,40\nTiming,parent_id,Parent ID,Char,40\nTiming,rel_type,Rel Type,Char,40\nTiming,type.code,Type Code,Char,40\nTiming,relativeFromScheduledInstanceId,From,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("ScheduleTimeline.csv"),
+        "parent_entity,parent_id,parent_rel,rel_type,id,name,instanceType\nStudyDesign,StudyDesign_1,scheduleTimelines,definition,ScheduleTimeline_1,Adverse Event Timeline,ScheduleTimeline\n",
+    )
+    .expect("write schedule timeline csv");
+    fs::write(
+        data_dir.join("ScheduledActivityInstance.csv"),
+        "parent_id,rel_type,id\nScheduleTimeline_1,definition,ScheduledActivityInstance_1\n",
+    )
+    .expect("write scheduled activity instance csv");
+    fs::write(
+        data_dir.join("Timing.csv"),
+        "parent_id,rel_type,type.code,relativeFromScheduledInstanceId\nScheduleTimeline_1,definition,C201356,ScheduledActivityInstance_1\n",
+    )
+    .expect("write timing csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["parent_entity", "parent_id", "parent_rel", "id", "name"]
+    );
+}
+
+#[test]
+fn run_validation_core_000676_passes_absent_to_reference_distinct_when_sptobid_parameter_absent() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000676.yml"),
+        r#"Core:
+  Id: CORE-000676
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - TX
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TO
+    id: $to_sptobid
+    name: SPTOBID
+    operator: distinct
+Check:
+  all:
+    - name: TXPARMCD
+      operator: equal_to
+      value: SPTOBID
+      value_is_literal: true
+    - name: TXVAL
+      operator: is_not_contained_by
+      value: $to_sptobid
+Outcome:
+  Message: TXVAL SPTOBID must be represented in TO
+  Output Variables:
+    - TXVAL
+    - $to_sptobid
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\ntx,Trial Sets\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\ntx,TXPARMCD,Parameter,Char,16\ntx,TXVAL,Value,Char,16\n",
+    )
+    .expect("write variables csv");
+    fs::write(data_dir.join("tx.csv"), "TXPARMCD,TXVAL\nMETACTFL,Y\n").expect("write tx csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].error_count, 0);
 }
 
 #[test]

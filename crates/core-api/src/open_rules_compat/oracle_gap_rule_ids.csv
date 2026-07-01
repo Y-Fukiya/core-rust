@@ -392,6 +392,8 @@ CORE-000455,supported_reference_distinct,reference distinct support is rule-id s
 CORE-000559,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000604,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000620,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000676,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000678,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000772,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000888,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
@@ -416,7 +418,9 @@ CORE-000172,scope_wide_reference_distinct,reference distinct must preserve scope
 CORE-000201,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000271,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000361,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000678,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000840,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000200,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000217,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000466,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
@@ -424,3 +428,11 @@ CORE-000547,missing_condition_columns_as_null,missing condition columns are trea
 CORE-000580,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000680,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000806,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000137,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000256,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000266,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000407,usdm_jsonata_entity_scope,USDM JSONata entity scope semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000768,record_count_operation,record_count operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000814,usdm_join_operation,USDM join and grouped operation semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000960,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001069,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness

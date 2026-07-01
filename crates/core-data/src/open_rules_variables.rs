@@ -5,7 +5,10 @@ use super::{
     OpenRulesVariable, Result,
 };
 
-fn open_rules_variable_descriptor(row: &BTreeMap<String, String>) -> Result<OpenRulesVariable> {
+fn open_rules_variable_descriptor(
+    row: &BTreeMap<String, String>,
+    raw_label: Option<String>,
+) -> Result<OpenRulesVariable> {
     let dataset =
         row_string(row, &["dataset", "Dataset", "domain", "Domain"]).ok_or_else(|| {
             DataError::InvalidDatasetPackage("_variables.csv missing dataset".to_owned())
@@ -32,7 +35,7 @@ fn open_rules_variable_descriptor(row: &BTreeMap<String, String>) -> Result<Open
         dataset: normalize_dataset_name(&dataset),
         variable: DatasetVariable {
             name: variable.trim().to_ascii_uppercase(),
-            label: row_string(row, &["label", "Label"]),
+            label: raw_label.or_else(|| row_string(row, &["label", "Label"])),
             variable_type,
             length,
             extra: BTreeMap::new(),
@@ -47,7 +50,10 @@ pub(super) fn open_rules_variable_descriptors(
 ) -> Result<Vec<OpenRulesVariable>> {
     let dictionary_result = rows
         .iter()
-        .map(open_rules_variable_descriptor)
+        .enumerate()
+        .map(|(index, row)| {
+            open_rules_variable_descriptor(row, open_rules_variable_raw_label(records, index))
+        })
         .collect::<Result<Vec<_>>>();
     match dictionary_result {
         Ok(variables) => Ok(variables),
@@ -56,6 +62,19 @@ pub(super) fn open_rules_variable_descriptors(
         }
         Err(source) => Err(source),
     }
+}
+
+fn open_rules_variable_raw_label(records: &CsvRecords, row_index: usize) -> Option<String> {
+    let label_index = records
+        .headers
+        .iter()
+        .position(|header| header.trim().eq_ignore_ascii_case("label"))?;
+    records
+        .records
+        .get(row_index)
+        .and_then(|row| row.get(label_index))
+        .filter(|value| !value.trim().is_empty())
+        .cloned()
 }
 
 fn is_horizontal_open_rules_variables_schema(records: &CsvRecords) -> bool {

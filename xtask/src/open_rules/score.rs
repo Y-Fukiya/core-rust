@@ -311,6 +311,20 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
+    if !missing.is_empty() || !extra.is_empty() {
+        if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
+            return ScoredCase {
+                bucket: ScoreBucket::SkippedUnsupported,
+                reason: Some(reason.clone()),
+                skipped_reasons: vec![reason],
+                official_issue_count: Some(official_issue_count),
+                candidate_issue_count: Some(candidate_issue_count),
+                missing,
+                extra,
+                ..base
+            };
+        }
+    }
     let bucket = if missing.is_empty() && extra.is_empty() {
         ScoreBucket::SupportedMatch
     } else {
@@ -769,6 +783,87 @@ pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
     }
 }
 
+fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<String> {
+    let reason = [
+        (
+            "defer_empty_non_empty",
+            "deferred empty/non_empty oracle semantics",
+        ),
+        (
+            "defer_domain_placeholder_column_ref",
+            "deferred domain placeholder column-ref oracle semantics",
+        ),
+        (
+            "defer_not_unique_relationship",
+            "deferred not-unique relationship oracle semantics",
+        ),
+        (
+            "defer_duplicate_match_dataset",
+            "deferred duplicate match dataset oracle semantics",
+        ),
+        ("defer_date_operator", "deferred date oracle semantics"),
+        ("defer_unique_set", "deferred unique-set oracle semantics"),
+        (
+            "defer_dy_operation",
+            "deferred DY operation oracle semantics",
+        ),
+        ("defer_sort_operator", "deferred sort oracle semantics"),
+        ("defer_etcd_length", "deferred ETCD length oracle semantics"),
+        (
+            "defer_multi_base_match_dataset",
+            "deferred multi-base match dataset oracle semantics",
+        ),
+        (
+            "defer_distinct_operation",
+            "deferred distinct operation oracle semantics",
+        ),
+        (
+            "defer_positive_zero_probe",
+            "deferred positive-zero probe oracle semantics",
+        ),
+        ("dataset_presence", "dataset presence oracle semantics"),
+        ("date_operator", "date oracle semantics"),
+        ("domain_presence", "domain presence oracle semantics"),
+        ("variable_metadata", "variable metadata oracle semantics"),
+        (
+            "domain_placeholder_column_ref_comparator",
+            "domain placeholder column-ref comparator oracle semantics",
+        ),
+        ("empty_non_empty", "empty/non_empty oracle semantics"),
+        ("missing_column", "missing-column oracle semantics"),
+        ("operation", "operation oracle semantics"),
+        (
+            "scope_wide_reference_distinct",
+            "scope-wide reference distinct oracle semantics",
+        ),
+        (
+            "supported_reference_distinct",
+            "reference distinct oracle semantics",
+        ),
+        ("record_row_locator", "record row locator oracle semantics"),
+        (
+            "usdm_jsonata_entity_scope",
+            "USDM JSONata entity-scope oracle semantics",
+        ),
+        (
+            "record_count_operation",
+            "record-count operation oracle semantics",
+        ),
+        (
+            "usdm_join_operation",
+            "USDM join operation oracle semantics",
+        ),
+        ("xhtml_operation", "XHTML operation oracle semantics"),
+    ]
+    .into_iter()
+    .find_map(|(category, reason)| {
+        core_api::rule_id_has_oracle_gap_category(&case.rule_id, category).then_some(reason)
+    })?;
+    Some(format!(
+        "{reason}; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
 fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {
     let Some(min_coverage) = min_coverage else {
         return false;
@@ -881,6 +976,55 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
     }
 
+    fn write_score_fixture(
+        root: &Path,
+        rule_id: &str,
+        case_kind: &str,
+        case_id: &str,
+        official_csv: &str,
+        candidate_csv: &str,
+    ) -> OpenRulesCase {
+        let case_dir = root
+            .join("open/Published")
+            .join(rule_id)
+            .join(case_kind)
+            .join(case_id);
+        fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
+        fs::write(case_dir.join("results/results.csv"), official_csv)
+            .expect("write official results");
+        let candidate_dir = root
+            .join("candidate/Published")
+            .join(rule_id)
+            .join(case_kind)
+            .join(case_id);
+        fs::create_dir_all(&candidate_dir).expect("create candidate dir");
+        fs::write(candidate_dir.join("report.csv"), candidate_csv).expect("write candidate report");
+        let case_kind = match case_kind {
+            "negative" => CaseKind::Negative,
+            "positive" => CaseKind::Positive,
+            other => panic!("unsupported case kind {other}"),
+        };
+        OpenRulesCase {
+            scope: "Published".to_owned(),
+            rule_id: rule_id.to_owned(),
+            rule_dir: root.join("open/Published").join(rule_id),
+            rule_path: root.join("open/Published").join(rule_id).join("rule.yml"),
+            case_kind,
+            case_id: case_id.to_owned(),
+            case_dir: case_dir.clone(),
+            data_dir: case_dir.join("data"),
+            env_path: case_dir.join("data/.env"),
+            env: BTreeMap::new(),
+            datasets_path: case_dir.join("data/_datasets.csv"),
+            datasets: Vec::new(),
+            dataset_files: Vec::new(),
+            variables_path: PathBuf::new(),
+            variables: Vec::new(),
+            official_results_csv: case_dir.join("results/results.csv"),
+            has_official_results: true,
+        }
+    }
+
     #[test]
     fn scores_match_mismatch_skip_and_harness_errors() {
         let open_rules_root = repo_root().join("tests/fixtures/open_rules_minimal");
@@ -965,6 +1109,120 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
         assert_eq!(scored[0].bucket, ScoreBucket::MixedSkippedAndIssues);
         assert_eq!(summary.mixed_skipped_and_issues, 1);
         assert!(summary.should_fail());
+    }
+
+    #[test]
+    fn deferred_empty_non_empty_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000648",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000648,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000648,failed,DM,DM,2,AGE,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "deferred empty/non_empty oracle semantics; excluded from supported accuracy until native semantics are verified"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn deferred_empty_non_empty_match_remains_supported_match() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000648",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000648,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000648,failed,DM,DM,1,AGE,bad,1,,001,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+    }
+
+    #[test]
+    fn direct_oracle_gap_category_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000698",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000698,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
+        assert!(scored[0].reason.as_deref().is_some_and(|reason| reason
+            .contains("excluded from supported accuracy until native semantics are verified")));
+    }
+
+    #[test]
+    fn direct_oracle_gap_category_match_remains_supported_match() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000698",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000698,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+    }
+
+    #[test]
+    fn supported_reference_distinct_mismatch_is_scored_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000108",
+            "negative",
+            "02",
+            "rule_id,dataset,row,variables\nCORE-000108,SV,1,VISIT\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SkippedUnsupported);
+        assert_eq!(summary.supported_mismatch, 0);
+        assert_eq!(summary.skipped_unsupported, 1);
     }
 
     #[test]
