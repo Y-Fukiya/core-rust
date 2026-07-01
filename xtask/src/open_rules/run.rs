@@ -55,6 +55,9 @@ pub struct RunScoreArgs {
 
     #[arg(long, value_name = "COUNT")]
     pub max_skipped_unsupported: Option<usize>,
+
+    #[arg(long)]
+    pub fail_on_deferred_oracle_gap: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -99,6 +102,7 @@ pub fn run_score(args: RunScoreArgs) -> Result<bool> {
         scope: args.scope,
         min_coverage: args.min_coverage,
         max_skipped_unsupported: args.max_skipped_unsupported,
+        fail_on_deferred_oracle_gap: args.fail_on_deferred_oracle_gap,
     })?;
 
     Ok(run_summary.failed > 0 || score_failed)
@@ -376,6 +380,7 @@ mod tests {
             strict_lock: false,
             min_coverage: None,
             max_skipped_unsupported: None,
+            fail_on_deferred_oracle_gap: false,
         })
         .expect("run score");
 

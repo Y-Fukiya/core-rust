@@ -31,6 +31,9 @@ pub struct ScoreArgs {
 
     #[arg(long, value_name = "COUNT")]
     pub max_skipped_unsupported: Option<usize>,
+
+    #[arg(long)]
+    pub fail_on_deferred_oracle_gap: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,6 +98,12 @@ pub struct ScoredCase {
     pub skipped_reasons: Vec<String>,
     pub official_issue_count: Option<usize>,
     pub candidate_issue_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue_fingerprint_hash: Option<String>,
     pub missing: Vec<IssueKey>,
     pub extra: Vec<IssueKey>,
 }
@@ -163,6 +172,8 @@ pub struct ScoreGate {
     pub max_skipped_unsupported: Option<usize>,
     pub coverage_threshold_failed: bool,
     pub skipped_unsupported_threshold_failed: bool,
+    #[serde(default)]
+    pub deferred_oracle_gap_failed: bool,
     pub should_fail: bool,
 }
 
@@ -181,6 +192,7 @@ pub fn run(args: ScoreArgs) -> anyhow::Result<bool> {
         scored,
         args.min_coverage,
         args.max_skipped_unsupported,
+        args.fail_on_deferred_oracle_gap,
     );
     write_scoreboard(&args.out, &scoreboard)?;
     Ok(scoreboard.gate.should_fail)
@@ -217,6 +229,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         skipped_reasons: Vec::new(),
         official_issue_count: None,
         candidate_issue_count: None,
+        missing_count: None,
+        extra_count: None,
+        issue_fingerprint_hash: None,
         missing: Vec::new(),
         extra: Vec::new(),
     };
@@ -315,6 +330,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
+    let missing_count = missing.len();
+    let extra_count = extra.len();
+    let issue_fingerprint_hash = issue_fingerprint_hash(&missing, &extra);
     if !missing.is_empty() || !extra.is_empty() {
         if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
             return ScoredCase {
@@ -323,6 +341,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
                 skipped_reasons: Vec::new(),
                 official_issue_count: Some(official_issue_count),
                 candidate_issue_count: Some(candidate_issue_count),
+                missing_count: Some(missing_count),
+                extra_count: Some(extra_count),
+                issue_fingerprint_hash: Some(issue_fingerprint_hash),
                 missing,
                 extra,
                 ..base
@@ -339,6 +360,9 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         bucket,
         official_issue_count: Some(official_issue_count),
         candidate_issue_count: Some(candidate_issue_count),
+        missing_count: Some(missing_count),
+        extra_count: Some(extra_count),
+        issue_fingerprint_hash: Some(issue_fingerprint_hash),
         missing,
         extra,
         ..base
@@ -754,6 +778,44 @@ fn coverage_for_counts(supported: usize, total_cases: usize) -> Option<f64> {
     (total_cases > 0).then(|| supported as f64 / total_cases as f64)
 }
 
+pub fn issue_fingerprint_hash(missing: &[IssueKey], extra: &[IssueKey]) -> String {
+    let mut entries = BTreeSet::new();
+    for issue in missing {
+        entries.insert(issue_fingerprint_entry("missing", issue));
+    }
+    for issue in extra {
+        entries.insert(issue_fingerprint_entry("extra", issue));
+    }
+
+    let mut hash = 0xcbf29ce484222325u64;
+    for entry in entries {
+        fnv1a_update(&mut hash, entry.as_bytes());
+        fnv1a_update(&mut hash, b"\n");
+    }
+    format!("{hash:016x}")
+}
+
+fn issue_fingerprint_entry(kind: &str, issue: &IssueKey) -> String {
+    format!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        kind,
+        issue.rule_id,
+        issue.dataset,
+        issue.domain,
+        issue.row,
+        issue.variables.join("|"),
+        issue.usubjid,
+        issue.seq
+    )
+}
+
+fn fnv1a_update(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(0x100000001b3);
+    }
+}
+
 fn candidate_execution_provenance(case: &OpenRulesCase, path: &Path) -> ExecutionProvenance {
     read_candidate_execution_provenance(path)
         .unwrap_or_else(|| execution_provenance_for_rule_id(&case.rule_id))
@@ -903,7 +965,7 @@ fn case_is_unverified_synthetic_oracle(case: &ScoredCase) -> bool {
 impl Scoreboard {
     #[cfg(test)]
     pub fn new(upstream: UpstreamInfo, cases: Vec<ScoredCase>) -> Self {
-        Self::new_with_gate(upstream, cases, None, None)
+        Self::new_with_gate(upstream, cases, None, None, false)
     }
 
     pub fn new_with_gate(
@@ -911,9 +973,15 @@ impl Scoreboard {
         cases: Vec<ScoredCase>,
         min_coverage: Option<f64>,
         max_skipped_unsupported: Option<usize>,
+        fail_on_deferred_oracle_gap: bool,
     ) -> Self {
         let summary = ScoreSummary::from_cases(&cases);
-        let gate = ScoreGate::new(&summary, min_coverage, max_skipped_unsupported);
+        let gate = ScoreGate::new(
+            &summary,
+            min_coverage,
+            max_skipped_unsupported,
+            fail_on_deferred_oracle_gap,
+        );
         let by_scope = grouped_summary(&cases, |case| case.scope.clone());
         let by_case_kind = grouped_summary(&cases, |case| case.case_kind.clone());
         Self {
@@ -932,18 +1000,23 @@ impl ScoreGate {
         summary: &ScoreSummary,
         min_coverage: Option<f64>,
         max_skipped_unsupported: Option<usize>,
+        fail_on_deferred_oracle_gap: bool,
     ) -> Self {
         let coverage_threshold_failed = coverage_threshold_failed(summary, min_coverage);
         let skipped_unsupported_threshold_failed =
             skipped_unsupported_threshold_failed(summary, max_skipped_unsupported);
+        let deferred_oracle_gap_failed =
+            fail_on_deferred_oracle_gap && summary.deferred_oracle_gap_mismatch > 0;
         Self {
             min_coverage,
             max_skipped_unsupported,
             coverage_threshold_failed,
             skipped_unsupported_threshold_failed,
+            deferred_oracle_gap_failed,
             should_fail: summary.should_fail()
                 || coverage_threshold_failed
-                || skipped_unsupported_threshold_failed,
+                || skipped_unsupported_threshold_failed
+                || deferred_oracle_gap_failed,
         }
     }
 }
@@ -981,6 +1054,16 @@ mod tests {
 
     fn repo_root() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+    }
+
+    fn test_upstream() -> UpstreamInfo {
+        UpstreamInfo {
+            repo: "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned(),
+            expected_sha: Some("expected".to_owned()),
+            observed_sha: Some("expected".to_owned()),
+            lock_path: "tests/open_rules/upstream.lock".into(),
+            warnings: Vec::new(),
+        }
     }
 
     fn write_score_fixture(
@@ -1236,6 +1319,31 @@ CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
         assert_eq!(summary.deferred_oracle_gap_mismatch, 1);
         assert_eq!(summary.skipped_unsupported, 0);
         assert!(scored[0].skipped_reasons.is_empty());
+    }
+
+    #[test]
+    fn fail_on_deferred_oracle_gap_makes_score_gate_fail() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000108",
+            "negative",
+            "02",
+            "rule_id,dataset,row,variables\nCORE-000108,SV,1,VISIT\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let permissive =
+            Scoreboard::new_with_gate(test_upstream(), scored.clone(), None, None, false);
+        let strict = Scoreboard::new_with_gate(test_upstream(), scored, None, None, true);
+
+        assert_eq!(permissive.summary.deferred_oracle_gap_mismatch, 1);
+        assert!(!permissive.gate.deferred_oracle_gap_failed);
+        assert!(!permissive.gate.should_fail);
+        assert!(strict.gate.deferred_oracle_gap_failed);
+        assert!(strict.gate.should_fail);
     }
 
     #[test]

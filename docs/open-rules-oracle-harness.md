@@ -172,9 +172,13 @@ The full upstream regression baseline lives in
 `tests/open_rules/upstream-baseline.json`. It is generated from the pinned
 upstream SHA in `tests/open_rules/upstream.lock`, with local filesystem paths
 normalized and per-case issue diff arrays stripped so the baseline remains
-portable. The upstream regression workflow treats scoreboard generation failure
-as an infrastructure failure, then lets the baseline comparison decide whether
-known compatibility gaps have regressed.
+portable. Stripped baselines keep `missing_count`, `extra_count`, and
+`issue_fingerprint_hash`, and the comparator uses those portable fields before
+falling back to full arrays. This preserves same-bucket regression detection
+without requiring full issue arrays in the committed upstream baseline. The
+upstream regression workflow treats scoreboard generation failure as an
+infrastructure failure, then lets the baseline comparison decide whether known
+compatibility gaps have regressed.
 
 A supported case moving from `rule_id_hand_port` provenance to `native_engine`
 provenance is not counted as an automatic baseline improvement. The baseline
@@ -239,7 +243,10 @@ provenance values in the baseline report output.
 The run-score command exits non-zero for correctness failures, harness failures,
 or unresolved official oracle gaps: `supported_mismatch > 0`,
 `harness_error > 0`, `no_official_oracle > 0`, or
-`mixed_skipped_and_issues > 0`.
+`mixed_skipped_and_issues > 0`. Deferred oracle-gap mismatches are not a default
+score failure because they are reviewed through the baseline gate. Use
+`--fail-on-deferred-oracle-gap` when a standalone score command should also
+fail on any `deferred_oracle_gap_mismatch` case.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
