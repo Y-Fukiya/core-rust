@@ -15,6 +15,8 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, EngineError>;
 pub type BooleanMask = Vec<bool>;
 
+const SOURCE_ROW_COLUMN: &str = "__core_source_row";
+
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("condition is missing a target column")]
@@ -187,14 +189,16 @@ fn evaluate_condition_group_with_options(
         ConditionGroup::All(groups) => {
             let mut mask = vec![true; row_count];
             for group in groups {
-                and_assign(
-                    &mut mask,
-                    &evaluate_condition_group_with_options(
-                        group,
-                        dataset,
-                        dataset_presence_exists,
-                    )?,
-                );
+                match evaluate_condition_group_with_options(group, dataset, dataset_presence_exists)
+                {
+                    Ok(branch) => and_assign(&mut mask, &branch),
+                    Err(EngineError::MissingColumn(_))
+                        if missing_column_is_false_in_all_group(group) =>
+                    {
+                        mask.fill(false);
+                    }
+                    Err(source) => return Err(source),
+                }
                 if mask.iter().all(|value| !*value) {
                     break;
                 }
@@ -203,17 +207,29 @@ fn evaluate_condition_group_with_options(
         }
         ConditionGroup::Any(groups) => {
             let mut mask = vec![false; row_count];
+            let mut first_missing_column = None;
+            let mut evaluated_any_branch = false;
             for group in groups {
-                or_assign(
-                    &mut mask,
-                    &evaluate_condition_group_with_options(
-                        group,
-                        dataset,
-                        dataset_presence_exists,
-                    )?,
-                );
+                match evaluate_condition_group_with_options(group, dataset, dataset_presence_exists)
+                {
+                    Ok(branch) => {
+                        evaluated_any_branch = true;
+                        or_assign(&mut mask, &branch);
+                    }
+                    Err(source @ EngineError::MissingColumn(_)) => {
+                        if first_missing_column.is_none() {
+                            first_missing_column = Some(source);
+                        }
+                    }
+                    Err(source) => return Err(source),
+                }
                 if mask.iter().all(|value| *value) {
                     break;
+                }
+            }
+            if !evaluated_any_branch {
+                if let Some(source) = first_missing_column {
+                    return Err(source);
                 }
             }
             Ok(mask)
@@ -230,6 +246,16 @@ fn evaluate_condition_group_with_options(
             evaluate_condition_with_options(condition, dataset, dataset_presence_exists)
         }
     }
+}
+
+fn missing_column_is_false_in_all_group(group: &ConditionGroup) -> bool {
+    matches!(
+        group,
+        ConditionGroup::Leaf(Condition {
+            operator: Operator::MatchesRegex,
+            ..
+        })
+    )
 }
 
 pub fn extract_target_variables(group: &ConditionGroup) -> Vec<String> {
@@ -393,7 +419,27 @@ fn evaluate_condition_with_options(
         _ => {}
     }
 
-    let column = required_column(frame, &target)?;
+    let column = match optional_column(frame, &target)? {
+        Some(column) => column,
+        None if matches!(operator, Operator::IsNotUniqueSet | Operator::IsUniqueSet) => {
+            return evaluate_unique_set(
+                operator,
+                dataset,
+                frame,
+                row_count,
+                None,
+                &condition.comparator,
+            );
+        }
+        None if matches!(
+            operator,
+            Operator::IsNotContainedBy | Operator::IsNotContainedByCaseInsensitive
+        ) =>
+        {
+            return Ok(vec![false; row_count]);
+        }
+        None => return Err(EngineError::MissingColumn(target)),
+    };
 
     match operator {
         Operator::EqualTo
@@ -401,6 +447,8 @@ fn evaluate_condition_with_options(
         | Operator::EqualToCaseInsensitive
         | Operator::NotEqualToCaseInsensitive => {
             let comparator = required_comparator(operator, &condition.comparator)?;
+            let type_insensitive =
+                option_bool(&condition.options.extra, "type_insensitive").unwrap_or(false);
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
                 let equal = scalar_matches_comparator(
@@ -410,6 +458,7 @@ fn evaluate_condition_with_options(
                     frame,
                     row,
                     is_case_insensitive_operator(operator),
+                    type_insensitive,
                 )?;
                 Ok(matches!(
                     operator,
@@ -458,6 +507,7 @@ fn evaluate_condition_with_options(
                     frame,
                     row,
                     is_case_insensitive_operator(operator),
+                    false,
                 )?;
                 Ok(matches!(
                     operator,
@@ -601,7 +651,7 @@ fn evaluate_condition_with_options(
             dataset,
             frame,
             row_count,
-            column,
+            Some(column),
             &condition.comparator,
         ),
         Operator::IsNotUniqueRelationship => evaluate_not_unique_relationship(
@@ -726,6 +776,7 @@ fn evaluate_condition_with_options(
                     &ScalarValue::String(prefix),
                     &right,
                     false,
+                    false,
                 ))
             })
         }
@@ -778,6 +829,7 @@ fn evaluate_condition_with_options(
                     dataset,
                     frame,
                     row,
+                    false,
                     false,
                 )?;
                 Ok(!contained)
@@ -1049,7 +1101,12 @@ fn evaluate_does_not_have_next_corresponding_record(
         for pair in sorted_rows.windows(2) {
             let current = pair[0];
             let next = pair[1];
-            if !scalar_equal_with_mode(&target_values[current], &comparator_values[next], false) {
+            if !scalar_equal_with_mode(
+                &target_values[current],
+                &comparator_values[next],
+                false,
+                false,
+            ) {
                 mask[current] = true;
             }
         }
@@ -1096,34 +1153,38 @@ fn evaluate_unique_set(
     dataset: &LoadedDataset,
     frame: &DataFrame,
     row_count: usize,
-    target_column: &Column,
+    target_column: Option<&Column>,
     comparator: &ValueExpr,
 ) -> Result<BooleanMask> {
     let group_columns = column_name_comparators(operator, comparator)?
         .into_iter()
         .map(|column| expand_domain_placeholder(dataset, &column))
         .collect::<Vec<_>>();
-    for column in &group_columns {
-        if optional_column(frame, column)?.is_none() {
-            return Err(EngineError::MissingColumn(column.clone()));
-        }
-    }
+    let group_column_values = group_columns
+        .iter()
+        .map(|column| optional_column(frame, column))
+        .collect::<Result<Vec<_>>>()?;
 
     let mut counts = std::collections::BTreeMap::<Vec<String>, usize>::new();
     let mut row_keys = Vec::with_capacity(row_count);
 
     for row in 0..row_count {
-        let target = ScalarValue::from_any_value(target_column.get(row)?);
-        if target.is_empty() {
-            row_keys.push(None);
-            continue;
-        }
+        let target = match target_column {
+            Some(column) => ScalarValue::from_any_value(column.get(row)?).to_string(),
+            None => "Not in dataset".to_owned(),
+        };
 
         let mut key = Vec::with_capacity(group_columns.len() + 1);
-        for column in &group_columns {
-            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        for column in &group_column_values {
+            let value = match column {
+                Some(column) => ScalarValue::from_any_value(column.get(row)?)
+                    .into_string()
+                    .unwrap_or_default(),
+                None => "Not in dataset".to_owned(),
+            };
+            key.push(value);
         }
-        key.push(target.to_string());
+        key.push(target);
         *counts.entry(key.clone()).or_default() += 1;
         row_keys.push(Some(key));
     }
@@ -1177,8 +1238,9 @@ fn evaluate_not_unique_relationship(
         row_values.push(Some((target, related)));
     }
 
-    let target_to_comparator_only =
-        option_string(&options.extra, "direction").as_deref() == Some("target_to_comparator");
+    let direction = option_string(&options.extra, "direction");
+    let target_to_comparator_only = direction.as_deref() == Some("target_to_comparator");
+    let comparator_to_target_only = direction.as_deref() == Some("comparator_to_target");
 
     Ok(row_values
         .into_iter()
@@ -1186,9 +1248,10 @@ fn evaluate_not_unique_relationship(
             let Some((target, related)) = values else {
                 return false;
             };
-            related_by_target
-                .get(&target)
-                .is_some_and(|values| values.len() > 1)
+            (!comparator_to_target_only
+                && related_by_target
+                    .get(&target)
+                    .is_some_and(|values| values.len() > 1))
                 || (!target_to_comparator_only
                     && target_by_related
                         .get(&related)
@@ -1217,11 +1280,10 @@ fn evaluate_inconsistent_across_dataset(
             .into_iter()
             .map(|column| expand_domain_placeholder(dataset, &column))
             .collect::<Vec<_>>();
-    for column in &group_columns {
-        if optional_column(frame, column)?.is_none() {
-            return Err(EngineError::MissingColumn(column.clone()));
-        }
-    }
+    let group_column_values = group_columns
+        .iter()
+        .map(|column| optional_column(frame, column))
+        .collect::<Result<Vec<_>>>()?;
 
     let mut target_values_by_key =
         std::collections::BTreeMap::<Vec<String>, std::collections::BTreeSet<String>>::new();
@@ -1229,14 +1291,15 @@ fn evaluate_inconsistent_across_dataset(
 
     for row in 0..row_count {
         let target = ScalarValue::from_any_value(target_column.get(row)?);
-        if target.is_empty() {
-            row_keys.push(None);
-            continue;
-        }
-
         let mut key = Vec::with_capacity(group_columns.len());
-        for column in &group_columns {
-            key.push(cell_string(frame, column, row)?.unwrap_or_default());
+        for column in &group_column_values {
+            let value = match column {
+                Some(column) => ScalarValue::from_any_value(column.get(row)?)
+                    .into_string()
+                    .unwrap_or_default(),
+                None => "Not in dataset".to_owned(),
+            };
+            key.push(value);
         }
         target_values_by_key
             .entry(key.clone())
@@ -1438,7 +1501,7 @@ fn record_level_issues(
                 rule_id: rule.core_id.clone(),
                 dataset: dataset.metadata().name.clone(),
                 domain: dataset.metadata().domain.clone(),
-                row: Some(row + 1),
+                row: issue_row(dataset, row)?,
                 variables: variables.to_vec(),
                 message: message.to_owned(),
                 usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
@@ -1466,7 +1529,7 @@ fn group_level_issues(
             rule_id: rule.core_id.clone(),
             dataset: dataset.metadata().name.clone(),
             domain: dataset.metadata().domain.clone(),
-            row: Some(row + 1),
+            row: issue_row(dataset, row)?,
             variables: variables.to_vec(),
             message: message.to_owned(),
             usubjid: cell_string(dataset.frame(), "USUBJID", row)?,
@@ -1474,6 +1537,16 @@ fn group_level_issues(
         });
     }
     Ok(issues)
+}
+
+fn issue_row(dataset: &LoadedDataset, row: usize) -> Result<Option<usize>> {
+    if let Some(value) = cell_string(dataset.frame(), SOURCE_ROW_COLUMN, row)?
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+    {
+        return Ok(Some(value));
+    }
+    Ok(Some(row + 1))
 }
 
 fn group_issue_signature(
@@ -1579,7 +1652,6 @@ fn is_usdm_ref_lookahead_pattern(pattern: &str) -> bool {
 }
 
 fn usdm_ref_pattern_matches(value: &str) -> bool {
-    let value = value.trim();
     let Some(remainder) = value.strip_prefix("<usdm:ref") else {
         return false;
     };
@@ -1713,10 +1785,6 @@ fn optional_column<'a>(frame: &'a DataFrame, name: &str) -> Result<Option<&'a Co
     }
 }
 
-fn required_column<'a>(frame: &'a DataFrame, name: &str) -> Result<&'a Column> {
-    optional_column(frame, name)?.ok_or_else(|| EngineError::MissingColumn(name.to_owned()))
-}
-
 fn required_comparator<'a>(
     operator: &Operator,
     comparator: &'a ValueExpr,
@@ -1808,6 +1876,28 @@ fn option_usize(map: &std::collections::BTreeMap<String, Value>, key: &str) -> O
     }
 }
 
+fn option_bool(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<bool> {
+    let value = map.get(key).or_else(|| {
+        map.iter()
+            .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
+            .map(|(_key, value)| value)
+    })?;
+    match value {
+        Value::Bool(value) => Some(*value),
+        Value::Number(value) => value.as_u64().and_then(|value| match value {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }),
+        Value::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "t" | "yes" | "y" | "1" => Some(true),
+            "false" | "f" | "no" | "n" | "0" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn option_string(map: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<String> {
     let value = map.get(key).or_else(|| {
         map.iter()
@@ -1828,15 +1918,20 @@ fn scalar_matches_comparator(
     frame: &DataFrame,
     row: usize,
     case_insensitive: bool,
+    type_insensitive: bool,
 ) -> Result<bool> {
     match comparator {
-        ValueExpr::List(values) => Ok(values
-            .iter()
-            .map(json_value_to_scalar)
-            .any(|right| scalar_contained_by_value(left, &right, case_insensitive))),
+        ValueExpr::List(values) => Ok(values.iter().map(json_value_to_scalar).any(|right| {
+            scalar_contained_by_value(left, &right, case_insensitive, type_insensitive)
+        })),
         _ => {
             let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
-            Ok(scalar_contained_by_value(left, &right, case_insensitive))
+            Ok(scalar_contained_by_value(
+                left,
+                &right,
+                case_insensitive,
+                type_insensitive,
+            ))
         }
     }
 }
@@ -2012,6 +2107,18 @@ impl ScalarValue {
         }
     }
 
+    fn as_type_insensitive_number(&self) -> Option<f64> {
+        match self {
+            Self::Number(value) if value.is_finite() => Some(*value),
+            Self::String(value) => value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite()),
+            _ => None,
+        }
+    }
+
     fn as_string(&self) -> Option<&str> {
         match self {
             Self::String(value) => Some(value.as_str()),
@@ -2040,7 +2147,21 @@ impl std::fmt::Display for ScalarValue {
     }
 }
 
-fn scalar_equal_with_mode(left: &ScalarValue, right: &ScalarValue, case_insensitive: bool) -> bool {
+fn scalar_equal_with_mode(
+    left: &ScalarValue,
+    right: &ScalarValue,
+    case_insensitive: bool,
+    type_insensitive: bool,
+) -> bool {
+    if type_insensitive {
+        if let (Some(left), Some(right)) = (
+            left.as_type_insensitive_number(),
+            right.as_type_insensitive_number(),
+        ) {
+            return left == right;
+        }
+    }
+
     match (left, right) {
         (ScalarValue::Null, ScalarValue::Null) => true,
         (ScalarValue::Null, _) | (_, ScalarValue::Null) => false,
@@ -2066,8 +2187,9 @@ fn scalar_contained_by_value(
     left: &ScalarValue,
     right: &ScalarValue,
     case_insensitive: bool,
+    type_insensitive: bool,
 ) -> bool {
-    if scalar_equal_with_mode(left, right, case_insensitive) {
+    if scalar_equal_with_mode(left, right, case_insensitive, type_insensitive) {
         return true;
     }
 
@@ -2084,13 +2206,14 @@ fn scalar_contained_by_value(
             left,
             &ScalarValue::String(part.to_owned()),
             case_insensitive,
+            type_insensitive,
         ) || scalar_string_equal_with_mode(left, part, case_insensitive)
     })
 }
 
 fn scalar_contains_all(left: &ScalarValue, right: &ScalarValue, case_insensitive: bool) -> bool {
     scalar_list_values(right).all(|value| {
-        scalar_contained_by_value(&value, left, case_insensitive)
+        scalar_contained_by_value(&value, left, case_insensitive, false)
             || scalar_string_equal_with_mode(left, &value.to_string(), case_insensitive)
     })
 }
@@ -2098,7 +2221,7 @@ fn scalar_contains_all(left: &ScalarValue, right: &ScalarValue, case_insensitive
 fn scalar_shares_no_elements_with(left: &ScalarValue, right: &ScalarValue) -> bool {
     !scalar_list_values(left).any(|left_value| {
         scalar_list_values(right)
-            .any(|right_value| scalar_equal_with_mode(&left_value, &right_value, false))
+            .any(|right_value| scalar_equal_with_mode(&left_value, &right_value, false, false))
     })
 }
 
@@ -2231,13 +2354,19 @@ fn parse_orderable_complete_date(value: &str) -> Option<(u16, u8, u8, u8, u8, u8
     let time = remainder
         .strip_prefix('T')
         .or_else(|| remainder.strip_prefix(' '))?;
-    if time.len() < 5 || time.as_bytes().get(2) != Some(&b':') {
+    let (hour_text, after_hour) = time.split_once(':')?;
+    if !(1..=2).contains(&hour_text.len())
+        || !hour_text
+            .chars()
+            .all(|character| character.is_ascii_digit())
+        || after_hour.len() < 2
+    {
         return None;
     }
-    let hour = parse_fixed_digits(time.get(0..2)?)? as u8;
-    let minute = parse_fixed_digits(time.get(3..5)?)? as u8;
-    let second = if time.as_bytes().get(5) == Some(&b':') {
-        parse_fixed_digits(time.get(6..8)?)? as u8
+    let hour = parse_fixed_digits(hour_text)? as u8;
+    let minute = parse_fixed_digits(after_hour.get(0..2)?)? as u8;
+    let second = if after_hour.as_bytes().get(2) == Some(&b':') {
+        parse_fixed_digits(after_hour.get(3..5)?)? as u8
     } else {
         0
     };
@@ -2397,7 +2526,7 @@ fn is_valid_iso_duration(value: &str) -> bool {
     }
 
     if let Some(week) = rest.strip_suffix('W') {
-        return !week.is_empty() && week.chars().all(|character| character.is_ascii_digit());
+        return is_valid_duration_number(week);
     }
 
     let mut in_time = false;
@@ -2603,7 +2732,9 @@ mod tests {
         "LEFT": ["A", "A", "C", "D"],
         "RIGHT": ["1", "2", "3", "3"],
         "LEFT_EMPTY": ["A", "A", "", "C"],
-        "RIGHT_EMPTY": ["1", "", "1", "2"]
+        "RIGHT_EMPTY": ["1", "", "1", "2"],
+        "TARGET_EMPTY_DUP": ["", "", "X", "Y"],
+        "GROUP_DUP": ["G", "G", "H", "I"]
       }
     }
   ]
@@ -2912,16 +3043,19 @@ mod tests {
         assert!(!scalar_equal_with_mode(
             &ScalarValue::Bool(true),
             &ScalarValue::Number(1.0),
+            false,
             false
         ));
         assert!(scalar_equal_with_mode(
             &ScalarValue::Bool(true),
             &ScalarValue::String("True".to_owned()),
+            false,
             false
         ));
         assert!(scalar_equal_with_mode(
             &ScalarValue::Bool(false),
             &ScalarValue::String("false".to_owned()),
+            false,
             false
         ));
     }
@@ -3062,6 +3196,18 @@ mod tests {
             .expect("open rules not_matches_regex"),
             vec![true, false, false, false]
         );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TERM",
+                    Operator::DoesNotMatchRegexFullString,
+                    literal(r#"^-?(\d+(\.\d+)?$)|(\.\d+$)"#)
+                ),
+                &dataset
+            )
+            .expect("open rules numeric not_matches_regex"),
+            vec![true, true, false, false]
+        );
     }
 
     #[test]
@@ -3082,6 +3228,8 @@ mod tests {
           "<usdm:ref attribute=\"maxValue\" id=\"Range 1\" klass=\"Range\"/>",
           "<usdm:ref klass=\"Range1\" id=\"Range_3\" attribute=\"maxValue\"></usdm:ref>",
           "<usdm:ref id=\"Activity_6\" attribute=\"label\" class=\"Activity\"></usdm:ref>",
+          "<usdm:ref attribute=\"label\" klass=\"Activity\" id=\"Activity_9\"></usdm:ref>  ",
+          " <usdm:ref attribute=\"label\" klass=\"Activity\" id=\"Activity_9\"></usdm:ref>",
           "a piece of text that includes usdm:ref"
         ]
       }
@@ -3107,7 +3255,7 @@ mod tests {
                 &dataset
             )
             .expect("USDM ref lookahead fallback"),
-            vec![false, false, false, true, true, true]
+            vec![false, false, false, true, true, true, true, true]
         );
     }
 
@@ -3412,6 +3560,42 @@ mod tests {
     }
 
     #[test]
+    fn treats_decimal_week_iso8601_duration_as_valid() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "timing.csv",
+      "domain": "TIMING",
+      "records": {
+        "DUR": ["P4.5W", "P4,5W", "P4.W"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("DUR", Operator::InvalidDuration, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid duration"),
+            vec![false, false, true]
+        );
+    }
+
+    #[test]
     fn incomplete_iso8601_dates_are_not_invalid_dates() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("datasets.json");
@@ -3534,6 +3718,46 @@ mod tests {
     }
 
     #[test]
+    fn date_comparisons_accept_single_digit_datetime_hour() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "sv.xpt",
+      "domain": "SV",
+      "records": {
+        "SVSTDTC": ["2019-01-07T6:10", "2019-01-07T06:09"],
+        "SESTDTC": ["2019-01-07T06:10", "2019-01-07T06:10"]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "SVSTDTC",
+                    Operator::DateGreaterThanOrEqualTo,
+                    ValueExpr::ColumnRef("SESTDTC".to_owned())
+                ),
+                &dataset,
+            )
+            .expect("single digit hour comparison"),
+            vec![true, false]
+        );
+    }
+
+    #[test]
     fn evaluates_target_is_not_sorted_by_within_groups() {
         let dataset = sort_dataset();
 
@@ -3647,6 +3871,72 @@ mod tests {
     }
 
     #[test]
+    fn unique_set_treats_missing_group_columns_as_not_in_dataset() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID"), json!("MISSING")])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, false, false]
+        );
+    }
+
+    #[test]
+    fn unique_set_treats_missing_target_column_as_not_in_dataset() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "MISSING",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, true, false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "MISSING",
+                    Operator::IsUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")])
+                ),
+                &dataset
+            )
+            .expect("is unique set"),
+            vec![false, false, false, true]
+        );
+    }
+
+    #[test]
+    fn unique_set_includes_empty_target_values() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "TARGET_EMPTY_DUP",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("GROUP_DUP")])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, false, false]
+        );
+    }
+
+    #[test]
     fn evaluates_is_not_unique_relationship_between_columns() {
         let dataset = relationship_dataset();
 
@@ -3683,6 +3973,28 @@ mod tests {
             )
             .expect("is not unique relationship"),
             vec![true, true, false, false]
+        );
+    }
+
+    #[test]
+    fn evaluates_is_not_unique_relationship_comparator_to_target_only() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "LEFT",
+                    Operator::IsNotUniqueRelationship,
+                    ValueExpr::ColumnRef("RIGHT".to_owned()),
+                    serde_json::Map::from_iter([(
+                        "direction".to_owned(),
+                        json!("comparator_to_target")
+                    )])
+                ),
+                &dataset
+            )
+            .expect("is not unique relationship"),
+            vec![false, false, true, true]
         );
     }
 
@@ -3741,6 +4053,42 @@ mod tests {
             )
             .expect("is inconsistent across dataset"),
             vec![true, true, true, false]
+        );
+    }
+
+    #[test]
+    fn inconsistent_across_dataset_treats_missing_group_columns_as_not_in_dataset() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RELID",
+                    Operator::IsInconsistentAcrossDataset,
+                    ValueExpr::List(vec![json!("USUBJID"), json!("MISSING")])
+                ),
+                &dataset
+            )
+            .expect("is inconsistent across dataset"),
+            vec![true, true, true, false]
+        );
+    }
+
+    #[test]
+    fn inconsistent_across_dataset_includes_empty_target_values() {
+        let dataset = relationship_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "RIGHT_EMPTY",
+                    Operator::IsInconsistentAcrossDataset,
+                    ValueExpr::List(vec![json!("LEFT")])
+                ),
+                &dataset
+            )
+            .expect("is inconsistent across dataset"),
+            vec![true, true, false, false]
         );
     }
 
@@ -3887,6 +4235,109 @@ mod tests {
         assert_eq!(
             evaluate_condition_group(&group, &dataset).expect("all short-circuit"),
             vec![false, false, false, false]
+        );
+    }
+
+    #[test]
+    fn any_condition_treats_missing_column_branch_as_false_when_another_branch_applies() {
+        let dataset = test_dataset();
+        let group = ConditionGroup::Any(vec![
+            ConditionGroup::Leaf(condition("MISSING", Operator::NotEqualTo, literal("N"))),
+            ConditionGroup::Leaf(condition("MISSING", Operator::NotExists, ValueExpr::Null)),
+        ]);
+
+        assert_eq!(
+            evaluate_condition_group(&group, &dataset).expect("condition group"),
+            vec![true, true, true, true]
+        );
+    }
+
+    #[test]
+    fn all_condition_treats_missing_column_branch_as_false() {
+        let dataset = test_dataset();
+        let group = ConditionGroup::All(vec![
+            ConditionGroup::Leaf(condition("USUBJID", Operator::Exists, ValueExpr::Null)),
+            ConditionGroup::Leaf(condition(
+                "MISSING",
+                Operator::MatchesRegex,
+                literal("^.+$"),
+            )),
+        ]);
+
+        assert_eq!(
+            evaluate_condition_group(&group, &dataset).expect("condition group"),
+            vec![false, false, false, false]
+        );
+    }
+
+    #[test]
+    fn all_condition_preserves_non_regex_missing_column_errors() {
+        let dataset = test_dataset();
+        let group = ConditionGroup::All(vec![
+            ConditionGroup::Leaf(condition("USUBJID", Operator::Exists, ValueExpr::Null)),
+            ConditionGroup::Leaf(condition("MISSING", Operator::EqualTo, literal("Y"))),
+        ]);
+
+        let error = evaluate_condition_group(&group, &dataset)
+            .expect_err("non-regex missing columns should stay unsupported");
+
+        assert!(matches!(error, EngineError::MissingColumn(_)));
+    }
+
+    #[test]
+    fn missing_is_not_contained_by_target_is_false() {
+        let dataset = test_dataset();
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "MISSING",
+                    Operator::IsNotContainedBy,
+                    ValueExpr::List(vec![json!("A")])
+                ),
+                &dataset,
+            )
+            .expect("missing target"),
+            vec![false, false, false, false]
+        );
+    }
+
+    #[test]
+    fn type_insensitive_column_ref_equality_compares_numeric_strings_as_numbers() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "lb.xpt",
+      "domain": "LB",
+      "records": {
+        "LBSTRESC": ["154", "200.00", "-44.0"],
+        "LBSTRESN": [154.0, 200, -44]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        let condition = condition_with_options(
+            "LBSTRESC",
+            Operator::NotEqualTo,
+            ValueExpr::ColumnRef("LBSTRESN".to_owned()),
+            serde_json::Map::from_iter([("type_insensitive".to_owned(), json!(true))]),
+        );
+
+        assert_eq!(
+            evaluate_condition(&condition, &dataset).expect("type insensitive comparison"),
+            vec![false, false, false]
         );
     }
 
