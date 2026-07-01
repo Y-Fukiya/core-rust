@@ -1,0 +1,258 @@
+rule_id,classification,category,reason,owner,evidence,scope
+CORE-000007,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000012,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000015,engine_semantics,missing_column_once_result,dataset sensitivity missing column result is emitted once per dataset for this oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000025,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000029,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000037,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000038,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000044,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000048,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000050,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000051,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000052,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000054,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000055,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000056,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000057,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000058,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000059,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000060,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000061,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000064,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000065,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000066,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000067,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000068,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000069,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000070,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000071,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000096,engine_semantics,missing_column_once_result,dataset sensitivity missing column result is emitted once per dataset for this oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000098,engine_semantics,missing_column_once_result,dataset sensitivity missing column result is emitted once per dataset for this oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000111,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000112,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000113,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000114,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000165,engine_semantics,missing_column_zero_record_result,missing timepoint reference column is emitted once with Record 0,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000166,engine_semantics,missing_column_once_result,dataset sensitivity missing column result is emitted once per dataset for this oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000167,engine_semantics,first_row_dataset_presence_result,dataset sensitivity presence result is emitted on the first record for this oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000177,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000124,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000140,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000147,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000148,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000185,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000186,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000187,engine_semantics,csv_line_record_number,official Record uses CSV line number for this row-scope oracle family,core-api,full-upstream-source-row-probe,open-rules-oracle-harness
+CORE-000223,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000224,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000228,engine_semantics,previous_record_number,official Record uses previous record number for this row-scope oracle family,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000242,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000245,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000246,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000247,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000258,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000613,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000614,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000615,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000617,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000621,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000622,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000623,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000624,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000625,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000626,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000627,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000628,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000629,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000630,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000631,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000632,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000633,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000634,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000635,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000636,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000637,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000639,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000640,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000641,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000649,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000661,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000662,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000663,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000664,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000665,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000667,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000668,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000669,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000762,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000788,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000789,engine_semantics,dataset_level_presence_result,dataset sensitivity presence result is compared at dataset scope,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000047,engine_semantics,operation_adapter,reference distinct report variables are rule scoped,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000039,engine_semantics,missing_column_adapter,missing SVPRESP is treated as a planned SV record when VISITDY is absent,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000095,engine_semantics,result_postprocess,SE dataset level oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000119,compatibility_policy,standard_filter,SENDIG TIG substandard compatibility exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000138,engine_semantics,result_postprocess,DM dataset level oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000139,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000142,engine_semantics,inconsistent_dataset_precondition_adapter,elapsed time consistency only compares rows satisfying timing preconditions,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000172,compatibility_policy,standard_filter,SENDIG 3.1 operation oracle gap,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000201,engine_semantics,operation_adapter,scope wide reference target oracle handling,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000206,engine_semantics,relationship_adapter,IDVARVAL RDOMAIN reference matching uses RELREC/SUPP semantics,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000217,compatibility_policy,standard_filter,SENDIG 3.1 standard oracle gap,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000272,engine_semantics,operation_adapter,requested standard operation rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000321,engine_semantics,dataset_level_existing_day_date_variable_result,missing study-day column is reported once with the existing date variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000324,engine_semantics,date_result_postprocess,CM DTC fallback and date issue expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000328,engine_semantics,dataset_level_existing_day_date_variable_result,missing start study-day column is reported once with the existing start date variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000361,engine_semantics,relationship_adapter,relationship direction rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000376,engine_semantics,metadata_adapter,variable metadata domain prefix operation,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000390,engine_semantics,unique_set_interval_adapter,CV uniqueness uses overlapping evaluation interval semantics,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000398,engine_semantics,metadata_adapter,CDISC Library variable metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000407,hand_port_semantics,usdm_jsonata_hand_port,USDM timeline JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000454,engine_semantics,operation_adapter,operation report variable follows RFXENDTC check target despite legacy outcome label,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000460,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000466,engine_semantics,result_postprocess,PP dataset level oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000478,compatibility_policy,standard_filter,SENDIG standard exclusion exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000494,engine_semantics,metadata_adapter,define role metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000495,engine_semantics,unique_set_locator_variable_projection,unique-set subject locator is reported as location metadata rather than issue variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000505,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000507,engine_semantics,metadata_adapter,define/library variable label metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000516,engine_semantics,simple_any_output_variable_projection,official reports all study-day outcome variables when either study-day condition fails,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000526,engine_semantics,unique_set_subject_locator_variable_projection,unique-set subject locator is also reported as an issue variable for this pooled subject rule,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000539,engine_semantics,metadata_adapter,split dataset parent metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000540,engine_semantics,metadata_adapter,findings about parent metadata adapter with alphanumeric split dataset names,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000547,engine_semantics,date_result_postprocess,date and missing column oracle handling,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000550,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000572,engine_semantics,date_result_postprocess,CM dataset level oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000583,engine_semantics,condition_rewrite,null flavor condition rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000595,engine_semantics,result_postprocess,CASNO missing issue synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000597,engine_semantics,supplemental_qualifier_parent_record_adapter,SUPPAE AESOSP checks apply to the AE record referenced by IDVAR and IDVARVAL,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000642,compatibility_policy,standard_filter,SENDIG standard exclusion exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000651,engine_semantics,result_postprocess,TPT relationship oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000653,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000654,engine_semantics,result_postprocess,TPT relationship oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000660,engine_semantics,operation_adapter,reference distinct operation compares scoped values across all target datasets,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000670,engine_semantics,operation_adapter,SENDIG 3.0 DD unscheduled death rule uses matched DSUSCHFL blankness,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000676,engine_semantics,operation_adapter,reference distinct operation treats absent TO source values as an empty reference set,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000677,engine_semantics,result_postprocess,POOLDEF POOLID oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000678,engine_semantics,operation_adapter,reference distinct POOLDEF pass through,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000690,engine_semantics,relationship_adapter,variable label uniqueness uses comparator-to-target relationship direction,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000700,engine_semantics,dataset_level_existing_day_date_variable_result,missing date column is reported once with the existing study-day variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000711,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000714,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000744,engine_semantics,result_postprocess,RELREC FAOBJ oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000757,engine_semantics,result_postprocess,intervention RELREC FAOBJ handling passes when parent FA data is absent,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000770,compatibility_policy,standard_filter,SENDIG 3.1 operation oracle gap,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000783,engine_semantics,operation_adapter,operation report variable override,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000793,engine_semantics,dataset_level_existing_day_date_variable_result,missing study-day column is reported once with the existing date variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000794,engine_semantics,metadata_adapter,forbidden SEND domain-placeholder variable scan uses dataset metadata across domains,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000847,engine_semantics,metadata_adapter,forbidden SEND domain-placeholder variable scan uses dataset metadata across domains,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000848,engine_semantics,metadata_adapter,forbidden SEND domain-placeholder variable scan uses dataset metadata across domains,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000852,engine_semantics,metadata_adapter,model column order and metadata comparator adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000853,engine_semantics,single_match_dataset_self_target,DM reference-date match dataset is also evaluated as a scoped target dataset,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000862,engine_semantics,dataset_level_existing_study_day_variable_result,missing start date column is reported once with the existing study-day variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000864,engine_semantics,dataset_level_existing_study_day_variable_result,missing end date column is reported once with the existing study-day variable,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000866,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000867,engine_semantics,metadata_adapter,value level metadata support exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000884,engine_semantics,operation_adapter,TS AGE AGEU AGETXT parameter counts are reported as dataset-level findings,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000893,engine_semantics,result_postprocess,TX distinct group findings are reported once per offending SETCD group,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000890,engine_semantics,metadata_adapter,value level metadata support exception,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000896,engine_semantics,operation_adapter,POOLDEF POOLID mismatch adapter shared with CORE-000677,core-api,full-upstream-baseline,open-rules-oracle-harness
+CORE-000902,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000903,engine_semantics,metadata_adapter,CDISC Library variable metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000929,engine_semantics,metadata_adapter,domain codelist metadata and ZB issue normalization,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000944,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000947,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000948,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000950,hand_port_semantics,usdm_jsonata_hand_port,USDM scheduled instance JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000954,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000955,hand_port_semantics,usdm_jsonata_hand_port,USDM identifier JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000956,hand_port_semantics,usdm_jsonata_hand_port,USDM identifier JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000961,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000962,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000963,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000964,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000965,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000966,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000967,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000968,hand_port_semantics,usdm_jsonata_hand_port,USDM governance date JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000969,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000970,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000971,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000973,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000974,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000980,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000981,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000982,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000983,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000984,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000985,hand_port_semantics,usdm_jsonata_hand_port,USDM document content reference JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000986,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000994,hand_port_semantics,usdm_jsonata_hand_port,USDM duration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000995,hand_port_semantics,usdm_jsonata_hand_port,USDM duration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000996,hand_port_semantics,usdm_jsonata_hand_port,USDM planned sex JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000997,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000998,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000999,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001000,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001001,hand_port_semantics,usdm_jsonata_hand_port,USDM administrable product JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001002,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001003,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001004,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001005,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001006,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001007,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001008,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001009,hand_port_semantics,usdm_jsonata_hand_port,USDM range JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001010,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001011,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001012,hand_port_semantics,usdm_jsonata_hand_port,USDM range JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001013,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001014,hand_port_semantics,usdm_jsonata_hand_port,USDM person name JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001015,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001016,hand_port_semantics,usdm_jsonata_hand_port,USDM timeline JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001017,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001018,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001019,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001020,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001021,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001022,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001023,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001024,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001025,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001026,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001027,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001028,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001029,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001030,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001031,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001032,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001033,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001036,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001037,hand_port_semantics,usdm_jsonata_hand_port,USDM syntax template text JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001038,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001039,hand_port_semantics,usdm_jsonata_hand_port,USDM scheduled instance JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001040,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001041,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001042,hand_port_semantics,usdm_jsonata_hand_port,USDM geographic scope JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001045,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001046,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001047,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001048,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001049,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001050,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001051,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001052,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001053,hand_port_semantics,usdm_jsonata_hand_port,USDM abbreviation JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001054,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001055,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001062,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001065,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001066,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001067,hand_port_semantics,usdm_jsonata_hand_port,USDM abbreviation JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001070,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001071,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001072,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001073,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content item JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001074,hand_port_semantics,usdm_jsonata_hand_port,USDM syntax template text JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001075,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001077,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness

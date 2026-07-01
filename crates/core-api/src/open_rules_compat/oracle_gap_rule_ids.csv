@@ -1,0 +1,438 @@
+rule_id,category,reason,owner,evidence,scope
+CORE-000773,operation,operation pipeline semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001034,operation,operation pipeline semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,distinct_operation,distinct operation semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000896,distinct_operation,distinct operation semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000436,dy_operation,DY derivation operation semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000529,dy_operation,DY derivation operation semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000015,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000049,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000080,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000081,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000096,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000098,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000092,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000165,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000166,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000167,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000321,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000328,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000700,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000786,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000793,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000794,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000847,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000848,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000862,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000864,dataset_presence,dataset sensitivity presence semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000357,domain_presence,domain presence metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000539,domain_presence,domain presence metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000540,domain_presence,domain presence metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000560,domain_presence,domain presence metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000019,variable_metadata,variable metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000355,variable_metadata,variable metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000569,variable_metadata,variable metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000690,variable_metadata,variable metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000195,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000197,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000198,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000237,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000542,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000545,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000546,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000698,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000704,domain_placeholder_column_ref_comparator,domain placeholder column ref comparator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000820,entity_literal,USDM entity literal semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000007,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000027,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000117,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000224,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000225,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000262,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000267,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000341,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000430,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000438,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000524,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000554,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000570,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000616,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000648,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000650,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000670,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000863,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000865,empty_non_empty,empty and non_empty semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000138,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000139,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000324,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000370,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000460,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000505,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000547,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000572,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000653,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000711,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000714,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000718,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000866,date_operator,date operator partial date semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000007,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000027,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000117,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000225,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000262,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000267,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000341,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000430,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000648,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000650,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000670,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000863,defer_empty_non_empty,empty and non_empty semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000138,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000139,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000324,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000370,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000460,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000505,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000547,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000572,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000653,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000711,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000714,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000866,defer_date_operator,date operator partial date semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000436,defer_dy_operation,DY operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000529,defer_dy_operation,DY operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000535,sort_operator,sort operator semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000387,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000390,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000396,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000495,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000526,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000551,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000580,unique_set,unique set semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000184,not_unique_relationship,not unique relationship semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000268,not_unique_relationship,not unique relationship semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000142,inconsistent_across_dataset,inconsistent across dataset semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000016,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000017,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000092,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000093,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000458,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000465,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000481,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000482,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000547,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000039,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000674,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000699,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000750,missing_column,missing column fixture semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000354,multi_base_match_dataset,multi dataset match semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000853,multi_base_match_dataset,multi dataset match semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000252,duplicate_match_dataset,duplicate match dataset semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000253,duplicate_match_dataset,duplicate match dataset semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000597,duplicate_match_dataset,duplicate match dataset semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000784,duplicate_match_dataset,duplicate match dataset semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000206,relrec_or_supp_match_dataset,RELREC or SUPP dataset join semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000744,relrec_or_supp_match_dataset,RELREC or SUPP dataset join semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000757,relrec_or_supp_match_dataset,RELREC or SUPP dataset join semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000387,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000390,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000396,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000495,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000526,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000551,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000580,defer_unique_set,unique set semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000535,defer_sort_operator,sort operator semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000184,defer_not_unique_relationship,not unique relationship semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000268,defer_not_unique_relationship,not unique relationship semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000142,defer_inconsistent_across_dataset,inconsistent across dataset semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000744,defer_relrec_or_supp_match_dataset,RELREC or SUPP dataset join semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000354,defer_multi_base_match_dataset,multi dataset match semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000853,defer_multi_base_match_dataset,multi dataset match semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000252,defer_duplicate_match_dataset,duplicate match dataset semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000253,defer_duplicate_match_dataset,duplicate match dataset semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000597,defer_duplicate_match_dataset,duplicate match dataset semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000784,defer_duplicate_match_dataset,duplicate match dataset semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000904,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000905,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000906,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000907,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000908,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000909,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000910,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000911,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000912,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000917,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000918,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000919,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000920,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000921,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000922,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000923,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000925,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000930,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000931,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000932,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000933,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000939,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000940,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000941,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000942,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000943,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000951,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000957,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000958,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000959,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000975,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000976,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000977,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000978,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000979,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000987,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000988,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000989,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000990,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000991,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000992,defer_entity_column_ref,USDM entity column ref semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000195,defer_domain_placeholder_column_ref,domain placeholder column ref comparator still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000197,defer_domain_placeholder_column_ref,domain placeholder column ref comparator still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000198,defer_domain_placeholder_column_ref,domain placeholder column ref comparator still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000539,defer_domain_presence,domain presence metadata semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000540,defer_domain_presence,domain presence metadata semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000019,defer_variable_metadata,variable metadata semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000454,defer_distinct_operation,distinct operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000455,defer_distinct_operation,distinct operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000143,defer_etcd_length,ETCD length semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000356,required_value_metadata,value level metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000098,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000027,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000108,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000014,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000117,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000116,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000142,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000143,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000165,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000166,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000167,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000168,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000184,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000195,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000197,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000198,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000204,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000217,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000224,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000237,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000249,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000262,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000268,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000269,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000270,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000273,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000289,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000321,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000325,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000328,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000355,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000356,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000357,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000478,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000529,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000535,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000390,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000438,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000465,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000481,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000482,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000524,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000542,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000547,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000548,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000551,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000554,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000558,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000560,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000569,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000570,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000597,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000616,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000642,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000648,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000652,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000670,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000676,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000690,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000698,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000699,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000700,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000704,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000732,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000757,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000750,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000756,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000773,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000784,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000786,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000793,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000794,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000799,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000804,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000807,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000808,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000809,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000820,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000823,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000834,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000840,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000847,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000848,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000854,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000855,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000856,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000858,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000859,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000860,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000861,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000862,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000864,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000868,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000871,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000877,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000879,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000884,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000897,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000904,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000905,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000906,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000907,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000908,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000909,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000910,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000911,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000912,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000917,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000918,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000919,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000920,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000921,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000922,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000923,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000925,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000930,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000931,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000932,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000933,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000939,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000940,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000941,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000942,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000943,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000951,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000957,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000958,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000959,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000975,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000976,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000977,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000978,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000979,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000987,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000988,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000989,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000990,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000991,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000992,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001034,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001056,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001057,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001058,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001059,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001060,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001061,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001063,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000545,unsafe_positive_zero_probe,positive zero probe is known unsafe,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000546,unsafe_positive_zero_probe,positive zero probe is known unsafe,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000427,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000803,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000819,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000828,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000835,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000836,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000837,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000838,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000839,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000857,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000924,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000972,supported_entity_match_column_ref,entity column ref support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000036,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000039,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000040,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000047,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000108,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000140,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000155,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000156,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000168,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000172,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000173,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000201,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000204,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000227,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000228,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000238,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000239,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000249,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000269,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000270,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000271,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000361,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000454,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000455,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000559,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000604,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000620,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000676,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000678,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000772,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000888,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000891,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000893,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000894,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000895,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000916,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000878,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000993,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000770,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000807,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000823,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000834,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000840,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000868,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000871,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000877,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000953,supported_reference_distinct,reference distinct support is rule-id scoped,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000140,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000172,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000201,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000271,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000361,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000660,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000678,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000840,scope_wide_reference_distinct,reference distinct must preserve scope-wide datasets,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000200,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000217,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000466,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000547,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000580,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000680,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000806,missing_condition_columns_as_null,missing condition columns are treated as null for oracle compatibility,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000137,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000256,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000266,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000407,usdm_jsonata_entity_scope,USDM JSONata entity scope semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000768,record_count_operation,record_count operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000814,usdm_join_operation,USDM join and grouped operation semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000960,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-001069,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
