@@ -39,6 +39,31 @@ follow-up work.
 | `defer_positive_zero_probe` | `CORE-000217` 2, `CORE-000478` 2, `CORE-000642` 2, `CORE-000652` 2 |
 | `required_value_metadata` | `CORE-000356` 2 |
 
+The detailed upstream proposal backlog for the 47
+`official_oracle_fixture_gap` cases is tracked in
+[`open-rules-official-fixture-gap-candidates.md`](open-rules-official-fixture-gap-candidates.md).
+
+## Positive-Zero Probe Review
+
+The remaining `defer_positive_zero_probe` cases should not be bulk-returned to
+supported scoring. They mix different semantics and the current candidate
+reports are skips, not wrong answers:
+
+| Rule | Cases | Review finding |
+|---|---:|---|
+| `CORE-000217` | 2 | EC dose text fallback with `empty`/`not_exists` branches. Needs targeted empty/null semantics before scoring. |
+| `CORE-000478` | 2 | Placeholder timing variables (`--STINT`, `--ENINT`, `--TPTREF`) with SEND scope. Needs placeholder expansion and missing-column handling review. |
+| `CORE-000642` | 2 | Placeholder timing variables with explicit `exists` + `non_empty`/`empty` checks. Needs the same timing placeholder semantics as `CORE-000478`. |
+| `CORE-000652` | 2 | GV `USUBJID` containment against DM/EX distinct operations. Needs distinct operation evidence plus SEND control-subject semantics review. |
+
+## Required Value Metadata Review
+
+`CORE-000356` remains excluded from supported scoring. The official negative
+oracle lists 28 LB variables for record 1, including values that are not
+`Required`/null under the rule text. Implementing the literal rule semantics
+would not reproduce that oracle, so this is currently safer as an oracle/fixture
+review item than as a native engine change.
+
 ## Next Actions
 
 1. Keep `official_oracle_fixture_gap` as warning/report-only unless upstream

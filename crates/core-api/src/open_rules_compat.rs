@@ -10,6 +10,26 @@ use std::sync::LazyLock;
 use core_engine::RuleValidationResult;
 use core_rule_model::ExecutableRule;
 
+#[path = "open_rules_compat/classifier.rs"]
+mod classifier;
+
+pub(crate) use classifier::{
+    has_oracle_gap_rule_id, is_dataset_presence_oracle_gap_rule, is_date_operator_oracle_gap_rule,
+    is_distinct_operation_oracle_gap_rule,
+    is_domain_placeholder_column_ref_comparator_oracle_gap_rule,
+    is_domain_presence_oracle_gap_rule, is_duplicate_match_dataset_oracle_gap_rule,
+    is_dy_operation_oracle_gap_rule, is_empty_non_empty_oracle_gap_rule,
+    is_entity_literal_oracle_gap_rule, is_inconsistent_across_dataset_oracle_gap_rule,
+    is_known_unsafe_positive_zero_probe_rule, is_missing_column_oracle_gap_rule,
+    is_multi_base_match_dataset_oracle_gap_rule, is_not_unique_relationship_oracle_gap_rule,
+    is_operation_oracle_gap_rule, is_relrec_or_supp_match_dataset_oracle_gap_rule,
+    is_required_value_metadata_oracle_gap_rule, is_sort_operator_oracle_gap_rule,
+    is_supported_entity_match_column_ref_rule, is_unique_set_oracle_gap_rule,
+    is_usdm_match_dataset_oracle_gap_rule, is_variable_metadata_oracle_gap_rule,
+    should_defer_entity_column_ref_oracle_gap, should_defer_etcd_length_oracle_gap,
+    should_defer_positive_zero_oracle_gap_probe,
+};
+
 const HAND_PORT_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/hand_port_rule_ids.csv");
 const HAND_PORT_RULE_ID_HEADER: &str = "rule_id,execution_provenance,owner,scope";
 const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 119;
