@@ -459,6 +459,26 @@ mod tests {
                 },
                 ScoredCase {
                     scope: "Published".to_owned(),
+                    rule_id: "CORE-000008".to_owned(),
+                    case_kind: "negative".to_owned(),
+                    case_id: "02".to_owned(),
+                    case_dir: "case".into(),
+                    official_results_csv: "official.csv".into(),
+                    candidate_report_csv: "report.csv".into(),
+                    execution_provenance: ExecutionProvenance::NativeEngine,
+                    bucket: ScoreBucket::DeferredOracleGapMismatch,
+                    reason: Some(
+                        "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
+                            .to_owned(),
+                    ),
+                    skipped_reasons: Vec::new(),
+                    official_issue_count: Some(1),
+                    candidate_issue_count: Some(1),
+                    missing: Vec::new(),
+                    extra: Vec::new(),
+                },
+                ScoredCase {
+                    scope: "Published".to_owned(),
                     rule_id: "CORE-000007".to_owned(),
                     case_kind: "positive".to_owned(),
                     case_id: "01".to_owned(),
