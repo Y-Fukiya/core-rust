@@ -115,6 +115,10 @@ pub(crate) fn usdm_jsonata_execution_datasets(
         ));
     }
 
+    if is_usdm_timeline_jsonata_rule(rule) {
+        return Some(required_dataset(rule, datasets, "StudyDesign"));
+    }
+
     if is_usdm_governance_date_jsonata_rule(rule) {
         return Some(required_dataset(rule, datasets, "GovernanceDate"));
     }
