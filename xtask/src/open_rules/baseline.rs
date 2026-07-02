@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -20,6 +21,15 @@ pub struct BaselineArgs {
 
     #[arg(long, value_name = "FILE")]
     pub baseline: PathBuf,
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct CanonicalizeBaselineArgs {
+    #[arg(long, value_name = "FILE")]
+    pub scoreboard: PathBuf,
+
+    #[arg(long, value_name = "FILE")]
+    pub out: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -147,6 +157,59 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
         );
     }
     Ok(report.should_fail())
+}
+
+pub fn canonicalize(args: CanonicalizeBaselineArgs) -> Result<bool> {
+    let scoreboard = read_scoreboard(&args.scoreboard)?;
+    let canonicalized = canonicalize_scoreboard_for_baseline(scoreboard);
+    let mut file =
+        File::create(&args.out).with_context(|| format!("create {}", args.out.display()))?;
+    serde_json::to_writer_pretty(&mut file, &canonicalized)
+        .with_context(|| format!("write {}", args.out.display()))?;
+    writeln!(file).with_context(|| format!("write {}", args.out.display()))?;
+    println!("wrote canonical open-rules baseline {}", args.out.display());
+    Ok(false)
+}
+
+fn canonicalize_scoreboard_for_baseline(mut scoreboard: Scoreboard) -> Scoreboard {
+    for case in &mut scoreboard.cases {
+        case.case_dir = canonicalize_scoreboard_path(&case.case_dir);
+        case.official_results_csv = canonicalize_scoreboard_path(&case.official_results_csv);
+        case.candidate_report_csv = canonicalize_scoreboard_path(&case.candidate_report_csv);
+    }
+    Scoreboard::new_with_gate(
+        scoreboard.upstream,
+        scoreboard.cases,
+        scoreboard.gate.min_coverage,
+        scoreboard.gate.max_skipped_unsupported,
+        false,
+    )
+}
+
+fn canonicalize_scoreboard_path(path: &Path) -> PathBuf {
+    let components = path.components().collect::<Vec<_>>();
+    if let Some(index) = components
+        .iter()
+        .position(|component| component.as_os_str() == "target")
+    {
+        return components_to_path(&components[index..]);
+    }
+    if let Some(index) = components
+        .iter()
+        .position(|component| component.as_os_str() == "Published")
+    {
+        return components_to_path(&components[index..]);
+    }
+    path.to_path_buf()
+}
+
+fn components_to_path(components: &[Component<'_>]) -> PathBuf {
+    components
+        .iter()
+        .fold(PathBuf::new(), |mut path, component| {
+            path.push(component.as_os_str());
+            path
+        })
 }
 
 pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> BaselineReport {
@@ -835,6 +898,38 @@ mod tests {
                 && review.current_execution_provenance_detail
                     == Some(ExecutionProvenanceDetail::OracleGapNormalized)
         }));
+    }
+
+    #[test]
+    fn canonicalized_baseline_uses_portable_paths_and_recomputes_summary() {
+        let mut scoreboard = scoreboard(ScoreBucket::SupportedMatch);
+        scoreboard.cases[0].case_dir =
+            "/private/tmp/cdisc-open-rules/Published/CORE-OPEN-0001/negative/01".into();
+        scoreboard.cases[0].official_results_csv =
+            "/private/tmp/cdisc-open-rules/Published/CORE-OPEN-0001/negative/01/results/results.csv"
+                .into();
+        scoreboard.cases[0].candidate_report_csv =
+            "/Users/example/core-rust/target/open-rules-core-rs-upstream/Published/CORE-OPEN-0001/negative/01/report.csv"
+                .into();
+        scoreboard.summary.total_cases = 99;
+
+        let canonicalized = canonicalize_scoreboard_for_baseline(scoreboard);
+
+        assert_eq!(
+            canonicalized.cases[0].case_dir,
+            PathBuf::from("Published/CORE-OPEN-0001/negative/01")
+        );
+        assert_eq!(
+            canonicalized.cases[0].official_results_csv,
+            PathBuf::from("Published/CORE-OPEN-0001/negative/01/results/results.csv")
+        );
+        assert_eq!(
+            canonicalized.cases[0].candidate_report_csv,
+            PathBuf::from(
+                "target/open-rules-core-rs-upstream/Published/CORE-OPEN-0001/negative/01/report.csv"
+            )
+        );
+        assert_eq!(canonicalized.summary.total_cases, 1);
     }
 
     #[test]

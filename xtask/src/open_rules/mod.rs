@@ -6,7 +6,7 @@ pub mod run;
 pub mod score;
 pub mod upstream;
 
-pub use baseline::BaselineArgs;
+pub use baseline::{BaselineArgs, CanonicalizeBaselineArgs};
 pub use run::{RunArgs, RunScoreArgs};
 pub use score::ScoreArgs;
 
@@ -24,4 +24,8 @@ pub fn score(args: ScoreArgs) -> anyhow::Result<bool> {
 
 pub fn baseline(args: BaselineArgs) -> anyhow::Result<bool> {
     baseline::run(args)
+}
+
+pub fn canonicalize_baseline(args: CanonicalizeBaselineArgs) -> anyhow::Result<bool> {
+    baseline::canonicalize(args)
 }
