@@ -90,6 +90,22 @@ supported matches and must not be used as native engine conformance evidence.
 The current full-upstream inventory is maintained in
 `docs/open-rules-deferred-gap-inventory.md`.
 
+As of the v29 upstream scoreboard, the remaining 55
+`deferred_oracle_gap_skipped` cases are split into:
+
+- 51 `official_oracle_fixture_gap` cases, tracked as upstream oracle/data review
+  candidates rather than native engine implementation backlog. See
+  `docs/open-rules-official-fixture-gap-candidates.md`.
+- 4 `standard_filter_oracle_gap` cases, where the fixture standard/version does
+  not match the rule authority or applicability note. See
+  `docs/open-rules-standard-filter-gap-candidates.md`.
+
+There are no remaining `required_value_metadata` or `defer_distinct_operation`
+skipped cases in the v29 inventory. Those previously ambiguous cases were
+reclassified after targeted review showed that returning them to supported
+scoring would either contradict the official oracle or create a deferred
+mismatch.
+
 For reviewed row-locator oracle-gap families, scoring may ignore record locator
 fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
 domain, variables, and multiset counts. This is limited to manifest-backed

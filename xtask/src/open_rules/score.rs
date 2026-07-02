@@ -1001,6 +1001,7 @@ fn deferred_default_engine_oracle_gap_skipped_reason(case: &OpenRulesCase) -> Op
 
 fn deferred_default_engine_oracle_gap_reason_text(case: &OpenRulesCase) -> Option<&'static str> {
     [
+        ("official_oracle_fixture_gap", "official oracle fixture gap"),
         (
             "defer_empty_non_empty",
             "deferred empty/non_empty oracle semantics",
@@ -1032,6 +1033,10 @@ fn deferred_default_engine_oracle_gap_reason_text(case: &OpenRulesCase) -> Optio
         (
             "defer_distinct_operation",
             "deferred distinct operation oracle semantics",
+        ),
+        (
+            "standard_filter_oracle_gap",
+            "standard applicability oracle semantics",
         ),
         (
             "required_value_metadata",
@@ -1363,7 +1368,7 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
     }
 
     #[test]
-    fn deferred_oracle_gap_skip_is_not_counted_as_skipped_unsupported() {
+    fn standard_filter_oracle_gap_skip_is_not_counted_as_skipped_unsupported() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
@@ -1385,14 +1390,14 @@ CORE-000217,skipped,DM,DM,,,,0,oracle_semantics_gap,,\n",
         assert_eq!(
             scored[0].reason,
             Some(
-                "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified"
+                "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified"
                     .to_owned()
             )
         );
     }
 
     #[test]
-    fn reviewed_rule_gap_skip_is_not_counted_as_skipped_unsupported() {
+    fn official_fixture_gap_skip_is_not_counted_as_skipped_unsupported() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
@@ -1413,7 +1418,7 @@ CORE-000356,skipped,DM,DM,,,,0,unsupported_rule_type,,\n",
         assert_eq!(
             scored[0].reason,
             Some(
-                "required value metadata oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified"
+                "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified"
                     .to_owned()
             )
         );

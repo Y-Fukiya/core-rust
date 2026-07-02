@@ -40,7 +40,7 @@ const ORACLE_GAP_RULE_ID_HEADER: &str = "rule_id,category,reason,owner,evidence,
 const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 473;
 const ORACLE_GAP_SCOPE: &str = "open-rules-oracle-harness";
 #[cfg(test)]
-const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["usdm_match_dataset"];
+const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["required_value_metadata", "usdm_match_dataset"];
 #[cfg(test)]
 const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "dataset_presence",
@@ -82,6 +82,7 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "relrec_or_supp_match_dataset",
     "required_value_metadata",
     "scope_wide_reference_distinct",
+    "standard_filter_oracle_gap",
     "supported_entity_match_column_ref",
     "supported_reference_distinct",
     "usdm_join_operation",

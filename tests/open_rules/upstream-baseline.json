@@ -8493,7 +8493,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000217/negative/05/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "oracle_semantics_gap"
       ],
@@ -8578,7 +8578,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000217/positive/05/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "oracle_semantics_gap"
       ],
@@ -12459,7 +12459,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000356/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "required value metadata oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "unsupported_rule_type"
       ],
@@ -12476,7 +12476,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000356/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "required value metadata oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "unsupported_rule_type"
       ],
@@ -15523,7 +15523,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000478/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "oracle_semantics_gap"
       ],
@@ -15540,7 +15540,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000478/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "oracle_semantics_gap"
       ],
@@ -21405,7 +21405,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000652/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "operations_not_supported"
       ],
@@ -21422,7 +21422,7 @@
       "candidate_report_csv": "target/open-rules-core-rs-upstream-v26/Published/CORE-000652/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "bucket": "deferred_oracle_gap_skipped",
-      "reason": "deferred positive-zero probe oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified",
+      "reason": "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified",
       "skipped_reasons": [
         "operations_not_supported"
       ],

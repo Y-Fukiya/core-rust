@@ -234,7 +234,7 @@ CORE-000019,defer_variable_metadata,variable metadata semantics still quarantine
 CORE-000454,defer_distinct_operation,distinct operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000455,defer_distinct_operation,distinct operation semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000143,defer_etcd_length,ETCD length semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000356,required_value_metadata,value level metadata semantics need oracle review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000356,official_oracle_fixture_gap,official negative oracle lists LB variables beyond literal Required/null semantics,core-api,Published/CORE-000356/negative/01 results.csv vs value metadata rule,open-rules-oracle-harness
 CORE-000098,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000027,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000108,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
@@ -252,7 +252,7 @@ CORE-000195,defer_positive_zero_probe,positive zero probe semantics still quaran
 CORE-000197,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000198,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000204,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000217,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000217,standard_filter_oracle_gap,SENDIG 3.1 fixture does not match the SDTMIG/TIG rule authority,core-api,Published/CORE-000217/negative/05 and positive/05 standard filter,open-rules-oracle-harness
 CORE-000224,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000237,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000249,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
@@ -268,7 +268,7 @@ CORE-000328,defer_positive_zero_probe,positive zero probe semantics still quaran
 CORE-000355,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000356,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000357,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000478,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000478,standard_filter_oracle_gap,SENDIG 3.0 fixture conflicts with rule comment not applicable to SENDIG-3.0,core-api,Published/CORE-000478 rule.yml and SENDIG 3.0 fixture,open-rules-oracle-harness
 CORE-000529,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000390,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000438,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
@@ -288,7 +288,7 @@ CORE-000570,defer_positive_zero_probe,positive zero probe semantics still quaran
 CORE-000597,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000616,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000648,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000652,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000652,official_oracle_fixture_gap,official GV rows contradict DM/EX USUBJID containment observed in distinct probe,core-api,Published/CORE-000652 negative/01 official rows vs external distinct probe,open-rules-oracle-harness
 CORE-000670,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000676,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000660,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
