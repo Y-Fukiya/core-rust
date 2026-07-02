@@ -111,12 +111,17 @@ fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
 domain, variables, and multiset counts. This is limited to manifest-backed
 families where official and candidate issue identity is known to differ only by
 unstable row location; it must not hide missing or extra issue counts.
+Cases where this relaxation is applied record
+`scoring_normalizations: ["row_locator_identity_relaxed"]` in `scoreboard.json`.
 
 For reviewed `empty/non_empty` oracle-gap families, scoring may drop candidate
 output-context variables at the same rule/dataset/domain/row/subject/sequence
 location when the official oracle reports only the failed condition variables.
 This is limited to manifest-backed cases and does not ignore extra rows, missing
 official variables, or different record locators.
+Cases where this relaxation is applied record
+`scoring_normalizations: ["output_context_variable_aligned"]` in
+`scoreboard.json`.
 
 The same output-context-variable normalization applies to reviewed
 positive-zero probe oracle-gap families. It can remove extra candidate variables
@@ -147,6 +152,10 @@ Read these fields together:
   native engine execution.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
   supported rule-id hand-port execution.
+- `execution_provenance_detail`: case-level refinement of execution provenance.
+  It separates `generic_engine`, `rule_specific_engine_semantics`,
+  `compatibility_policy`, `oracle_gap_normalized`, `rule_id_hand_port`, and
+  `unknown`.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
 
@@ -181,7 +190,11 @@ large, not that supported behavior is wrong.
 are excluded from the supported numerator.
 
 Aggregate `coverage` includes both native engine and rule-id hand-port supported
-cases. Use `native_engine_coverage` when describing generic engine support.
+cases. `native_engine_coverage` is retained for backward compatibility and means
+"not hand-port", not necessarily pure generic-engine semantics. Use the
+`Execution Provenance Detail` table to separate generic engine support from
+rule-specific engine semantics, compatibility policy, and oracle-gap
+normalization.
 
 Rule-id hand-port provenance is driven by
 `crates/core-api/src/open_rules_compat/hand_port_rule_ids.csv`, not by an inline
@@ -303,9 +316,12 @@ Baseline comparison is stricter: increases in either
 `deferred_oracle_gap_skipped` or `no_official_oracle` are review-required and
 make the baseline command exit non-zero.
 
-CI runs the repository-local executable fixture only. It does not download or
-vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
-are not blocked by network access or upstream drift.
+CI runs the repository-local curated executable fixture only. It does not
+download or vendor the full upstream `cdisc-open-rules` repository, so normal
+pull requests are not blocked by network access or upstream drift. The curated
+fixture gate compares against `tests/open_rules/baseline.json`, which includes
+provenance detail and scoring-normalization fields so schema regressions are
+caught in PR CI. Full upstream observe/regression remains scheduled/manual.
 
 The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 `Open Rules Upstream`. It can be started manually with `workflow_dispatch` and

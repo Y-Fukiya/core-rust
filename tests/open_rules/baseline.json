@@ -3,8 +3,10 @@
     "repo": "https://github.com/cdisc-org/cdisc-open-rules.git",
     "expected_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
     "observed_sha": null,
-    "lock_path": "tests/open_rules/upstream.lock",
-    "warnings": []
+    "lock_path": "/Users/yfukiya/Documents/core-rust/xtask/../tests/open_rules/upstream.lock",
+    "warnings": [
+      "git rev-parse failed for tests/fixtures/open_rules_executable: not a git checkout"
+    ]
   },
   "summary": {
     "total_cases": 2,
@@ -13,6 +15,15 @@
     "synthetic_oracle_match": 0,
     "unverified_synthetic_oracle_match": 0,
     "supported_mismatch": 0,
+    "deferred_oracle_gap_mismatch": 0,
+    "deferred_oracle_gap_skipped": 0,
+    "deferred_oracle_gap_breakdown": {
+      "candidate_skipped": 0,
+      "official_fixture_gap": 0,
+      "standard_filter_oracle_gap": 0,
+      "oracle_identity_gap": 0,
+      "unverified_semantics_gap": 0
+    },
     "skipped_unsupported": 0,
     "mixed_skipped_and_issues": 0,
     "no_official_oracle": 0,
@@ -30,13 +41,23 @@
     "unknown_provenance_supported_match": 0,
     "unknown_provenance_supported_mismatch": 0,
     "unknown_provenance_supported_accuracy": null,
-    "unknown_provenance_coverage": 0.0
+    "unknown_provenance_coverage": 0.0,
+    "by_execution_provenance_detail": [
+      {
+        "detail": "generic_engine",
+        "supported_match": 2,
+        "supported_mismatch": 0,
+        "supported_accuracy": 1.0,
+        "coverage": 1.0
+      }
+    ]
   },
   "gate": {
     "min_coverage": 1.0,
     "max_skipped_unsupported": 0,
     "coverage_threshold_failed": false,
     "skipped_unsupported_threshold_failed": false,
+    "deferred_oracle_gap_failed": false,
     "should_fail": false
   },
   "by_scope": [
@@ -49,6 +70,15 @@
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
+        "deferred_oracle_gap_mismatch": 0,
+        "deferred_oracle_gap_skipped": 0,
+        "deferred_oracle_gap_breakdown": {
+          "candidate_skipped": 0,
+          "official_fixture_gap": 0,
+          "standard_filter_oracle_gap": 0,
+          "oracle_identity_gap": 0,
+          "unverified_semantics_gap": 0
+        },
         "skipped_unsupported": 0,
         "mixed_skipped_and_issues": 0,
         "no_official_oracle": 0,
@@ -66,7 +96,16 @@
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
-        "unknown_provenance_coverage": 0.0
+        "unknown_provenance_coverage": 0.0,
+        "by_execution_provenance_detail": [
+          {
+            "detail": "generic_engine",
+            "supported_match": 2,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ]
       }
     }
   ],
@@ -80,6 +119,15 @@
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
+        "deferred_oracle_gap_mismatch": 0,
+        "deferred_oracle_gap_skipped": 0,
+        "deferred_oracle_gap_breakdown": {
+          "candidate_skipped": 0,
+          "official_fixture_gap": 0,
+          "standard_filter_oracle_gap": 0,
+          "oracle_identity_gap": 0,
+          "unverified_semantics_gap": 0
+        },
         "skipped_unsupported": 0,
         "mixed_skipped_and_issues": 0,
         "no_official_oracle": 0,
@@ -97,7 +145,16 @@
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
-        "unknown_provenance_coverage": 0.0
+        "unknown_provenance_coverage": 0.0,
+        "by_execution_provenance_detail": [
+          {
+            "detail": "generic_engine",
+            "supported_match": 1,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ]
       }
     },
     {
@@ -109,6 +166,15 @@
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
+        "deferred_oracle_gap_mismatch": 0,
+        "deferred_oracle_gap_skipped": 0,
+        "deferred_oracle_gap_breakdown": {
+          "candidate_skipped": 0,
+          "official_fixture_gap": 0,
+          "standard_filter_oracle_gap": 0,
+          "oracle_identity_gap": 0,
+          "unverified_semantics_gap": 0
+        },
         "skipped_unsupported": 0,
         "mixed_skipped_and_issues": 0,
         "no_official_oracle": 0,
@@ -126,7 +192,16 @@
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
-        "unknown_provenance_coverage": 0.0
+        "unknown_provenance_coverage": 0.0,
+        "by_execution_provenance_detail": [
+          {
+            "detail": "generic_engine",
+            "supported_match": 1,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ]
       }
     }
   ],
@@ -140,10 +215,14 @@
       "official_results_csv": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/negative/01/results/results.csv",
       "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/negative/01/report.csv",
       "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
       "bucket": "supported_match",
       "reason": null,
       "official_issue_count": 1,
       "candidate_issue_count": 1,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
       "missing": [],
       "extra": []
     },
@@ -156,10 +235,14 @@
       "official_results_csv": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/positive/01/results/results.csv",
       "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/positive/01/report.csv",
       "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
       "bucket": "supported_match",
       "reason": null,
       "official_issue_count": 0,
       "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
       "missing": [],
       "extra": []
     }

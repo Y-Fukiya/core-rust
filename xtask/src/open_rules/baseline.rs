@@ -507,9 +507,12 @@ mod tests {
                 official_results_csv: "official.csv".into(),
                 candidate_report_csv: "report.csv".into(),
                 execution_provenance: ExecutionProvenance::Unknown,
+                execution_provenance_detail:
+                    crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
                 bucket,
                 reason: None,
                 skipped_reasons: Vec::new(),
+                scoring_normalizations: Vec::new(),
                 official_issue_count: Some(1),
                 candidate_issue_count: Some(1),
                 missing_count: Some(0),
