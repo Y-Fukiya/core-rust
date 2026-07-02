@@ -21,8 +21,12 @@ use policy::{
     official_oracle_fixture_gap_category,
 };
 pub use provenance::{
-    execution_provenance_for_rule_id, ExecutionProvenance, ExecutionProvenanceDetail,
+    execution_provenance_detail_for_case, execution_provenance_for_rule_id,
+    scoring_policy_for_normalizations, ExecutionProvenance, ExecutionProvenanceDetail,
+    ScoringPolicy,
 };
+#[cfg(test)]
+pub use summary::ScoringNormalizationSummary;
 pub use summary::{GroupSummary, ScoreGate, ScoreSummary};
 
 #[derive(Debug, Clone, Parser)]
@@ -98,6 +102,8 @@ pub struct ScoredCase {
     pub execution_provenance: ExecutionProvenance,
     #[serde(default)]
     pub execution_provenance_detail: ExecutionProvenanceDetail,
+    #[serde(default)]
+    pub scoring_policy: ScoringPolicy,
     pub bucket: ScoreBucket,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -212,6 +218,7 @@ fn score_case(
             &execution_provenance,
             &[],
         ),
+        scoring_policy: ScoringPolicy::StrictIdentity,
         bucket: ScoreBucket::HarnessError,
         reason: None,
         skipped_reasons: Vec::new(),
@@ -343,6 +350,7 @@ fn score_case(
         &base.execution_provenance,
         &scoring_normalizations,
     );
+    let scoring_policy = provenance::scoring_policy_for_normalizations(&scoring_normalizations);
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
@@ -354,6 +362,7 @@ fn score_case(
             return ScoredCase {
                 bucket: ScoreBucket::DeferredOracleGapSkipped,
                 execution_provenance_detail: execution_provenance_detail.clone(),
+                scoring_policy: scoring_policy.clone(),
                 reason: Some(
                     "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled"
                         .to_owned(),
@@ -374,6 +383,7 @@ fn score_case(
             return ScoredCase {
                 bucket: ScoreBucket::DeferredOracleGapMismatch,
                 execution_provenance_detail: execution_provenance_detail.clone(),
+                scoring_policy: scoring_policy.clone(),
                 reason: Some(reason.clone()),
                 skipped_reasons: Vec::new(),
                 scoring_normalizations: scoring_normalizations.clone(),
@@ -397,6 +407,7 @@ fn score_case(
     ScoredCase {
         bucket,
         execution_provenance_detail,
+        scoring_policy,
         scoring_normalizations,
         official_issue_count: Some(official_issue_count),
         candidate_issue_count: Some(candidate_issue_count),
@@ -596,6 +607,7 @@ mod tests {
             candidate_report_csv: PathBuf::from("report.csv"),
             execution_provenance: ExecutionProvenance::NativeEngine,
             execution_provenance_detail: ExecutionProvenanceDetail::GenericEngine,
+            scoring_policy: ScoringPolicy::StrictIdentity,
             bucket,
             reason: reason.map(str::to_owned),
             skipped_reasons: Vec::new(),
@@ -932,8 +944,9 @@ CORE-000027,failed,TE,TE,1,ETCD|TEDUR|TEENRL,bad,1,,,\n",
         );
         assert_eq!(
             scored[0].execution_provenance_detail,
-            ExecutionProvenanceDetail::OracleGapNormalized
+            ExecutionProvenanceDetail::GenericEngine
         );
+        assert_eq!(scored[0].scoring_policy, ScoringPolicy::OracleGapNormalized);
         assert_eq!(summary.supported_match, 1);
         assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
     }
@@ -987,6 +1000,39 @@ CORE-000027,failed,TE,TE,1,ETCD|TEDUR|TEENRL,bad,1,,,\n",
                     cases: 1,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn scoring_policy_is_separate_from_execution_provenance_detail() {
+        let mut scored = scored_case(ScoreBucket::SupportedMatch, None);
+        scored.execution_provenance = ExecutionProvenance::RuleIdHandPort;
+        scored.execution_provenance_detail = ExecutionProvenanceDetail::RuleIdHandPort;
+        scored.scoring_normalizations = vec!["row_locator_identity_relaxed".to_owned()];
+        scored.scoring_policy = ScoringPolicy::OracleGapNormalized;
+
+        let summary = ScoreSummary::from_cases(&[scored]);
+
+        assert_eq!(summary.rule_id_hand_port_supported_match, 1);
+        assert_eq!(
+            summary.by_execution_provenance_detail,
+            vec![summary::ExecutionProvenanceDetailSummary {
+                detail: ExecutionProvenanceDetail::RuleIdHandPort,
+                supported_match: 1,
+                supported_mismatch: 0,
+                supported_accuracy: Some(1.0),
+                coverage: Some(1.0),
+            }]
+        );
+        assert_eq!(
+            summary.by_scoring_policy,
+            vec![summary::ScoringPolicySummary {
+                policy: ScoringPolicy::OracleGapNormalized,
+                supported_match: 1,
+                supported_mismatch: 0,
+                supported_accuracy: Some(1.0),
+                coverage: Some(1.0),
+            }]
         );
     }
 
@@ -1258,8 +1304,9 @@ CORE-000137,failed,EC,EC,13,ECDOSE,bad,1,,,\n",
         );
         assert_eq!(
             scored[0].execution_provenance_detail,
-            ExecutionProvenanceDetail::OracleGapNormalized
+            ExecutionProvenanceDetail::GenericEngine
         );
+        assert_eq!(scored[0].scoring_policy, ScoringPolicy::OracleGapNormalized);
         assert_eq!(summary.supported_match, 1);
         assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
     }

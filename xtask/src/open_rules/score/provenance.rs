@@ -20,9 +20,19 @@ pub enum ExecutionProvenanceDetail {
     RuleSpecificEngineSemantics,
     CompatibilityPolicy,
     RuleIdHandPort,
+    // Retained for backward-compatible baseline deserialization. New
+    // scoreboards report normalization through ScoringPolicy instead.
     OracleGapNormalized,
     #[default]
     Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ScoringPolicy {
+    #[default]
+    StrictIdentity,
+    OracleGapNormalized,
 }
 
 impl ExecutionProvenance {
@@ -48,6 +58,15 @@ impl ExecutionProvenanceDetail {
     }
 }
 
+impl ScoringPolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::StrictIdentity => "strict_identity",
+            Self::OracleGapNormalized => "oracle_gap_normalized",
+        }
+    }
+}
+
 pub fn candidate_execution_provenance(case: &OpenRulesCase, path: &Path) -> ExecutionProvenance {
     read_candidate_execution_provenance(path)
         .unwrap_or_else(|| execution_provenance_for_rule_id(&case.rule_id))
@@ -64,11 +83,8 @@ pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
 pub fn execution_provenance_detail_for_case(
     rule_id: &str,
     provenance: &ExecutionProvenance,
-    scoring_normalizations: &[String],
+    _scoring_normalizations: &[String],
 ) -> ExecutionProvenanceDetail {
-    if !scoring_normalizations.is_empty() {
-        return ExecutionProvenanceDetail::OracleGapNormalized;
-    }
     match provenance {
         ExecutionProvenance::RuleIdHandPort => ExecutionProvenanceDetail::RuleIdHandPort,
         ExecutionProvenance::Unknown => ExecutionProvenanceDetail::Unknown,
@@ -79,6 +95,14 @@ pub fn execution_provenance_detail_for_case(
                 None => ExecutionProvenanceDetail::GenericEngine,
             }
         }
+    }
+}
+
+pub fn scoring_policy_for_normalizations(scoring_normalizations: &[String]) -> ScoringPolicy {
+    if scoring_normalizations.is_empty() {
+        ScoringPolicy::StrictIdentity
+    } else {
+        ScoringPolicy::OracleGapNormalized
     }
 }
 

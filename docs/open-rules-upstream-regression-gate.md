@@ -65,11 +65,11 @@ The curated upstream subset is intentionally not a replacement for the full
 upstream workflow. It is a fast PR signal that copies selected rule directories
 from the pinned `cdisc-open-rules` checkout and compares them against
 `tests/open_rules/curated-upstream-baseline.json`. The selected rules cover the
-major execution provenance detail families and several previously fragile
-semantics families:
+major execution provenance detail families, scoring-policy normalization, and
+several previously fragile semantics families:
 
 - `CORE-000001`: `generic_engine`
-- `CORE-000007`: `oracle_gap_normalized`
+- `CORE-000007`: `scoring_policy=oracle_gap_normalized`
 - `CORE-000012`: `rule_specific_engine_semantics`
 - `CORE-000047`: `rule_id_hand_port`
 - `CORE-000119`: `compatibility_policy`
@@ -82,7 +82,7 @@ semantics families:
 
 The gap subset lives in `tests/open_rules/curated-gap-rules.txt` and is
 compared against `tests/open_rules/curated-gap-baseline.json`. It intentionally
-includes a small number of accepted non-supported paths so PR CI exercises
+includes 31 rules / 135 accepted non-supported path cases so PR CI exercises
 `deferred_oracle_gap_skipped`, `official_oracle_fixture_gap`,
 `standard_filter_oracle_gap`, and `no_official_oracle` accounting without
 requiring a full upstream run.
