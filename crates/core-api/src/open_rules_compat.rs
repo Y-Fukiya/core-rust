@@ -82,7 +82,7 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "supported_entity_match_column_ref",
     "supported_reference_distinct",
     "usdm_join_operation",
-    "usdm_jsonata_entity_scope",
+    "usdm_hand_port_entity_scope",
     "unique_set",
     "unsafe_positive_zero_probe",
     "usdm_match_dataset",
@@ -127,7 +127,7 @@ const RULE_SPECIFIC_SEMANTICS_CATEGORIES: &[&str] = &[
     "unique_set_locator_variable_projection",
     "unique_set_subject_locator_variable_projection",
     "usdm_condition_context",
-    "usdm_jsonata_hand_port",
+    "usdm_hand_port",
 ];
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =

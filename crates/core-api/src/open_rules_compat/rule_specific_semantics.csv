@@ -110,7 +110,7 @@ CORE-000361,engine_semantics,relationship_adapter,relationship direction rewrite
 CORE-000376,engine_semantics,metadata_adapter,variable metadata domain prefix operation,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000390,engine_semantics,unique_set_interval_adapter,CV uniqueness uses overlapping evaluation interval semantics,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000398,engine_semantics,metadata_adapter,CDISC Library variable metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000407,hand_port_semantics,usdm_jsonata_hand_port,USDM timeline JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000407,hand_port_semantics,usdm_hand_port,USDM timeline hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000454,engine_semantics,operation_adapter,operation report variable follows RFXENDTC check target despite legacy outcome label,core-api,full-upstream-baseline,open-rules-oracle-harness
 CORE-000460,engine_semantics,date_result_postprocess,date issue variable expansion,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000466,engine_semantics,result_postprocess,PP dataset level oracle row synthesis,core-api,core-api-lib-inventory,open-rules-oracle-harness
@@ -166,99 +166,99 @@ CORE-000896,engine_semantics,operation_adapter,POOLDEF POOLID mismatch adapter s
 CORE-000902,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000903,engine_semantics,metadata_adapter,CDISC Library variable metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000929,engine_semantics,metadata_adapter,domain codelist metadata and ZB issue normalization,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000944,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000944,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
 CORE-000947,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000948,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000950,hand_port_semantics,usdm_jsonata_hand_port,USDM scheduled instance JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000954,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000955,hand_port_semantics,usdm_jsonata_hand_port,USDM identifier JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000956,hand_port_semantics,usdm_jsonata_hand_port,USDM identifier JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000961,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000962,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000963,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000964,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000965,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000966,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000967,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000968,hand_port_semantics,usdm_jsonata_hand_port,USDM governance date JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000969,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000970,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000971,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000973,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000974,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000980,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000981,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000982,hand_port_semantics,usdm_jsonata_hand_port,USDM planned number JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000983,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000984,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000985,hand_port_semantics,usdm_jsonata_hand_port,USDM document content reference JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000986,hand_port_semantics,usdm_jsonata_hand_port,USDM administration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000994,hand_port_semantics,usdm_jsonata_hand_port,USDM duration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000995,hand_port_semantics,usdm_jsonata_hand_port,USDM duration JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000996,hand_port_semantics,usdm_jsonata_hand_port,USDM planned sex JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000997,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000998,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-000999,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001000,hand_port_semantics,usdm_jsonata_hand_port,USDM study role JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001001,hand_port_semantics,usdm_jsonata_hand_port,USDM administrable product JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001002,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001003,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001004,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001005,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001006,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001007,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001008,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001009,hand_port_semantics,usdm_jsonata_hand_port,USDM range JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001010,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001011,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001012,hand_port_semantics,usdm_jsonata_hand_port,USDM range JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001013,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001014,hand_port_semantics,usdm_jsonata_hand_port,USDM person name JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001015,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001016,hand_port_semantics,usdm_jsonata_hand_port,USDM timeline JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001017,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001018,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001019,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001020,hand_port_semantics,usdm_jsonata_hand_port,USDM strength JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001021,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001022,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001023,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001024,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001025,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001026,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001027,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001028,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001029,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001030,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001031,hand_port_semantics,usdm_jsonata_hand_port,USDM recursive JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001032,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001033,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001036,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001037,hand_port_semantics,usdm_jsonata_hand_port,USDM syntax template text JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001038,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001039,hand_port_semantics,usdm_jsonata_hand_port,USDM scheduled instance JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001040,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001041,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001042,hand_port_semantics,usdm_jsonata_hand_port,USDM geographic scope JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001045,hand_port_semantics,usdm_jsonata_hand_port,USDM reference integrity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001046,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001047,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001048,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001049,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001050,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001051,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001052,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001053,hand_port_semantics,usdm_jsonata_hand_port,USDM abbreviation JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001054,hand_port_semantics,usdm_jsonata_hand_port,USDM study version JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001055,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001062,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001065,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001066,hand_port_semantics,usdm_jsonata_hand_port,USDM activity JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001067,hand_port_semantics,usdm_jsonata_hand_port,USDM abbreviation JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001070,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001071,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001072,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001073,hand_port_semantics,usdm_jsonata_hand_port,USDM narrative content item JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001074,hand_port_semantics,usdm_jsonata_hand_port,USDM syntax template text JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001075,hand_port_semantics,usdm_jsonata_hand_port,USDM object JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
-CORE-001077,hand_port_semantics,usdm_jsonata_hand_port,USDM study design JSONata rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000948,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000950,hand_port_semantics,usdm_hand_port,USDM scheduled instance hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000954,hand_port_semantics,usdm_hand_port,USDM activity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000955,hand_port_semantics,usdm_hand_port,USDM identifier hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000956,hand_port_semantics,usdm_hand_port,USDM identifier hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000961,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000962,hand_port_semantics,usdm_hand_port,USDM planned number hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000963,hand_port_semantics,usdm_hand_port,USDM planned number hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000964,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000965,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000966,hand_port_semantics,usdm_hand_port,USDM administration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000967,hand_port_semantics,usdm_hand_port,USDM administration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000968,hand_port_semantics,usdm_hand_port,USDM governance date hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000969,hand_port_semantics,usdm_hand_port,USDM administration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000970,hand_port_semantics,usdm_hand_port,USDM study role hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000971,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000973,hand_port_semantics,usdm_hand_port,USDM study version hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000974,hand_port_semantics,usdm_hand_port,USDM study role hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000980,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000981,hand_port_semantics,usdm_hand_port,USDM planned number hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000982,hand_port_semantics,usdm_hand_port,USDM planned number hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000983,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000984,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000985,hand_port_semantics,usdm_hand_port,USDM document content reference hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000986,hand_port_semantics,usdm_hand_port,USDM administration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000994,hand_port_semantics,usdm_hand_port,USDM duration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000995,hand_port_semantics,usdm_hand_port,USDM duration hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000996,hand_port_semantics,usdm_hand_port,USDM planned sex hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000997,hand_port_semantics,usdm_hand_port,USDM study role hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000998,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-000999,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001000,hand_port_semantics,usdm_hand_port,USDM study role hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001001,hand_port_semantics,usdm_hand_port,USDM administrable product hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001002,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001003,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001004,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001005,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001006,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001007,hand_port_semantics,usdm_hand_port,USDM strength hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001008,hand_port_semantics,usdm_hand_port,USDM strength hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001009,hand_port_semantics,usdm_hand_port,USDM range hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001010,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001011,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001012,hand_port_semantics,usdm_hand_port,USDM range hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001013,hand_port_semantics,usdm_hand_port,USDM object hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001014,hand_port_semantics,usdm_hand_port,USDM person name hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001015,hand_port_semantics,usdm_hand_port,USDM object hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001016,hand_port_semantics,usdm_hand_port,USDM timeline hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001017,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001018,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001019,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001020,hand_port_semantics,usdm_hand_port,USDM strength hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001021,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001022,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001023,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001024,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001025,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001026,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001027,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001028,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001029,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001030,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001031,hand_port_semantics,usdm_hand_port,USDM recursive hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001032,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001033,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001036,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001037,hand_port_semantics,usdm_hand_port,USDM syntax template text hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001038,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001039,hand_port_semantics,usdm_hand_port,USDM scheduled instance hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001040,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001041,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001042,hand_port_semantics,usdm_hand_port,USDM geographic scope hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001045,hand_port_semantics,usdm_hand_port,USDM reference integrity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001046,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001047,hand_port_semantics,usdm_hand_port,USDM activity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001048,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001049,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001050,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001051,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001052,hand_port_semantics,usdm_hand_port,USDM study version hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001053,hand_port_semantics,usdm_hand_port,USDM abbreviation hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001054,hand_port_semantics,usdm_hand_port,USDM study version hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001055,hand_port_semantics,usdm_hand_port,USDM narrative content hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001062,hand_port_semantics,usdm_hand_port,USDM activity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001065,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001066,hand_port_semantics,usdm_hand_port,USDM activity hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001067,hand_port_semantics,usdm_hand_port,USDM abbreviation hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001070,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001071,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001072,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001073,hand_port_semantics,usdm_hand_port,USDM narrative content item hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001074,hand_port_semantics,usdm_hand_port,USDM syntax template text hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001075,hand_port_semantics,usdm_hand_port,USDM object hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness
+CORE-001077,hand_port_semantics,usdm_hand_port,USDM study design hand-port rewrite,core-api,core-api-lib-inventory,open-rules-oracle-harness

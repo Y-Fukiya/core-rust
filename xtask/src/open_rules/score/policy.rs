@@ -117,8 +117,8 @@ fn deferred_default_engine_oracle_gap_reason_text(case: &OpenRulesCase) -> Optio
         ),
         ("record_row_locator", "record row locator oracle semantics"),
         (
-            "usdm_jsonata_entity_scope",
-            "USDM JSONata entity-scope oracle semantics",
+            "usdm_hand_port_entity_scope",
+            "USDM hand-port entity-scope oracle semantics",
         ),
         (
             "record_count_operation",

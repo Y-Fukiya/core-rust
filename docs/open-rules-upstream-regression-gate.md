@@ -61,6 +61,12 @@ workflow currently runs on `workflow_dispatch` and a weekly schedule. Normal PR
 CI runs the repository-local fixture gate, a supported-match pinned upstream
 subset gate, and a small pinned upstream gap subset gate.
 
+This layering has an intentional detection window: regressions outside the
+curated PR subsets can merge green and surface only when the scheduled or manual
+full upstream workflow runs. Treat the weekly full-corpus artifacts as part of
+the review record for Open Rules compatibility, especially for changes touching
+`core-api`, `core-data`, `core-engine`, or `xtask open-rules` scoring policy.
+
 The curated upstream subset is intentionally not a replacement for the full
 upstream workflow. It is a fast PR signal that copies selected rule directories
 from the pinned `cdisc-open-rules` checkout and compares them against

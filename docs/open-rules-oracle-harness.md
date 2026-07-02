@@ -239,13 +239,13 @@ labels for future native semantics work, not supported matches.
 Remaining hard-coded `CORE-xxxxxx` references in `core-api` are inventoried in
 `crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`. That file
 does not make the rules generic; it classifies why each rule-specific reference
-still exists, such as USDM JSONata hand-port semantics, metadata adapters,
+still exists, such as USDM hand-port semantics, metadata adapters,
 standard-filter compatibility, or result post-processing. Unit tests scan the
 core API source files and fail when a new hard-coded CORE id appears without a
 classification row.
 
-USDM JSONata hand-port semantics are isolated in
-`crates/core-api/src/usdm_jsonata.rs`. `core-api/src/lib.rs` should call that
+USDM hand-port semantics are isolated in
+`crates/core-api/src/usdm_hand_ports.rs`. `core-api/src/lib.rs` should call that
 module, not carry inline USDM rule-family lists.
 
 Remaining Open Rules engine-semantics rule-id membership is isolated in
