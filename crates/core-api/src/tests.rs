@@ -21,6 +21,8 @@ mod open_rules_operations;
 mod open_rules_scope;
 mod open_rules_usdm;
 mod open_rules_usdm_activity;
+mod open_rules_usdm_blinding;
+mod open_rules_usdm_identifiers;
 mod open_rules_usdm_narrative;
 mod open_rules_usdm_population;
 mod open_rules_usdm_study_design;
