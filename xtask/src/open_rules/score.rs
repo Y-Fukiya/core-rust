@@ -1,29 +1,23 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
-use crate::open_rules::normalize::{normalize_csv, IssueKey, ReportSource};
+use crate::open_rules::normalize::{normalize_csv, normalize_scalar, IssueKey, ReportSource};
 use crate::open_rules::report::write_scoreboard;
 use crate::open_rules::upstream::{load_upstream_info, UpstreamInfo};
 
-mod identity;
-mod normalization;
-mod policy;
 mod provenance;
 mod summary;
-use identity::{align_candidate_identity_to_official, duplicate_sequence_values_by_dataset};
-use normalization::normalize_deferred_oracle_gap_issue_identity;
-use policy::{
-    deferred_default_engine_oracle_gap_reason, deferred_default_engine_oracle_gap_skipped_reason,
-    official_oracle_fixture_gap_category,
-};
 pub use provenance::{
     execution_provenance_for_rule_id, ExecutionProvenance, ExecutionProvenanceDetail,
 };
 pub use summary::{GroupSummary, ScoreGate, ScoreSummary};
+
+type IssueSignature = (String, String, String, Vec<String>);
+type IssueRowSignature = (String, String, String, Vec<String>, String);
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreArgs {
@@ -359,6 +353,105 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     }
 }
 
+fn normalize_deferred_oracle_gap_issue_identity(
+    case: &OpenRulesCase,
+    official: &mut [IssueKey],
+    candidate: &mut Vec<IssueKey>,
+) -> Vec<String> {
+    let mut normalizations = Vec::new();
+    if row_locator_oracle_gap_category(case) {
+        clear_issue_record_locators(official);
+        clear_issue_record_locators(candidate);
+        normalizations.push("row_locator_identity_relaxed".to_owned());
+    }
+    if output_context_variable_oracle_gap_category(case) {
+        drop_candidate_output_context_variables(official, candidate);
+        normalizations.push("output_context_variable_aligned".to_owned());
+    }
+    normalizations
+}
+
+fn official_oracle_fixture_gap_category(case: &OpenRulesCase) -> bool {
+    core_api::rule_id_has_oracle_gap_category(&case.rule_id, "official_oracle_fixture_gap")
+}
+
+fn row_locator_oracle_gap_category(case: &OpenRulesCase) -> bool {
+    [
+        "record_row_locator",
+        "defer_unique_set",
+        "scope_wide_reference_distinct",
+        "defer_duplicate_match_dataset",
+    ]
+    .into_iter()
+    .any(|category| core_api::rule_id_has_oracle_gap_category(&case.rule_id, category))
+}
+
+fn clear_issue_record_locators(issues: &mut [IssueKey]) {
+    for issue in issues {
+        issue.row.clear();
+        issue.usubjid.clear();
+        issue.seq.clear();
+    }
+}
+
+fn output_context_variable_oracle_gap_category(case: &OpenRulesCase) -> bool {
+    [
+        "defer_empty_non_empty",
+        "empty_non_empty",
+        "defer_positive_zero_probe",
+    ]
+    .into_iter()
+    .any(|category| core_api::rule_id_has_oracle_gap_category(&case.rule_id, category))
+}
+
+fn drop_candidate_output_context_variables(official: &[IssueKey], candidate: &mut Vec<IssueKey>) {
+    let official_variables_by_location = official
+        .iter()
+        .flat_map(|issue| {
+            issue.variables.iter().map(|variable| {
+                (
+                    (
+                        issue.rule_id.clone(),
+                        issue.dataset.clone(),
+                        issue.domain.clone(),
+                        issue.row.clone(),
+                        issue.usubjid.clone(),
+                        issue.seq.clone(),
+                    ),
+                    variable.clone(),
+                )
+            })
+        })
+        .fold(
+            BTreeMap::<_, BTreeSet<String>>::new(),
+            |mut variables_by_location, (location, variable)| {
+                variables_by_location
+                    .entry(location)
+                    .or_default()
+                    .insert(variable);
+                variables_by_location
+            },
+        );
+
+    candidate.retain(|issue| {
+        let location = (
+            issue.rule_id.clone(),
+            issue.dataset.clone(),
+            issue.domain.clone(),
+            issue.row.clone(),
+            issue.usubjid.clone(),
+            issue.seq.clone(),
+        );
+        let Some(official_variables) = official_variables_by_location.get(&location) else {
+            return true;
+        };
+        issue
+            .variables
+            .iter()
+            .any(|variable| official_variables.contains(variable))
+    });
+}
+
 fn issue_multiset_diff(
     official: Vec<IssueKey>,
     candidate: Vec<IssueKey>,
@@ -435,6 +528,204 @@ pub(crate) fn parse_coverage_ratio(value: &str) -> Result<f64, String> {
     }
 }
 
+fn align_candidate_identity_to_official(
+    official: &[IssueKey],
+    candidate: Vec<IssueKey>,
+    duplicate_sequence_values: &BTreeSet<(String, String)>,
+) -> Vec<IssueKey> {
+    let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
+    let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
+    let unlocated_rules = official
+        .iter()
+        .filter(|issue| issue_is_unlocated(issue))
+        .map(|issue| issue.rule_id.clone())
+        .collect::<BTreeSet<_>>();
+    let official_dataset_issues = official
+        .iter()
+        .filter(|issue| issue.row.is_empty() && issue.usubjid.is_empty() && issue.seq.is_empty())
+        .map(issue_signature)
+        .collect::<BTreeSet<_>>();
+    let official_row_issues = official
+        .iter()
+        .filter(|issue| !issue.row.is_empty())
+        .map(issue_row_signature)
+        .collect::<BTreeSet<_>>();
+    let candidate_seq_rows = candidate_seq_row_index(&candidate);
+
+    candidate
+        .into_iter()
+        .map(|mut issue| {
+            if unlocated_rules.contains(&issue.rule_id) {
+                issue.dataset.clear();
+                issue.domain.clear();
+                issue.row.clear();
+                issue.variables.clear();
+                issue.usubjid.clear();
+                issue.seq.clear();
+            } else if official_dataset_issues.contains(&issue_signature(&issue)) {
+                issue.row.clear();
+                issue.usubjid.clear();
+                issue.seq.clear();
+            } else {
+                if !compare_seq
+                    && candidate_seq_matches_official_row(
+                        &issue,
+                        &official_row_issues,
+                        &candidate_seq_rows,
+                        duplicate_sequence_values,
+                    )
+                {
+                    issue.row.clone_from(&issue.seq);
+                }
+                if !compare_usubjid {
+                    issue.usubjid.clear();
+                }
+            }
+            if !compare_seq {
+                issue.seq.clear();
+            }
+            issue
+        })
+        .collect()
+}
+
+fn issue_is_unlocated(issue: &IssueKey) -> bool {
+    issue.dataset.is_empty()
+        && issue.domain.is_empty()
+        && issue.row.is_empty()
+        && issue.variables.is_empty()
+        && issue.usubjid.is_empty()
+        && issue.seq.is_empty()
+}
+
+fn issue_signature(issue: &IssueKey) -> IssueSignature {
+    (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+    )
+}
+
+fn candidate_seq_matches_official_row(
+    issue: &IssueKey,
+    official_row_issues: &BTreeSet<IssueRowSignature>,
+    candidate_seq_rows: &BTreeMap<IssueRowSignature, BTreeSet<String>>,
+    duplicate_sequence_values: &BTreeSet<(String, String)>,
+) -> bool {
+    let seq_signature = (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+        issue.seq.clone(),
+    );
+    !issue.seq.is_empty()
+        && issue.row != issue.seq
+        && !official_row_issues.contains(&issue_row_signature(issue))
+        && duplicate_sequence_values.contains(&(issue.dataset.clone(), issue.seq.clone()))
+        && official_row_issues.contains(&seq_signature)
+        && candidate_seq_rows
+            .get(&seq_signature)
+            .is_some_and(|rows| rows.len() == 1 && rows.contains(&issue.row))
+}
+
+fn duplicate_sequence_values_by_dataset(case: &OpenRulesCase) -> BTreeSet<(String, String)> {
+    case.dataset_files
+        .iter()
+        .filter_map(|path| duplicate_sequence_values_in_dataset(path).ok())
+        .flatten()
+        .collect()
+}
+
+fn duplicate_sequence_values_in_dataset(path: &Path) -> anyhow::Result<Vec<(String, String)>> {
+    let dataset = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .map(normalize_dataset_name)
+        .unwrap_or_default();
+    if dataset.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut reader = csv::ReaderBuilder::new().flexible(true).from_path(path)?;
+    let headers = reader.headers()?.clone();
+    let Some(seq_index) = sequence_column_index(&headers, &dataset) else {
+        return Ok(Vec::new());
+    };
+
+    let mut counts = BTreeMap::<String, usize>::new();
+    for record in reader.records() {
+        let record = record?;
+        let value = record
+            .get(seq_index)
+            .map(normalize_scalar)
+            .unwrap_or_default();
+        if !value.is_empty() {
+            *counts.entry(value).or_default() += 1;
+        }
+    }
+
+    Ok(counts
+        .into_iter()
+        .filter_map(|(seq, count)| (count > 1).then(|| (dataset.clone(), seq)))
+        .collect())
+}
+
+fn sequence_column_index(headers: &csv::StringRecord, dataset: &str) -> Option<usize> {
+    let expected = format!("{dataset}SEQ");
+    headers
+        .iter()
+        .position(|header| header.trim().eq_ignore_ascii_case(&expected))
+        .or_else(|| {
+            headers.iter().position(|header| {
+                let header = header.trim();
+                header.len() > 3
+                    && header.to_ascii_uppercase().ends_with("SEQ")
+                    && !header.eq_ignore_ascii_case("USUBJID")
+            })
+        })
+}
+
+fn normalize_dataset_name(value: &str) -> String {
+    value
+        .trim()
+        .strip_suffix(".csv")
+        .or_else(|| value.trim().strip_suffix(".CSV"))
+        .unwrap_or_else(|| value.trim())
+        .to_ascii_uppercase()
+}
+
+fn candidate_seq_row_index(issues: &[IssueKey]) -> BTreeMap<IssueRowSignature, BTreeSet<String>> {
+    let mut index = BTreeMap::<IssueRowSignature, BTreeSet<String>>::new();
+    for issue in issues {
+        if issue.seq.is_empty() {
+            continue;
+        }
+        index
+            .entry((
+                issue.rule_id.clone(),
+                issue.dataset.clone(),
+                issue.domain.clone(),
+                issue.variables.clone(),
+                issue.seq.clone(),
+            ))
+            .or_default()
+            .insert(issue.row.clone());
+    }
+    index
+}
+
+fn issue_row_signature(issue: &IssueKey) -> IssueRowSignature {
+    (
+        issue.rule_id.clone(),
+        issue.dataset.clone(),
+        issue.domain.clone(),
+        issue.variables.clone(),
+        issue.row.clone(),
+    )
+}
+
 pub fn issue_fingerprint_hash(missing: &[IssueKey], extra: &[IssueKey]) -> String {
     let mut entries = Vec::with_capacity(missing.len() + extra.len());
     for issue in missing {
@@ -472,6 +763,119 @@ fn fnv1a_update(hash: &mut u64, bytes: &[u8]) {
         *hash ^= u64::from(*byte);
         *hash = hash.wrapping_mul(0x100000001b3);
     }
+}
+
+fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<String> {
+    let reason = deferred_default_engine_oracle_gap_reason_text(case)?;
+    Some(format!(
+        "{reason}; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
+fn deferred_default_engine_oracle_gap_skipped_reason(case: &OpenRulesCase) -> Option<String> {
+    let reason = deferred_default_engine_oracle_gap_reason_text(case)?;
+    Some(format!(
+        "{reason}; candidate skipped; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
+fn deferred_default_engine_oracle_gap_reason_text(case: &OpenRulesCase) -> Option<&'static str> {
+    [
+        ("official_oracle_fixture_gap", "official oracle fixture gap"),
+        (
+            "defer_empty_non_empty",
+            "deferred empty/non_empty oracle semantics",
+        ),
+        (
+            "defer_domain_placeholder_column_ref",
+            "deferred domain placeholder column-ref oracle semantics",
+        ),
+        (
+            "defer_not_unique_relationship",
+            "deferred not-unique relationship oracle semantics",
+        ),
+        (
+            "defer_duplicate_match_dataset",
+            "deferred duplicate match dataset oracle semantics",
+        ),
+        ("defer_date_operator", "deferred date oracle semantics"),
+        ("defer_unique_set", "deferred unique-set oracle semantics"),
+        (
+            "defer_dy_operation",
+            "deferred DY operation oracle semantics",
+        ),
+        ("defer_sort_operator", "deferred sort oracle semantics"),
+        ("defer_etcd_length", "deferred ETCD length oracle semantics"),
+        (
+            "defer_multi_base_match_dataset",
+            "deferred multi-base match dataset oracle semantics",
+        ),
+        (
+            "defer_distinct_operation",
+            "deferred distinct operation oracle semantics",
+        ),
+        (
+            "standard_filter_oracle_gap",
+            "standard applicability oracle semantics",
+        ),
+        (
+            "required_value_metadata",
+            "required value metadata oracle semantics",
+        ),
+        ("dataset_presence", "dataset presence oracle semantics"),
+        ("date_operator", "date oracle semantics"),
+        ("domain_presence", "domain presence oracle semantics"),
+        ("variable_metadata", "variable metadata oracle semantics"),
+        (
+            "domain_placeholder_column_ref_comparator",
+            "domain placeholder column-ref comparator oracle semantics",
+        ),
+        ("empty_non_empty", "empty/non_empty oracle semantics"),
+        ("missing_column", "missing-column oracle semantics"),
+        ("operation", "operation oracle semantics"),
+        (
+            "scope_wide_reference_distinct",
+            "scope-wide reference distinct oracle semantics",
+        ),
+        (
+            "reference_distinct_official_empty",
+            "reference distinct official-empty oracle semantics",
+        ),
+        (
+            "reference_distinct_fixture_row",
+            "reference distinct fixture row oracle semantics",
+        ),
+        (
+            "reference_distinct_cardinality",
+            "reference distinct cardinality oracle semantics",
+        ),
+        (
+            "supported_reference_distinct",
+            "reference distinct oracle semantics",
+        ),
+        ("record_row_locator", "record row locator oracle semantics"),
+        (
+            "usdm_jsonata_entity_scope",
+            "USDM JSONata entity-scope oracle semantics",
+        ),
+        (
+            "record_count_operation",
+            "record-count operation oracle semantics",
+        ),
+        (
+            "usdm_join_operation",
+            "USDM join operation oracle semantics",
+        ),
+        ("xhtml_operation", "XHTML operation oracle semantics"),
+        (
+            "defer_positive_zero_probe",
+            "deferred positive-zero probe oracle semantics",
+        ),
+    ]
+    .into_iter()
+    .find_map(|(category, reason)| {
+        core_api::rule_id_has_oracle_gap_category(&case.rule_id, category).then_some(reason)
+    })
 }
 
 impl Scoreboard {
