@@ -324,13 +324,31 @@ CI runs two lightweight gates:
   `tests/open_rules/upstream.lock`, compared against
   `tests/open_rules/curated-upstream-baseline.json`
 
-The upstream subset intentionally covers the main execution provenance detail
-families: `generic_engine`, `rule_specific_engine_semantics`,
-`compatibility_policy`, `oracle_gap_normalized`, and `rule_id_hand_port`. It also
-includes representative reference distinct, record-count, USDM codelist, grouped
-distinct, and XHTML operation rules. It is small enough for PR CI but stronger
-than the local fixture because it uses real upstream rule/data/oracle
-directories. Full upstream observe/regression remains scheduled/manual.
+The upstream subset rule list lives in
+`tests/open_rules/curated-upstream-rules.txt`. It should stay small enough for
+PR CI and large enough to catch real upstream integration regressions; the
+current subset is 47 rules / 278 cases. The selected rules intentionally cover
+the main execution provenance detail families: `generic_engine`,
+`rule_specific_engine_semantics`, `compatibility_policy`,
+`oracle_gap_normalized`, and `rule_id_hand_port`. It also includes
+representative reference distinct, record-count, USDM codelist, grouped
+distinct, and XHTML operation rules. Full upstream observe/regression remains
+scheduled/manual.
+
+When refreshing an accepted upstream baseline, generate it from a scoreboard
+with the canonicalizer rather than editing paths by hand:
+
+```sh
+cargo run -p xtask -- open-rules canonicalize-baseline \
+  --scoreboard target/open-rules-scoreboard-upstream/scoreboard.json \
+  --out tests/open_rules/upstream-baseline.json
+```
+
+Use the same command for the curated upstream subset, changing `--scoreboard`
+and `--out` to the curated scoreboard and
+`tests/open_rules/curated-upstream-baseline.json`. The canonicalizer rewrites
+local checkout paths to portable `Published/...` and `target/...` paths and
+recomputes summary/gate fields from the retained cases.
 
 The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 `Open Rules Upstream`. It can be started manually with `workflow_dispatch` and
