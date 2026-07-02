@@ -5,10 +5,10 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 8721 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 8723 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
 | `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
-| `crates/core-api/src/tests/open_rules_usdm.rs` | 3817 | Continue splitting USDM fixture families into focused sibling modules. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 3302 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
 
@@ -53,9 +53,13 @@ still too large to review safely:
   overlap regression tests.
 - `core-api/src/tests/open_rules_usdm_narrative.rs`: USDM narrative content
   JSONata regression tests.
+- `core-api/src/tests/open_rules_usdm_population.rs`: USDM planned
+  enrollment and completion population/cohort consistency regression tests.
 - `core-api/src/tests/open_rules_usdm_study_design.rs`: USDM study-design
   document-version, duplicate code-list, and single/multi-centre regression
   tests.
+- `core-api/src/tests/open_rules_usdm_timeline.rs`: USDM main timeline,
+  planned duration, and timeline ordering regression tests.
 - `core-api/src/tests/open_rules_dates.rs`: Open Rules date, partial-date,
   duration, and date ordering regression tests.
 - `core-api/src/tests/open_rules_metadata.rs`: domain presence, dataset
