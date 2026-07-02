@@ -22,6 +22,7 @@ mod open_rules_scope;
 mod open_rules_usdm;
 mod open_rules_usdm_activity;
 mod open_rules_usdm_narrative;
+mod open_rules_usdm_study_design;
 
 #[test]
 fn run_validation_requires_paths_before_loading() {
