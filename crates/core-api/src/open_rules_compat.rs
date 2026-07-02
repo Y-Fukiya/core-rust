@@ -37,7 +37,7 @@ const HAND_PORT_PROVENANCE: &str = "rule_id_hand_port";
 const HAND_PORT_SCOPE: &str = "open-rules-oracle-harness";
 const ORACLE_GAP_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/oracle_gap_rule_ids.csv");
 const ORACLE_GAP_RULE_ID_HEADER: &str = "rule_id,category,reason,owner,evidence,scope";
-const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 474;
+const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 473;
 const ORACLE_GAP_SCOPE: &str = "open-rules-oracle-harness";
 #[cfg(test)]
 const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["usdm_match_dataset"];

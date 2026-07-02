@@ -287,7 +287,6 @@ CORE-000569,defer_positive_zero_probe,positive zero probe semantics still quaran
 CORE-000570,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000597,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000616,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000642,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000648,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000652,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000670,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
