@@ -49,6 +49,8 @@ still too large to review safely:
   join regression tests.
 - `core-api/src/tests/basic_validation.rs`: basic rule selection,
   preflight, and report-writing API tests.
+- `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
+  Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
   `_variables.csv`, embedded metadata, and CSV data-dir loading.
 - `core-engine/src/group_operators.rs`: unique-set, relationship, and
