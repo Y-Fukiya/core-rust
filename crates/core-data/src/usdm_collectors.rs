@@ -2,6 +2,54 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use crate::usdm_row_builders::{
+    usdm_address_row, usdm_duration_row, usdm_person_name_row, usdm_range_row,
+};
+
+pub(crate) fn collect_usdm_duration_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
+    collect_recursive_instance_rows(value, "Duration", rows, usdm_duration_row);
+}
+
+pub(crate) fn collect_usdm_range_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
+    collect_recursive_instance_rows(value, "Range", rows, usdm_range_row);
+}
+
+pub(crate) fn collect_usdm_person_name_rows(
+    value: &Value,
+    rows: &mut Vec<BTreeMap<String, Value>>,
+) {
+    collect_recursive_instance_rows(value, "PersonName", rows, usdm_person_name_row);
+}
+
+pub(crate) fn collect_usdm_address_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
+    let Some(versions) = value
+        .get("study")
+        .and_then(|study| study.get("versions"))
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+    for (version_index, version) in versions.iter().enumerate() {
+        for (org_index, organization) in version
+            .get("organizations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if let Some(address) = organization.get("legalAddress") {
+                rows.push(usdm_address_row(
+                    address,
+                    &format!(
+                        "/study/versions/{version_index}/organizations/{org_index}/legalAddress"
+                    ),
+                    organization,
+                ));
+            }
+        }
+    }
+}
+
 pub(crate) fn collect_recursive_instance_rows(
     value: &Value,
     instance_type: &str,

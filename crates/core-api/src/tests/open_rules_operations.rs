@@ -4,7 +4,160 @@ use core_engine::{ExecutionStatus, SkippedReason};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
-use crate::{run_validation, ValidateRequest};
+use crate::{run_validation, DatasetLoader, ValidateRequest};
+
+#[test]
+fn run_validation_core_000660_passes_absent_to_reference_distinct_from_scoped_values() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000660.yml"),
+        r#"Core:
+  Id: CORE-000660
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - ALL
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TO
+    id: $to_sptobid
+    name: SPTOBID
+    operator: distinct
+Check:
+  all:
+    - name: SPTOBID
+      operator: is_not_contained_by
+      value: $to_sptobid
+Outcome:
+  Message: SPTOBID must be represented in TO
+  Output Variables:
+    - SPTOBID
+    - $to_sptobid
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\npd,Product Design\nem,Device Events\ntx,Trial Sets\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\npd,SPTOBID,Product,Char,16\nem,SPTOBID,Product,Char,16\ntx,TXPARMCD,Parameter,Char,16\ntx,TXVAL,Value,Char,16\n",
+    )
+    .expect("write variables csv");
+    fs::write(data_dir.join("pd.csv"), "SPTOBID\nCIG01a\nVAPE-Z27\n").expect("write pd csv");
+    fs::write(data_dir.join("em.csv"), "SPTOBID\nVAPE-Z01\n").expect("write em csv");
+    fs::write(data_dir.join("tx.csv"), "TXPARMCD,TXVAL\nMETACTFL,Y\n").expect("write tx csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 3);
+    assert!(outcome
+        .results
+        .iter()
+        .all(|result| result.execution_status == ExecutionStatus::Passed));
+}
+
+#[test]
+fn run_validation_core_000660_applies_to_non_to_datasets_when_to_is_loaded() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000660.yml"),
+        r#"Core:
+  Id: CORE-000660
+  Status: Published
+Scope:
+  Domains:
+    Include:
+      - ALL
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TO
+    id: $to_sptobid
+    name: SPTOBID
+    operator: distinct
+Check:
+  all:
+    - name: SPTOBID
+      operator: is_not_contained_by
+      value: $to_sptobid
+Outcome:
+  Message: SPTOBID must be represented in TO
+  Output Variables:
+    - SPTOBID
+    - $to_sptobid
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\npd,Product Design\nem,Device Events\nto,Tobacco Products\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\npd,SPTOBID,Product,Char,16\npd,PDSEQ,Sequence,Num,8\nem,SPTOBID,Product,Char,16\nem,EMSEQ,Sequence,Num,8\nto,SPTOBID,Product,Char,16\nto,TOSEQ,Sequence,Num,8\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("pd.csv"),
+        "SPTOBID,PDSEQ\nCIG01b,1\nCIG01a,2\n",
+    )
+    .expect("write pd csv");
+    fs::write(data_dir.join("em.csv"), "SPTOBID,EMSEQ\nAPE-Z01,1\n").expect("write em csv");
+    fs::write(
+        data_dir.join("to.csv"),
+        "SPTOBID,TOSEQ\nCIG01a,1\nVAPE-Z01,2\n",
+    )
+    .expect("write to csv");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let failed = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 2);
+    assert_eq!(failed[0].dataset, "PD");
+    assert_eq!(failed[0].errors[0].row, Some(1));
+    assert_eq!(
+        failed[0].errors[0].variables,
+        vec!["SPTOBID", "$to_sptobid"]
+    );
+    assert_eq!(failed[1].dataset, "EM");
+    assert_eq!(failed[1].errors[0].row, Some(1));
+    assert_eq!(
+        failed[1].errors[0].variables,
+        vec!["SPTOBID", "$to_sptobid"]
+    );
+}
 
 #[test]
 fn run_validation_skips_core_000039_missing_svpresp_as_oracle_gap() {

@@ -9,6 +9,7 @@ mod match_datasets;
 mod open_rules_compat;
 mod operation_fields;
 mod report_variables;
+mod rule_preparation;
 mod standard_filter;
 mod static_codelists;
 mod usdm_jsonata;
@@ -82,6 +83,7 @@ use report_variables::{
     apply_metadata_report_variables, apply_operation_report_variables,
     apply_requested_standard_operation_semantics,
 };
+use rule_preparation::apply_entity_instance_type_literals;
 use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
 use static_codelists::{
     ddf_valid_codelist_dates, static_codelist, static_codelist_matches_version,
@@ -2858,41 +2860,6 @@ fn prepare_rule_with_cdisc_context(
     let mut rule = rule.clone();
     apply_cdisc_context_to_group(&mut rule.conditions, context);
     rule
-}
-
-fn apply_entity_instance_type_literals(rule: &mut ExecutableRule) {
-    if rule.entities.is_none() {
-        return;
-    }
-    apply_entity_instance_type_literals_to_group(&mut rule.conditions);
-}
-
-fn apply_entity_instance_type_literals_to_group(group: &mut ConditionGroup) {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            for group in groups {
-                apply_entity_instance_type_literals_to_group(group);
-            }
-        }
-        ConditionGroup::Not(group) => apply_entity_instance_type_literals_to_group(group),
-        ConditionGroup::Leaf(condition) => {
-            if matches!(
-                condition.operator,
-                Operator::EqualTo
-                    | Operator::NotEqualTo
-                    | Operator::EqualToCaseInsensitive
-                    | Operator::NotEqualToCaseInsensitive
-            ) && condition
-                .target
-                .as_deref()
-                .is_some_and(|target| target.eq_ignore_ascii_case("instanceType"))
-            {
-                if let ValueExpr::ColumnRef(value) = &condition.comparator {
-                    condition.comparator = ValueExpr::Literal(Value::String(value.clone()));
-                }
-            }
-        }
-    }
 }
 
 pub(crate) fn has_reference_distinct_operation(rule: &ExecutableRule) -> bool {
