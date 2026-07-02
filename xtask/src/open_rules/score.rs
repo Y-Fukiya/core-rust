@@ -912,13 +912,14 @@ fn coverage_for_counts(supported: usize, total_cases: usize) -> Option<f64> {
 }
 
 pub fn issue_fingerprint_hash(missing: &[IssueKey], extra: &[IssueKey]) -> String {
-    let mut entries = BTreeSet::new();
+    let mut entries = Vec::with_capacity(missing.len() + extra.len());
     for issue in missing {
-        entries.insert(issue_fingerprint_entry("missing", issue));
+        entries.push(issue_fingerprint_entry("missing", issue));
     }
     for issue in extra {
-        entries.insert(issue_fingerprint_entry("extra", issue));
+        entries.push(issue_fingerprint_entry("extra", issue));
     }
+    entries.sort();
 
     let mut hash = 0xcbf29ce484222325u64;
     for entry in entries {
