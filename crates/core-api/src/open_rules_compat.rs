@@ -91,6 +91,41 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,scope";
 const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 263;
+const RULE_SPECIFIC_SEMANTICS_CLASSIFICATIONS: &[&str] = &[
+    "compatibility_policy",
+    "engine_semantics",
+    "hand_port_semantics",
+];
+const RULE_SPECIFIC_SEMANTICS_CATEGORIES: &[&str] = &[
+    "condition_rewrite",
+    "csv_line_record_number",
+    "dataset_level_existing_day_date_variable_result",
+    "dataset_level_existing_study_day_variable_result",
+    "dataset_level_presence_result",
+    "date_result_postprocess",
+    "first_row_dataset_presence_result",
+    "inconsistent_dataset_precondition_adapter",
+    "match_dataset_target_scope",
+    "metadata_adapter",
+    "missing_column_adapter",
+    "missing_column_once_result",
+    "missing_column_zero_record_result",
+    "missing_scoped_dataset_presence_result",
+    "operation_adapter",
+    "previous_record_number",
+    "relationship_adapter",
+    "result_postprocess",
+    "simple_any_output_variable_projection",
+    "single_match_dataset_self_target",
+    "split_domain_unique_set",
+    "standard_filter",
+    "supplemental_qualifier_parent_record_adapter",
+    "unique_set_interval_adapter",
+    "unique_set_locator_variable_projection",
+    "unique_set_subject_locator_variable_projection",
+    "usdm_condition_context",
+    "usdm_jsonata_hand_port",
+];
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =
     LazyLock::new(load_hand_port_rule_ids);
@@ -441,8 +476,16 @@ fn parse_rule_specific_semantics_entry(
         "missing rule-specific semantics classification for rule id {rule_id}"
     );
     assert!(
+        RULE_SPECIFIC_SEMANTICS_CLASSIFICATIONS.contains(&classification),
+        "invalid rule-specific semantics classification for rule id {rule_id}: {classification}"
+    );
+    assert!(
         !category.is_empty(),
         "missing rule-specific semantics category for rule id {rule_id}"
+    );
+    assert!(
+        RULE_SPECIFIC_SEMANTICS_CATEGORIES.contains(&category),
+        "invalid rule-specific semantics category for rule id {rule_id}: {category}"
     );
     assert!(
         !reason.is_empty(),
@@ -848,6 +891,24 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
             missing.is_empty(),
             "rule-specific semantics manifest is missing {missing:?}"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid rule-specific semantics classification")]
+    fn rule_specific_semantics_manifest_rejects_invalid_classification() {
+        parse_rule_specific_semantics_entry((
+            1,
+            "CORE-000583,engine_sematnics,metadata_adapter,reason,core-api,evidence,open-rules-oracle-harness",
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid rule-specific semantics category")]
+    fn rule_specific_semantics_manifest_rejects_invalid_category() {
+        parse_rule_specific_semantics_entry((
+            1,
+            "CORE-000583,engine_semantics,metadata_adatper,reason,core-api,evidence,open-rules-oracle-harness",
+        ));
     }
 
     fn production_core_api_source_rule_ids() -> BTreeMap<String, BTreeSet<String>> {

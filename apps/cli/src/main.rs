@@ -2,9 +2,10 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use core_api::{run_validation, ValidateRequest};
+use core_engine::ExecutionStatus;
 use core_report::ReportOutputFormat;
 
 #[derive(Debug, Parser)]
@@ -63,6 +64,12 @@ struct ValidateArgs {
 
     #[arg(long, value_enum, value_name = "disabled|info|debug|warn|error")]
     log_level: Option<LogLevel>,
+
+    #[arg(long, value_enum, value_delimiter = ',', value_name = "failed|skipped")]
+    fail_on: Vec<FailOnStatus>,
+
+    #[arg(long)]
+    strict: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -78,6 +85,12 @@ enum LogLevel {
     Debug,
     Warn,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum FailOnStatus {
+    Failed,
+    Skipped,
 }
 
 fn main() -> Result<()> {
@@ -135,6 +148,33 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         }
     }
 
+    enforce_exit_policy(&outcome.results, args.strict, &args.fail_on)?;
+
+    Ok(())
+}
+
+fn enforce_exit_policy(
+    results: &[core_engine::RuleValidationResult],
+    strict: bool,
+    fail_on: &[FailOnStatus],
+) -> Result<()> {
+    let fail_on_failed = strict || fail_on.contains(&FailOnStatus::Failed);
+    let fail_on_skipped = strict || fail_on.contains(&FailOnStatus::Skipped);
+    if !fail_on_failed && !fail_on_skipped {
+        return Ok(());
+    }
+
+    let failed = results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Skipped)
+        .count();
+    if (fail_on_failed && failed > 0) || (fail_on_skipped && skipped > 0) {
+        bail!("validation failed strict exit policy: failed={failed}, skipped={skipped}");
+    }
     Ok(())
 }
 

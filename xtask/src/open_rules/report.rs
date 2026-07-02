@@ -104,7 +104,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             summary.unknown_provenance_coverage,
         ),
         String::new(),
-        "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support."
+        "Aggregate coverage includes native-engine and rule-id hand-port supported cases. Native engine coverage means non-hand-port coverage; it may include rule-specific engine semantics, compatibility policy, and oracle-gap normalization. Use the Execution Provenance Detail table to estimate generic-engine support."
             .to_owned(),
         String::new(),
         "## Execution Provenance Detail".to_owned(),
@@ -567,9 +567,8 @@ mod tests {
         assert!(markdown.contains("## Execution Provenance"));
         assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 25.00% |"));
         assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 25.00% |"));
-        assert!(markdown.contains(
-            "Aggregate coverage includes both native engine and rule-id hand-port supported cases."
-        ));
+        assert!(markdown.contains("Native engine coverage means non-hand-port coverage"));
+        assert!(markdown.contains("Use the Execution Provenance Detail table"));
         assert!(markdown.contains("provenance=native_engine"));
         assert!(markdown.contains(
             "- `CORE-000005` negative/01 provenance=native_engine official=1 candidate=1"

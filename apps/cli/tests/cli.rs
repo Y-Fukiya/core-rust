@@ -254,6 +254,65 @@ fn validate_regulatory_fixture_writes_full_report_set() {
     assert_eq!(normalize_log(&actual_log), expected_log);
 }
 
+#[test]
+fn validate_fail_on_failed_exits_non_zero_when_failures_exist() {
+    let fixtures = fixture_root();
+    let output_dir = tempdir().expect("tempdir");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        fixtures
+            .join("rules/regulatory")
+            .to_str()
+            .expect("rules dir path"),
+        "--dataset-path",
+        fixtures
+            .join("datasets/regulatory/study_package.json")
+            .to_str()
+            .expect("dataset path"),
+        "--fail-on",
+        "failed",
+        "--output",
+        output_dir.path().to_str().expect("output path"),
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation failed strict exit policy: failed=5, skipped=12",
+    ));
+}
+
+#[test]
+fn validate_strict_exits_non_zero_when_failures_or_skips_exist() {
+    let fixtures = fixture_root();
+    let output_dir = tempdir().expect("tempdir");
+
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+    cmd.args([
+        "validate",
+        "--local-rules",
+        fixtures
+            .join("rules/regulatory")
+            .to_str()
+            .expect("rules dir path"),
+        "--dataset-path",
+        fixtures
+            .join("datasets/regulatory/study_package.json")
+            .to_str()
+            .expect("dataset path"),
+        "--strict",
+        "--output",
+        output_dir.path().to_str().expect("output path"),
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "validation failed strict exit policy: failed=5, skipped=12",
+    ));
+}
+
 fn normalize_log(source: &str) -> String {
     source
         .lines()
