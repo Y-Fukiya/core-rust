@@ -3,7 +3,7 @@
     "repo": "https://github.com/cdisc-org/cdisc-open-rules.git",
     "expected_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
     "observed_sha": null,
-    "lock_path": "/Users/yfukiya/Documents/core-rust/xtask/../tests/open_rules/upstream.lock",
+    "lock_path": "tests/open_rules/upstream.lock",
     "warnings": [
       "git rev-parse failed for tests/fixtures/open_rules_executable: not a git checkout"
     ]
@@ -211,8 +211,8 @@
       "rule_id": "CORE-OPEN-0001",
       "case_kind": "negative",
       "case_id": "01",
-      "case_dir": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/negative/01",
-      "official_results_csv": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/negative/01/results/results.csv",
+      "case_dir": "Published/CORE-OPEN-0001/negative/01",
+      "official_results_csv": "Published/CORE-OPEN-0001/negative/01/results/results.csv",
       "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
@@ -222,17 +222,15 @@
       "candidate_issue_count": 1,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
       "rule_id": "CORE-OPEN-0001",
       "case_kind": "positive",
       "case_id": "01",
-      "case_dir": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/positive/01",
-      "official_results_csv": "tests/fixtures/open_rules_executable/Published/CORE-OPEN-0001/positive/01/results/results.csv",
+      "case_dir": "Published/CORE-OPEN-0001/positive/01",
+      "official_results_csv": "Published/CORE-OPEN-0001/positive/01/results/results.csv",
       "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
@@ -242,9 +240,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     }
   ]
 }

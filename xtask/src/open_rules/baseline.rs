@@ -75,6 +75,10 @@ pub struct BaselineDifference {
     pub baseline_issue_fingerprint: Option<String>,
     #[serde(default)]
     pub current_issue_fingerprint: Option<String>,
+    #[serde(default)]
+    pub baseline_scoring_normalizations: Vec<String>,
+    #[serde(default)]
+    pub current_scoring_normalizations: Vec<String>,
     pub message: String,
 }
 
@@ -172,10 +176,23 @@ pub fn canonicalize(args: CanonicalizeBaselineArgs) -> Result<bool> {
 }
 
 fn canonicalize_scoreboard_for_baseline(mut scoreboard: Scoreboard) -> Scoreboard {
+    scoreboard.upstream.lock_path = PathBuf::from("tests/open_rules/upstream.lock");
+    scoreboard.upstream.warnings = scoreboard
+        .upstream
+        .warnings
+        .into_iter()
+        .map(canonicalize_reason_text)
+        .collect();
     for case in &mut scoreboard.cases {
         case.case_dir = canonicalize_scoreboard_path(&case.case_dir);
         case.official_results_csv = canonicalize_scoreboard_path(&case.official_results_csv);
         case.candidate_report_csv = canonicalize_scoreboard_path(&case.candidate_report_csv);
+        case.reason = case.reason.take().map(canonicalize_reason_text);
+        case.missing_count = Some(case_missing_count(case));
+        case.extra_count = Some(case_extra_count(case));
+        case.issue_fingerprint_hash = Some(case_issue_fingerprint_hash(case));
+        case.missing.clear();
+        case.extra.clear();
     }
     Scoreboard::new_with_gate(
         scoreboard.upstream,
@@ -184,6 +201,35 @@ fn canonicalize_scoreboard_for_baseline(mut scoreboard: Scoreboard) -> Scoreboar
         scoreboard.gate.max_skipped_unsupported,
         false,
     )
+}
+
+fn canonicalize_reason_text(reason: String) -> String {
+    reason
+        .split_whitespace()
+        .map(|token| {
+            let trimmed = token.trim_end_matches([';', ',', ')', ':']);
+            let suffix = &token[trimmed.len()..];
+            if let Some(path) = canonicalize_reason_path(trimmed) {
+                format!("{}{}", path.display(), suffix)
+            } else {
+                token.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn canonicalize_reason_path(token: &str) -> Option<PathBuf> {
+    let path = Path::new(token);
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonicalized = canonicalize_scoreboard_path(path);
+    if canonicalized.is_absolute() {
+        Some(PathBuf::from("<absolute-path>"))
+    } else {
+        Some(canonicalized)
+    }
 }
 
 fn canonicalize_scoreboard_path(path: &Path) -> PathBuf {
@@ -239,7 +285,14 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
         let current_case = current_cases.get(&key).copied();
         match (baseline_case, current_case) {
             (Some(baseline_case), Some(current_case)) => {
-                if is_improvement(&baseline_case.bucket, &current_case.bucket) {
+                if scoring_normalizations_require_review(baseline_case, current_case) {
+                    review_required.push(difference(
+                        key,
+                        Some(baseline_case),
+                        Some(current_case),
+                        "scoring normalizations require review",
+                    ));
+                } else if is_improvement(&baseline_case.bucket, &current_case.bucket) {
                     improvements.push(difference(
                         key,
                         Some(baseline_case),
@@ -486,6 +539,24 @@ fn supported_match_provenance_changed(baseline: &ScoredCase, current: &ScoredCas
     baseline.execution_provenance != current.execution_provenance
 }
 
+fn scoring_normalizations_require_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    if current.bucket != ScoreBucket::SupportedMatch {
+        return false;
+    }
+    if baseline.bucket != ScoreBucket::SupportedMatch {
+        return !current.scoring_normalizations.is_empty();
+    }
+    normalized_scoring_normalizations(&baseline.scoring_normalizations)
+        != normalized_scoring_normalizations(&current.scoring_normalizations)
+}
+
+fn normalized_scoring_normalizations(values: &[String]) -> Vec<String> {
+    let mut values = values.to_vec();
+    values.sort();
+    values.dedup();
+    values
+}
+
 fn same_bucket_issue_details_regressed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
     if baseline.bucket != current.bucket || baseline.bucket == ScoreBucket::SupportedMatch {
         return false;
@@ -558,6 +629,12 @@ fn difference(
         current_extra_count: current_case.map(case_extra_count),
         baseline_issue_fingerprint: baseline_case.map(case_issue_fingerprint_hash),
         current_issue_fingerprint: current_case.map(case_issue_fingerprint_hash),
+        baseline_scoring_normalizations: baseline_case
+            .map(|case| normalized_scoring_normalizations(&case.scoring_normalizations))
+            .unwrap_or_default(),
+        current_scoring_normalizations: current_case
+            .map(|case| normalized_scoring_normalizations(&case.scoring_normalizations))
+            .unwrap_or_default(),
         message: message.to_owned(),
     }
 }
@@ -878,6 +955,53 @@ mod tests {
     }
 
     #[test]
+    fn baseline_requires_review_when_supported_match_normalizations_change() {
+        let mut baseline = scoreboard(ScoreBucket::SupportedMatch);
+        baseline.cases[0].scoring_normalizations = vec!["row_locator_identity_relaxed".to_owned()];
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.cases[0].scoring_normalizations = vec![
+            "row_locator_identity_relaxed".to_owned(),
+            "output_context_variable_aligned".to_owned(),
+        ];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        let review = report
+            .review_required
+            .iter()
+            .find(|review| review.message == "scoring normalizations require review")
+            .expect("normalization review");
+        assert_eq!(
+            review.baseline_scoring_normalizations,
+            vec!["row_locator_identity_relaxed".to_owned()]
+        );
+        assert_eq!(
+            review.current_scoring_normalizations,
+            vec![
+                "output_context_variable_aligned".to_owned(),
+                "row_locator_identity_relaxed".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn baseline_requires_review_when_improvement_uses_normalization() {
+        let baseline = scoreboard(ScoreBucket::SupportedMismatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.cases[0].scoring_normalizations = vec!["row_locator_identity_relaxed".to_owned()];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.improvements.is_empty());
+        assert!(report
+            .review_required
+            .iter()
+            .any(|review| review.message == "scoring normalizations require review"));
+    }
+
+    #[test]
     fn baseline_fails_when_supported_match_detail_requires_review() {
         let report = compare_scoreboards(
             &scoreboard_with_provenance_detail(
@@ -911,6 +1035,20 @@ mod tests {
         scoreboard.cases[0].candidate_report_csv =
             "/Users/example/core-rust/target/open-rules-core-rs-upstream/Published/CORE-OPEN-0001/negative/01/report.csv"
                 .into();
+        scoreboard.upstream.lock_path =
+            "/Users/example/core-rust/xtask/../tests/open_rules/upstream.lock".into();
+        scoreboard.upstream.warnings = vec![
+            "git rev-parse failed for /private/tmp/cdisc-open-rules: not a git checkout".to_owned(),
+        ];
+        scoreboard.cases[0].reason = Some(
+            "official results.csv is malformed: CSV contains merge conflict markers: /private/tmp/cdisc-open-rules/Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
+                .to_owned(),
+        );
+        scoreboard.cases[0].missing = vec![issue("1")];
+        scoreboard.cases[0].extra = vec![issue("2")];
+        scoreboard.cases[0].missing_count = None;
+        scoreboard.cases[0].extra_count = None;
+        scoreboard.cases[0].issue_fingerprint_hash = None;
         scoreboard.summary.total_cases = 99;
 
         let canonicalized = canonicalize_scoreboard_for_baseline(scoreboard);
@@ -929,6 +1067,25 @@ mod tests {
                 "target/open-rules-core-rs-upstream/Published/CORE-OPEN-0001/negative/01/report.csv"
             )
         );
+        assert_eq!(
+            canonicalized.upstream.lock_path,
+            PathBuf::from("tests/open_rules/upstream.lock")
+        );
+        assert_eq!(
+            canonicalized.upstream.warnings,
+            vec!["git rev-parse failed for <absolute-path>: not a git checkout"]
+        );
+        assert_eq!(
+            canonicalized.cases[0].reason.as_deref(),
+            Some(
+                "official results.csv is malformed: CSV contains merge conflict markers: Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
+            )
+        );
+        assert!(canonicalized.cases[0].missing.is_empty());
+        assert!(canonicalized.cases[0].extra.is_empty());
+        assert_eq!(canonicalized.cases[0].missing_count, Some(1));
+        assert_eq!(canonicalized.cases[0].extra_count, Some(1));
+        assert!(canonicalized.cases[0].issue_fingerprint_hash.is_some());
         assert_eq!(canonicalized.summary.total_cases, 1);
     }
 

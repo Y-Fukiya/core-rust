@@ -1,0 +1,11 @@
+# Open Rules curated upstream gap PR gate subset.
+# Keep this small; it exercises accepted non-supported buckets and no-oracle
+# accounting paths that the supported-only curated subset intentionally avoids.
+CORE-000698
+CORE-000704
+CORE-000217
+CORE-000478
+CORE-000356
+CORE-000652
+CORE-000107
+CORE-000213

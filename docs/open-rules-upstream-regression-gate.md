@@ -19,34 +19,36 @@ The full upstream baseline should fail when:
 - a new `harness_error` case appears
 - a new `mixed_skipped_and_issues` case appears
 - `deferred_oracle_gap_mismatch` increases
+- `deferred_oracle_gap_skipped` increases
 - `coverage` decreases
 - `skipped_unsupported` increases
+- scoring normalization traces change for a `supported_match` case
+- a case improves to `supported_match` only through a scoring normalization
 - same-bucket issue counts or issue fingerprints regress
 - a baseline case disappears from the current scoreboard
-
-The full upstream baseline should warn, but not fail, when:
-
-- `deferred_oracle_gap_skipped` increases
 
 The accepted v31 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
 `official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.
 These are not supported matches and are not conformance evidence. Treat them as
-review backlog that must not grow silently. New cases in this bucket should be
-reviewed and either moved back to supported scoring, classified as an upstream
-oracle/data issue, or promoted to a failing bucket if the candidate actually
-ran and disagreed with the official oracle.
+review backlog that must not grow silently. New cases in this bucket are
+review-required and fail the baseline command until they are moved back to
+supported scoring, classified as an upstream oracle/data issue, or promoted to a
+failing bucket if the candidate actually ran and disagreed with the official
+oracle.
 
 The committed upstream baseline strips per-case `missing` and `extra` issue
 arrays so it remains portable and reviewable, but keeps `missing_count`,
 `extra_count`, and `issue_fingerprint_hash`. The comparator uses those portable
 fields before falling back to arrays, so stripped baselines can still detect
 same-bucket issue regressions without creating false positives.
+The canonicalizer also normalizes `upstream.lock_path` and absolute paths in
+case reasons so committed baselines do not contain machine-local paths.
 
 Do not use a hard 100% full-corpus gate. The accepted upstream baseline is a
 "do not get worse" guard, not a conformance certificate. The full upstream
 workflow currently runs on `workflow_dispatch` and a weekly schedule. Normal PR
-CI runs both the repository-local fixture gate and a small pinned upstream
-subset gate.
+CI runs the repository-local fixture gate, a supported-match pinned upstream
+subset gate, and a small pinned upstream gap subset gate.
 
 The curated upstream subset is intentionally not a replacement for the full
 upstream workflow. It is a fast PR signal that copies selected rule directories
@@ -66,3 +68,10 @@ semantics families:
 - `CORE-000857`: USDM codelist column-reference handling
 - `CORE-000878`: USDM grouped distinct semantics
 - `CORE-001069`: XHTML structural operation handling
+
+The gap subset lives in `tests/open_rules/curated-gap-rules.txt` and is
+compared against `tests/open_rules/curated-gap-baseline.json`. It intentionally
+includes a small number of accepted non-supported paths so PR CI exercises
+`deferred_oracle_gap_skipped`, `official_oracle_fixture_gap`,
+`standard_filter_oracle_gap`, and `no_official_oracle` accounting without
+requiring a full upstream run.

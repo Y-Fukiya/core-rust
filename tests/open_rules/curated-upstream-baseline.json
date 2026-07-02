@@ -3,7 +3,7 @@
     "repo": "https://github.com/cdisc-org/cdisc-open-rules.git",
     "expected_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
     "observed_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
-    "lock_path": "/Users/yfukiya/Documents/core-rust/xtask/../tests/open_rules/upstream.lock",
+    "lock_path": "tests/open_rules/upstream.lock",
     "warnings": []
   },
   "summary": {
@@ -332,9 +332,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -352,9 +350,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -375,9 +371,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -398,9 +392,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -421,9 +413,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -444,9 +434,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -464,9 +452,7 @@
       "candidate_issue_count": 1,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -484,9 +470,7 @@
       "candidate_issue_count": 1,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -504,9 +488,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -524,9 +506,7 @@
       "candidate_issue_count": 24,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -544,9 +524,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -564,9 +542,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -584,9 +560,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -604,9 +578,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -627,9 +599,7 @@
       "candidate_issue_count": 20,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -650,9 +620,7 @@
       "candidate_issue_count": 20,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -673,9 +641,7 @@
       "candidate_issue_count": 20,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -696,9 +662,7 @@
       "candidate_issue_count": 20,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -719,9 +683,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -742,9 +704,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -765,9 +725,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -788,9 +746,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -811,9 +767,7 @@
       "candidate_issue_count": 50,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -834,9 +788,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -854,9 +806,7 @@
       "candidate_issue_count": 11,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -874,9 +824,7 @@
       "candidate_issue_count": 9,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -894,9 +842,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -914,9 +860,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -934,9 +878,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -954,9 +896,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -974,9 +914,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -994,9 +932,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1014,9 +950,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1034,9 +968,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1054,9 +986,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1077,9 +1007,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1100,9 +1028,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1123,9 +1049,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1146,9 +1070,7 @@
       "candidate_issue_count": 3,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1169,9 +1091,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1192,9 +1112,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1215,9 +1133,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1238,9 +1154,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1261,9 +1175,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1281,9 +1193,7 @@
       "candidate_issue_count": 16,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1301,9 +1211,7 @@
       "candidate_issue_count": 16,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1321,9 +1229,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1341,9 +1247,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1361,9 +1265,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1381,9 +1283,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1401,9 +1301,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1421,9 +1319,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1441,9 +1337,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1461,9 +1355,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1481,9 +1373,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1501,9 +1391,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1521,9 +1409,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1544,9 +1430,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1567,9 +1451,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1590,9 +1472,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1613,9 +1493,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1636,9 +1514,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1659,9 +1535,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1682,9 +1556,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1706,9 +1578,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1730,9 +1600,7 @@
       "candidate_issue_count": 400,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1754,9 +1622,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1778,9 +1644,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1798,9 +1662,7 @@
       "candidate_issue_count": 9,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1818,9 +1680,7 @@
       "candidate_issue_count": 13,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1838,9 +1698,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1858,9 +1716,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1878,9 +1734,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1902,9 +1756,7 @@
       "candidate_issue_count": 88,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1926,9 +1778,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1950,9 +1800,7 @@
       "candidate_issue_count": 112,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1974,9 +1822,7 @@
       "candidate_issue_count": 52,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -1998,9 +1844,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2018,9 +1862,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2038,9 +1880,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2058,9 +1898,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2078,9 +1916,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2098,9 +1934,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2118,9 +1952,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2138,9 +1970,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2158,9 +1988,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2178,9 +2006,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2198,9 +2024,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2218,9 +2042,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2238,9 +2060,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2258,9 +2078,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2278,9 +2096,7 @@
       "candidate_issue_count": 96,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2298,9 +2114,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2318,9 +2132,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2338,9 +2150,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2358,9 +2168,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2378,9 +2186,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2398,9 +2204,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2418,9 +2222,7 @@
       "candidate_issue_count": 20,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2438,9 +2240,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2458,9 +2258,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2478,9 +2276,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2498,9 +2294,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2518,9 +2312,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2538,9 +2330,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2558,9 +2348,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2578,9 +2366,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2598,9 +2384,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2618,9 +2402,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2638,9 +2420,7 @@
       "candidate_issue_count": 2,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2658,9 +2438,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2678,9 +2456,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2698,9 +2474,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2718,9 +2492,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2738,9 +2510,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2758,9 +2528,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2778,9 +2546,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2798,9 +2564,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2818,9 +2582,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2841,9 +2603,7 @@
       "candidate_issue_count": 35,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2864,9 +2624,7 @@
       "candidate_issue_count": 25,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2887,9 +2645,7 @@
       "candidate_issue_count": 25,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2910,9 +2666,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2933,9 +2687,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2956,9 +2708,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2976,9 +2726,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -2996,9 +2744,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3016,9 +2762,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3036,9 +2780,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3056,9 +2798,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3076,9 +2816,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3096,9 +2834,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3116,9 +2852,7 @@
       "candidate_issue_count": 10,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3136,9 +2870,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3156,9 +2888,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3176,9 +2906,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3196,9 +2924,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3216,9 +2942,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3236,9 +2960,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3256,9 +2978,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3276,9 +2996,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3296,9 +3014,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3316,9 +3032,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3339,9 +3053,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3362,9 +3074,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3385,9 +3095,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3408,9 +3116,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3431,9 +3137,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3451,9 +3155,7 @@
       "candidate_issue_count": 12,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3471,9 +3173,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3491,9 +3191,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3511,9 +3209,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3531,9 +3227,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3551,9 +3245,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3571,9 +3263,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3591,9 +3281,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3614,9 +3302,7 @@
       "candidate_issue_count": 3,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3637,9 +3323,7 @@
       "candidate_issue_count": 6,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3660,9 +3344,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3683,9 +3365,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3706,9 +3386,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3726,9 +3404,7 @@
       "candidate_issue_count": 144,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3746,9 +3422,7 @@
       "candidate_issue_count": 72,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3766,9 +3440,7 @@
       "candidate_issue_count": 72,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3786,9 +3458,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3806,9 +3476,7 @@
       "candidate_issue_count": 72,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3826,9 +3494,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3846,9 +3512,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3866,9 +3530,7 @@
       "candidate_issue_count": 18,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3886,9 +3548,7 @@
       "candidate_issue_count": 72,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3906,9 +3566,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3926,9 +3584,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3946,9 +3602,7 @@
       "candidate_issue_count": 18,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3966,9 +3620,7 @@
       "candidate_issue_count": 36,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -3986,9 +3638,7 @@
       "candidate_issue_count": 18,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4006,9 +3656,7 @@
       "candidate_issue_count": 18,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4026,9 +3674,7 @@
       "candidate_issue_count": 9,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4046,9 +3692,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4066,9 +3710,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4086,9 +3728,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4106,9 +3746,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4126,9 +3764,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4146,9 +3782,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4166,9 +3800,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4186,9 +3818,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4206,9 +3836,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4226,9 +3854,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4246,9 +3872,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4266,9 +3890,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4286,9 +3908,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4306,9 +3926,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4326,9 +3944,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4346,9 +3962,7 @@
       "candidate_issue_count": 7,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4366,9 +3980,7 @@
       "candidate_issue_count": 7,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4386,9 +3998,7 @@
       "candidate_issue_count": 7,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4406,9 +4016,7 @@
       "candidate_issue_count": 7,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4426,9 +4034,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4446,9 +4052,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4466,9 +4070,7 @@
       "candidate_issue_count": 90,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4486,9 +4088,7 @@
       "candidate_issue_count": 30,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4506,9 +4106,7 @@
       "candidate_issue_count": 90,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4526,9 +4124,7 @@
       "candidate_issue_count": 30,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4546,9 +4142,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4566,9 +4160,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4586,9 +4178,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4606,9 +4196,7 @@
       "candidate_issue_count": 88,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4626,9 +4214,7 @@
       "candidate_issue_count": 22,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4646,9 +4232,7 @@
       "candidate_issue_count": 22,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4666,9 +4250,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4686,9 +4268,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4706,9 +4286,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4726,9 +4304,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4746,9 +4322,7 @@
       "candidate_issue_count": 90,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4766,9 +4340,7 @@
       "candidate_issue_count": 90,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4786,9 +4358,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4806,9 +4376,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4826,9 +4394,7 @@
       "candidate_issue_count": 88,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4846,9 +4412,7 @@
       "candidate_issue_count": 22,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4866,9 +4430,7 @@
       "candidate_issue_count": 66,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4886,9 +4448,7 @@
       "candidate_issue_count": 22,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4906,9 +4466,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4926,9 +4484,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4946,9 +4502,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4966,9 +4520,7 @@
       "candidate_issue_count": 91,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -4986,9 +4538,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5006,9 +4556,7 @@
       "candidate_issue_count": 16,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5026,9 +4574,7 @@
       "candidate_issue_count": 16,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5046,9 +4592,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5066,9 +4610,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5086,9 +4628,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5106,9 +4646,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5126,9 +4664,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5146,9 +4682,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5166,9 +4700,7 @@
       "candidate_issue_count": 16,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5186,9 +4718,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5206,9 +4736,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5226,9 +4754,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5246,9 +4772,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5266,9 +4790,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5286,9 +4808,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5306,9 +4826,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5326,9 +4844,7 @@
       "candidate_issue_count": 5,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5346,9 +4862,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5366,9 +4880,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5386,9 +4898,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5406,9 +4916,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5426,9 +4934,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5446,9 +4952,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5466,9 +4970,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5486,9 +4988,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5506,9 +5006,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5526,9 +5024,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5546,9 +5042,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5566,9 +5060,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5586,9 +5078,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5606,9 +5096,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5626,9 +5114,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5646,9 +5132,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5666,9 +5150,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5686,9 +5168,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5706,9 +5186,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5726,9 +5204,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5746,9 +5222,7 @@
       "candidate_issue_count": 8,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5766,9 +5240,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5786,9 +5258,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5806,9 +5276,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5826,9 +5294,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5846,9 +5312,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5866,9 +5330,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5886,9 +5348,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5906,9 +5366,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5926,9 +5384,7 @@
       "candidate_issue_count": 4,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5946,9 +5402,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5969,9 +5423,7 @@
       "candidate_issue_count": 285,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -5992,9 +5444,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -6015,9 +5465,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -6035,9 +5483,7 @@
       "candidate_issue_count": 70,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -6055,9 +5501,7 @@
       "candidate_issue_count": 0,
       "missing_count": 0,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325",
-      "missing": [],
-      "extra": []
+      "issue_fingerprint_hash": "cbf29ce484222325"
     }
   ]
 }

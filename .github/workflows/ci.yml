@@ -90,3 +90,17 @@ jobs:
           cargo run -p xtask -- open-rules baseline \
             --scoreboard target/open-rules-scoreboard-curated-upstream/scoreboard.json \
             --baseline tests/open_rules/curated-upstream-baseline.json
+
+      - name: Open Rules curated gap subset oracle
+        run: |
+          mkdir -p ../cdisc-open-rules-curated-gap/Published
+          grep -Ev '^[[:space:]]*(#|$)' tests/open_rules/curated-gap-rules.txt | while read -r rule_id; do
+            cp -R "../cdisc-open-rules/Published/${rule_id}" ../cdisc-open-rules-curated-gap/Published/
+          done
+          cargo run -p xtask -- open-rules run-score \
+            --open-rules-root ../cdisc-open-rules-curated-gap \
+            --core-rs-results-root target/open-rules-core-rs-curated-gap \
+            --out target/open-rules-scoreboard-curated-gap
+          cargo run -p xtask -- open-rules baseline \
+            --scoreboard target/open-rules-scoreboard-curated-gap/scoreboard.json \
+            --baseline tests/open_rules/curated-gap-baseline.json
