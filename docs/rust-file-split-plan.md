@@ -5,7 +5,7 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 11102 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 10958 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 9363 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
 | `crates/core-data/src/lib.rs` | 8451 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
 | `crates/core-engine/src/lib.rs` | 1779 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
@@ -61,6 +61,8 @@ still too large to review safely:
   entity column-ref oracle-gap, and entity literal fallback tests.
 - `core-api/src/tests/open_rules_jsonata.rs`: JSONata normalization,
   JSONata string expression, and unsupported JSONata preflight tests.
+- `core-api/src/tests/open_rules_match_datasets.rs`: basic Open Rules
+  match-dataset execution and single match-dataset join tests.
 - `core-api/src/tests/basic_validation.rs`: basic rule selection,
   preflight, and report-writing API tests.
 - `core-api/src/cdisc_context.rs`: Define-XML, controlled terminology, and
@@ -85,8 +87,9 @@ still too large to review safely:
 
 The next low-risk code slice is:
 
-- move the next cohesive row-scope or match-dataset fixture family from
-  `core-api/src/tests.rs` into an existing `tests/open_rules_*.rs` module,
+- move the next cohesive row-scope or remaining match-dataset fixture family
+  from `core-api/src/tests.rs` into an existing `tests/open_rules_*.rs`
+  module,
   or split the next pure USDM collector family from `core-data/src/lib.rs`
 - prefer code that already has focused tests and does not require behavior
   changes
