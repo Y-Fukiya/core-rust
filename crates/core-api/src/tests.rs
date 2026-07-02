@@ -16824,6 +16824,75 @@ fn run_validation_executes_usdm_main_timeline_count_jsonata_rule() {
 }
 
 #[test]
+fn run_validation_executes_usdm_main_timeline_planned_duration_jsonata_rule() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-001016.json"),
+        r##"{
+  "Core": { "Id": "CORE-001016", "Status": "Published" },
+  "Rule Type": "JSONata",
+  "Sensitivity": "Record",
+  "Scope": { "Entities": { "Include": ["ScheduleTimeline"] } },
+  "Check": "$.study.versions.studyDesigns.scheduleTimelines.{\"check\": true}",
+  "Outcome": {
+    "Message": "The planned duration is not specified for the main timeline.",
+    "Output Variables": ["name", "mainTimeline"]
+  }
+}"##,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("usdm.json"),
+        r#"{
+  "study": {
+    "versions": [
+      {
+        "studyDesigns": [
+          {
+            "id": "StudyDesign_1",
+            "name": "Design",
+            "instanceType": "InterventionalStudyDesign",
+            "scheduleTimelines": [
+              {
+                "id": "Timeline_1",
+                "name": "Main Timeline",
+                "mainTimeline": true
+              },
+              {
+                "id": "Timeline_2",
+                "name": "Auxiliary Timeline",
+                "mainTimeline": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .expect("write json");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].dataset, "ScheduleTimeline");
+}
+
+#[test]
 fn run_validation_executes_usdm_timeline_order_consistency_rules() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

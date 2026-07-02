@@ -1,6 +1,6 @@
 # Open Rules Upstream Issue Drafts
 
-Snapshot: `target/open-rules-scoreboard-upstream-v29/scoreboard.json`
+Snapshot: `target/open-rules-scoreboard-upstream-v31/scoreboard.json`
 
 These are draft upstream issue bodies for the remaining reviewed
 `deferred_oracle_gap_skipped` backlog. They are intentionally framed as
@@ -20,7 +20,7 @@ Body:
 ## Summary
 
 The Open Rules fixtures for `CORE-000698` and `CORE-000704` appear to have
-paired expected-result inconsistencies. In the v29 core-rust structural
+paired expected-result inconsistencies. In the v31 core-rust structural
 comparison, these cases are excluded from supported accuracy as
 `official_oracle_fixture_gap`.
 
@@ -65,7 +65,7 @@ Body:
 ## Summary
 
 Two Open Rules cases have empty official `results/results.csv` files while the
-fixture/rule combination produces large structural candidate output in the v29
+fixture/rule combination produces large structural candidate output in the v31
 core-rust structural comparison.
 
 These are currently excluded from supported accuracy as
@@ -108,7 +108,7 @@ Body:
 ## Summary
 
 Several positive Open Rules fixtures contain official issues or produce
-structural candidate issues in the v29 core-rust structural comparison. Because
+structural candidate issues in the v31 core-rust structural comparison. Because
 positive fixtures are usually interpreted as clean examples, these cases are
 currently excluded from supported accuracy as `official_oracle_fixture_gap`.
 

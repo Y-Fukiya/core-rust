@@ -157,7 +157,7 @@ fn push_case(
     let env_path = data_dir.join(".env");
     let datasets_path = data_dir.join("_datasets.csv");
     let variables_path = data_dir.join("_variables.csv");
-    let official_results_csv = case_dir.join("results").join("results.csv");
+    let official_results_csv = official_results_csv_path(&case_dir)?;
     let datasets = read_csv_dicts(&datasets_path)?;
     let variables = read_csv_dicts(&variables_path)?;
     let dataset_files = datasets
@@ -186,6 +186,32 @@ fn push_case(
         official_results_csv,
     });
     Ok(())
+}
+
+fn official_results_csv_path(case_dir: &Path) -> Result<PathBuf> {
+    let default_path = case_dir.join("results").join("results.csv");
+    if default_path.is_file() {
+        return Ok(default_path);
+    }
+
+    for child in sorted_children(case_dir)? {
+        let Some(name) = child.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("results") || !child.is_dir() {
+            continue;
+        }
+        for result_file in sorted_children(&child)? {
+            let Some(file_name) = result_file.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if file_name.eq_ignore_ascii_case("results.csv") && result_file.is_file() {
+                return Ok(result_file);
+            }
+        }
+    }
+
+    Ok(default_path)
 }
 
 fn sorted_children(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -346,5 +372,44 @@ mod tests {
         assert_eq!(cases[0].case_dir, case_dir);
         assert!(cases[0].has_official_results);
         assert!(cases[0].dataset_files[0].ends_with("cm.csv"));
+    }
+
+    #[test]
+    fn discovers_case_insensitive_results_directory() {
+        let dir = tempdir().expect("tempdir");
+        let rule_dir = dir.path().join("Published/CORE-RESULTS");
+        let case_dir = rule_dir.join("positive/01");
+        fs::create_dir_all(case_dir.join("data")).expect("data dir");
+        fs::create_dir_all(case_dir.join("Results")).expect("Results dir");
+        fs::write(rule_dir.join("rule.yml"), "Core:\n  Id: CORE-RESULTS\n").expect("write rule");
+        fs::write(
+            case_dir.join("data/_datasets.csv"),
+            "Dataset,Filename\nTS,ts.csv\n",
+        )
+        .expect("write datasets");
+        fs::write(
+            case_dir.join("data/_variables.csv"),
+            "Dataset,Variable\nTS,TSPARMCD\n",
+        )
+        .expect("write variables");
+        fs::write(case_dir.join("data/ts.csv"), "TSPARMCD\nA\n").expect("write data");
+        fs::write(
+            case_dir.join("Results/results.csv"),
+            "rule_id,dataset,row,variables\n",
+        )
+        .expect("write official results");
+
+        let cases = discover_cases(dir.path(), &[]).expect("discover cases");
+
+        assert_eq!(cases.len(), 1);
+        assert!(cases[0].has_official_results);
+        assert!(cases[0].official_results_csv.is_file());
+        assert_eq!(
+            cases[0]
+                .official_results_csv
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some("results.csv")
+        );
     }
 }

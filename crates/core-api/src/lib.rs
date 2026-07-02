@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::result_large_err)]
 
+mod condition_inspect;
 mod engine_semantics;
 mod open_rules_compat;
 mod standard_filter;
@@ -40,21 +41,23 @@ use core_rule_model::{
 use serde_json::Value;
 use thiserror::Error;
 
+pub(crate) use condition_inspect::{
+    contains_column_ref_comparator, contains_date_operator,
+    contains_domain_placeholder_column_ref_comparator, contains_empty_operator,
+    contains_full_regex_wildcard_target, contains_inconsistent_across_dataset_operator,
+    contains_longer_than_target, contains_not_unique_relationship_operator,
+    contains_presence_operator, contains_sort_operator, contains_target,
+    contains_unique_set_operator,
+};
 use open_rules_compat::{
-    has_oracle_gap_rule_id, is_dataset_presence_oracle_gap_rule, is_date_operator_oracle_gap_rule,
-    is_distinct_operation_oracle_gap_rule,
-    is_domain_placeholder_column_ref_comparator_oracle_gap_rule,
-    is_domain_presence_oracle_gap_rule, is_duplicate_match_dataset_oracle_gap_rule,
-    is_dy_operation_oracle_gap_rule, is_empty_non_empty_oracle_gap_rule,
-    is_entity_literal_oracle_gap_rule, is_inconsistent_across_dataset_oracle_gap_rule,
-    is_known_unsafe_positive_zero_probe_rule, is_missing_column_oracle_gap_rule,
-    is_multi_base_match_dataset_oracle_gap_rule, is_not_unique_relationship_oracle_gap_rule,
-    is_operation_oracle_gap_rule, is_relrec_or_supp_match_dataset_oracle_gap_rule,
-    is_required_value_metadata_oracle_gap_rule, is_sort_operator_oracle_gap_rule,
-    is_supported_entity_match_column_ref_rule, is_unique_set_oracle_gap_rule,
-    is_usdm_match_dataset_oracle_gap_rule, is_variable_metadata_oracle_gap_rule,
-    post_execution_oracle_gap_result, should_defer_entity_column_ref_oracle_gap,
-    should_defer_etcd_length_oracle_gap, should_defer_positive_zero_oracle_gap_probe,
+    has_oracle_gap_rule_id, is_dataset_presence_oracle_gap_rule,
+    is_distinct_operation_oracle_gap_rule, is_domain_presence_oracle_gap_rule,
+    is_dy_operation_oracle_gap_rule, is_known_unsafe_positive_zero_probe_rule,
+    is_missing_column_oracle_gap_rule, is_operation_oracle_gap_rule,
+    is_required_value_metadata_oracle_gap_rule, is_supported_entity_match_column_ref_rule,
+    is_variable_metadata_oracle_gap_rule, post_execution_oracle_gap_result,
+    should_defer_entity_column_ref_oracle_gap, should_defer_positive_zero_oracle_gap_probe,
+    skipped_oracle_gap_after_operator_checks,
 };
 use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
 use usdm_jsonata::{
@@ -2481,7 +2484,7 @@ fn skipped_unsupported_rule(
     }
 
     if open_rules_compat {
-        if let Some(skipped) = skipped_open_rules_oracle_gap_after_operator_checks(rule) {
+        if let Some(skipped) = skipped_oracle_gap_after_operator_checks(rule) {
             return Some(skipped);
         }
     }
@@ -2501,215 +2504,6 @@ fn skipped_unsupported_rule(
             ),
         )
     })
-}
-
-fn skipped_open_rules_oracle_gap_after_operator_checks(
-    rule: &ExecutableRule,
-) -> Option<RuleValidationResult> {
-    let skipped = |message: String| {
-        Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::OracleSemanticsGap,
-            message,
-        ))
-    };
-
-    if is_domain_placeholder_column_ref_comparator_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses domain placeholder column-ref comparator oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_entity_literal_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses entity literal oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if contains_full_regex_wildcard_target(&rule.conditions) {
-        return skipped(format!(
-            "Rule {} uses wildcard regex target semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if contains_longer_than_target(&rule.conditions, "ETCD")
-        && scope_matches(&scope_values(rule.domains.as_ref(), "Include"), "SE")
-        && !should_defer_etcd_length_oracle_gap(rule)
-    {
-        return skipped(format!(
-            "Rule {} uses ETCD length semantics for SE that are not supported",
-            rule.core_id
-        ));
-    }
-    if contains_longer_than_target(&rule.conditions, "ARMCD")
-        && contains_target(&rule.conditions, "TXPARMCD")
-        && contains_longer_than_target(&rule.conditions, "TXVAL")
-    {
-        return skipped(format!(
-            "Rule {} uses cross-domain ARMCD/TXVAL length semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_empty_non_empty_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses empty/non_empty oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_date_operator_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses date oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_sort_operator_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses sort oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_unique_set_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses unique set oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_not_unique_relationship_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses not-unique relationship oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_inconsistent_across_dataset_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses inconsistent across dataset oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_usdm_match_dataset_oracle_gap_rule(rule) {
-        return Some(RuleValidationResult::skipped_rule(
-            rule.core_id.clone(),
-            SkippedReason::DatasetJoinNotSupported,
-            format!(
-                "Rule {} uses USDM match dataset oracle semantics that are not supported",
-                rule.core_id
-            ),
-        ));
-    }
-    if is_multi_base_match_dataset_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses multi-base match dataset oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_duplicate_match_dataset_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses duplicate match dataset oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    if is_relrec_or_supp_match_dataset_oracle_gap_rule(rule) {
-        return skipped(format!(
-            "Rule {} uses RELREC/SUPP-- match dataset oracle semantics that are not supported",
-            rule.core_id
-        ));
-    }
-    None
-}
-
-fn contains_empty_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_empty_operator)
-        }
-        ConditionGroup::Not(group) => contains_empty_operator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::IsEmpty | Operator::IsNotEmpty)
-        }
-    }
-}
-
-fn contains_inconsistent_across_dataset_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
-            .iter()
-            .any(contains_inconsistent_across_dataset_operator),
-        ConditionGroup::Not(group) => contains_inconsistent_across_dataset_operator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::IsInconsistentAcrossDataset)
-        }
-    }
-}
-
-fn contains_unique_set_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_unique_set_operator)
-        }
-        ConditionGroup::Not(group) => contains_unique_set_operator(group),
-        ConditionGroup::Leaf(condition) => matches!(
-            condition.operator,
-            Operator::IsNotUniqueSet | Operator::IsUniqueSet
-        ),
-    }
-}
-
-fn contains_not_unique_relationship_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_not_unique_relationship_operator)
-        }
-        ConditionGroup::Not(group) => contains_not_unique_relationship_operator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::IsNotUniqueRelationship)
-        }
-    }
-}
-
-fn contains_sort_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_sort_operator)
-        }
-        ConditionGroup::Not(group) => contains_sort_operator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::TargetIsNotSortedBy)
-        }
-    }
-}
-
-fn contains_date_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_date_operator)
-        }
-        ConditionGroup::Not(group) => contains_date_operator(group),
-        ConditionGroup::Leaf(condition) => matches!(
-            condition.operator,
-            Operator::DateEqualTo
-                | Operator::DateNotEqualTo
-                | Operator::DateLessThan
-                | Operator::DateLessThanOrEqualTo
-                | Operator::DateGreaterThan
-                | Operator::DateGreaterThanOrEqualTo
-                | Operator::InvalidDate
-                | Operator::InvalidDuration
-                | Operator::IsCompleteDate
-                | Operator::IsIncompleteDate
-        ),
-    }
-}
-
-fn contains_presence_operator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_presence_operator)
-        }
-        ConditionGroup::Not(group) => contains_presence_operator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::Exists | Operator::NotExists)
-        }
-    }
 }
 
 fn add_missing_presence_target_columns(
@@ -2855,31 +2649,6 @@ fn collect_presence_target_columns(group: &ConditionGroup, columns: &mut BTreeSe
     }
 }
 
-fn contains_column_ref_comparator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_column_ref_comparator)
-        }
-        ConditionGroup::Not(group) => contains_column_ref_comparator(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column.contains("--") && !column.starts_with("--"))
-        }
-    }
-}
-
-fn contains_domain_placeholder_column_ref_comparator(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
-            .iter()
-            .any(contains_domain_placeholder_column_ref_comparator),
-        ConditionGroup::Not(group) => contains_domain_placeholder_column_ref_comparator(group),
-        ConditionGroup::Leaf(condition) => {
-            !matches!(condition.operator, Operator::IsNotUniqueRelationship)
-                && matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column.starts_with("--"))
-        }
-    }
-}
-
 fn contains_existing_column_ref_comparator(
     group: &ConditionGroup,
     dataset: &LoadedDataset,
@@ -2945,51 +2714,6 @@ fn expand_domain_placeholder_for_dataset(dataset: &LoadedDataset, name: &str) ->
         prefix.trim().to_ascii_uppercase(),
         suffix.to_ascii_uppercase()
     )
-}
-
-fn contains_full_regex_wildcard_target(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(contains_full_regex_wildcard_target)
-        }
-        ConditionGroup::Not(group) => contains_full_regex_wildcard_target(group),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::DoesNotMatchRegexFullString)
-                && condition
-                    .target
-                    .as_deref()
-                    .is_some_and(|target| target.contains("--"))
-        }
-    }
-}
-
-fn contains_target(group: &ConditionGroup, target: &str) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            groups.iter().any(|group| contains_target(group, target))
-        }
-        ConditionGroup::Not(group) => contains_target(group, target),
-        ConditionGroup::Leaf(condition) => condition
-            .target
-            .as_deref()
-            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(target)),
-    }
-}
-
-fn contains_longer_than_target(group: &ConditionGroup, target: &str) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
-            .iter()
-            .any(|group| contains_longer_than_target(group, target)),
-        ConditionGroup::Not(group) => contains_longer_than_target(group, target),
-        ConditionGroup::Leaf(condition) => {
-            matches!(condition.operator, Operator::LongerThan)
-                && condition
-                    .target
-                    .as_deref()
-                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(target))
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default)]
