@@ -5,11 +5,11 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 18633 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 11818 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
-| `crates/core-data/src/lib.rs` | 10660 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader split. |
-| `crates/core-engine/src/lib.rs` | 4632 | Continue extracting scalar/date/operator helper families after the group-operator split. |
-| `xtask/src/open_rules/score.rs` | 2643 | Continue splitting issue normalization and scoring fixtures after the summary/gate/provenance policy split. |
+| `crates/core-api/src/tests.rs` | 11102 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/lib.rs` | 9363 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
+| `crates/core-data/src/lib.rs` | 8451 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
+| `crates/core-engine/src/lib.rs` | 1779 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
+| `xtask/src/open_rules/score.rs` | 2239 | Continue splitting scoring fixtures after the summary/gate/provenance/policy and identity-normalization splits. |
 
 ## Principles
 
@@ -24,8 +24,9 @@ still too large to review safely:
 ## Recommended Order
 
 1. `core-api/src/lib.rs`: continue extracting small pure helper families into
-   `open_rules_compat/` and sibling modules. The oracle-gap classifier and
-   condition-inspection slices have already moved out of `lib.rs`.
+   `open_rules_compat/` and sibling modules. The oracle-gap classifier,
+   condition-inspection, CDISC context, static codelist, and operation-field
+   helper slices have already moved out of `lib.rs`.
 2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
    `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
    out already.
@@ -47,8 +48,28 @@ still too large to review safely:
   and row-scope regression tests.
 - `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
   join regression tests.
+- `core-api/src/tests/open_rules_dates.rs`: Open Rules date, partial-date,
+  duration, and date ordering regression tests.
+- `core-api/src/tests/open_rules_metadata.rs`: domain presence, dataset
+  metadata, variable metadata, library metadata, and Define metadata tests.
+- `core-api/src/tests/open_rules_operations.rs`: reference distinct, grouped
+  aggregate, domain label, XHTML, DY, and match-dataset operation tests.
+- `core-api/src/tests/open_rules_codelists.rs`: static CDISC codelist,
+  package-version scoping, Define-XML/CT enrichment, and entity codelist
+  operation tests.
+- `core-api/src/tests/open_rules_entities.rs`: entity-scope execution,
+  entity column-ref oracle-gap, and entity literal fallback tests.
+- `core-api/src/tests/open_rules_jsonata.rs`: JSONata normalization,
+  JSONata string expression, and unsupported JSONata preflight tests.
 - `core-api/src/tests/basic_validation.rs`: basic rule selection,
   preflight, and report-writing API tests.
+- `core-api/src/cdisc_context.rs`: Define-XML, controlled terminology, and
+  external dictionary context loading plus codelist comparator enrichment.
+- `core-api/src/static_codelists.rs`: static CDISC codelist registry,
+  package-version scoping helpers, and term lookup helpers.
+- `core-api/src/operation_fields.rs`: Open Rules operation name, key
+  normalization, string/list/map field extraction, and expression literal
+  parsing helpers.
 - `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
@@ -64,8 +85,9 @@ still too large to review safely:
 
 The next low-risk code slice is:
 
-- move another cohesive Open Rules test family from `core-api/src/tests.rs`,
-  or split a pure helper family from `core-data/src/lib.rs`
+- move the next cohesive row-scope or match-dataset fixture family from
+  `core-api/src/tests.rs` into an existing `tests/open_rules_*.rs` module,
+  or split the next pure USDM collector family from `core-data/src/lib.rs`
 - prefer code that already has focused tests and does not require behavior
   changes
 - keep public behavior unchanged

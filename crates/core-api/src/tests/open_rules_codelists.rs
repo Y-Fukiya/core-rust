@@ -1,9 +1,14 @@
 use super::{
-    static_codelist, static_codelist_matches_version, static_codelist_term_by_code,
-    static_codelist_term_by_value, static_codelist_term_matches_version, valid_codelist_dates,
-    valid_codelist_dates_for_operation,
+    define_codelist_for_condition, run_validation, static_codelist,
+    static_codelist_matches_version, static_codelist_term_by_code, static_codelist_term_by_value,
+    static_codelist_term_matches_version, valid_codelist_dates, valid_codelist_dates_for_operation,
+    CdiscContext, ValidateRequest,
 };
-use core_rule_model::OperationSpec;
+use std::fs;
+
+use core_engine::ExecutionStatus;
+use core_rule_model::{Condition, OperationSpec, Operator, ValueExpr};
+use tempfile::tempdir;
 
 #[test]
 fn static_codelist_resolves_ddf_organization_type_terms() {
@@ -1129,4 +1134,391 @@ fn ddf_observational_study_subtype_codelist_is_scoped_by_package_version() {
         term,
         Some("2025-09-26")
     ));
+}
+
+#[test]
+fn run_validation_executes_core_000857_entity_codelist_column_refs() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+            rules_dir.join("CORE-000857.json"),
+            r#"{
+  "Core": { "Id": "CORE-000857", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["StudyDesignPopulation"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    {
+      "Name": "Code",
+      "Keys": [
+        { "Left": "instanceType", "Right": "parent_entity" },
+        { "Left": "id", "Right": "parent_id" },
+        "rel_type"
+      ]
+    }
+  ],
+  "Operations": [
+    {
+      "id": "$codelist_code",
+      "operator": "map",
+      "map": [{ "parent_rel.Code": "plannedSex", "output": "C66732" }]
+    },
+    { "id": "$valid_versions", "operator": "valid_codelist_dates" },
+    {
+      "id": "$codelist_extensible",
+      "operator": "codelist_extensible",
+      "codelist_code": "$codelist_code"
+    },
+    {
+      "id": "$value_for_code",
+      "operator": "codelist_terms",
+      "codelist_code": "$codelist_code",
+      "returntype": "value",
+      "term_code": "code"
+    },
+    {
+      "id": "$pref_term_for_code",
+      "operator": "codelist_terms",
+      "codelist_code": "$codelist_code",
+      "returntype": "pref_term",
+      "term_code": "code"
+    },
+    {
+      "id": "$code_for_decode_pref_term",
+      "operator": "codelist_terms",
+      "codelist_code": "$codelist_code",
+      "returntype": "code",
+      "term_pref_term": "decode"
+    },
+    {
+      "id": "$code_for_decode_value",
+      "operator": "codelist_terms",
+      "codelist_code": "$codelist_code",
+      "returntype": "code",
+      "term_value": "decode"
+    }
+  ],
+  "Check": {
+    "all": [
+      { "name": "rel_type", "operator": "equal_to", "value": "definition" },
+      { "name": "plannedSex", "operator": "equal_to", "value": true },
+      { "name": "parent_rel.Code", "operator": "equal_to", "value": "plannedSex", "value_is_literal": true },
+      {
+        "not": {
+          "all": [
+            { "name": "codeSystem", "operator": "equal_to", "value": "http://www.cdisc.org" },
+            { "name": "codeSystemVersion", "operator": "is_contained_by", "value": "$valid_versions" },
+            {
+              "any": [
+                {
+                  "all": [
+                    { "name": "$pref_term_for_code", "operator": "non_empty" },
+                    { "name": "$value_for_code", "operator": "non_empty" },
+                    {
+                      "any": [
+                        { "name": "$code_for_decode_pref_term", "operator": "non_empty" },
+                        { "name": "$code_for_decode_value", "operator": "non_empty" }
+                      ]
+                    },
+                    {
+                      "any": [
+                        { "name": "code", "operator": "equal_to", "value": "$code_for_decode_pref_term" },
+                        { "name": "code", "operator": "equal_to", "value": "$code_for_decode_value" }
+                      ]
+                    },
+                    {
+                      "any": [
+                        { "name": "decode", "operator": "equal_to", "value": "$pref_term_for_code" },
+                        { "name": "decode", "operator": "equal_to", "value": "$value_for_code" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "all": [
+                    { "name": "$codelist_extensible", "operator": "equal_to", "value": true },
+                    { "name": "$code_for_decode_pref_term", "operator": "empty" },
+                    { "name": "$code_for_decode_value", "operator": "empty" },
+                    { "name": "$pref_term_for_code", "operator": "empty" },
+                    { "name": "$value_for_code", "operator": "empty" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "Outcome": {
+    "Message": "planned sex codelist mismatch",
+    "Output Variables": ["code", "decode", "$value_for_code", "$pref_term_for_code"]
+  }
+}"#,
+        )
+        .expect("write CORE-000857 rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "StudyDesignPopulation.csv",
+      "domain": "StudyDesignPopulation",
+      "records": {
+        "id": ["StudyDesignPopulation_1"],
+        "instanceType": ["StudyDesignPopulation"],
+        "rel_type": ["definition"],
+        "plannedSex": [true]
+      }
+    },
+    {
+      "filename": "Code.csv",
+      "domain": "Code",
+      "records": {
+        "parent_entity": ["StudyDesignPopulation"],
+        "parent_id": ["StudyDesignPopulation_1"],
+        "parent_rel.Code": ["plannedSex"],
+        "rel_type": ["definition"],
+        "codeSystem": ["http://www.cdisc.org"],
+        "codeSystemVersion": ["2023-12-15"],
+        "code": ["C16576"],
+        "decode": ["Wrong"],
+        "id": ["Code_1"],
+        "name": ["Wrong code"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write entity codelist data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+}
+
+#[test]
+fn run_validation_uses_define_xml_and_ct_for_codelist_checks() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-CT-DOMAIN.json"),
+        r#"{
+  "Core": { "Id": "CORE-CT-DOMAIN", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "DOMAIN",
+    "operator": "is_not_contained_by"
+  },
+  "Outcome": { "Message": "DOMAIN must use controlled terminology" }
+}"#,
+    )
+    .expect("write codelist rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "DOMAIN": ["AE", "CM", "XX"],
+        "AESEQ": [1, 2, 3]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write codelist data");
+
+    let define_xml_path = dir.path().join("define.xml");
+    fs::write(
+        &define_xml_path,
+        r#"
+<ODM>
+  <ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text">
+    <CodeListRef CodeListOID="CL.DOMAIN"/>
+  </ItemDef>
+  <CodeList OID="CL.DOMAIN">
+    <CodeListItem CodedValue="AE"/>
+  </CodeList>
+</ODM>
+"#,
+    )
+    .expect("write define xml");
+    let ct_path = dir.path().join("ct.json");
+    fs::write(&ct_path, r#"{ "CL.DOMAIN": ["CM"] }"#).expect("write ct");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        define_xml_paths: vec![define_xml_path],
+        ct_paths: vec![ct_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(3));
+}
+
+#[test]
+fn run_validation_resolves_define_and_ct_codelist_aliases() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-CT-ALIAS.json"),
+        r#"{
+  "Core": { "Id": "CORE-CT-ALIAS", "Status": "Published" },
+  "Scope": { "Domains": {}, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AE.DOMAIN",
+    "operator": "is_not_contained_by"
+  },
+  "Outcome": { "Message": "DOMAIN must use Define-XML and CT terminology" }
+}"#,
+    )
+    .expect("write codelist rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1", "S2", "S3"],
+        "AE.DOMAIN": ["AE", "CM", "XX"],
+        "AESEQ": [1, 2, 3]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write codelist data");
+
+    let define_xml_path = dir.path().join("define.xml");
+    fs::write(
+        &define_xml_path,
+        r#"
+<odm:ODM xmlns:odm="http://www.cdisc.org/ns/odm/v1.3">
+  <odm:ItemDef OID="IT.DOMAIN" Name="DOMAIN" DataType="text">
+    <odm:CodeListRef CodeListOID="CL.DOMAIN"/>
+  </odm:ItemDef>
+  <odm:CodeList OID="CL.DOMAIN" Name="Domain Abbreviation" SASFormatName="DOMAIN">
+    <odm:CodeListItem CodedValue="AE"/>
+  </odm:CodeList>
+</odm:ODM>
+"#,
+    )
+    .expect("write define xml");
+    let ct_path = dir.path().join("ct.json");
+    fs::write(
+        &ct_path,
+        r#"{
+  "codelists": [
+    {
+      "submissionValue": "DOMAIN",
+      "conceptId": "C66734",
+      "terms": [
+        { "submissionValue": "CM" }
+      ]
+    }
+  ]
+}"#,
+    )
+    .expect("write ct");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        define_xml_paths: vec![define_xml_path],
+        ct_paths: vec![ct_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(3));
+}
+
+#[test]
+fn define_codelist_resolution_uses_domain_and_avoids_ambiguous_globals() {
+    let dir = tempdir().expect("tempdir");
+    let define_xml_path = dir.path().join("define.xml");
+    fs::write(
+        &define_xml_path,
+        r#"
+<ODM>
+  <ItemGroupDef OID="IG.AE" Name="AE" Domain="AE">
+    <ItemRef ItemOID="IT.AE.PARAMCD"/>
+  </ItemGroupDef>
+  <ItemGroupDef OID="IG.CM" Name="CM" Domain="CM">
+    <ItemRef ItemOID="IT.CM.PARAMCD"/>
+  </ItemGroupDef>
+  <ItemDef OID="IT.AE.PARAMCD" Name="PARAMCD" DataType="text">
+    <CodeListRef CodeListOID="CL.AE.PARAMCD"/>
+  </ItemDef>
+  <ItemDef OID="IT.CM.PARAMCD" Name="PARAMCD" DataType="text">
+    <CodeListRef CodeListOID="CL.CM.PARAMCD"/>
+  </ItemDef>
+</ODM>
+"#,
+    )
+    .expect("write define xml");
+    let context = CdiscContext::load(&[define_xml_path], &[], &[]).expect("load context");
+
+    let unqualified = Condition {
+        target: Some("PARAMCD".to_owned()),
+        operator: Operator::IsContainedBy,
+        comparator: ValueExpr::Null,
+        options: Default::default(),
+    };
+    assert_eq!(define_codelist_for_condition(&unqualified, &context), None);
+
+    let qualified = Condition {
+        target: Some("AE.PARAMCD".to_owned()),
+        operator: Operator::IsContainedBy,
+        comparator: ValueExpr::Null,
+        options: Default::default(),
+    };
+    assert_eq!(
+        define_codelist_for_condition(&qualified, &context),
+        Some("CL.AE.PARAMCD".to_owned())
+    );
 }
