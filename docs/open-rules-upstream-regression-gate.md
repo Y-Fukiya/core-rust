@@ -44,6 +44,18 @@ same-bucket issue regressions without creating false positives.
 
 Do not use a hard 100% full-corpus gate. The accepted upstream baseline is a
 "do not get worse" guard, not a conformance certificate. The full upstream
-workflow currently runs on `workflow_dispatch` and a weekly schedule; normal PR
-CI still uses the repository-local fixture gate unless a curated upstream subset
-is added to CI.
+workflow currently runs on `workflow_dispatch` and a weekly schedule. Normal PR
+CI runs both the repository-local fixture gate and a small pinned upstream
+subset gate.
+
+The curated upstream subset is intentionally not a replacement for the full
+upstream workflow. It is a fast PR signal that copies selected rule directories
+from the pinned `cdisc-open-rules` checkout and compares them against
+`tests/open_rules/curated-upstream-baseline.json`. The selected rules cover the
+major execution provenance detail families:
+
+- `CORE-000001`: `generic_engine`
+- `CORE-000007`: `oracle_gap_normalized`
+- `CORE-000012`: `rule_specific_engine_semantics`
+- `CORE-000047`: `rule_id_hand_port`
+- `CORE-000119`: `compatibility_policy`
