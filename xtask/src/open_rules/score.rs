@@ -127,6 +127,8 @@ pub struct ScoreSummary {
     pub deferred_oracle_gap_mismatch: usize,
     #[serde(default)]
     pub deferred_oracle_gap_skipped: usize,
+    #[serde(default)]
+    pub deferred_oracle_gap_breakdown: DeferredOracleGapBreakdown,
     pub skipped_unsupported: usize,
     #[serde(default)]
     pub mixed_skipped_and_issues: usize,
@@ -159,6 +161,20 @@ pub struct ScoreSummary {
     pub unknown_provenance_supported_accuracy: Option<f64>,
     #[serde(default)]
     pub unknown_provenance_coverage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeferredOracleGapBreakdown {
+    #[serde(default)]
+    pub candidate_skipped: usize,
+    #[serde(default)]
+    pub official_fixture_gap: usize,
+    #[serde(default)]
+    pub standard_filter_oracle_gap: usize,
+    #[serde(default)]
+    pub oracle_identity_gap: usize,
+    #[serde(default)]
+    pub unverified_semantics_gap: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -798,6 +814,7 @@ impl ScoreSummary {
         let deferred_oracle_gap_mismatch =
             *counts.get("deferred_oracle_gap_mismatch").unwrap_or(&0);
         let deferred_oracle_gap_skipped = *counts.get("deferred_oracle_gap_skipped").unwrap_or(&0);
+        let deferred_oracle_gap_breakdown = deferred_oracle_gap_breakdown(cases);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
         let mixed_skipped_and_issues = *counts.get("mixed_skipped_and_issues").unwrap_or(&0);
         let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
@@ -843,6 +860,7 @@ impl ScoreSummary {
             supported_mismatch,
             deferred_oracle_gap_mismatch,
             deferred_oracle_gap_skipped,
+            deferred_oracle_gap_breakdown,
             skipped_unsupported,
             mixed_skipped_and_issues,
             no_official_oracle,
@@ -900,6 +918,56 @@ fn count_supported_by_provenance(
         .iter()
         .filter(|case| case.bucket == bucket && case.execution_provenance == provenance)
         .count()
+}
+
+fn deferred_oracle_gap_breakdown(cases: &[ScoredCase]) -> DeferredOracleGapBreakdown {
+    let mut breakdown = DeferredOracleGapBreakdown::default();
+    for case in cases
+        .iter()
+        .filter(|case| case.bucket == ScoreBucket::DeferredOracleGapSkipped)
+    {
+        match deferred_oracle_gap_breakdown_kind(case) {
+            DeferredOracleGapBreakdownKind::OfficialFixtureGap => {
+                breakdown.official_fixture_gap += 1;
+            }
+            DeferredOracleGapBreakdownKind::StandardFilterOracleGap => {
+                breakdown.standard_filter_oracle_gap += 1;
+            }
+            DeferredOracleGapBreakdownKind::CandidateSkipped => {
+                breakdown.candidate_skipped += 1;
+            }
+            DeferredOracleGapBreakdownKind::OracleIdentityGap => {
+                breakdown.oracle_identity_gap += 1;
+            }
+            DeferredOracleGapBreakdownKind::UnverifiedSemanticsGap => {
+                breakdown.unverified_semantics_gap += 1;
+            }
+        }
+    }
+    breakdown
+}
+
+enum DeferredOracleGapBreakdownKind {
+    CandidateSkipped,
+    OfficialFixtureGap,
+    StandardFilterOracleGap,
+    OracleIdentityGap,
+    UnverifiedSemanticsGap,
+}
+
+fn deferred_oracle_gap_breakdown_kind(case: &ScoredCase) -> DeferredOracleGapBreakdownKind {
+    let reason = case.reason.as_deref().unwrap_or_default();
+    if reason.contains("official oracle fixture gap") {
+        DeferredOracleGapBreakdownKind::OfficialFixtureGap
+    } else if reason.contains("standard applicability oracle semantics") {
+        DeferredOracleGapBreakdownKind::StandardFilterOracleGap
+    } else if !case.skipped_reasons.is_empty() {
+        DeferredOracleGapBreakdownKind::CandidateSkipped
+    } else if case.missing_count.unwrap_or(0) > 0 || case.extra_count.unwrap_or(0) > 0 {
+        DeferredOracleGapBreakdownKind::OracleIdentityGap
+    } else {
+        DeferredOracleGapBreakdownKind::UnverifiedSemanticsGap
+    }
 }
 
 fn supported_accuracy_for_counts(matches: usize, mismatches: usize) -> Option<f64> {
@@ -1233,6 +1301,29 @@ mod tests {
         }
     }
 
+    fn scored_case(bucket: ScoreBucket, reason: Option<&str>) -> ScoredCase {
+        ScoredCase {
+            scope: "Published".to_owned(),
+            rule_id: "CORE-OPEN-0001".to_owned(),
+            case_kind: "negative".to_owned(),
+            case_id: "01".to_owned(),
+            case_dir: PathBuf::from("case"),
+            official_results_csv: PathBuf::from("results.csv"),
+            candidate_report_csv: PathBuf::from("report.csv"),
+            execution_provenance: ExecutionProvenance::NativeEngine,
+            bucket,
+            reason: reason.map(str::to_owned),
+            skipped_reasons: Vec::new(),
+            official_issue_count: None,
+            candidate_issue_count: None,
+            missing_count: None,
+            extra_count: None,
+            issue_fingerprint_hash: None,
+            missing: Vec::new(),
+            extra: Vec::new(),
+        }
+    }
+
     fn write_score_fixture(
         root: &Path,
         rule_id: &str,
@@ -1314,6 +1405,60 @@ mod tests {
         assert_eq!(
             skipped.reason,
             Some("candidate skipped rows: unsupported_operator".to_owned())
+        );
+    }
+
+    #[test]
+    fn summary_splits_deferred_oracle_gap_skipped_by_review_category() {
+        let mut candidate_skipped = scored_case(
+            ScoreBucket::DeferredOracleGapSkipped,
+            Some("empty/non_empty oracle semantics; candidate skipped"),
+        );
+        candidate_skipped
+            .skipped_reasons
+            .push("unsupported operator".to_owned());
+        let mut identity_gap = scored_case(
+            ScoreBucket::DeferredOracleGapSkipped,
+            Some("record row locator oracle semantics"),
+        );
+        identity_gap.missing_count = Some(1);
+        let cases = vec![
+            scored_case(
+                ScoreBucket::DeferredOracleGapSkipped,
+                Some("official oracle fixture gap; excluded from supported accuracy"),
+            ),
+            scored_case(
+                ScoreBucket::DeferredOracleGapSkipped,
+                Some("standard applicability oracle semantics; candidate skipped"),
+            ),
+            candidate_skipped,
+            identity_gap,
+            scored_case(
+                ScoreBucket::DeferredOracleGapSkipped,
+                Some("operation oracle semantics"),
+            ),
+        ];
+
+        let summary = ScoreSummary::from_cases(&cases);
+
+        assert_eq!(summary.deferred_oracle_gap_skipped, 5);
+        assert_eq!(
+            summary.deferred_oracle_gap_breakdown.official_fixture_gap,
+            1
+        );
+        assert_eq!(
+            summary
+                .deferred_oracle_gap_breakdown
+                .standard_filter_oracle_gap,
+            1
+        );
+        assert_eq!(summary.deferred_oracle_gap_breakdown.candidate_skipped, 1);
+        assert_eq!(summary.deferred_oracle_gap_breakdown.oracle_identity_gap, 1);
+        assert_eq!(
+            summary
+                .deferred_oracle_gap_breakdown
+                .unverified_semantics_gap,
+            1
         );
     }
 

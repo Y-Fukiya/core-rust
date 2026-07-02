@@ -78,10 +78,12 @@ oracle, so this is currently safer as an upstream oracle/fixture review item.
 
 ## Next Actions
 
-1. Keep `official_oracle_fixture_gap` as warning/report-only unless upstream
-   fixture evidence changes.
-2. Keep `standard_filter_oracle_gap` as warning/report-only unless upstream
-   fixture standard metadata changes.
+1. Keep `official_oracle_fixture_gap` as report-only in the score command
+   unless upstream fixture evidence changes. Baseline comparison should require
+   review if this inventory grows.
+2. Keep `standard_filter_oracle_gap` as report-only in the score command unless
+   upstream fixture standard metadata changes. Baseline comparison should
+   require review if this inventory grows.
 3. Preserve `supported_mismatch = 0`, `skipped_unsupported = 0`,
    `harness_error = 0`, and `deferred_oracle_gap_mismatch = 0` as CI gate
    invariants.

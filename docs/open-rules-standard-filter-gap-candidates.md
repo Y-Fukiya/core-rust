@@ -18,7 +18,8 @@ the fixture standard metadata or rule applicability should change.
 
 ## Local Policy
 
-- Keep these cases report-only and warning-level in full upstream scoring.
+- Keep these cases report-only in full upstream scoring; baseline comparison
+  should require review if the accepted count grows.
 - Do not count them as `skipped_unsupported`; the skip is a reviewed standard
   applicability conflict, not a generic engine gap.
 - Do not promote them to `supported_match` unless upstream standard metadata or
