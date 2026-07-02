@@ -1,6 +1,6 @@
 # Open Rules Official Fixture Gap Candidates
 
-Snapshot: `target/open-rules-scoreboard-upstream-v29/scoreboard.json`
+Snapshot: `target/open-rules-scoreboard-upstream-v31/scoreboard.json`
 
 These cases are currently classified as `official_oracle_fixture_gap` and are
 excluded from supported accuracy. They should not be converted into native
@@ -121,11 +121,11 @@ For each proposed upstream issue or PR, include:
 
 - Rule id and case id.
 - The exact official `results.csv` row count.
-- The candidate structural issue count from core-rust v29.
+- The candidate structural issue count from core-rust v31.
 - A small excerpt of the input rows that demonstrate the discrepancy.
 - Whether the discrepancy is cardinality, positive-fixture issue presence,
   official-empty/candidate-nonempty, or locator identity.
-- The `issue_fingerprint_hash` from the v29 scoreboard, so future fixture or
+- The `issue_fingerprint_hash` from the v31 scoreboard, so future fixture or
   oracle changes can be compared without relying on diagnostic text.
 - A note that the case remains excluded from supported accuracy until upstream
   oracle/data are reconciled.

@@ -1,6 +1,6 @@
 # Open Rules Deferred Gap Inventory
 
-Snapshot: `target/open-rules-scoreboard-upstream-v29/scoreboard.json`
+Snapshot: `target/open-rules-scoreboard-upstream-v31/scoreboard.json`
 
 This inventory tracks the remaining `deferred_oracle_gap_skipped` cases after
 the default-engine upstream run reached:
