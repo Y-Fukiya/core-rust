@@ -27,6 +27,14 @@ The full upstream baseline should fail when:
 - same-bucket issue counts or issue fingerprints regress
 - a baseline case disappears from the current scoreboard
 
+Default upstream scoring is a compatibility regression gate. It can defer
+manifest-backed oracle/fixture/semantics gaps and can apply reviewed scoring
+normalizations. For scorer audits, run the same corpus with
+`xtask open-rules score --strict-scoring`. Strict scoring disables oracle-gap
+reclassification and oracle-informed identity/output-context normalization, so
+the result is intentionally harsher and should be reported beside, not instead
+of, the default compatibility scoreboard.
+
 The accepted v31 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
 `official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.
 These are not supported matches and are not conformance evidence. Treat them as
@@ -43,6 +51,9 @@ fields before falling back to arrays, so stripped baselines can still detect
 same-bucket issue regressions without creating false positives.
 The canonicalizer also normalizes `upstream.lock_path` and absolute paths in
 case reasons so committed baselines do not contain machine-local paths.
+Scoreboard summaries include `scoring_normalization_counts`; any increase or
+case-level trace change is review-required because these normalizations are
+oracle-informed compatibility policy, not native engine proof.
 
 Do not use a hard 100% full-corpus gate. The accepted upstream baseline is a
 "do not get worse" guard, not a conformance certificate. The full upstream

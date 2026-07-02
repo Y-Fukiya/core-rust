@@ -1,8 +1,11 @@
 //! Open Rules oracle-compatibility helpers.
 //!
-//! This module is intentionally separate from the generic validation path. Open
-//! Rules compatibility gaps are coverage decisions for the oracle harness, not
-//! production engine semantics.
+//! This module keeps Open Rules oracle-harness policy and rule-id manifests out
+//! of the large `lib.rs` orchestration code. Some helpers classify default
+//! engine behavior for provenance or deferred-gap scoring, so this is not a
+//! promise that every referenced rule is outside the default path. Treat entries
+//! here as reviewed compatibility/coverage policy, not as proof of generic
+//! engine semantics.
 
 use std::collections::BTreeSet;
 use std::sync::LazyLock;

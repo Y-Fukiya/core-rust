@@ -113,6 +113,8 @@ families where official and candidate issue identity is known to differ only by
 unstable row location; it must not hide missing or extra issue counts.
 Cases where this relaxation is applied record
 `scoring_normalizations: ["row_locator_identity_relaxed"]` in `scoreboard.json`.
+The scoreboard summary also reports normalization counts, so readers can see
+how many cases relied on each compatibility normalization.
 
 For reviewed `empty/non_empty` oracle-gap families, scoring may drop candidate
 output-context variables at the same rule/dataset/domain/row/subject/sequence
@@ -127,6 +129,12 @@ The same output-context-variable normalization applies to reviewed
 positive-zero probe oracle-gap families. It can remove extra candidate variables
 only when the official oracle already has an issue at the same structural
 location; candidate-only rows and official-only rows remain mismatches.
+
+Use `xtask open-rules score --strict-scoring` when auditing the scorer itself.
+Strict scoring disables oracle-gap reclassification, row-locator identity
+relaxation, and output-context-variable alignment. Cases that only match after
+those compatibility policies therefore remain `supported_mismatch` in the
+strict scoreboard.
 
 ## Missing Official Oracle Policy
 
@@ -143,19 +151,25 @@ Read these fields together:
 - `supported_mismatch`: official-oracle-backed cases where structural issue keys
   differ.
 - `deferred_oracle_gap_mismatch`: official-oracle-backed mismatches deferred by
-  an explicit oracle-gap policy; treat increases as review-required, not as
-  coverage improvement.
-- `deferred_oracle_gap_skipped`: official-oracle-backed skipped execution
-  deferred by an explicit oracle-gap policy; treat increases as review-required,
-  not as supported coverage.
-- `native_engine_coverage`: share of all discovered cases covered by supported
-  native engine execution.
+  manifest-backed oracle/fixture/semantics policy and excluded from the
+  supported denominator.
+- `deferred_oracle_gap_skipped`: candidate skipped cases accepted as reviewed
+  oracle/fixture/standard applicability gaps and excluded from the supported
+  denominator.
+- `coverage`: supported cases divided by total discovered cases.
+- `native_engine_coverage`: non-hand-port supported coverage; this can include
+  generic engine behavior, rule-specific engine semantics, compatibility
+  policy, and oracle-gap normalization. Use the provenance detail fields for a
+  narrower read.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
   supported rule-id hand-port execution.
 - `execution_provenance_detail`: case-level refinement of execution provenance.
   It separates `generic_engine`, `rule_specific_engine_semantics`,
   `compatibility_policy`, `oracle_gap_normalized`, `rule_id_hand_port`, and
   `unknown`.
+- `scoring_normalization_counts`: count of cases where the scorer applied
+  compatibility identity normalization such as row-locator relaxation or
+  output-context-variable alignment.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
 

@@ -1,3 +1,10 @@
+//! Hand-ported USDM/Open Rules checks whose upstream rule type is JSONata.
+//!
+//! This module does not implement a general JSONata evaluator. It rewrites
+//! reviewed USDM rule families into synthetic condition columns that the USDM
+//! data loader computes from source JSON. New rules should be treated as
+//! explicit hand ports and tracked in the Open Rules provenance manifests.
+
 use core_data::LoadedDataset;
 use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::{Condition, ConditionGroup, ExecutableRule, Operator, ValueExpr};

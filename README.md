@@ -17,7 +17,7 @@ CORE rules engine can look like.
 - Comparing Rust behavior with Python/CDISC-compatible expected outputs.
 - Producing JSON, CSV, and log reports for traceable validation results.
 - Developing validation engine features such as rule normalization, dataset
-  operations, JSONATA-like conditions, Define-XML metadata, controlled
+  operations, targeted hand-ported USDM/Open Rules checks, Define-XML metadata, controlled
   terminology, and external dictionaries.
 
 ## What It Is Not
@@ -56,8 +56,10 @@ authority for production submission decisions.
   - row number
   - left/inner/semi/anti joins
   - Match_Datasets-style checks
-- JSONATA-like rule support for a practical subset of expressions used in the
-  compatibility fixtures.
+- JSONata normalization for a small expression subset plus targeted
+  hand-ported USDM/Open Rules checks. These hand ports are tracked separately
+  in Open Rules provenance and should not be read as a general JSONata
+  evaluator.
 - Reports:
   - `report.json`
   - `report.csv`
@@ -65,7 +67,7 @@ authority for production submission decisions.
 
 ## Validation Coverage
 
-The repository includes golden fixtures for:
+The repository includes golden fixtures and Open Rules oracle harnesses for:
 
 - integrated DatasetPackageJson + Define-XML + CT flows
 - SDTM/ADaM-like multi-domain packages
@@ -74,6 +76,21 @@ The repository includes golden fixtures for:
 - issue identity traceability with `usubjid` and sequence fields
 - CSV and log report structure
 - GitHub Actions CI running format, check, and workspace tests
+- CDISC Open Rules fixture and curated-upstream subset comparisons
+
+Open Rules coverage metrics are split by evidence type. `supported_accuracy`
+only measures cases still in the supported denominator after reviewed
+`deferred_oracle_gap_*`, missing-oracle, and unsupported cases have been
+excluded. It is a regression-gate invariant, not a claim that the full upstream
+corpus is completely implemented. Read it together with `coverage`,
+`native_engine_coverage`, `rule_id_hand_port_coverage`,
+`deferred_oracle_gap_skipped`, and `no_official_oracle`.
+
+For audit runs, `xtask open-rules score --strict-scoring` disables oracle-gap
+reclassification and oracle-informed identity/output-context normalizations.
+That strict score is intentionally harsher and is the right lens for estimating
+how much the compatibility scorer, manifests, and normalization policy affect
+the headline gate metrics.
 
 These fixtures make regressions visible, but they are not a substitute for broad
 parallel runs against the official CDISC Validator or the Python rules engine on

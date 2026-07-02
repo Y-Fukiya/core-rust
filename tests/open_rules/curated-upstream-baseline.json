@@ -76,6 +76,16 @@
         "supported_accuracy": 1.0,
         "coverage": 0.2805755395683453
       }
+    ],
+    "scoring_normalization_counts": [
+      {
+        "normalization": "output_context_variable_aligned",
+        "cases": 30
+      },
+      {
+        "normalization": "row_locator_identity_relaxed",
+        "cases": 37
+      }
     ]
   },
   "gate": {
@@ -159,6 +169,16 @@
             "supported_accuracy": 1.0,
             "coverage": 0.2805755395683453
           }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 30
+          },
+          {
+            "normalization": "row_locator_identity_relaxed",
+            "cases": 37
+          }
         ]
       }
     }
@@ -236,6 +256,16 @@
             "supported_accuracy": 1.0,
             "coverage": 0.2937062937062937
           }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 15
+          },
+          {
+            "normalization": "row_locator_identity_relaxed",
+            "cases": 20
+          }
         ]
       }
     },
@@ -310,6 +340,16 @@
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
             "coverage": 0.26666666666666666
+          }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 15
+          },
+          {
+            "normalization": "row_locator_identity_relaxed",
+            "cases": 17
           }
         ]
       }

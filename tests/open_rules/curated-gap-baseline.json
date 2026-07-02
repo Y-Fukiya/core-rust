@@ -57,6 +57,12 @@
         "supported_accuracy": 1.0,
         "coverage": 0.1
       }
+    ],
+    "scoring_normalization_counts": [
+      {
+        "normalization": "output_context_variable_aligned",
+        "cases": 10
+      }
     ]
   },
   "gate": {
@@ -119,6 +125,12 @@
             "supported_accuracy": 1.0,
             "coverage": 0.1
           }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 10
+          }
         ]
       }
     }
@@ -167,6 +179,12 @@
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
             "coverage": 0.2
+          }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 4
           }
         ]
       }
@@ -221,6 +239,12 @@
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
             "coverage": 0.2
+          }
+        ],
+        "scoring_normalization_counts": [
+          {
+            "normalization": "output_context_variable_aligned",
+            "cases": 6
           }
         ]
       }
