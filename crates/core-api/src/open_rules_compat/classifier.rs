@@ -33,8 +33,9 @@ pub(crate) fn is_dy_operation_oracle_gap_rule(rule: &ExecutableRule) -> bool {
 }
 
 pub(crate) fn is_required_value_metadata_oracle_gap_rule(rule: &ExecutableRule) -> bool {
-    has_oracle_gap_rule_id(rule, "required_value_metadata")
-        && rule.rule_type == RuleType::ValueLevelMetadata
+    rule.rule_type == RuleType::ValueLevelMetadata
+        && (has_oracle_gap_rule_id(rule, "required_value_metadata")
+            || has_oracle_gap_rule_id(rule, "official_oracle_fixture_gap"))
 }
 
 pub(crate) fn is_domain_presence_oracle_gap_rule(rule: &ExecutableRule) -> bool {
