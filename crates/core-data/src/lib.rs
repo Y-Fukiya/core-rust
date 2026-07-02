@@ -16,6 +16,7 @@ mod dataset_transforms;
 mod json_table;
 mod open_rules_data_dir;
 mod open_rules_variables;
+mod usdm_collectors;
 mod usdm_json_schema;
 mod usdm_references;
 
@@ -23,6 +24,7 @@ pub use dataset_package::load_dataset_package_json;
 pub use dataset_transforms::sort_dataset_by_columns;
 use json_table::{records_to_frame, series_from_json_values};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
+use usdm_collectors::collect_recursive_instance_rows;
 use usdm_json_schema::collect_usdm_json_schema_issue_rows;
 use usdm_references::{
     collect_usdm_id_instance_types, collect_usdm_reference_keys, parameter_map_reference_invalid,
@@ -1179,107 +1181,15 @@ fn collect_usdm_activity_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Val
 }
 
 fn collect_usdm_duration_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    collect_usdm_duration_rows_at(value, "", rows);
-}
-
-fn collect_usdm_duration_rows_at(
-    value: &Value,
-    path: &str,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            if object
-                .get("instanceType")
-                .and_then(Value::as_str)
-                .is_some_and(|instance_type| instance_type == "Duration")
-            {
-                rows.push(usdm_duration_row(value, path));
-            }
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_duration_rows_at(child, &child_path, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_duration_rows_at(child, &format!("{path}/{index}"), rows);
-            }
-        }
-        _ => {}
-    }
+    collect_recursive_instance_rows(value, "Duration", rows, usdm_duration_row);
 }
 
 fn collect_usdm_range_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    collect_usdm_range_rows_at(value, "", rows);
-}
-
-fn collect_usdm_range_rows_at(value: &Value, path: &str, rows: &mut Vec<BTreeMap<String, Value>>) {
-    match value {
-        Value::Object(object) => {
-            if object
-                .get("instanceType")
-                .and_then(Value::as_str)
-                .is_some_and(|instance_type| instance_type == "Range")
-            {
-                rows.push(usdm_range_row(value, path));
-            }
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_range_rows_at(child, &child_path, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_range_rows_at(child, &format!("{path}/{index}"), rows);
-            }
-        }
-        _ => {}
-    }
+    collect_recursive_instance_rows(value, "Range", rows, usdm_range_row);
 }
 
 fn collect_usdm_person_name_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    collect_usdm_person_name_rows_at(value, "", rows);
-}
-
-fn collect_usdm_person_name_rows_at(
-    value: &Value,
-    path: &str,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            if object
-                .get("instanceType")
-                .and_then(Value::as_str)
-                .is_some_and(|instance_type| instance_type == "PersonName")
-            {
-                rows.push(usdm_person_name_row(value, path));
-            }
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_person_name_rows_at(child, &child_path, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_person_name_rows_at(child, &format!("{path}/{index}"), rows);
-            }
-        }
-        _ => {}
-    }
+    collect_recursive_instance_rows(value, "PersonName", rows, usdm_person_name_row);
 }
 
 fn collect_usdm_address_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {

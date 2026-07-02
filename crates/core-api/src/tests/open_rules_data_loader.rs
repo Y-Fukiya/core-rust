@@ -4,7 +4,176 @@ use core_engine::ExecutionStatus;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
+use crate::tests::helpers::{write_rule, write_test_xpt_char_dataset};
 use crate::{run_validation, DatasetLoader, ValidateRequest};
+
+#[test]
+fn run_validation_loads_xpt_dataset() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    write_rule(&rules_dir, "CORE-XPT-0001", "AE");
+    let dataset_path = data_dir.join("ae.xpt");
+    write_test_xpt_char_dataset(
+        &dataset_path,
+        "AE",
+        &["STUDYID", "DOMAIN", "AESEQ"],
+        &[vec!["CDISC-TEST", "AE", "1"], vec!["CDISC-TEST", "CM", "2"]],
+    );
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path.clone()],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Failed,
+        "{:?}",
+        outcome.results[0]
+    );
+    assert_eq!(outcome.results[0].error_count, 1);
+    assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    assert_eq!(outcome.results[0].errors[0].seq.as_deref(), Some("2"));
+}
+
+#[test]
+fn run_validation_treats_safe_open_rules_missing_columns_as_null() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000200.json"),
+        r#"{
+  "Core": { "Id": "CORE-000200", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["LB"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "any": [
+      {
+        "all": [
+          { "name": "--STAT", "operator": "empty" },
+          { "name": "--DRVFL", "operator": "not_equal_to", "value": "Y", "value_is_literal": true },
+          { "name": "--ORRES", "operator": "empty" }
+        ]
+      }
+    ]
+  },
+  "Outcome": { "Message": "--ORRES cannot be null" }
+}"#,
+    )
+    .expect("write open rules missing-column rule");
+    let dataset_path = data_dir.join("lb.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "lb.csv",
+      "domain": "LB",
+      "records": {
+        "USUBJID": ["S1"],
+        "LBSEQ": [1],
+        "LBSTAT": [""],
+        "LBORRES": ["12"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write open rules data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].skipped_reason, None);
+}
+
+#[test]
+fn run_validation_treats_safe_usdm_missing_nested_columns_as_null() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000680.json"),
+        r#"{
+  "Core": { "Id": "CORE-000680", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["Range"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "instanceType", "operator": "equal_to", "value": "Range" },
+      { "name": "rel_type", "operator": "equal_to", "value": "definition" },
+      { "name": "parent_rel", "operator": "is_contained_by", "value": ["plannedCompletionNumber"] },
+      {
+        "not": {
+          "any": [
+            { "name": "unit", "operator": "equal_to", "value": false },
+            { "name": "unit", "operator": "empty" },
+            { "name": "unit", "operator": "not_exists" }
+          ]
+        }
+      }
+    ]
+  },
+  "Outcome": { "Message": "A unit is specified" }
+}"#,
+    )
+    .expect("write usdm missing-column rule");
+    let dataset_path = data_dir.join("range.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "Range.csv",
+      "domain": "Range",
+      "records": {
+        "parent_entity": ["StudyDesignPopulation"],
+        "parent_id": ["StudyDesignPopulation_2"],
+        "parent_rel": ["plannedCompletionNumber"],
+        "rel_type": ["definition"],
+        "id": ["Range_6"],
+        "instanceType": ["Range"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write usdm data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(outcome.results[0].skipped_reason, None);
+}
 
 #[test]
 fn run_validation_uses_open_rules_data_loader_when_requested() {
