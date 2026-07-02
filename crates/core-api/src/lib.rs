@@ -4,6 +4,7 @@
 mod cdisc_context;
 mod condition_inspect;
 mod engine_semantics;
+mod json_values;
 mod match_datasets;
 mod open_rules_compat;
 mod operation_fields;
@@ -55,6 +56,7 @@ pub(crate) use condition_inspect::{
     contains_presence_operator, contains_sort_operator, contains_target,
     contains_unique_set_operator,
 };
+use json_values::{json_distinct_value_string, json_report_string, json_scalar_string};
 use match_datasets::{
     add_source_row_column, execute_match_datasets, match_dataset_name,
     rule_referenced_columns_with_suffix, rule_references_match_dataset_prefixed_column,
@@ -3857,16 +3859,6 @@ fn split_domain_sequence_column(dataset: &LoadedDataset) -> Option<String> {
 fn resolved_dataset_column_values(dataset: &LoadedDataset, column: &str) -> Option<Vec<Value>> {
     let actual = dataset_column_name(dataset, column)?;
     dataset_column_values(dataset, &actual).ok()
-}
-
-fn json_report_string(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::String(value) => value.clone(),
-        Value::Number(value) => value.to_string(),
-        Value::Bool(value) => value.to_string(),
-        other => other.to_string(),
-    }
 }
 
 fn core_000878_invalid_condition_context_results(
@@ -8009,34 +8001,6 @@ pub(crate) fn expand_dataset_domain_placeholder(dataset: &LoadedDataset, name: &
         domain.trim().to_ascii_uppercase(),
         suffix.to_ascii_uppercase()
     )
-}
-
-fn json_scalar_string(value: &Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::String(value) => Some(value.clone()),
-        Value::Bool(value) => Some(value.to_string()),
-        Value::Number(value) => Some(value.to_string()),
-        _ => None,
-    }
-}
-
-fn json_distinct_value_string(value: &Value) -> Option<String> {
-    match value {
-        Value::Number(value) => value
-            .as_f64()
-            .map(canonical_numeric_string)
-            .or_else(|| Some(value.to_string())),
-        _ => json_scalar_string(value),
-    }
-}
-
-fn canonical_numeric_string(value: f64) -> String {
-    let formatted = format!("{value:.12}");
-    formatted
-        .trim_end_matches('0')
-        .trim_end_matches('.')
-        .to_owned()
 }
 
 fn operation_input_datasets(
