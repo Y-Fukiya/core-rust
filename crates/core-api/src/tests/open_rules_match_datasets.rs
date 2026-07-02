@@ -7,6 +7,285 @@ use tempfile::tempdir;
 use crate::{run_validation, DatasetLoader, ValidateRequest};
 
 #[test]
+fn run_validation_joins_match_dataset_before_reference_distinct_operation() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000270.json"),
+        r#"{
+  "Core": { "Id": "CORE-000270", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["TV"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SV", "Keys": ["USUBJID", "VISITNUM"] }
+  ],
+  "Operations": [
+    { "domain": "TV", "id": "$TV_VISITNUM", "name": "VISITNUM", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "SVPRESP", "operator": "equal_to", "value": "Y" },
+      { "name": "VISITNUM", "operator": "is_not_contained_by", "value": "$TV_VISITNUM" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Planned VISITNUM should be among TV.VISITNUM.",
+    "Output Variables": ["SVPRESP", "VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write match dataset reference distinct rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "tv.csv",
+      "domain": "TV",
+      "records": {
+        "VISITNUM": ["1"]
+      }
+    },
+    {
+      "filename": "sv.csv",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "VISITNUM": ["2", "1"],
+        "SVPRESP": ["Y", "Y"]
+      }
+    },
+    {
+      "filename": "lb.csv",
+      "domain": "LB",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "LBSEQ": [1, 2],
+        "VISITNUM": ["2", "1"]
+      }
+    },
+    {
+      "filename": "ae.csv",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["S1"],
+        "AESEQ": [1]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write match dataset reference distinct data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let lb = outcome
+        .results
+        .iter()
+        .find(|result| result.dataset == "LB")
+        .expect("LB result");
+    assert_eq!(lb.execution_status, ExecutionStatus::Failed);
+    assert_eq!(lb.skipped_reason, None);
+    assert_eq!(lb.error_count, 1);
+    assert_eq!(lb.errors[0].row, Some(1));
+}
+
+#[test]
+fn run_validation_evaluates_planned_visit_match_dataset_as_target() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000270.json"),
+        r#"{
+  "Core": { "Id": "CORE-000270", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["TV"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SV", "Keys": ["USUBJID", "VISITNUM"] }
+  ],
+  "Operations": [
+    { "domain": "TV", "id": "$TV_VISITNUM", "name": "VISITNUM", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "SVPRESP", "operator": "equal_to", "value": "Y" },
+      { "name": "VISITNUM", "operator": "is_not_contained_by", "value": "$TV_VISITNUM" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Planned VISITNUM should be among TV.VISITNUM.",
+    "Output Variables": ["SVPRESP", "VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write planned visitnum rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "tv.csv",
+      "domain": "TV",
+      "records": {
+        "VISITNUM": ["1"]
+      }
+    },
+    {
+      "filename": "sv.csv",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1", "S1"],
+        "VISITNUM": ["1", "2"],
+        "SVPRESP": ["Y", "Y"]
+      }
+    },
+    {
+      "filename": "lb.csv",
+      "domain": "LB",
+      "records": {
+        "USUBJID": ["S1"],
+        "LBSEQ": [1],
+        "VISITNUM": ["1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write planned visitnum data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let result = outcome
+        .results
+        .iter()
+        .find(|result| result.dataset == "SV")
+        .expect("SV result");
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, Some(2));
+    assert_eq!(
+        result.errors[0].variables,
+        vec!["SVPRESP".to_owned(), "VISITNUM".to_owned()]
+    );
+}
+
+#[test]
+fn run_validation_core_000269_evaluates_sv_match_dataset_as_target() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000269.json"),
+        r#"{
+  "Core": { "Id": "CORE-000269", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["TV"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [
+    { "Name": "SV", "Keys": ["USUBJID", "VISIT"] }
+  ],
+  "Operations": [
+    { "domain": "TV", "id": "$tv_visit", "name": "VISIT", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "VISIT", "operator": "non_empty" },
+      { "name": "SVPRESP", "operator": "equal_to", "value": "Y" },
+      { "name": "VISIT", "operator": "is_not_contained_by", "value": "$tv_visit" }
+    ]
+  },
+  "Outcome": {
+    "Message": "Planned VISIT should be among TV.VISIT.",
+    "Output Variables": ["VISIT", "VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write planned visit rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "tv.csv",
+      "domain": "TV",
+      "records": {
+        "VISIT": ["WEEK 24"]
+      }
+    },
+    {
+      "filename": "sv.csv",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1"],
+        "VISIT": ["WEEK 26"],
+        "VISITNUM": ["13"],
+        "SVPRESP": ["Y"]
+      }
+    },
+    {
+      "filename": "lb.csv",
+      "domain": "LB",
+      "records": {
+        "USUBJID": ["S1"],
+        "LBSEQ": [1],
+        "VISIT": ["WEEK 26"],
+        "VISITNUM": ["13"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write planned visit data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let mut datasets = outcome
+        .results
+        .iter()
+        .filter(|result| result.execution_status == ExecutionStatus::Failed)
+        .map(|result| result.dataset.as_str())
+        .collect::<Vec<_>>();
+    datasets.sort_unstable();
+    assert_eq!(datasets, vec!["LB", "SV"]);
+}
+
+#[test]
 fn run_validation_executes_match_datasets_without_explicit_operation() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
