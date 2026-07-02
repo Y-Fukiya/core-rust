@@ -326,10 +326,11 @@ CI runs two lightweight gates:
 
 The upstream subset intentionally covers the main execution provenance detail
 families: `generic_engine`, `rule_specific_engine_semantics`,
-`compatibility_policy`, `oracle_gap_normalized`, and `rule_id_hand_port`. It is
-small enough for PR CI but stronger than the local fixture because it uses real
-upstream rule/data/oracle directories. Full upstream observe/regression remains
-scheduled/manual.
+`compatibility_policy`, `oracle_gap_normalized`, and `rule_id_hand_port`. It also
+includes representative reference distinct, record-count, USDM codelist, grouped
+distinct, and XHTML operation rules. It is small enough for PR CI but stronger
+than the local fixture because it uses real upstream rule/data/oracle
+directories. Full upstream observe/regression remains scheduled/manual.
 
 The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 `Open Rules Upstream`. It can be started manually with `workflow_dispatch` and
