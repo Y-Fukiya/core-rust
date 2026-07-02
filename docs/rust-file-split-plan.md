@@ -5,11 +5,12 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 8718 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 8719 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
 | `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 4519 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
-| `xtask/src/open_rules/score.rs` | 2362 | Continue splitting scoring fixtures after the summary/gate/provenance/policy and identity-normalization splits. |
+| `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
 
 ## Principles
 
@@ -34,9 +35,8 @@ still too large to review safely:
    package helpers after the Open Rules CSV/data-dir loader split.
 4. `core-engine/src/lib.rs`: continue splitting scalar/date/operator helper
    families after group/relationship operator evaluators moved out.
-5. `xtask/src/open_rules/score.rs`: continue with issue normalization and
-   test-fixture helpers after the `ScoreSummary`/`ScoreGate`/provenance
-   policy split.
+5. `xtask/src/open_rules/score.rs`: keep as a small orchestration module after
+   the summary/gate/provenance/policy/normalization/test splits.
 
 ## Completed Slices
 
@@ -48,6 +48,8 @@ still too large to review safely:
   and row-scope regression tests.
 - `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
   join regression tests.
+- `core-api/src/tests/open_rules_usdm_narrative.rs`: USDM narrative content
+  JSONata regression tests.
 - `core-api/src/tests/open_rules_dates.rs`: Open Rules date, partial-date,
   duration, and date ordering regression tests.
 - `core-api/src/tests/open_rules_metadata.rs`: domain presence, dataset
@@ -83,6 +85,10 @@ still too large to review safely:
   oracle-gap breakdown, group summaries, and score gate policy.
 - `xtask/src/open_rules/score/provenance.rs`: candidate provenance parsing
   and detailed execution-provenance classification.
+- `xtask/src/open_rules/score/normalization.rs`: score-only identity
+  normalization helpers for deferred oracle-gap comparison.
+- `xtask/src/open_rules/score/tests.rs`: score fixture construction and
+  scoreboard/bucket policy regression tests moved out of `score.rs`.
 
 ## Next Implementation Slice
 

@@ -20,6 +20,7 @@ mod open_rules_metadata;
 mod open_rules_operations;
 mod open_rules_scope;
 mod open_rules_usdm;
+mod open_rules_usdm_narrative;
 
 #[test]
 fn run_validation_requires_paths_before_loading() {
