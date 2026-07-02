@@ -9,9 +9,9 @@
     ]
   },
   "summary": {
-    "total_cases": 14,
-    "supported_match": 14,
-    "official_oracle_match": 14,
+    "total_cases": 38,
+    "supported_match": 38,
+    "official_oracle_match": 38,
     "synthetic_oracle_match": 0,
     "unverified_synthetic_oracle_match": 0,
     "supported_mismatch": 0,
@@ -30,14 +30,14 @@
     "harness_error": 0,
     "supported_accuracy": 1.0,
     "coverage": 1.0,
-    "native_engine_supported_match": 12,
+    "native_engine_supported_match": 36,
     "native_engine_supported_mismatch": 0,
     "native_engine_supported_accuracy": 1.0,
-    "native_engine_coverage": 0.8571428571428571,
+    "native_engine_coverage": 0.9473684210526315,
     "rule_id_hand_port_supported_match": 2,
     "rule_id_hand_port_supported_mismatch": 0,
     "rule_id_hand_port_supported_accuracy": 1.0,
-    "rule_id_hand_port_coverage": 0.14285714285714285,
+    "rule_id_hand_port_coverage": 0.05263157894736842,
     "unknown_provenance_supported_match": 0,
     "unknown_provenance_supported_mismatch": 0,
     "unknown_provenance_supported_accuracy": null,
@@ -45,38 +45,38 @@
     "by_execution_provenance_detail": [
       {
         "detail": "generic_engine",
-        "supported_match": 2,
+        "supported_match": 10,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.14285714285714285
+        "coverage": 0.2631578947368421
       },
       {
         "detail": "rule_specific_engine_semantics",
-        "supported_match": 3,
+        "supported_match": 5,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.21428571428571427
+        "coverage": 0.13157894736842105
       },
       {
         "detail": "compatibility_policy",
         "supported_match": 3,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.21428571428571427
+        "coverage": 0.07894736842105263
       },
       {
         "detail": "oracle_gap_normalized",
-        "supported_match": 4,
+        "supported_match": 18,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.2857142857142857
+        "coverage": 0.47368421052631576
       },
       {
         "detail": "rule_id_hand_port",
         "supported_match": 2,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.14285714285714285
+        "coverage": 0.05263157894736842
       }
     ]
   },
@@ -92,9 +92,9 @@
     {
       "name": "Published",
       "summary": {
-        "total_cases": 14,
-        "supported_match": 14,
-        "official_oracle_match": 14,
+        "total_cases": 38,
+        "supported_match": 38,
+        "official_oracle_match": 38,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
@@ -113,14 +113,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 1.0,
-        "native_engine_supported_match": 12,
+        "native_engine_supported_match": 36,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.8571428571428571,
+        "native_engine_coverage": 0.9473684210526315,
         "rule_id_hand_port_supported_match": 2,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.14285714285714285,
+        "rule_id_hand_port_coverage": 0.05263157894736842,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -128,38 +128,38 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 2,
+            "supported_match": 10,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.2631578947368421
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 3,
+            "supported_match": 5,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.21428571428571427
+            "coverage": 0.13157894736842105
           },
           {
             "detail": "compatibility_policy",
             "supported_match": 3,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.21428571428571427
+            "coverage": 0.07894736842105263
           },
           {
             "detail": "oracle_gap_normalized",
-            "supported_match": 4,
+            "supported_match": 18,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.2857142857142857
+            "coverage": 0.47368421052631576
           },
           {
             "detail": "rule_id_hand_port",
             "supported_match": 2,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.05263157894736842
           }
         ]
       }
@@ -169,9 +169,9 @@
     {
       "name": "negative",
       "summary": {
-        "total_cases": 7,
-        "supported_match": 7,
-        "official_oracle_match": 7,
+        "total_cases": 20,
+        "supported_match": 20,
+        "official_oracle_match": 20,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
@@ -190,14 +190,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 1.0,
-        "native_engine_supported_match": 6,
+        "native_engine_supported_match": 19,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.8571428571428571,
+        "native_engine_coverage": 0.95,
         "rule_id_hand_port_supported_match": 1,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.14285714285714285,
+        "rule_id_hand_port_coverage": 0.05,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -205,38 +205,38 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 1,
+            "supported_match": 5,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.25
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 2,
+            "supported_match": 3,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.2857142857142857
+            "coverage": 0.15
           },
           {
             "detail": "compatibility_policy",
             "supported_match": 1,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.05
           },
           {
             "detail": "oracle_gap_normalized",
-            "supported_match": 2,
+            "supported_match": 10,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.2857142857142857
+            "coverage": 0.5
           },
           {
             "detail": "rule_id_hand_port",
             "supported_match": 1,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.05
           }
         ]
       }
@@ -244,9 +244,9 @@
     {
       "name": "positive",
       "summary": {
-        "total_cases": 7,
-        "supported_match": 7,
-        "official_oracle_match": 7,
+        "total_cases": 18,
+        "supported_match": 18,
+        "official_oracle_match": 18,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
@@ -265,14 +265,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 1.0,
-        "native_engine_supported_match": 6,
+        "native_engine_supported_match": 17,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.8571428571428571,
+        "native_engine_coverage": 0.9444444444444444,
         "rule_id_hand_port_supported_match": 1,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.14285714285714285,
+        "rule_id_hand_port_coverage": 0.05555555555555555,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -280,38 +280,38 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 1,
+            "supported_match": 5,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.2777777777777778
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 1,
+            "supported_match": 2,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.1111111111111111
           },
           {
             "detail": "compatibility_policy",
             "supported_match": 2,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.2857142857142857
+            "coverage": 0.1111111111111111
           },
           {
             "detail": "oracle_gap_normalized",
-            "supported_match": 2,
+            "supported_match": 8,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.2857142857142857
+            "coverage": 0.4444444444444444
           },
           {
             "detail": "rule_id_hand_port",
             "supported_match": 1,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14285714285714285
+            "coverage": 0.05555555555555555
           }
         ]
       }
@@ -600,6 +600,537 @@
       "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000119/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "compatibility_policy",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000168",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000168/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000168/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000168/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 50,
+      "candidate_issue_count": 50,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000168",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000168/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000168/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000168/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000249",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000249/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000249/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000249/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 2,
+      "candidate_issue_count": 2,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000249",
+      "case_kind": "negative",
+      "case_id": "02",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000249/negative/02",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000249/negative/02/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000249/negative/02/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 400,
+      "candidate_issue_count": 400,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000249",
+      "case_kind": "negative",
+      "case_id": "03",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000249/negative/03",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000249/negative/03/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000249/negative/03/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 2,
+      "candidate_issue_count": 2,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000249",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000249/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000249/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000249/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000269",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000269/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000269/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000269/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 88,
+      "candidate_issue_count": 88,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000269",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000269/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000269/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000269/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000270",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000270/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000270/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000270/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 112,
+      "candidate_issue_count": 112,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000270",
+      "case_kind": "negative",
+      "case_id": "02",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000270/negative/02",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000270/negative/02/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000270/negative/02/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 52,
+      "candidate_issue_count": 52,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000270",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000270/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000270/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000270/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "row_locator_identity_relaxed",
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000427",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000427/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000427/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000427/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 96,
+      "candidate_issue_count": 96,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000427",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000427/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000427/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000427/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000857",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000857/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000857/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000857/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 90,
+      "candidate_issue_count": 90,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000857",
+      "case_kind": "negative",
+      "case_id": "02",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000857/negative/02",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000857/negative/02/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000857/negative/02/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 90,
+      "candidate_issue_count": 90,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000857",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000857/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000857/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000857/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000857",
+      "case_kind": "positive",
+      "case_id": "02",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000857/positive/02",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000857/positive/02/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000857/positive/02/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000878",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000878/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000878/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000878/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 91,
+      "candidate_issue_count": 91,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-000878",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-000878/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-000878/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-000878/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-001034",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-001034/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-001034/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-001034/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 285,
+      "candidate_issue_count": 285,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-001034",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-001034/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-001034/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-001034/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-001034",
+      "case_kind": "positive",
+      "case_id": "02",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-001034/positive/02",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-001034/positive/02/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-001034/positive/02/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "oracle_gap_normalized",
+      "bucket": "supported_match",
+      "reason": null,
+      "scoring_normalizations": [
+        "output_context_variable_aligned"
+      ],
+      "official_issue_count": 0,
+      "candidate_issue_count": 0,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-001069",
+      "case_kind": "negative",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-001069/negative/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-001069/negative/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-001069/negative/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
+      "bucket": "supported_match",
+      "reason": null,
+      "official_issue_count": 70,
+      "candidate_issue_count": 70,
+      "missing_count": 0,
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325",
+      "missing": [],
+      "extra": []
+    },
+    {
+      "scope": "Published",
+      "rule_id": "CORE-001069",
+      "case_kind": "positive",
+      "case_id": "01",
+      "case_dir": "target/open-rules-curated-upstream/Published/CORE-001069/positive/01",
+      "official_results_csv": "target/open-rules-curated-upstream/Published/CORE-001069/positive/01/results/results.csv",
+      "candidate_report_csv": "target/open-rules-core-rs-curated-upstream/Published/CORE-001069/positive/01/report.csv",
+      "execution_provenance": "native_engine",
+      "execution_provenance_detail": "generic_engine",
       "bucket": "supported_match",
       "reason": null,
       "official_issue_count": 0,

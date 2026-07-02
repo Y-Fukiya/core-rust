@@ -78,7 +78,10 @@ jobs:
       - name: Open Rules curated upstream subset oracle
         run: |
           mkdir -p ../cdisc-open-rules-curated/Published
-          for rule_id in CORE-000001 CORE-000007 CORE-000012 CORE-000047 CORE-000119; do
+          for rule_id in \
+            CORE-000001 CORE-000007 CORE-000012 CORE-000047 CORE-000119 \
+            CORE-000168 CORE-000249 CORE-000269 CORE-000270 CORE-000427 \
+            CORE-000857 CORE-000878 CORE-001034 CORE-001069; do
             cp -R "../cdisc-open-rules/Published/${rule_id}" ../cdisc-open-rules-curated/Published/
           done
           cargo run -p xtask -- open-rules run-score \

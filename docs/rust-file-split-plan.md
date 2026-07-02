@@ -5,10 +5,10 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 12965 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 11818 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
-| `crates/core-data/src/lib.rs` | 10225 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader and transform split. |
-| `crates/core-engine/src/lib.rs` | 3985 | Continue extracting scalar/operator helper families after the group-operator, date-operator, and scalar-helper splits. |
+| `crates/core-api/src/tests.rs` | 11840 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/lib.rs` | 11821 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
+| `crates/core-data/src/lib.rs` | 8452 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
+| `crates/core-engine/src/lib.rs` | 1779 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 2239 | Continue splitting scoring fixtures after the summary/gate/provenance/policy and identity-normalization splits. |
 
 ## Principles
@@ -54,8 +54,12 @@ still too large to review safely:
   metadata, variable metadata, library metadata, and Define metadata tests.
 - `core-api/src/tests/open_rules_operations.rs`: reference distinct, grouped
   aggregate, domain label, XHTML, DY, and match-dataset operation tests.
+- `core-api/src/tests/open_rules_codelists.rs`: static CDISC codelist and
+  package-version scoping tests.
 - `core-api/src/tests/basic_validation.rs`: basic rule selection,
   preflight, and report-writing API tests.
+- `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
+  Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
   `_variables.csv`, embedded metadata, and CSV data-dir loading.
 - `core-data/src/dataset_transforms.rs`: first dataset transform split,
@@ -70,6 +74,8 @@ still too large to review safely:
   date comparison, and ISO duration validation.
 - `core-engine/src/scalar_operators.rs`: scalar comparator resolution,
   placeholder expansion, and scalar equality/list helper logic.
+- `core-engine/src/tests.rs`: core-engine validation and operator regression
+  tests moved out of `lib.rs`.
 - `xtask/src/open_rules/score/policy.rs`: deferred oracle-gap score policy
   and reason mapping.
 - `xtask/src/open_rules/score/normalization.rs`: deferred oracle-gap issue
@@ -83,7 +89,9 @@ still too large to review safely:
   normalization and duplicate sequence detection for Open Rules score
   comparison.
 - `.github/workflows/ci.yml`: PR CI now runs both the repository-local curated
-  fixture gate and a pinned curated upstream subset gate.
+  fixture gate and an expanded pinned curated upstream subset gate covering all
+  provenance detail families plus reference distinct, record-count, USDM
+  codelist, grouped distinct, and XHTML operation representatives.
 
 ## Next Implementation Slice
 

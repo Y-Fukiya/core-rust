@@ -52,10 +52,17 @@ The curated upstream subset is intentionally not a replacement for the full
 upstream workflow. It is a fast PR signal that copies selected rule directories
 from the pinned `cdisc-open-rules` checkout and compares them against
 `tests/open_rules/curated-upstream-baseline.json`. The selected rules cover the
-major execution provenance detail families:
+major execution provenance detail families and several previously fragile
+semantics families:
 
 - `CORE-000001`: `generic_engine`
 - `CORE-000007`: `oracle_gap_normalized`
 - `CORE-000012`: `rule_specific_engine_semantics`
 - `CORE-000047`: `rule_id_hand_port`
 - `CORE-000119`: `compatibility_policy`
+- `CORE-000168`, `CORE-000249`, `CORE-000269`, `CORE-000270`, `CORE-001034`:
+  reference distinct / planned visit / record-count normalization
+- `CORE-000427`: record-count column-reference comparison
+- `CORE-000857`: USDM codelist column-reference handling
+- `CORE-000878`: USDM grouped distinct semantics
+- `CORE-001069`: XHTML structural operation handling
