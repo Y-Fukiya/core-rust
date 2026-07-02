@@ -7,6 +7,74 @@ use tempfile::tempdir;
 use super::*;
 
 #[test]
+fn run_validation_ignores_missing_columns_for_non_applicable_scoped_datasets() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-SCOPED-MISSING-COLUMN.json"),
+        r#"{
+  "Core": { "Id": "CORE-SCOPED-MISSING-COLUMN", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "AESTDTC",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "AESTDTC must be populated" }
+}"#,
+    )
+    .expect("write rule");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESTDTC": ["2020-01-01", ""]
+      }
+    },
+    {
+      "filename": "cm.xpt",
+      "domain": "CM",
+      "records": {
+        "USUBJID": ["SUBJ1"],
+        "CMSTDTC": ["2020-01-01"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(outcome.results[0].dataset, "AE");
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Failed,
+        "{:?}",
+        outcome.results[0]
+    );
+    assert_eq!(outcome.results[0].skipped_reason, None);
+    assert_eq!(outcome.results[0].error_count, 1);
+}
+
+#[test]
 fn run_validation_filters_execution_datasets_by_domain_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
