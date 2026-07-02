@@ -5,8 +5,8 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 23867 | Move Open Rules oracle-gate tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 12363 | Extract oracle-gap classification helpers after the existing `open_rules_compat`, `standard_filter`, and `usdm_jsonata` modules. |
+| `crates/core-api/src/tests.rs` | 18778 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/lib.rs` | 11818 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
 | `crates/core-data/src/lib.rs` | 11264 | Extract Open Rules CSV/data-dir loading next to `open_rules_variables.rs`. |
 | `crates/core-engine/src/lib.rs` | 4900 | Extract multi-row/group operator evaluation into operator modules. |
 | `xtask/src/open_rules/score.rs` | 2823 | Split scoring, gate policy, and test fixtures once upstream baseline work settles. |
@@ -23,27 +23,39 @@ still too large to review safely:
 
 ## Recommended Order
 
-1. `core-api/src/lib.rs`: extract oracle-gap classifier predicates into
-   `open_rules_compat/classifier.rs`. This removes the densest rule-policy
-   block without touching engine execution.
-2. `core-api/src/tests.rs`: move oracle-gap manifest and score-gate tests into
-   `tests/open_rules_oracle_gap.rs` style modules.
+1. `core-api/src/lib.rs`: continue extracting small pure helper families into
+   `open_rules_compat/` and sibling modules. The oracle-gap classifier and
+   condition-inspection slices have already moved out of `lib.rs`.
+2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
+   `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
+   out already.
 3. `core-data/src/lib.rs`: move `_datasets.csv` and Open Rules data-dir loader
    code beside `open_rules_variables.rs`.
 4. `core-engine/src/lib.rs`: split group/relationship operator evaluators.
 5. `xtask/src/open_rules/score.rs`: split `ScoreSummary`/`ScoreGate` policy
    from issue normalization.
 
-## First Implementation Slice
+## Completed Slices
+
+- `core-api/src/open_rules_compat/classifier.rs`: oracle-gap classifier
+  predicates and post-operator skip classification.
+- `core-api/src/condition_inspect.rs`: pure condition tree inspection helpers
+  used by Open Rules compatibility classification.
+- `core-api/src/tests/open_rules_data_loader.rs`: first Open Rules data-loader
+  and row-scope regression tests.
+- `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
+  join regression tests.
+
+## Next Implementation Slice
 
 The next low-risk code slice is:
 
-- add `crates/core-api/src/open_rules_compat/classifier.rs`
-- move only pure predicates that depend on
-  `rule_id_has_oracle_gap_category`, `ExecutableRule`, `RuleType`,
-  `Sensitivity`, and condition-inspection helpers
+- move another cohesive non-USDM test family from `core-api/src/tests.rs` into
+  `crates/core-api/src/tests/open_rules_*.rs`
+- prefer tests that already build fixtures in memory and do not require
+  production code changes
 - keep public behavior unchanged
 - verify with:
-  - `cargo test -p core-api oracle_gap_manifest --locked`
+  - `cargo test -p core-api open_rules --locked`
   - `cargo test -p xtask baseline_warns_when_deferred_oracle_gap_skipped_increases --locked`
   - `cargo check --workspace --locked`

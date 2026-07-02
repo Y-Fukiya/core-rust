@@ -21,6 +21,41 @@ supported accuracy gate until upstream evidence changes.
 4. Standard applicability cases: `CORE-000217`, `CORE-000478`.
 5. Remaining grouped bundles from `open-rules-official-fixture-gap-candidates.md`.
 
+## Ready-To-File Bundles
+
+Use bundles rather than 55 one-off issues. The goal is to ask upstream to
+reconcile oracle/data evidence, not to encode Open Rules fixture quirks as
+native engine behavior.
+
+| Bundle | Cases | Upstream ask | Local evidence |
+|---|---:|---|---|
+| Paired PDVAL bound oracle review | 6 | Confirm whether `CORE-000698` expected rows should use PDVALMIN and `CORE-000704` should use PDVALMAX, including paired positive fixtures. | Draft 1 in `open-rules-upstream-issue-drafts.md`; candidate table in `open-rules-official-fixture-gap-candidates.md`. |
+| Official-empty large-output timing fixtures | 2 | Confirm whether empty official results for `CORE-000080` and `CORE-000081` are intentional despite thousands of structural candidate rows. | Draft 2 in `open-rules-upstream-issue-drafts.md`. |
+| Positive fixtures with issues | 9 | Confirm whether positive fixtures should be clean or whether issue-bearing positive fixtures need explanatory metadata. | Draft 3 in `open-rules-upstream-issue-drafts.md`. |
+| Standard applicability mismatch | 4 | Confirm whether the fixture standard metadata or rule applicability should change for `CORE-000217` and `CORE-000478`. | Draft 4 plus `open-rules-standard-filter-gap-candidates.md`. |
+| Remaining official fixture/oracle gaps | 34 | File smaller follow-ups by semantic family after the first four bundles are reviewed. | Bundle table in `open-rules-official-fixture-gap-candidates.md`. |
+
+Do not file `CORE-000356` or `CORE-000652` as engine implementation requests
+yet. They are currently candidate-skipped because targeted probes found the
+committed official rows do not line up with the literal rule/fixture semantics.
+After upstream confirms or corrects those expected rows, revisit them as native
+engine semantics work.
+
+## Filed Upstream Issues
+
+The first filing wave has been submitted to `cdisc-org/cdisc-open-rules`:
+
+| Bundle | Upstream issue |
+|---|---|
+| Paired PDVAL bound oracle review | [cdisc-org/cdisc-open-rules#66](https://github.com/cdisc-org/cdisc-open-rules/issues/66) |
+| Official-empty large-output timing fixtures | [cdisc-org/cdisc-open-rules#67](https://github.com/cdisc-org/cdisc-open-rules/issues/67) |
+| Positive fixtures with issues | [cdisc-org/cdisc-open-rules#68](https://github.com/cdisc-org/cdisc-open-rules/issues/68) |
+| Standard applicability mismatch | [cdisc-org/cdisc-open-rules#69](https://github.com/cdisc-org/cdisc-open-rules/issues/69) |
+
+Keep the remaining 34 `official_oracle_fixture_gap` cases local/report-only
+until upstream responds to this first wave or a reviewer asks for more granular
+follow-ups.
+
 ## Evidence To Attach
 
 For every upstream issue or PR, include:

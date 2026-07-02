@@ -6,6 +6,13 @@ These are draft upstream issue bodies for the remaining reviewed
 `deferred_oracle_gap_skipped` backlog. They are intentionally framed as
 oracle/data reconciliation requests, not as core-rust conformance claims.
 
+Filed issues:
+
+- Draft 1: [cdisc-org/cdisc-open-rules#66](https://github.com/cdisc-org/cdisc-open-rules/issues/66)
+- Draft 2: [cdisc-org/cdisc-open-rules#67](https://github.com/cdisc-org/cdisc-open-rules/issues/67)
+- Draft 3: [cdisc-org/cdisc-open-rules#68](https://github.com/cdisc-org/cdisc-open-rules/issues/68)
+- Draft 4: [cdisc-org/cdisc-open-rules#69](https://github.com/cdisc-org/cdisc-open-rules/issues/69)
+
 ## Draft 1: PDVALMIN/PDVALMAX Paired Fixture Oracle Review
 
 Title:
