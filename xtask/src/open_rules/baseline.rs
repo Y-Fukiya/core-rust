@@ -27,6 +27,8 @@ pub struct BaselineReport {
     pub improvements: Vec<BaselineDifference>,
     #[serde(default)]
     pub review_required: Vec<BaselineDifference>,
+    #[serde(default)]
+    pub warnings: Vec<BaselineDifference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -66,10 +68,11 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
     let current = read_scoreboard(&args.scoreboard)?;
     let report = compare_scoreboards(&baseline, &current);
     println!(
-        "open-rules baseline: {} regression(s), {} improvement(s), {} review-required",
+        "open-rules baseline: {} regression(s), {} improvement(s), {} review-required, {} warning(s)",
         report.regressions.len(),
         report.improvements.len(),
-        report.review_required.len()
+        report.review_required.len(),
+        report.warnings.len()
     );
     for regression in &report.regressions {
         println!(
@@ -112,6 +115,21 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             review.message
         );
     }
+    for warning in &report.warnings {
+        println!(
+            "warning {}: {} -> {} ({})",
+            warning.case_key,
+            bucket_and_provenance(
+                &warning.baseline_bucket,
+                &warning.baseline_execution_provenance,
+            ),
+            bucket_and_provenance(
+                &warning.current_bucket,
+                &warning.current_execution_provenance,
+            ),
+            warning.message
+        );
+    }
     Ok(report.should_fail())
 }
 
@@ -130,6 +148,7 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
     let mut review_required = Vec::new();
+    let mut warnings = Vec::new();
     let keys = baseline_cases
         .keys()
         .chain(current_cases.keys())
@@ -245,11 +264,20 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
             "deferred oracle-gap mismatch count increased",
         ));
     }
+    if current.summary.deferred_oracle_gap_skipped > baseline.summary.deferred_oracle_gap_skipped {
+        warnings.push(difference(
+            "summary/deferred_oracle_gap_skipped".to_owned(),
+            None,
+            None,
+            "deferred oracle-gap skipped count increased",
+        ));
+    }
 
     BaselineReport {
         regressions,
         improvements,
         review_required,
+        warnings,
     }
 }
 
@@ -308,8 +336,9 @@ fn is_failing_new_bucket(bucket: &ScoreBucket) -> bool {
     matches!(
         bucket,
         ScoreBucket::SupportedMismatch
+            | ScoreBucket::DeferredOracleGapMismatch
+            | ScoreBucket::SkippedUnsupported
             | ScoreBucket::HarnessError
-            | ScoreBucket::NoOfficialOracle
             | ScoreBucket::MixedSkippedAndIssues
     )
 }
@@ -545,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn baseline_requires_review_when_supported_mismatch_becomes_deferred_oracle_gap() {
+    fn baseline_fails_when_supported_mismatch_becomes_deferred_oracle_gap() {
         let report = compare_scoreboards(
             &scoreboard(ScoreBucket::SupportedMismatch),
             &scoreboard(ScoreBucket::DeferredOracleGapMismatch),
@@ -555,11 +584,11 @@ mod tests {
         assert!(report.regressions.iter().any(|regression| {
             regression.case_key == "summary/coverage" && regression.message == "coverage regressed"
         }));
-        assert!(report.review_required.iter().any(|review| {
-            review.case_key == "Published/CORE-OPEN-0001/negative/01"
-                && review.message == "case bucket requires review"
-                && review.baseline_bucket == Some(ScoreBucket::SupportedMismatch)
-                && review.current_bucket == Some(ScoreBucket::DeferredOracleGapMismatch)
+        assert!(report.regressions.iter().any(|regression| {
+            regression.case_key == "Published/CORE-OPEN-0001/negative/01"
+                && regression.message == "case bucket regressed"
+                && regression.baseline_bucket == Some(ScoreBucket::SupportedMismatch)
+                && regression.current_bucket == Some(ScoreBucket::DeferredOracleGapMismatch)
         }));
     }
 
@@ -576,6 +605,22 @@ mod tests {
         assert!(report.review_required.iter().any(|review| {
             review.case_key == "summary/deferred_oracle_gap_mismatch"
                 && review.message == "deferred oracle-gap mismatch count increased"
+        }));
+    }
+
+    #[test]
+    fn baseline_warns_when_deferred_oracle_gap_skipped_increases() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.deferred_oracle_gap_skipped =
+            baseline.summary.deferred_oracle_gap_skipped + 1;
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(!report.should_fail());
+        assert!(report.warnings.iter().any(|warning| {
+            warning.case_key == "summary/deferred_oracle_gap_skipped"
+                && warning.message == "deferred oracle-gap skipped count increased"
         }));
     }
 
@@ -810,5 +855,24 @@ mod tests {
 
         assert!(!report.should_fail());
         assert!(report.regressions.is_empty());
+    }
+
+    #[test]
+    fn stripped_baseline_json_deserializes_without_issue_arrays() {
+        let mut value =
+            serde_json::to_value(scoreboard(ScoreBucket::SupportedMismatch)).expect("serialize");
+        let case = value
+            .get_mut("cases")
+            .and_then(|cases| cases.as_array_mut())
+            .and_then(|cases| cases.first_mut())
+            .and_then(|case| case.as_object_mut())
+            .expect("first case object");
+        case.remove("missing");
+        case.remove("extra");
+
+        let scoreboard: Scoreboard = serde_json::from_value(value).expect("deserialize");
+
+        assert!(scoreboard.cases[0].missing.is_empty());
+        assert!(scoreboard.cases[0].extra.is_empty());
     }
 }

@@ -1,6 +1,7 @@
-use crate::RuleSelection;
 use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::{ExecutableRule, StandardRef};
+
+use crate::RuleSelection;
 
 pub(crate) fn apply_standard_filter(
     selection: &mut RuleSelection,
@@ -74,8 +75,7 @@ fn rule_matches_standard(
 }
 
 fn rule_standard_matches_name(rule_standard: &StandardRef, requested: &str, rule_id: &str) -> bool {
-    if matches!(rule_id, "CORE-000478" | "CORE-000642") && requested.eq_ignore_ascii_case("SENDIG")
-    {
+    if rule_id == "CORE-000478" && requested.eq_ignore_ascii_case("SENDIG") {
         return false;
     }
 
@@ -180,9 +180,77 @@ fn is_standard_filter_oracle_gap_rule(
     let standard = standard.unwrap_or_default();
     let standard_version = standard_version.unwrap_or_default();
 
-    (matches!(rule.core_id.as_str(), "CORE-000478" | "CORE-000642")
-        && standard.eq_ignore_ascii_case("SENDIG"))
+    (rule.core_id == "CORE-000478" && standard.eq_ignore_ascii_case("SENDIG"))
         || (rule.core_id == "CORE-000217"
             && standard.eq_ignore_ascii_case("SENDIG")
             && standard_version == "3.1")
+}
+
+#[cfg(test)]
+mod tests {
+    use core_rule_model::{
+        Condition, ConditionGroup, Operator, OperatorOptions, RuleType, ValueExpr,
+    };
+    use serde_json::Value;
+
+    use super::*;
+
+    fn rule_with_standard(rule_id: &str, name: &str, version: &str) -> ExecutableRule {
+        ExecutableRule {
+            core_id: rule_id.to_owned(),
+            standards: vec![StandardRef {
+                name: Some(name.to_owned()),
+                version: Some(version.to_owned()),
+                ..Default::default()
+            }],
+            sensitivity: None,
+            executability: None,
+            description: None,
+            authorities: Vec::new(),
+            classes: None,
+            domains: None,
+            datasets: None,
+            entities: None,
+            rule_type: RuleType::RecordData,
+            conditions: ConditionGroup::Leaf(Condition {
+                target: Some("USUBJID".to_owned()),
+                operator: Operator::Exists,
+                comparator: ValueExpr::Literal(Value::Null),
+                options: OperatorOptions::default(),
+            }),
+            actions: Vec::new(),
+            operations: Vec::new(),
+            output_variables: Vec::new(),
+            grouping_variables: Vec::new(),
+            use_case: None,
+            status: None,
+            raw: None,
+            author: None,
+        }
+    }
+
+    #[test]
+    fn core_000642_matches_sendig_31_fixture_standard() {
+        let rule = rule_with_standard("CORE-000642", "SENDIG", "3.1.1");
+        assert!(rule_matches_standard(
+            &rule,
+            &Some("SENDIG".to_owned()),
+            &Some("3.1".to_owned())
+        ));
+    }
+
+    #[test]
+    fn core_000478_sendig_30_remains_oracle_gap_standard_mismatch() {
+        let rule = rule_with_standard("CORE-000478", "SENDIG", "3.1");
+        assert!(!rule_matches_standard(
+            &rule,
+            &Some("SENDIG".to_owned()),
+            &Some("3.0".to_owned())
+        ));
+        let skipped = standard_mismatch_result(&rule, Some("SENDIG"), Some("3.0"));
+        assert_eq!(
+            skipped.skipped_reason,
+            Some(SkippedReason::OracleSemanticsGap)
+        );
+    }
 }

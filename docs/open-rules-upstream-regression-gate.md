@@ -24,6 +24,18 @@ The full upstream baseline should fail when:
 - same-bucket issue counts or issue fingerprints regress
 - a baseline case disappears from the current scoreboard
 
+The full upstream baseline should warn, but not fail, when:
+
+- `deferred_oracle_gap_skipped` increases
+
+The accepted v29 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
+`official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.
+These are not supported matches and are not conformance evidence. Treat them as
+review backlog that must not grow silently. New cases in this bucket should be
+reviewed and either moved back to supported scoring, classified as an upstream
+oracle/data issue, or promoted to a failing bucket if the candidate actually
+ran and disagreed with the official oracle.
+
 The committed upstream baseline strips per-case `missing` and `extra` issue
 arrays so it remains portable and reviewable, but keeps `missing_count`,
 `extra_count`, and `issue_fingerprint_hash`. The comparator uses those portable

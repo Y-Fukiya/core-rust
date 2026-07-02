@@ -106,10 +106,20 @@ fn discover_rule_cases(
         .and_then(|name| name.to_str())
         .context("rule directory name is not valid UTF-8")?
         .to_owned();
+    let context = RuleDiscoveryContext {
+        scope,
+        rule_dir,
+        rule_path,
+        rule_id: &rule_id,
+    };
 
     for case_kind in [CaseKind::Positive, CaseKind::Negative] {
         let kind_dir = rule_dir.join(case_kind.as_str());
         if !kind_dir.is_dir() {
+            continue;
+        }
+        if kind_dir.join("data").is_dir() || kind_dir.join("results").is_dir() {
+            push_case(context, case_kind, "01", kind_dir, cases)?;
             continue;
         }
         for case_dir in sorted_children(&kind_dir)? {
@@ -121,41 +131,60 @@ fn discover_rule_cases(
                 .and_then(|name| name.to_str())
                 .context("case directory name is not valid UTF-8")?
                 .to_owned();
-            let data_dir = case_dir.join("data");
-            let env_path = data_dir.join(".env");
-            let datasets_path = data_dir.join("_datasets.csv");
-            let variables_path = data_dir.join("_variables.csv");
-            let official_results_csv = case_dir.join("results").join("results.csv");
-            let datasets = read_csv_dicts(&datasets_path)?;
-            let variables = read_csv_dicts(&variables_path)?;
-            let dataset_files = datasets
-                .iter()
-                .filter_map(dataset_filename)
-                .map(|name| data_dir.join(format!("{}.csv", strip_csv_suffix(&name))))
-                .collect::<Vec<_>>();
-
-            cases.push(OpenRulesCase {
-                scope: scope.to_owned(),
-                rule_id: rule_id.clone(),
-                rule_dir: rule_dir.to_path_buf(),
-                rule_path: rule_path.to_path_buf(),
-                case_kind,
-                case_id,
-                case_dir,
-                data_dir,
-                env_path: env_path.clone(),
-                env: read_env_file(&env_path)?,
-                datasets_path,
-                datasets,
-                dataset_files,
-                variables_path,
-                variables,
-                has_official_results: official_results_csv.is_file(),
-                official_results_csv,
-            });
+            push_case(context, case_kind, &case_id, case_dir, cases)?;
         }
     }
 
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct RuleDiscoveryContext<'a> {
+    scope: &'a str,
+    rule_dir: &'a Path,
+    rule_path: &'a Path,
+    rule_id: &'a str,
+}
+
+fn push_case(
+    context: RuleDiscoveryContext<'_>,
+    case_kind: CaseKind,
+    case_id: &str,
+    case_dir: PathBuf,
+    cases: &mut Vec<OpenRulesCase>,
+) -> Result<()> {
+    let data_dir = case_dir.join("data");
+    let env_path = data_dir.join(".env");
+    let datasets_path = data_dir.join("_datasets.csv");
+    let variables_path = data_dir.join("_variables.csv");
+    let official_results_csv = case_dir.join("results").join("results.csv");
+    let datasets = read_csv_dicts(&datasets_path)?;
+    let variables = read_csv_dicts(&variables_path)?;
+    let dataset_files = datasets
+        .iter()
+        .filter_map(dataset_filename)
+        .map(|name| data_dir.join(format!("{}.csv", strip_csv_suffix(&name))))
+        .collect::<Vec<_>>();
+
+    cases.push(OpenRulesCase {
+        scope: context.scope.to_owned(),
+        rule_id: context.rule_id.to_owned(),
+        rule_dir: context.rule_dir.to_path_buf(),
+        rule_path: context.rule_path.to_path_buf(),
+        case_kind,
+        case_id: case_id.to_owned(),
+        case_dir,
+        data_dir,
+        env_path: env_path.clone(),
+        env: read_env_file(&env_path)?,
+        datasets_path,
+        datasets,
+        dataset_files,
+        variables_path,
+        variables,
+        has_official_results: official_results_csv.is_file(),
+        official_results_csv,
+    });
     Ok(())
 }
 
@@ -237,9 +266,11 @@ fn strip_csv_suffix(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::Path;
 
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
 
     use super::*;
 
@@ -280,5 +311,40 @@ mod tests {
 
         assert!(!missing.has_official_results);
         assert!(missing.official_results_csv.ends_with("results.csv"));
+    }
+
+    #[test]
+    fn discovers_kind_directory_case_without_numbered_case_dir() {
+        let dir = tempdir().expect("tempdir");
+        let rule_dir = dir.path().join("Published/CORE-DIRECT");
+        let case_dir = rule_dir.join("negative");
+        fs::create_dir_all(case_dir.join("data")).expect("data dir");
+        fs::create_dir_all(case_dir.join("results")).expect("results dir");
+        fs::write(rule_dir.join("rule.yml"), "Core:\n  Id: CORE-DIRECT\n").expect("write rule");
+        fs::write(
+            case_dir.join("data/_datasets.csv"),
+            "Dataset,Filename\nCM,cm.csv\n",
+        )
+        .expect("write datasets");
+        fs::write(
+            case_dir.join("data/_variables.csv"),
+            "Dataset,Variable\nCM,CMTRT\n",
+        )
+        .expect("write variables");
+        fs::write(case_dir.join("data/cm.csv"), "CMTRT\nA\n").expect("write data");
+        fs::write(
+            case_dir.join("results/results.csv"),
+            "rule_id,dataset,row,variables\n",
+        )
+        .expect("write official results");
+
+        let cases = discover_cases(dir.path(), &[]).expect("discover cases");
+
+        assert_eq!(cases.len(), 1);
+        assert_eq!(cases[0].case_kind, CaseKind::Negative);
+        assert_eq!(cases[0].case_id, "01");
+        assert_eq!(cases[0].case_dir, case_dir);
+        assert!(cases[0].has_official_results);
+        assert!(cases[0].dataset_files[0].ends_with("cm.csv"));
     }
 }

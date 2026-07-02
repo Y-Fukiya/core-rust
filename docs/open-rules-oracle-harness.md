@@ -70,16 +70,58 @@ target/open-rules-core-rs/Published/CORE-000001/negative/01/report.csv
 |---|---|---|
 | `supported_match` | Candidate ran and normalized issue keys match the official oracle. | zero |
 | `supported_mismatch` | Candidate ran but normalized issue keys differ. | non-zero |
-| `deferred_oracle_gap_mismatch` | Candidate ran and differs from the official oracle, but the rule family is explicitly deferred as an oracle-semantics gap pending native verification. It is not a skipped execution and is excluded from supported accuracy. | zero for score, review-required in baseline when newly introduced |
-| `skipped_unsupported` | Candidate output contains skipped rows. | zero |
+| `deferred_oracle_gap_mismatch` | Candidate ran and differs from the official oracle, but the rule family is explicitly deferred as an oracle-semantics gap pending native verification. It is not a skipped execution and is excluded from supported accuracy. | non-zero |
+| `deferred_oracle_gap_skipped` | Candidate skipped execution for a rule family that is explicitly deferred as an oracle-semantics gap, or the case has a reviewed official oracle/data fixture inconsistency that makes the official result unsuitable as a correctness oracle. It remains a coverage gap, but it is not counted as generic unsupported coverage. | zero for score, review-required in baseline when increased |
+| `skipped_unsupported` | Candidate output contains skipped rows. | non-zero |
 | `mixed_skipped_and_issues` | Candidate output mixes skipped rows and issue rows for the same case. | non-zero |
-| `no_official_oracle` | The case has no official `results.csv`; it is excluded from supported accuracy and fails the score gate until explicitly resolved. | non-zero |
+| `no_official_oracle` | The case has no official `results.csv`; it is retained for accounting and excluded from supported accuracy. | zero |
 | `harness_error` | Official or candidate report is missing, malformed, or cannot be scored. | non-zero |
 
 Skipped and wrong are separate. Skipped cases are coverage gaps. Supported
-mismatches are correctness problems. Deferred oracle-gap mismatches are a third
-state: they preserve the mismatch evidence without counting it as unsupported
-skip coverage.
+mismatches are correctness problems. Deferred oracle-gap buckets preserve the
+evidence separately: mismatches stay as mismatches, and reviewed oracle-gap
+skips stay as skips without being counted as generic `skipped_unsupported`.
+
+Reviewed official fixture gaps are also reported as
+`deferred_oracle_gap_skipped`. These are cases where the committed official
+`results.csv` is inconsistent with the rule or input data, such as an official
+result referring to a variable/value absent from the fixture. They are not
+supported matches and must not be used as native engine conformance evidence.
+The current full-upstream inventory is maintained in
+`docs/open-rules-deferred-gap-inventory.md`.
+
+As of the v29 upstream scoreboard, the remaining 55
+`deferred_oracle_gap_skipped` cases are split into:
+
+- 51 `official_oracle_fixture_gap` cases, tracked as upstream oracle/data review
+  candidates rather than native engine implementation backlog. See
+  `docs/open-rules-official-fixture-gap-candidates.md`.
+- 4 `standard_filter_oracle_gap` cases, where the fixture standard/version does
+  not match the rule authority or applicability note. See
+  `docs/open-rules-standard-filter-gap-candidates.md`.
+
+There are no remaining `required_value_metadata` or `defer_distinct_operation`
+skipped cases in the v29 inventory. Those previously ambiguous cases were
+reclassified after targeted review showed that returning them to supported
+scoring would either contradict the official oracle or create a deferred
+mismatch.
+
+For reviewed row-locator oracle-gap families, scoring may ignore record locator
+fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
+domain, variables, and multiset counts. This is limited to manifest-backed
+families where official and candidate issue identity is known to differ only by
+unstable row location; it must not hide missing or extra issue counts.
+
+For reviewed `empty/non_empty` oracle-gap families, scoring may drop candidate
+output-context variables at the same rule/dataset/domain/row/subject/sequence
+location when the official oracle reports only the failed condition variables.
+This is limited to manifest-backed cases and does not ignore extra rows, missing
+official variables, or different record locators.
+
+The same output-context-variable normalization applies to reviewed
+positive-zero probe oracle-gap families. It can remove extra candidate variables
+only when the official oracle already has an issue at the same structural
+location; candidate-only rows and official-only rows remain mismatches.
 
 ## Missing Official Oracle Policy
 
@@ -98,6 +140,9 @@ Read these fields together:
 - `deferred_oracle_gap_mismatch`: official-oracle-backed mismatches deferred by
   an explicit oracle-gap policy; treat increases as review-required, not as
   coverage improvement.
+- `deferred_oracle_gap_skipped`: official-oracle-backed skipped execution
+  deferred by an explicit oracle-gap policy; treat increases as review-required,
+  not as supported coverage.
 - `native_engine_coverage`: share of all discovered cases covered by supported
   native engine execution.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
@@ -151,6 +196,12 @@ loader validates the header, exact row count, CORE id format, category, reason,
 owner, evidence, scope, duplicate headers, and duplicate rule ids within the
 same category. The engine code should keep semantic predicates in Rust and use
 this manifest only for reviewed rule-id membership.
+
+Reference-distinct oracle gaps are split into narrower scoreboard families when
+the remaining mismatch is not safe to normalize away: official-empty oracles,
+fixture row locators that point outside the loaded data rows, broad cardinality
+differences, and scope-wide distinct behavior. These categories are triage
+labels for future native semantics work, not supported matches.
 
 Remaining hard-coded `CORE-xxxxxx` references in `core-api` are inventoried in
 `crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`. That file
@@ -241,12 +292,13 @@ the score bucket. Provenance-related differences include the old and new
 provenance values in the baseline report output.
 
 The run-score command exits non-zero for correctness failures, harness failures,
-or unresolved official oracle gaps: `supported_mismatch > 0`,
-`harness_error > 0`, `no_official_oracle > 0`, or
-`mixed_skipped_and_issues > 0`. Deferred oracle-gap mismatches are not a default
-score failure because they are reviewed through the baseline gate. Use
-`--fail-on-deferred-oracle-gap` when a standalone score command should also
-fail on any `deferred_oracle_gap_mismatch` case.
+or unresolved unsupported execution: `supported_mismatch > 0`,
+`deferred_oracle_gap_mismatch > 0`, `skipped_unsupported > 0`,
+`harness_error > 0`, or `mixed_skipped_and_issues > 0`.
+`deferred_oracle_gap_skipped` and `no_official_oracle` remain reportable
+coverage/oracle gaps, but they do not fail the standalone score command.
+Use `--fail-on-deferred-oracle-gap` when a standalone score command should also
+fail on any `deferred_oracle_gap_skipped` case.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests

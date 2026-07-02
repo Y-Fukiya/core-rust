@@ -30,6 +30,8 @@ pub(crate) const CORE_000223: &str = "CORE-000223";
 pub(crate) const CORE_000224: &str = "CORE-000224";
 pub(crate) const CORE_000228: &str = "CORE-000228";
 pub(crate) const CORE_000206: &str = "CORE-000206";
+pub(crate) const CORE_000269: &str = "CORE-000269";
+pub(crate) const CORE_000270: &str = "CORE-000270";
 pub(crate) const CORE_000272: &str = "CORE-000272";
 pub(crate) const CORE_000321: &str = "CORE-000321";
 pub(crate) const CORE_000324: &str = "CORE-000324";
@@ -69,7 +71,9 @@ pub(crate) const CORE_000711: &str = "CORE-000711";
 pub(crate) const CORE_000714: &str = "CORE-000714";
 pub(crate) const CORE_000744: &str = "CORE-000744";
 pub(crate) const CORE_000757: &str = "CORE-000757";
+pub(crate) const CORE_000750: &str = "CORE-000750";
 pub(crate) const CORE_000783: &str = "CORE-000783";
+pub(crate) const CORE_000786: &str = "CORE-000786";
 pub(crate) const CORE_000793: &str = "CORE-000793";
 pub(crate) const CORE_000794: &str = "CORE-000794";
 pub(crate) const CORE_000847: &str = "CORE-000847";
@@ -80,6 +84,7 @@ pub(crate) const CORE_000862: &str = "CORE-000862";
 pub(crate) const CORE_000864: &str = "CORE-000864";
 pub(crate) const CORE_000866: &str = "CORE-000866";
 pub(crate) const CORE_000867: &str = "CORE-000867";
+pub(crate) const CORE_000878: &str = "CORE-000878";
 pub(crate) const CORE_000884: &str = "CORE-000884";
 pub(crate) const CORE_000893: &str = "CORE-000893";
 pub(crate) const CORE_000890: &str = "CORE-000890";
@@ -181,6 +186,7 @@ pub(crate) fn is_dataset_level_presence_result_rule(rule: &ExecutableRule) -> bo
             | "CORE-000635"
             | "CORE-000636"
             | "CORE-000637"
+            | "CORE-000638"
             | "CORE-000639"
             | "CORE-000640"
             | "CORE-000641"
@@ -230,11 +236,18 @@ pub(crate) fn uses_dataset_level_existing_study_day_variable_result(rule: &Execu
 }
 
 pub(crate) fn includes_single_match_dataset_as_target(rule: &ExecutableRule) -> bool {
-    rule.core_id == CORE_000853
+    matches!(
+        rule.core_id.as_str(),
+        CORE_000269 | CORE_000270 | CORE_000853
+    )
 }
 
 pub(crate) fn uses_first_row_dataset_presence_result(rule: &ExecutableRule) -> bool {
     rule.core_id == CORE_000167
+}
+
+pub(crate) fn uses_missing_scoped_dataset_presence_result(rule: &ExecutableRule) -> bool {
+    rule.core_id == CORE_000786
 }
 
 pub(crate) fn uses_csv_line_record_numbers(rule: &ExecutableRule) -> bool {

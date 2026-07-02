@@ -10,6 +10,26 @@ use std::sync::LazyLock;
 use core_engine::RuleValidationResult;
 use core_rule_model::ExecutableRule;
 
+#[path = "open_rules_compat/classifier.rs"]
+mod classifier;
+
+pub(crate) use classifier::{
+    has_oracle_gap_rule_id, is_dataset_presence_oracle_gap_rule, is_date_operator_oracle_gap_rule,
+    is_distinct_operation_oracle_gap_rule,
+    is_domain_placeholder_column_ref_comparator_oracle_gap_rule,
+    is_domain_presence_oracle_gap_rule, is_duplicate_match_dataset_oracle_gap_rule,
+    is_dy_operation_oracle_gap_rule, is_empty_non_empty_oracle_gap_rule,
+    is_entity_literal_oracle_gap_rule, is_inconsistent_across_dataset_oracle_gap_rule,
+    is_known_unsafe_positive_zero_probe_rule, is_missing_column_oracle_gap_rule,
+    is_multi_base_match_dataset_oracle_gap_rule, is_not_unique_relationship_oracle_gap_rule,
+    is_operation_oracle_gap_rule, is_relrec_or_supp_match_dataset_oracle_gap_rule,
+    is_required_value_metadata_oracle_gap_rule, is_sort_operator_oracle_gap_rule,
+    is_supported_entity_match_column_ref_rule, is_unique_set_oracle_gap_rule,
+    is_usdm_match_dataset_oracle_gap_rule, is_variable_metadata_oracle_gap_rule,
+    should_defer_entity_column_ref_oracle_gap, should_defer_etcd_length_oracle_gap,
+    should_defer_positive_zero_oracle_gap_probe,
+};
+
 const HAND_PORT_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/hand_port_rule_ids.csv");
 const HAND_PORT_RULE_ID_HEADER: &str = "rule_id,execution_provenance,owner,scope";
 const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 119;
@@ -17,10 +37,10 @@ const HAND_PORT_PROVENANCE: &str = "rule_id_hand_port";
 const HAND_PORT_SCOPE: &str = "open-rules-oracle-harness";
 const ORACLE_GAP_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/oracle_gap_rule_ids.csv");
 const ORACLE_GAP_RULE_ID_HEADER: &str = "rule_id,category,reason,owner,evidence,scope";
-const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 437;
+const EXPECTED_ORACLE_GAP_RULE_ID_COUNT: usize = 473;
 const ORACLE_GAP_SCOPE: &str = "open-rules-oracle-harness";
 #[cfg(test)]
-const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["usdm_match_dataset"];
+const EMPTY_ORACLE_GAP_CATEGORIES: &[&str] = &["required_value_metadata", "usdm_match_dataset"];
 #[cfg(test)]
 const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "dataset_presence",
@@ -39,7 +59,6 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "defer_not_unique_relationship",
     "defer_positive_zero_probe",
     "defer_relrec_or_supp_match_dataset",
-    "defer_sort_operator",
     "defer_unique_set",
     "defer_variable_metadata",
     "distinct_operation",
@@ -55,12 +74,15 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "multi_base_match_dataset",
     "not_unique_relationship",
     "operation",
-    "record_count_operation",
+    "official_oracle_fixture_gap",
     "record_row_locator",
+    "reference_distinct_cardinality",
+    "reference_distinct_fixture_row",
+    "reference_distinct_official_empty",
     "relrec_or_supp_match_dataset",
     "required_value_metadata",
     "scope_wide_reference_distinct",
-    "sort_operator",
+    "standard_filter_oracle_gap",
     "supported_entity_match_column_ref",
     "supported_reference_distinct",
     "usdm_join_operation",
@@ -78,7 +100,7 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,scope";
 #[cfg(test)]
-const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 257;
+const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 263;
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =
     LazyLock::new(load_hand_port_rule_ids);
@@ -594,6 +616,66 @@ CORE-000095,rule_id_hand_port,core-api,open-rules-oracle-harness\n",
         assert!(rule_id_has_oracle_gap_category(
             "CORE-000200",
             "missing_condition_columns_as_null"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000546",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000542",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000770",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000172",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000195",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000197",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000198",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000184",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000268",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000143",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000225",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000252",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000370",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000718",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000454",
+            "official_oracle_fixture_gap"
         ));
         assert!(!rule_id_has_oracle_gap_category(
             "CORE-000773",

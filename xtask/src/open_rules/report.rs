@@ -53,6 +53,10 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             "| Deferred oracle-gap mismatch | {} |",
             summary.deferred_oracle_gap_mismatch
         ),
+        format!(
+            "| Deferred oracle-gap skipped | {} |",
+            summary.deferred_oracle_gap_skipped
+        ),
         format!("| Skipped unsupported | {} |", summary.skipped_unsupported),
         format!(
             "| Mixed skipped and issues | {} |",
@@ -459,31 +463,6 @@ mod tests {
                 },
                 ScoredCase {
                     scope: "Published".to_owned(),
-                    rule_id: "CORE-000008".to_owned(),
-                    case_kind: "negative".to_owned(),
-                    case_id: "02".to_owned(),
-                    case_dir: "case".into(),
-                    official_results_csv: "official.csv".into(),
-                    candidate_report_csv: "report.csv".into(),
-                    execution_provenance: ExecutionProvenance::NativeEngine,
-                    bucket: ScoreBucket::DeferredOracleGapMismatch,
-                    reason: Some(
-                        "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
-                            .to_owned(),
-                    ),
-                    skipped_reasons: Vec::new(),
-                    official_issue_count: Some(1),
-                    candidate_issue_count: Some(1),
-                    missing_count: Some(0),
-                    extra_count: Some(0),
-                    issue_fingerprint_hash: Some(
-                        crate::open_rules::score::issue_fingerprint_hash(&[], &[]),
-                    ),
-                    missing: Vec::new(),
-                    extra: Vec::new(),
-                },
-                ScoredCase {
-                    scope: "Published".to_owned(),
                     rule_id: "CORE-000007".to_owned(),
                     case_kind: "positive".to_owned(),
                     case_id: "01".to_owned(),
@@ -517,12 +496,14 @@ mod tests {
 
         assert!(json.contains("\"supported_mismatch\": 1"));
         assert!(json.contains("\"deferred_oracle_gap_mismatch\": 1"));
+        assert!(json.contains("\"deferred_oracle_gap_skipped\": 0"));
         assert!(markdown.contains("# CDISC Open Rules Oracle Compatibility"));
         assert!(markdown.contains("CORE-000005"));
         assert!(markdown.contains("| Official oracle match | 0 |"));
         assert!(markdown.contains("| Synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Unverified synthetic oracle match | 1 |"));
         assert!(markdown.contains("| Deferred oracle-gap mismatch | 1 |"));
+        assert!(markdown.contains("| Deferred oracle-gap skipped | 0 |"));
         assert!(markdown.contains("| Mixed skipped and issues | 0 |"));
         assert!(markdown.contains("## Execution Provenance"));
         assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 25.00% |"));

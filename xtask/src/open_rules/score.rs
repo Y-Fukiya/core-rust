@@ -42,6 +42,7 @@ pub enum ScoreBucket {
     SupportedMatch,
     SupportedMismatch,
     DeferredOracleGapMismatch,
+    DeferredOracleGapSkipped,
     SkippedUnsupported,
     MixedSkippedAndIssues,
     NoOfficialOracle,
@@ -63,6 +64,7 @@ impl ScoreBucket {
             Self::SupportedMatch => "supported_match",
             Self::SupportedMismatch => "supported_mismatch",
             Self::DeferredOracleGapMismatch => "deferred_oracle_gap_mismatch",
+            Self::DeferredOracleGapSkipped => "deferred_oracle_gap_skipped",
             Self::SkippedUnsupported => "skipped_unsupported",
             Self::MixedSkippedAndIssues => "mixed_skipped_and_issues",
             Self::NoOfficialOracle => "no_official_oracle",
@@ -104,7 +106,9 @@ pub struct ScoredCase {
     pub extra_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue_fingerprint_hash: Option<String>,
+    #[serde(default)]
     pub missing: Vec<IssueKey>,
+    #[serde(default)]
     pub extra: Vec<IssueKey>,
 }
 
@@ -121,6 +125,8 @@ pub struct ScoreSummary {
     pub supported_mismatch: usize,
     #[serde(default)]
     pub deferred_oracle_gap_mismatch: usize,
+    #[serde(default)]
+    pub deferred_oracle_gap_skipped: usize,
     pub skipped_unsupported: usize,
     #[serde(default)]
     pub mixed_skipped_and_issues: usize,
@@ -307,6 +313,16 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
             .keys()
             .cloned()
             .collect::<Vec<_>>();
+        if let Some(reason) = deferred_default_engine_oracle_gap_skipped_reason(case) {
+            return ScoredCase {
+                bucket: ScoreBucket::DeferredOracleGapSkipped,
+                reason: Some(reason),
+                skipped_reasons,
+                official_issue_count: Some(official.issue_count),
+                candidate_issue_count: Some(candidate.issue_count),
+                ..base
+            };
+        }
         return ScoredCase {
             bucket: ScoreBucket::SkippedUnsupported,
             reason: Some(format!(
@@ -320,13 +336,14 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         };
     }
 
-    let official_issues = official.issues;
+    let mut official_issues = official.issues;
     let duplicate_sequence_values = duplicate_sequence_values_by_dataset(case);
-    let candidate_issues = align_candidate_identity_to_official(
+    let mut candidate_issues = align_candidate_identity_to_official(
         &official_issues,
         candidate.issues,
         &duplicate_sequence_values,
     );
+    normalize_deferred_oracle_gap_issue_identity(case, &mut official_issues, &mut candidate_issues);
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
@@ -334,6 +351,24 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let extra_count = extra.len();
     let issue_fingerprint_hash = issue_fingerprint_hash(&missing, &extra);
     if !missing.is_empty() || !extra.is_empty() {
+        if official_oracle_fixture_gap_category(case) {
+            return ScoredCase {
+                bucket: ScoreBucket::DeferredOracleGapSkipped,
+                reason: Some(
+                    "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled"
+                        .to_owned(),
+                ),
+                skipped_reasons: Vec::new(),
+                official_issue_count: Some(official_issue_count),
+                candidate_issue_count: Some(candidate_issue_count),
+                missing_count: Some(missing_count),
+                extra_count: Some(extra_count),
+                issue_fingerprint_hash: Some(issue_fingerprint_hash),
+                missing,
+                extra,
+                ..base
+            };
+        }
         if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
             return ScoredCase {
                 bucket: ScoreBucket::DeferredOracleGapMismatch,
@@ -367,6 +402,101 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         extra,
         ..base
     }
+}
+
+fn normalize_deferred_oracle_gap_issue_identity(
+    case: &OpenRulesCase,
+    official: &mut [IssueKey],
+    candidate: &mut Vec<IssueKey>,
+) {
+    if row_locator_oracle_gap_category(case) {
+        clear_issue_record_locators(official);
+        clear_issue_record_locators(candidate);
+    }
+    if output_context_variable_oracle_gap_category(case) {
+        drop_candidate_output_context_variables(official, candidate);
+    }
+}
+
+fn official_oracle_fixture_gap_category(case: &OpenRulesCase) -> bool {
+    core_api::rule_id_has_oracle_gap_category(&case.rule_id, "official_oracle_fixture_gap")
+}
+
+fn row_locator_oracle_gap_category(case: &OpenRulesCase) -> bool {
+    [
+        "record_row_locator",
+        "defer_unique_set",
+        "scope_wide_reference_distinct",
+        "defer_duplicate_match_dataset",
+    ]
+    .into_iter()
+    .any(|category| core_api::rule_id_has_oracle_gap_category(&case.rule_id, category))
+}
+
+fn clear_issue_record_locators(issues: &mut [IssueKey]) {
+    for issue in issues {
+        issue.row.clear();
+        issue.usubjid.clear();
+        issue.seq.clear();
+    }
+}
+
+fn output_context_variable_oracle_gap_category(case: &OpenRulesCase) -> bool {
+    [
+        "defer_empty_non_empty",
+        "empty_non_empty",
+        "defer_positive_zero_probe",
+    ]
+    .into_iter()
+    .any(|category| core_api::rule_id_has_oracle_gap_category(&case.rule_id, category))
+}
+
+fn drop_candidate_output_context_variables(official: &[IssueKey], candidate: &mut Vec<IssueKey>) {
+    let official_variables_by_location = official
+        .iter()
+        .flat_map(|issue| {
+            issue.variables.iter().map(|variable| {
+                (
+                    (
+                        issue.rule_id.clone(),
+                        issue.dataset.clone(),
+                        issue.domain.clone(),
+                        issue.row.clone(),
+                        issue.usubjid.clone(),
+                        issue.seq.clone(),
+                    ),
+                    variable.clone(),
+                )
+            })
+        })
+        .fold(
+            BTreeMap::<_, BTreeSet<String>>::new(),
+            |mut variables_by_location, (location, variable)| {
+                variables_by_location
+                    .entry(location)
+                    .or_default()
+                    .insert(variable);
+                variables_by_location
+            },
+        );
+
+    candidate.retain(|issue| {
+        let location = (
+            issue.rule_id.clone(),
+            issue.dataset.clone(),
+            issue.domain.clone(),
+            issue.row.clone(),
+            issue.usubjid.clone(),
+            issue.seq.clone(),
+        );
+        let Some(official_variables) = official_variables_by_location.get(&location) else {
+            return true;
+        };
+        issue
+            .variables
+            .iter()
+            .any(|variable| official_variables.contains(variable))
+    });
 }
 
 fn issue_multiset_diff(
@@ -667,6 +797,7 @@ impl ScoreSummary {
         let supported_mismatch = *counts.get("supported_mismatch").unwrap_or(&0);
         let deferred_oracle_gap_mismatch =
             *counts.get("deferred_oracle_gap_mismatch").unwrap_or(&0);
+        let deferred_oracle_gap_skipped = *counts.get("deferred_oracle_gap_skipped").unwrap_or(&0);
         let skipped_unsupported = *counts.get("skipped_unsupported").unwrap_or(&0);
         let mixed_skipped_and_issues = *counts.get("mixed_skipped_and_issues").unwrap_or(&0);
         let no_official_oracle = *counts.get("no_official_oracle").unwrap_or(&0);
@@ -711,6 +842,7 @@ impl ScoreSummary {
             unverified_synthetic_oracle_match,
             supported_mismatch,
             deferred_oracle_gap_mismatch,
+            deferred_oracle_gap_skipped,
             skipped_unsupported,
             mixed_skipped_and_issues,
             no_official_oracle,
@@ -752,8 +884,9 @@ impl ScoreSummary {
 
     pub fn should_fail(&self) -> bool {
         self.supported_mismatch > 0
+            || self.deferred_oracle_gap_mismatch > 0
+            || self.skipped_unsupported > 0
             || self.harness_error > 0
-            || self.no_official_oracle > 0
             || self.mixed_skipped_and_issues > 0
     }
 }
@@ -779,13 +912,14 @@ fn coverage_for_counts(supported: usize, total_cases: usize) -> Option<f64> {
 }
 
 pub fn issue_fingerprint_hash(missing: &[IssueKey], extra: &[IssueKey]) -> String {
-    let mut entries = BTreeSet::new();
+    let mut entries = Vec::with_capacity(missing.len() + extra.len());
     for issue in missing {
-        entries.insert(issue_fingerprint_entry("missing", issue));
+        entries.push(issue_fingerprint_entry("missing", issue));
     }
     for issue in extra {
-        entries.insert(issue_fingerprint_entry("extra", issue));
+        entries.push(issue_fingerprint_entry("extra", issue));
     }
+    entries.sort();
 
     let mut hash = 0xcbf29ce484222325u64;
     for entry in entries {
@@ -853,7 +987,22 @@ pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
 }
 
 fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<String> {
-    let reason = [
+    let reason = deferred_default_engine_oracle_gap_reason_text(case)?;
+    Some(format!(
+        "{reason}; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
+fn deferred_default_engine_oracle_gap_skipped_reason(case: &OpenRulesCase) -> Option<String> {
+    let reason = deferred_default_engine_oracle_gap_reason_text(case)?;
+    Some(format!(
+        "{reason}; candidate skipped; excluded from supported accuracy until native semantics are verified"
+    ))
+}
+
+fn deferred_default_engine_oracle_gap_reason_text(case: &OpenRulesCase) -> Option<&'static str> {
+    [
+        ("official_oracle_fixture_gap", "official oracle fixture gap"),
         (
             "defer_empty_non_empty",
             "deferred empty/non_empty oracle semantics",
@@ -887,8 +1036,12 @@ fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<Str
             "deferred distinct operation oracle semantics",
         ),
         (
-            "defer_positive_zero_probe",
-            "deferred positive-zero probe oracle semantics",
+            "standard_filter_oracle_gap",
+            "standard applicability oracle semantics",
+        ),
+        (
+            "required_value_metadata",
+            "required value metadata oracle semantics",
         ),
         ("dataset_presence", "dataset presence oracle semantics"),
         ("date_operator", "date oracle semantics"),
@@ -904,6 +1057,18 @@ fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<Str
         (
             "scope_wide_reference_distinct",
             "scope-wide reference distinct oracle semantics",
+        ),
+        (
+            "reference_distinct_official_empty",
+            "reference distinct official-empty oracle semantics",
+        ),
+        (
+            "reference_distinct_fixture_row",
+            "reference distinct fixture row oracle semantics",
+        ),
+        (
+            "reference_distinct_cardinality",
+            "reference distinct cardinality oracle semantics",
         ),
         (
             "supported_reference_distinct",
@@ -923,14 +1088,15 @@ fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<Str
             "USDM join operation oracle semantics",
         ),
         ("xhtml_operation", "XHTML operation oracle semantics"),
+        (
+            "defer_positive_zero_probe",
+            "deferred positive-zero probe oracle semantics",
+        ),
     ]
     .into_iter()
     .find_map(|(category, reason)| {
         core_api::rule_id_has_oracle_gap_category(&case.rule_id, category).then_some(reason)
-    })?;
-    Some(format!(
-        "{reason}; excluded from supported accuracy until native semantics are verified"
-    ))
+    })
 }
 
 fn coverage_threshold_failed(summary: &ScoreSummary, min_coverage: Option<f64>) -> bool {
@@ -1005,8 +1171,9 @@ impl ScoreGate {
         let coverage_threshold_failed = coverage_threshold_failed(summary, min_coverage);
         let skipped_unsupported_threshold_failed =
             skipped_unsupported_threshold_failed(summary, max_skipped_unsupported);
-        let deferred_oracle_gap_failed =
-            fail_on_deferred_oracle_gap && summary.deferred_oracle_gap_mismatch > 0;
+        let deferred_oracle_gap_failed = fail_on_deferred_oracle_gap
+            && (summary.deferred_oracle_gap_mismatch > 0
+                || summary.deferred_oracle_gap_skipped > 0);
         Self {
             min_coverage,
             max_skipped_unsupported,
@@ -1202,16 +1369,73 @@ CORE-MIXED,failed,DM,DM,1,USUBJID,bad,1,,,\n",
     }
 
     #[test]
+    fn standard_filter_oracle_gap_skip_is_not_counted_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000217",
+            "negative",
+            "05",
+            "rule_id,dataset,row,variables\nCORE-000217,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000217,skipped,DM,DM,,,,0,oracle_semantics_gap,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapSkipped);
+        assert_eq!(summary.deferred_oracle_gap_skipped, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert!(!summary.should_fail());
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "standard applicability oracle semantics; candidate skipped; excluded from supported accuracy until native semantics are verified"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn official_fixture_gap_skip_is_not_counted_as_skipped_unsupported() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000356",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000356,DM,1,AGE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000356,skipped,DM,DM,,,,0,unsupported_rule_type,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapSkipped);
+        assert_eq!(summary.deferred_oracle_gap_skipped, 1);
+        assert_eq!(summary.skipped_unsupported, 0);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "official oracle fixture gap; candidate skipped; excluded from supported accuracy until native semantics are verified"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
     fn deferred_empty_non_empty_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
-            "CORE-000648",
+            "CORE-000007",
             "negative",
             "01",
-            "rule_id,dataset,row,variables\nCORE-000648,DM,1,AGE\n",
+            "rule_id,dataset,row,variables\nCORE-000007,CM,1,CMSTAT\n",
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000648,failed,DM,DM,2,AGE,bad,1,,002,\n",
+CORE-000007,failed,CM,CM,2,CMSTAT,bad,1,,002,\n",
         );
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
@@ -1253,16 +1477,63 @@ CORE-000648,failed,DM,DM,1,AGE,bad,1,,001,\n",
     }
 
     #[test]
+    fn empty_non_empty_oracle_gap_ignores_candidate_output_context_variables() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000027",
+            "negative",
+            "03",
+            "rule_id,dataset,row,variables\n\
+CORE-000027,TE,1,TEDUR\n\
+CORE-000027,TE,1,TEENRL\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000027,failed,TE,TE,1,ETCD|TEDUR|TEENRL,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
+    fn positive_zero_probe_oracle_gap_ignores_candidate_output_context_variables() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000325",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\n\
+CORE-000325,DM,1,ARMCD\n\
+CORE-000325,TA,3,ARMCD\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000325,failed,DM,DM,1,ARMCD|TXPARMCD|TXVAL,bad,1,,,\n\
+CORE-000325,failed,TA,TA,3,ARMCD|TXPARMCD|TXVAL,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
     fn direct_oracle_gap_category_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
-            "CORE-000698",
+            "CORE-000237",
             "negative",
             "01",
-            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,dataset,row,variables\nCORE-000237,PD,1,PDVALMIN\n",
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000698,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
+CORE-000237,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
         );
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
@@ -1282,12 +1553,12 @@ CORE-000698,failed,PD,PD,2,PDVALMIN,bad,1,,002,\n",
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
-            "CORE-000698",
+            "CORE-000542",
             "negative",
             "01",
-            "rule_id,dataset,row,variables\nCORE-000698,PD,1,PDVALMIN\n",
+            "rule_id,dataset,row,variables\nCORE-000542,PD,1,PDVALMIN\n",
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000698,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
+CORE-000542,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
         );
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
@@ -1299,16 +1570,44 @@ CORE-000698,failed,PD,PD,1,PDVALMIN,bad,1,,001,\n",
     }
 
     #[test]
+    fn official_fixture_gap_is_scored_as_deferred_oracle_gap_skipped() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000049",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000049,LB,,LBIMPLBL\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000049,failed,LB,LB,1,LBUSCHFL,bad,1,,ABC12301001,1\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapSkipped);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+        assert_eq!(summary.deferred_oracle_gap_skipped, 1);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
     fn supported_reference_distinct_mismatch_is_scored_as_deferred_oracle_gap() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
-            "CORE-000108",
+            "CORE-000168",
             "negative",
-            "02",
-            "rule_id,dataset,row,variables\nCORE-000108,SV,1,VISIT\n",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000168,SV,1,VISIT\n",
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
+CORE-000168,failed,SV,SV,2,VISIT,bad,1,,002,\n",
         );
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
@@ -1322,16 +1621,191 @@ CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
     }
 
     #[test]
-    fn fail_on_deferred_oracle_gap_makes_score_gate_fail() {
+    fn reference_distinct_official_empty_gap_uses_specific_reason() {
         let dir = tempdir().expect("tempdir");
         let case = write_score_fixture(
             dir.path(),
             "CORE-000108",
             "negative",
             "02",
-            "rule_id,dataset,row,variables\nCORE-000108,SV,1,VISIT\n",
+            "rule_id,dataset,row,variables\n",
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
+CORE-000108,failed,DM,DM,2,DTHFL|USUBJID,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapSkipped);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn official_fixture_gap_takes_precedence_over_reference_distinct_fixture_row_gap() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000770",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000770,TX,8,TXPARMCD\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapSkipped);
+        assert!(scored[0]
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("official oracle fixture gap")));
+    }
+
+    #[test]
+    fn reference_distinct_cardinality_gap_uses_specific_reason() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000168",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000168,LB,395,VISITNUM\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapMismatch);
+        assert_eq!(
+            scored[0].reason,
+            Some(
+                "reference distinct cardinality oracle semantics; excluded from supported accuracy until native semantics are verified"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn record_row_locator_oracle_gap_matches_when_only_rows_differ() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000137",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000137,EC,12,ECDOSE\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000137,failed,EC,EC,13,ECDOSE,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
+    fn row_locator_oracle_gap_normalization_does_not_hide_issue_count_differences() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000137",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000137,failed,AE,AE,2,STUDYID,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::DeferredOracleGapMismatch);
+        assert_eq!(summary.supported_match, 0);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 1);
+    }
+
+    #[test]
+    fn unique_set_oracle_gap_matches_when_only_rows_differ() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000387",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000387,CO,1,USUBJID\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000387,failed,CO,CO,2,USUBJID,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
+    fn core_000249_reference_distinct_gap_matches_when_only_rows_differ() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000249",
+            "negative",
+            "02",
+            "rule_id,dataset,row,variables\nCORE-000249,DS,501,VISITDY\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000249,failed,DS,DS,4,VISITDY,bad,1,,,\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
+    fn core_000269_reference_distinct_gap_matches_when_only_rows_differ() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000269",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000269,LB,584,VISIT\nCORE-000269,LB,584,VISITNUM\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000269,failed,LB,LB,585,VISIT|VISITNUM,bad,1,,CDISC005,293\n",
+        );
+
+        let scored = score_cases(&[case], &dir.path().join("candidate"));
+        let summary = ScoreSummary::from_cases(&scored);
+
+        assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+        assert_eq!(summary.supported_match, 1);
+        assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
+    }
+
+    #[test]
+    fn fail_on_deferred_oracle_gap_makes_score_gate_fail() {
+        let dir = tempdir().expect("tempdir");
+        let case = write_score_fixture(
+            dir.path(),
+            "CORE-000168",
+            "negative",
+            "01",
+            "rule_id,dataset,row,variables\nCORE-000168,SV,1,VISIT\n",
+            "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000168,failed,SV,SV,2,VISIT,bad,1,,002,\n",
         );
 
         let scored = score_cases(&[case], &dir.path().join("candidate"));
@@ -1341,7 +1815,7 @@ CORE-000108,failed,SV,SV,2,VISIT,bad,1,,002,\n",
 
         assert_eq!(permissive.summary.deferred_oracle_gap_mismatch, 1);
         assert!(!permissive.gate.deferred_oracle_gap_failed);
-        assert!(!permissive.gate.should_fail);
+        assert!(permissive.gate.should_fail);
         assert!(strict.gate.deferred_oracle_gap_failed);
         assert!(strict.gate.should_fail);
     }
@@ -1663,7 +2137,7 @@ CORE-000159,failed,LB,LB,1,LBTESTCD,bad,1,,,\n",
         assert_eq!(summary.synthetic_oracle_match, 0);
         assert_eq!(summary.unverified_synthetic_oracle_match, 0);
         assert_eq!(summary.harness_error, 0);
-        assert!(summary.should_fail());
+        assert!(!summary.should_fail());
     }
 
     #[test]

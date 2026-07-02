@@ -117,7 +117,8 @@ pub fn validate_rule(
             rule.rule_type,
             RuleType::RecordData | RuleType::DomainPresence
         ))
-        || contains_relationship_operator(&rule.conditions);
+        || contains_relationship_operator(&rule.conditions)
+        || contains_unique_set_operator(&rule.conditions);
     let mask =
         evaluate_condition_group_with_options(&rule.conditions, dataset, dataset_presence_exists)?;
     let message =
@@ -429,6 +430,7 @@ fn evaluate_condition_with_options(
                 row_count,
                 None,
                 &condition.comparator,
+                &condition.options,
             );
         }
         None if matches!(
@@ -653,6 +655,7 @@ fn evaluate_condition_with_options(
             row_count,
             Some(column),
             &condition.comparator,
+            &condition.options,
         ),
         Operator::IsNotUniqueRelationship => evaluate_not_unique_relationship(
             dataset,
@@ -1155,15 +1158,16 @@ fn evaluate_unique_set(
     row_count: usize,
     target_column: Option<&Column>,
     comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
 ) -> Result<BooleanMask> {
-    let group_columns = column_name_comparators(operator, comparator)?
-        .into_iter()
-        .map(|column| expand_domain_placeholder(dataset, &column))
-        .collect::<Vec<_>>();
+    let group_columns = expand_unique_set_group_columns(operator, comparator, dataset, frame)?;
     let group_column_values = group_columns
         .iter()
         .map(|column| optional_column(frame, column))
         .collect::<Result<Vec<_>>>()?;
+    let regex = option_string(&options.extra, "regex")
+        .map(|pattern| Regex::new(&pattern))
+        .transpose()?;
 
     let mut counts = std::collections::BTreeMap::<Vec<String>, usize>::new();
     let mut row_keys = Vec::with_capacity(row_count);
@@ -1182,9 +1186,9 @@ fn evaluate_unique_set(
                     .unwrap_or_default(),
                 None => "Not in dataset".to_owned(),
             };
-            key.push(value);
+            key.push(normalize_unique_set_key_value(&value, regex.as_ref()));
         }
-        key.push(target);
+        key.push(normalize_unique_set_key_value(&target, regex.as_ref()));
         *counts.entry(key.clone()).or_default() += 1;
         row_keys.push(Some(key));
     }
@@ -1197,6 +1201,68 @@ fn evaluate_unique_set(
             matches!(operator, Operator::IsNotUniqueSet) == duplicate
         })
         .collect())
+}
+
+fn normalize_unique_set_key_value(value: &str, regex: Option<&Regex>) -> String {
+    regex
+        .and_then(|regex| regex.find(value))
+        .map(|matched| matched.as_str().to_owned())
+        .unwrap_or_else(|| value.to_owned())
+}
+
+fn expand_unique_set_group_columns(
+    operator: &Operator,
+    comparator: &ValueExpr,
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+) -> Result<Vec<String>> {
+    let mut expanded = Vec::new();
+    for column in column_name_comparators(operator, comparator)? {
+        let column = expand_domain_placeholder(dataset, &column);
+        if let Some(dynamic_columns) = dynamic_group_columns(frame, &column)? {
+            expanded.extend(
+                dynamic_columns
+                    .into_iter()
+                    .map(|column| expand_domain_placeholder(dataset, &column)),
+            );
+        } else {
+            expanded.push(column);
+        }
+    }
+    Ok(expanded)
+}
+
+fn dynamic_group_columns(frame: &DataFrame, column_name: &str) -> Result<Option<Vec<String>>> {
+    let Some(column) = optional_column(frame, column_name)? else {
+        return Ok(None);
+    };
+    for row in 0..frame.height() {
+        let Some(value) = ScalarValue::from_any_value(column.get(row)?).into_string() else {
+            continue;
+        };
+        if let Some(columns) = parse_group_column_list_literal(&value).filter(|columns| {
+            !columns.is_empty()
+                && columns.iter().all(|column| {
+                    optional_column(frame, column).is_ok_and(|column| column.is_some())
+                })
+        }) {
+            return Ok(Some(columns));
+        }
+    }
+    Ok(None)
+}
+
+fn parse_group_column_list_literal(value: &str) -> Option<Vec<String>> {
+    let inner = value.trim().strip_prefix('[')?.strip_suffix(']')?;
+    Some(
+        inner
+            .split(',')
+            .filter_map(|part| {
+                let column = part.trim().trim_matches('"').trim_matches('\'').trim();
+                (!column.is_empty()).then(|| column.to_owned())
+            })
+            .collect(),
+    )
 }
 
 fn evaluate_not_unique_relationship(
@@ -1610,6 +1676,19 @@ fn contains_relationship_operator(group: &ConditionGroup) -> bool {
         ConditionGroup::Leaf(condition) => {
             matches!(condition.operator, Operator::IsNotUniqueRelationship)
         }
+    }
+}
+
+fn contains_unique_set_operator(group: &ConditionGroup) -> bool {
+    match group {
+        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+            groups.iter().any(contains_unique_set_operator)
+        }
+        ConditionGroup::Not(group) => contains_unique_set_operator(group),
+        ConditionGroup::Leaf(condition) => matches!(
+            condition.operator,
+            Operator::IsNotUniqueSet | Operator::IsUniqueSet
+        ),
     }
 }
 
@@ -2408,7 +2487,7 @@ enum DateValueState {
 fn classify_date_value(value: &str) -> Option<DateValueState> {
     let value = value.trim();
     if value.is_empty() {
-        return None;
+        return Some(DateValueState::Incomplete);
     }
     if parse_orderable_complete_date(value).is_some() {
         return Some(DateValueState::Complete);
@@ -3389,6 +3468,12 @@ mod tests {
             .expect("numeric is not contained by pipe-delimited set"),
             vec![false, true, false, true]
         );
+        assert!(scalar_contained_by_value(
+            &ScalarValue::Number(1.01),
+            &ScalarValue::String("1.01|2".to_owned()),
+            false,
+            false
+        ));
         assert!(scalar_contains_all(
             &ScalarValue::String("AE|CM|DS".to_owned()),
             &ScalarValue::String("AE|CM".to_owned()),
@@ -3556,6 +3641,57 @@ mod tests {
             )
             .expect("invalid duration"),
             vec![false, false, false, true]
+        );
+    }
+
+    #[test]
+    fn evaluates_empty_string_date_as_incomplete_date() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "lb.xpt",
+      "domain": "LB",
+      "records": {
+        "LBDTC": [""]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition("LBDTC", Operator::IsIncompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("incomplete date"),
+            vec![true]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("LBDTC", Operator::IsCompleteDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("complete date"),
+            vec![false]
+        );
+        assert_eq!(
+            evaluate_condition(
+                &condition("LBDTC", Operator::InvalidDate, ValueExpr::Null),
+                &dataset
+            )
+            .expect("invalid date"),
+            vec![false]
         );
     }
 
@@ -3867,6 +4003,115 @@ mod tests {
             )
             .expect("is unique set"),
             vec![false, false, true, true]
+        );
+    }
+
+    #[test]
+    fn unique_set_expands_dynamic_group_column_lists() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "eg.xpt",
+      "domain": "EG",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1"],
+        "EGTESTCD": ["HR", "HR", "HR", "HR"],
+        "VISIT": ["BASELINE", "BASELINE", "BASELINE", "BASELINE"],
+        "EGDTC": ["2022-01-14", "2022-01-14T07:00", "2022-01-14", "2022-01-14"],
+        "EGREPNUM": ["1", "2", "3", "1"],
+        "$TIMING_VARIABLES": [
+          "['VISIT', 'EGDTC']",
+          "['VISIT', 'EGDTC']",
+          "['VISIT', 'EGDTC']",
+          "['VISIT', 'EGDTC']"
+        ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition(
+                    "EGREPNUM",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![
+                        json!("USUBJID"),
+                        json!("EGTESTCD"),
+                        json!("$TIMING_VARIABLES")
+                    ])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, false, false, true]
+        );
+    }
+
+    #[test]
+    fn unique_set_applies_regex_to_dynamic_group_keys() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("datasets.json");
+        fs::write(
+            &path,
+            r#"{
+  "datasets": [
+    {
+      "filename": "eg.xpt",
+      "domain": "EG",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1"],
+        "EGTESTCD": ["HR", "HR", "HR"],
+        "VISIT": ["BASELINE", "BASELINE", "BASELINE"],
+        "EGDTC": ["2022-01-14", "2022-01-14T07:00", "2022-01-14"],
+        "EGREPNUM": ["1", "1", "1"],
+        "$TIMING_VARIABLES": [
+          "['VISIT', 'EGDTC']",
+          "['VISIT', 'EGDTC']",
+          "['VISIT', 'EGDTC']"
+        ]
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("write dataset package");
+        let dataset = load_dataset_package_json(&path)
+            .expect("load dataset package")
+            .into_iter()
+            .next()
+            .expect("dataset");
+
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "EGREPNUM",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![
+                        json!("USUBJID"),
+                        json!("EGTESTCD"),
+                        json!("$TIMING_VARIABLES")
+                    ]),
+                    serde_json::Map::from_iter([(
+                        "regex".to_owned(),
+                        json!(r"^\d{4}-\d{2}-\d{2}")
+                    )])
+                ),
+                &dataset
+            )
+            .expect("is not unique set"),
+            vec![true, true, true]
         );
     }
 
@@ -4496,6 +4741,44 @@ mod tests {
         assert_eq!(result.execution_status, ExecutionStatus::Failed);
         assert_eq!(result.error_count, 4);
         assert_eq!(result.errors[3].row, Some(4));
+    }
+
+    #[test]
+    fn record_data_with_unique_set_treats_exists_as_column_presence() {
+        let dataset = relationship_dataset();
+        let rule = rule(
+            Some(Sensitivity::Record),
+            ConditionGroup::All(vec![
+                ConditionGroup::Leaf(condition(
+                    "TARGET_EMPTY_DUP",
+                    Operator::Exists,
+                    ValueExpr::Null,
+                )),
+                ConditionGroup::Leaf(condition(
+                    "TARGET_EMPTY_DUP",
+                    Operator::IsEmpty,
+                    ValueExpr::Null,
+                )),
+                ConditionGroup::Leaf(condition(
+                    "GROUP_DUP",
+                    Operator::IsNotUniqueSet,
+                    ValueExpr::List(vec![json!("USUBJID")]),
+                )),
+            ]),
+            "empty target participates in duplicate-set rules",
+        );
+
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
+
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .map(|issue| issue.row)
+                .collect::<Vec<_>>(),
+            vec![Some(1), Some(2)]
+        );
     }
 
     #[test]
