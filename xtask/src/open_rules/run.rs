@@ -58,6 +58,11 @@ pub struct RunScoreArgs {
 
     #[arg(long)]
     pub fail_on_deferred_oracle_gap: bool,
+
+    /// Score raw candidate output without oracle-gap reclassification or
+    /// oracle-informed identity normalization.
+    #[arg(long)]
+    pub strict_scoring: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,6 +108,7 @@ pub fn run_score(args: RunScoreArgs) -> Result<bool> {
         min_coverage: args.min_coverage,
         max_skipped_unsupported: args.max_skipped_unsupported,
         fail_on_deferred_oracle_gap: args.fail_on_deferred_oracle_gap,
+        strict_scoring: args.strict_scoring,
     })?;
 
     Ok(run_summary.failed > 0 || score_failed)
@@ -381,6 +387,7 @@ mod tests {
             min_coverage: None,
             max_skipped_unsupported: None,
             fail_on_deferred_oracle_gap: false,
+            strict_scoring: false,
         })
         .expect("run score");
 

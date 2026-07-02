@@ -5,11 +5,11 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 10303 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 9363 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
-| `crates/core-data/src/lib.rs` | 8451 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
-| `crates/core-engine/src/lib.rs` | 1779 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
-| `xtask/src/open_rules/score.rs` | 2239 | Continue splitting scoring fixtures after the summary/gate/provenance/policy and identity-normalization splits. |
+| `crates/core-api/src/tests.rs` | 8718 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
+| `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
+| `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
+| `xtask/src/open_rules/score.rs` | 2362 | Continue splitting scoring fixtures after the summary/gate/provenance/policy and identity-normalization splits. |
 
 ## Principles
 

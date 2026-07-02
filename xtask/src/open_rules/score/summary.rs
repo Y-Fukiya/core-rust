@@ -55,6 +55,8 @@ pub struct ScoreSummary {
     pub unknown_provenance_coverage: Option<f64>,
     #[serde(default)]
     pub by_execution_provenance_detail: Vec<ExecutionProvenanceDetailSummary>,
+    #[serde(default)]
+    pub scoring_normalization_counts: Vec<ScoringNormalizationSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -64,6 +66,12 @@ pub struct ExecutionProvenanceDetailSummary {
     pub supported_mismatch: usize,
     pub supported_accuracy: Option<f64>,
     pub coverage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScoringNormalizationSummary {
+    pub normalization: String,
+    pub cases: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -160,6 +168,7 @@ impl ScoreSummary {
             ExecutionProvenance::Unknown,
         );
         let by_execution_provenance_detail = execution_provenance_detail_summaries(cases);
+        let scoring_normalization_counts = scoring_normalization_counts(cases);
         Self {
             total_cases,
             supported_match,
@@ -207,6 +216,7 @@ impl ScoreSummary {
                 total_cases,
             ),
             by_execution_provenance_detail,
+            scoring_normalization_counts,
         }
     }
 
@@ -290,6 +300,22 @@ fn execution_provenance_detail_summaries(
         })
     })
     .collect()
+}
+
+fn scoring_normalization_counts(cases: &[ScoredCase]) -> Vec<ScoringNormalizationSummary> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for case in cases {
+        for normalization in &case.scoring_normalizations {
+            *counts.entry(normalization.clone()).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(normalization, cases)| ScoringNormalizationSummary {
+            normalization,
+            cases,
+        })
+        .collect()
 }
 
 fn count_supported_by_provenance_detail(

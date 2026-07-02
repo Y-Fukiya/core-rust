@@ -121,6 +121,21 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             detail.coverage,
         ));
     }
+    if !summary.scoring_normalization_counts.is_empty() {
+        lines.extend([
+            String::new(),
+            "## Scoring Normalizations".to_owned(),
+            String::new(),
+            "| Normalization | Cases |".to_owned(),
+            "|---|---:|".to_owned(),
+        ]);
+        for normalization in &summary.scoring_normalization_counts {
+            lines.push(format!(
+                "| `{}` | {} |",
+                normalization.normalization, normalization.cases
+            ));
+        }
+    }
     lines.extend([
         String::new(),
         "## Deferred Oracle-Gap Breakdown".to_owned(),

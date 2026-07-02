@@ -113,6 +113,8 @@ families where official and candidate issue identity is known to differ only by
 unstable row location; it must not hide missing or extra issue counts.
 Cases where this relaxation is applied record
 `scoring_normalizations: ["row_locator_identity_relaxed"]` in `scoreboard.json`.
+The scoreboard summary also reports normalization counts, so readers can see
+how many cases relied on each compatibility normalization.
 
 For reviewed `empty/non_empty` oracle-gap families, scoring may drop candidate
 output-context variables at the same rule/dataset/domain/row/subject/sequence
@@ -127,6 +129,12 @@ The same output-context-variable normalization applies to reviewed
 positive-zero probe oracle-gap families. It can remove extra candidate variables
 only when the official oracle already has an issue at the same structural
 location; candidate-only rows and official-only rows remain mismatches.
+
+Use `xtask open-rules score --strict-scoring` when auditing the scorer itself.
+Strict scoring disables oracle-gap reclassification, row-locator identity
+relaxation, and output-context-variable alignment. Cases that only match after
+those compatibility policies therefore remain `supported_mismatch` in the
+strict scoreboard.
 
 ## Missing Official Oracle Policy
 
@@ -143,19 +151,25 @@ Read these fields together:
 - `supported_mismatch`: official-oracle-backed cases where structural issue keys
   differ.
 - `deferred_oracle_gap_mismatch`: official-oracle-backed mismatches deferred by
-  an explicit oracle-gap policy; treat increases as review-required, not as
-  coverage improvement.
-- `deferred_oracle_gap_skipped`: official-oracle-backed skipped execution
-  deferred by an explicit oracle-gap policy; treat increases as review-required,
-  not as supported coverage.
-- `native_engine_coverage`: share of all discovered cases covered by supported
-  native engine execution.
+  manifest-backed oracle/fixture/semantics policy and excluded from the
+  supported denominator.
+- `deferred_oracle_gap_skipped`: candidate skipped cases accepted as reviewed
+  oracle/fixture/standard applicability gaps and excluded from the supported
+  denominator.
+- `coverage`: supported cases divided by total discovered cases.
+- `native_engine_coverage`: non-hand-port supported coverage; this can include
+  generic engine behavior, rule-specific engine semantics, compatibility
+  policy, and oracle-gap normalization. Use the provenance detail fields for a
+  narrower read.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
   supported rule-id hand-port execution.
 - `execution_provenance_detail`: case-level refinement of execution provenance.
   It separates `generic_engine`, `rule_specific_engine_semantics`,
   `compatibility_policy`, `oracle_gap_normalized`, `rule_id_hand_port`, and
   `unknown`.
+- `scoring_normalization_counts`: count of cases where the scorer applied
+  compatibility identity normalization such as row-locator relaxation or
+  output-context-variable alignment.
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
 
@@ -323,6 +337,8 @@ CI runs two lightweight gates:
 - a pinned upstream curated subset copied from `cdisc-open-rules` at
   `tests/open_rules/upstream.lock`, compared against
   `tests/open_rules/curated-upstream-baseline.json`
+- a small pinned upstream gap subset, compared against
+  `tests/open_rules/curated-gap-baseline.json`
 
 The upstream subset rule list lives in
 `tests/open_rules/curated-upstream-rules.txt`. It should stay small enough for
@@ -332,8 +348,13 @@ the main execution provenance detail families: `generic_engine`,
 `rule_specific_engine_semantics`, `compatibility_policy`,
 `oracle_gap_normalized`, and `rule_id_hand_port`. It also includes
 representative reference distinct, record-count, USDM codelist, grouped
-distinct, and XHTML operation rules. Full upstream observe/regression remains
-scheduled/manual.
+distinct, and XHTML operation rules.
+
+The gap subset rule list lives in `tests/open_rules/curated-gap-rules.txt`.
+It is intentionally separate from the supported subset and keeps a small PR
+signal for accepted non-supported paths: `deferred_oracle_gap_skipped`,
+official fixture gaps, standard-filter oracle gaps, and `no_official_oracle`
+accounting. Full upstream observe/regression remains scheduled/manual.
 
 When refreshing an accepted upstream baseline, generate it from a scoreboard
 with the canonicalizer rather than editing paths by hand:
@@ -347,8 +368,10 @@ cargo run -p xtask -- open-rules canonicalize-baseline \
 Use the same command for the curated upstream subset, changing `--scoreboard`
 and `--out` to the curated scoreboard and
 `tests/open_rules/curated-upstream-baseline.json`. The canonicalizer rewrites
-local checkout paths to portable `Published/...` and `target/...` paths and
-recomputes summary/gate fields from the retained cases.
+local checkout paths to portable `Published/...` and `target/...` paths,
+normalizes `upstream.lock_path` to `tests/open_rules/upstream.lock`, rewrites
+absolute paths embedded in case reasons, strips per-case `missing`/`extra`
+issue arrays, and recomputes summary/gate fields from the retained cases.
 
 The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 `Open Rules Upstream`. It can be started manually with `workflow_dispatch` and
