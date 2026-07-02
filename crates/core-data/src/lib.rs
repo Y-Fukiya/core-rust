@@ -11,10 +11,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+mod dataset_transforms;
 mod open_rules_data_dir;
 mod open_rules_variables;
+mod usdm_json_schema;
 
+pub use dataset_transforms::sort_dataset_by_columns;
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
+use usdm_json_schema::collect_usdm_json_schema_issue_rows;
 
 pub type Result<T> = std::result::Result<T, DataError>;
 
@@ -2526,36 +2530,6 @@ fn collect_usdm_document_content_reference_rows(
                 }
             }
         }
-    }
-}
-
-fn collect_usdm_json_schema_issue_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    collect_usdm_json_schema_issue_rows_at(value, "", rows);
-}
-
-fn collect_usdm_json_schema_issue_rows_at(
-    value: &Value,
-    path: &str,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            push_usdm_json_schema_issues(value, path, rows);
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_json_schema_issue_rows_at(child, &child_path, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_json_schema_issue_rows_at(child, &format!("{path}/{index}"), rows);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -5652,243 +5626,6 @@ fn usdm_document_content_reference_row(
     row
 }
 
-fn push_usdm_json_schema_issues(
-    value: &Value,
-    path: &str,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    let Some(object) = value.as_object() else {
-        return;
-    };
-
-    if path.ends_with("/type") {
-        if let Some(code) = object.get("code").filter(|code| !code.is_string()) {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "type",
-                "code",
-                &format!("{} is not of type 'string'", json_schema_value_label(code)),
-            ));
-        }
-    }
-
-    if (path.ends_with("/encounters/0") || path.contains("/encounters/"))
-        && object
-            .get("contactModes")
-            .is_some_and(|value| !value.is_array())
-    {
-        rows.push(usdm_json_schema_issue_row(
-            path,
-            "type",
-            "contactModes",
-            "[Value of contactModes] is not of type 'array'",
-        ));
-    }
-
-    if path.ends_with("/minimumResponseDuration") {
-        if let Some(quantity_value) = object.get("value").filter(|value| !value.is_number()) {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "type",
-                "value",
-                &format!(
-                    "{} is not of type 'number'",
-                    json_schema_value_label(quantity_value)
-                ),
-            ));
-        }
-    }
-
-    if path.ends_with("/plannedAge") {
-        if let Some(is_approximate) = object
-            .get("isApproximate")
-            .filter(|value| !value.is_boolean())
-        {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "type",
-                "isApproximate",
-                &format!(
-                    "{} is not of type 'boolean'",
-                    json_schema_value_label(is_approximate)
-                ),
-            ));
-        }
-    }
-
-    if object
-        .get("plannedSex")
-        .and_then(Value::as_array)
-        .is_some_and(|values| values.len() > 1)
-    {
-        rows.push(usdm_json_schema_issue_row(
-            path,
-            "maxItems",
-            "plannedSex",
-            "[Value of plannedSex] is too long",
-        ));
-    }
-
-    if path.ends_with("/geographicScopes/0") {
-        if let Some(code) = object
-            .get("code")
-            .filter(|code| !code.is_null() && !code.is_object())
-        {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "type",
-                "code",
-                &format!("{} is not of type 'object'", json_schema_value_label(code)),
-            ));
-        }
-    }
-
-    if path.contains("/administrableProducts/") && object.contains_key("pharmacologClass") {
-        rows.push(usdm_json_schema_issue_row(
-            path,
-            "additionalProperties",
-            "",
-            "Additional properties are not allowed ('pharmacologClass' was unexpected)",
-        ));
-    }
-
-    if path.ends_with("/plannedAge/minValue/unit") {
-        if !object.contains_key("standardCode") {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "required",
-                "",
-                "'standardCode' is a required property",
-            ));
-        }
-        let unexpected = ["code", "codeSystem", "codeSystemVersion", "decode"]
-            .into_iter()
-            .filter(|key| object.contains_key(*key))
-            .collect::<Vec<_>>();
-        if !unexpected.is_empty() {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "additionalProperties",
-                "",
-                &format!(
-                    "Additional properties are not allowed ({})",
-                    json_schema_unexpected_properties(&unexpected)
-                ),
-            ));
-        }
-        if object.get("instanceType").and_then(Value::as_str) != Some("AliasCode") {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "const",
-                "instanceType",
-                "'AliasCode' was expected",
-            ));
-        }
-    }
-
-    if path_is_usdm_timing_object(path) {
-        let unexpected = ["windowLowerUnit", "windowLowerValue"]
-            .into_iter()
-            .filter(|key| object.contains_key(*key))
-            .collect::<Vec<_>>();
-        if !unexpected.is_empty() {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "additionalProperties",
-                "",
-                &format!(
-                    "Additional properties are not allowed ({})",
-                    json_schema_unexpected_properties(&unexpected)
-                ),
-            ));
-        }
-        if object.get("instanceType").and_then(Value::as_str) != Some("Timing") {
-            rows.push(usdm_json_schema_issue_row(
-                path,
-                "const",
-                "instanceType",
-                "'Timing' was expected",
-            ));
-        }
-    }
-
-    if path.contains("/abbreviations/")
-        && object.get("expandedText").and_then(Value::as_str) == Some("")
-    {
-        rows.push(usdm_json_schema_issue_row(
-            path,
-            "minLength",
-            "expandedText",
-            "'' is too short",
-        ));
-    }
-
-    if path.contains("/studyCells/")
-        && object
-            .get("elementIds")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty)
-    {
-        rows.push(usdm_json_schema_issue_row(
-            path,
-            "minItems",
-            "elementIds",
-            "[] is too short",
-        ));
-    }
-}
-
-fn path_is_usdm_timing_object(path: &str) -> bool {
-    let mut segments = path.rsplit('/');
-    let Some(last) = segments.next() else {
-        return false;
-    };
-    let Some(previous) = segments.next() else {
-        return false;
-    };
-    previous == "timings" && last.parse::<usize>().is_ok()
-}
-
-fn usdm_json_schema_issue_row(
-    path: &str,
-    validator: &str,
-    error_attribute: &str,
-    message: &str,
-) -> BTreeMap<String, Value> {
-    let mut row = BTreeMap::new();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert("validator".to_owned(), Value::String(validator.to_owned()));
-    row.insert(
-        "error_attribute".to_owned(),
-        Value::String(error_attribute.to_owned()),
-    );
-    row.insert("message".to_owned(), Value::String(message.to_owned()));
-    row
-}
-
-fn json_schema_value_label(value: &Value) -> String {
-    match value {
-        Value::String(value) => format!("'{value}'"),
-        Value::Bool(true) => "True".to_owned(),
-        Value::Bool(false) => "False".to_owned(),
-        _ => value.to_string(),
-    }
-}
-
-fn json_schema_unexpected_properties(properties: &[&str]) -> String {
-    match properties {
-        [one] => format!("'{one}' was unexpected"),
-        values => {
-            let quoted = values
-                .iter()
-                .map(|value| format!("'{value}'"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{quoted} were unexpected")
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 struct SyntaxTemplateDictionary {
     name: String,
@@ -8276,42 +8013,6 @@ pub fn group_distinct_values_dataset(
     derive_column_from_values(dataset, column_name, &values)
 }
 
-pub fn sort_dataset_by_columns(
-    dataset: &LoadedDataset,
-    keys: &[String],
-    descending: bool,
-) -> Result<LoadedDataset> {
-    if keys.is_empty() {
-        return Err(DataError::InvalidDatasetPackage(
-            "sort operation requires at least one key".to_owned(),
-        ));
-    }
-    for key in keys {
-        if dataset.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "sort key not found: {key}"
-            )));
-        }
-    }
-
-    let mut keyed_rows = (0..dataset.frame.height())
-        .map(|row| row_key(&dataset.frame, keys, row).map(|key| (key, row as u32)))
-        .collect::<Result<Vec<_>>>()?;
-    keyed_rows.sort_by(|left, right| {
-        let key_order = if descending {
-            right.0.cmp(&left.0)
-        } else {
-            left.0.cmp(&right.0)
-        };
-        key_order.then_with(|| left.1.cmp(&right.1))
-    });
-    let indices = keyed_rows
-        .into_iter()
-        .map(|(_key, row)| row)
-        .collect::<Vec<_>>();
-    take_dataset_rows(dataset, &indices)
-}
-
 pub fn row_number_dataset(
     dataset: &LoadedDataset,
     column_name: &str,
@@ -8546,7 +8247,7 @@ fn normalize_statistic_name(value: &str) -> String {
         .join("_")
 }
 
-fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Result<LoadedDataset> {
+pub(crate) fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Result<LoadedDataset> {
     let indices = UInt32Chunked::from_vec("row_index".into(), indices.to_vec());
     let frame = dataset
         .frame
@@ -8753,14 +8454,14 @@ fn actual_column_name(frame: &DataFrame, name: &str) -> Option<String> {
         .map(|column| column.as_str().to_owned())
 }
 
-fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
+pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
     keys.iter()
         .map(|key| cell_to_key(frame, key, row))
         .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum RowKeyValue {
+pub(crate) enum RowKeyValue {
     Null,
     Bool(bool),
     Number(NumberKey),

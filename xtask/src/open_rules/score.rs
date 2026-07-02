@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::discovery::{discover_cases, OpenRulesCase};
-use crate::open_rules::normalize::{normalize_csv, normalize_scalar, IssueKey, ReportSource};
+use crate::open_rules::normalize::{normalize_csv, IssueKey, ReportSource};
 use crate::open_rules::report::write_scoreboard;
 use crate::open_rules::upstream::{load_upstream_info, UpstreamInfo};
 
