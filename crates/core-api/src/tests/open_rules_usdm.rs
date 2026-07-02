@@ -7,6 +7,101 @@ use tempfile::tempdir;
 use crate::{run_validation, DatasetLoader, ValidateRequest};
 
 #[test]
+fn run_validation_core_000878_reports_all_invalid_condition_context_ids() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000878.json"),
+        r#"{
+  "Core": { "Id": "CORE-000878", "Status": "Published" },
+  "Scope": { "Entities": { "Include": ["ALL"], "Exclude": ["Activity", "ScheduledActivityInstance"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "parent_rel", "operator": "equal_to", "value": "contextIds", "value_is_literal": true },
+      { "name": "$condition_count", "operator": "non_empty" }
+    ]
+  },
+  "Operations": [
+    { "domain": "Condition", "filter": { "rel_type": "definition" }, "group": ["id", "instanceType"], "group_aliases": ["parent_id", "parent_entity"], "id": "$condition_count", "operator": "record_count" },
+    { "domain": "Condition", "filter": { "rel_type": "definition" }, "group": ["id", "instanceType"], "group_aliases": ["parent_id", "parent_entity"], "id": "$condition_parent_entity", "name": "parent_entity", "operator": "distinct" }
+  ],
+  "Outcome": {
+    "Message": "Invalid condition context.",
+    "Output Variables": ["$condition_parent_entity", "$condition_parent_id", "$condition_parent_rel", "$condition_rel_type", "$condition_name", "id", "name", "parent_id", "parent_rel", "rel_type", "instanceType", "value", "$error_type"]
+  }
+}"#,
+    )
+    .expect("write condition context rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "condition.csv",
+      "domain": "Condition",
+      "records": {
+        "parent_entity": ["StudyDesign", "Condition"],
+        "parent_id": ["StudyDesign_1", "Condition_2"],
+        "parent_rel": ["conditions", "contextIds"],
+        "rel_type": ["definition", "reference"],
+        "id": ["Condition_1", "Condition_1"],
+        "name": ["COND1", "COND1"],
+        "instanceType": ["Condition", "Condition"]
+      }
+    },
+    {
+      "filename": "biomedicalconcept.csv",
+      "domain": "BiomedicalConcept",
+      "records": {
+        "parent_entity": ["Condition"],
+        "parent_id": ["Condition_1"],
+        "parent_rel": ["contextIds"],
+        "rel_type": ["reference"],
+        "id": ["BiomedicalConcept_1"],
+        "name": ["Heart Rate"],
+        "instanceType": ["BiomedicalConcept"]
+      }
+    },
+    {
+      "filename": "string.csv",
+      "domain": "string",
+      "records": {
+        "parent_entity": ["Condition"],
+        "parent_id": ["Condition_1"],
+        "parent_rel": ["contextIds"],
+        "rel_type": ["definition"],
+        "value": ["Activity_missing"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write condition context data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    let issue_count = outcome
+        .results
+        .iter()
+        .flat_map(|result| result.errors.iter())
+        .count();
+    assert_eq!(issue_count, 3, "{:?}", outcome.results);
+}
+
+#[test]
 fn run_validation_joins_usdm_match_dataset_before_unique_set() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

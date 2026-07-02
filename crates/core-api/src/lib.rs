@@ -8,6 +8,7 @@ mod json_values;
 mod match_datasets;
 mod open_rules_compat;
 mod operation_fields;
+mod report_variables;
 mod standard_filter;
 mod static_codelists;
 mod usdm_jsonata;
@@ -76,6 +77,10 @@ use operation_fields::{
     is_supported_operation_name, normalize_operation_key, operation_function_argument,
     operation_function_arguments, operation_name, operation_string_literal, operation_value,
     rename_pair, string_field, string_list_field, string_map_field,
+};
+use report_variables::{
+    apply_metadata_report_variables, apply_operation_report_variables,
+    apply_requested_standard_operation_semantics,
 };
 use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
 use static_codelists::{
@@ -2855,88 +2860,6 @@ fn prepare_rule_with_cdisc_context(
     rule
 }
 
-fn apply_operation_report_variables(rule: &mut ExecutableRule) {
-    if engine_semantics::uses_check_target_report_variable_for_ex_end_rule(rule)
-        && condition_targets_column(&rule.conditions, "RFXENDTC")
-    {
-        for variable in &mut rule.output_variables {
-            if variable.eq_ignore_ascii_case("RFXSTDTC") {
-                *variable = "RFXENDTC".to_owned();
-            }
-        }
-    }
-
-    if engine_semantics::is_operation_report_variable_override_rule(rule) {
-        push_unique_string(&mut rule.output_variables, "USUBJID");
-        push_unique_string(&mut rule.output_variables, "STUDYID");
-        return;
-    }
-
-    if engine_semantics::is_reference_distinct_report_variable_rule(rule)
-        && has_reference_distinct_operation(rule)
-    {
-        let mut variables = Vec::new();
-        collect_condition_target_variables(&rule.conditions, &mut variables);
-        if !variables.is_empty() {
-            rule.output_variables = variables;
-        }
-        return;
-    }
-
-    if !rule.output_variables.is_empty() || !has_reference_distinct_operation(rule) {
-        return;
-    }
-
-    let mut variables = Vec::new();
-    collect_condition_target_variables(&rule.conditions, &mut variables);
-    if !variables.is_empty() {
-        rule.output_variables = variables;
-    }
-}
-
-fn apply_metadata_report_variables(rule: &mut ExecutableRule) {
-    if !rule.output_variables.is_empty()
-        || !matches!(
-            rule.rule_type,
-            RuleType::DatasetMetadata | RuleType::VariableMetadata
-        )
-    {
-        return;
-    }
-
-    let mut variables = Vec::new();
-    collect_condition_target_variables(&rule.conditions, &mut variables);
-    if !variables.is_empty() {
-        rule.output_variables = variables;
-    }
-}
-
-fn apply_requested_standard_operation_semantics(
-    rule: &mut ExecutableRule,
-    standard: &Option<String>,
-) {
-    if !engine_semantics::is_requested_standard_operation_rule(rule) {
-        return;
-    }
-
-    let Some(standard) = standard.as_deref() else {
-        return;
-    };
-
-    if standard.eq_ignore_ascii_case("SENDIG") {
-        for operation in &mut rule.operations {
-            if operation_name(operation).as_deref() == Some("domain_label") {
-                operation.fields.insert(
-                    "domain_label_source".to_owned(),
-                    Value::String("domain".to_owned()),
-                );
-            }
-        }
-        push_unique_string(&mut rule.output_variables, "--CAT");
-        push_unique_string(&mut rule.output_variables, "DOMAIN");
-    }
-}
-
 fn apply_entity_instance_type_literals(rule: &mut ExecutableRule) {
     if rule.entities.is_none() {
         return;
@@ -2972,7 +2895,7 @@ fn apply_entity_instance_type_literals_to_group(group: &mut ConditionGroup) {
     }
 }
 
-fn has_reference_distinct_operation(rule: &ExecutableRule) -> bool {
+pub(crate) fn has_reference_distinct_operation(rule: &ExecutableRule) -> bool {
     rule.operations.iter().any(|operation| {
         matches!(
             operation_name(operation).as_deref(),
@@ -3195,7 +3118,10 @@ fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
     has_oracle_gap_rule_id(rule, "supported_reference_distinct")
 }
 
-fn collect_condition_target_variables(group: &ConditionGroup, variables: &mut Vec<String>) {
+pub(crate) fn collect_condition_target_variables(
+    group: &ConditionGroup,
+    variables: &mut Vec<String>,
+) {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
             for group in groups {
@@ -3211,7 +3137,7 @@ fn collect_condition_target_variables(group: &ConditionGroup, variables: &mut Ve
     }
 }
 
-fn condition_targets_column(group: &ConditionGroup, column: &str) -> bool {
+pub(crate) fn condition_targets_column(group: &ConditionGroup, column: &str) -> bool {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
             .iter()
@@ -3224,7 +3150,7 @@ fn condition_targets_column(group: &ConditionGroup, column: &str) -> bool {
     }
 }
 
-fn push_unique_string(values: &mut Vec<String>, value: &str) {
+pub(crate) fn push_unique_string(values: &mut Vec<String>, value: &str) {
     if !values.iter().any(|existing| existing == value) {
         values.push(value.to_owned());
     }
