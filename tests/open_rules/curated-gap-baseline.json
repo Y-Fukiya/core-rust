@@ -61,33 +61,33 @@
     "by_scoring_policy": [
       {
         "policy": "strict_identity",
-        "supported_match": 12,
+        "supported_match": 27,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.08888888888888889
+        "coverage": 0.2
       },
       {
         "policy": "oracle_gap_normalized",
-        "supported_match": 20,
+        "supported_match": 5,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.14814814814814814
+        "coverage": 0.037037037037037035
       }
     ],
     "scoring_normalization_counts": [
       {
         "normalization": "output_context_variable_aligned",
-        "cases": 26
+        "cases": 5
       },
       {
         "normalization": "row_locator_identity_relaxed",
-        "cases": 12
+        "cases": 7
       }
     ]
   },
   "gate": {
     "min_coverage": null,
-    "max_skipped_unsupported": null,
+    "max_skipped_unsupported": 0,
     "coverage_threshold_failed": false,
     "skipped_unsupported_threshold_failed": false,
     "deferred_oracle_gap_failed": false,
@@ -149,27 +149,27 @@
         "by_scoring_policy": [
           {
             "policy": "strict_identity",
-            "supported_match": 12,
+            "supported_match": 27,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.08888888888888889
+            "coverage": 0.2
           },
           {
             "policy": "oracle_gap_normalized",
-            "supported_match": 20,
+            "supported_match": 5,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14814814814814814
+            "coverage": 0.037037037037037035
           }
         ],
         "scoring_normalization_counts": [
           {
             "normalization": "output_context_variable_aligned",
-            "cases": 26
+            "cases": 5
           },
           {
             "normalization": "row_locator_identity_relaxed",
-            "cases": 12
+            "cases": 7
           }
         ]
       }
@@ -247,7 +247,7 @@
         "scoring_normalization_counts": [
           {
             "normalization": "output_context_variable_aligned",
-            "cases": 12
+            "cases": 5
           },
           {
             "normalization": "row_locator_identity_relaxed",
@@ -311,27 +311,16 @@
         "by_scoring_policy": [
           {
             "policy": "strict_identity",
-            "supported_match": 7,
+            "supported_match": 22,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.09333333333333334
-          },
-          {
-            "policy": "oracle_gap_normalized",
-            "supported_match": 15,
-            "supported_mismatch": 0,
-            "supported_accuracy": 1.0,
-            "coverage": 0.2
+            "coverage": 0.29333333333333333
           }
         ],
         "scoring_normalization_counts": [
           {
-            "normalization": "output_context_variable_aligned",
-            "cases": 14
-          },
-          {
             "normalization": "row_locator_identity_relaxed",
-            "cases": 6
+            "cases": 1
           }
         ]
       }
@@ -614,12 +603,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000108/negative/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 2,
       "missing_count": 0,
@@ -655,12 +641,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000108/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -721,12 +704,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000117/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -743,12 +723,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000117/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -875,12 +852,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000172/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "compatibility_policy",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "row_locator_identity_relaxed"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -897,12 +871,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000172/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "compatibility_policy",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "row_locator_identity_relaxed"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -919,12 +890,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000172/positive/03/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "compatibility_policy",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "row_locator_identity_relaxed"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -941,12 +909,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000172/positive/04/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "compatibility_policy",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "row_locator_identity_relaxed"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -1276,12 +1241,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000225/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 8,
       "candidate_issue_count": 6,
       "missing_count": 4,
@@ -1317,12 +1279,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000225/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -1418,12 +1377,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000252/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "row_locator_identity_relaxed"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -1674,12 +1630,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000438/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 1,
       "candidate_issue_count": 2,
       "missing_count": 1,
@@ -1696,12 +1649,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000438/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 1,
       "candidate_issue_count": 0,
       "missing_count": 1,
@@ -1762,12 +1712,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000529/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 28,
       "candidate_issue_count": 24,
       "missing_count": 4,
@@ -1844,12 +1791,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000529/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -1904,12 +1848,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000529/positive/04/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -2553,12 +2494,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000648/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 33,
       "candidate_issue_count": 2,
       "missing_count": 31,
@@ -2575,12 +2513,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000648/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 2,
       "missing_count": 0,
@@ -2739,12 +2674,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000698/negative/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 12,
       "candidate_issue_count": 20,
       "missing_count": 12,
@@ -2761,12 +2693,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000698/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 4,
       "missing_count": 0,
@@ -2783,12 +2712,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000698/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -2805,12 +2731,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000698/positive/03/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -2849,12 +2772,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000704/negative/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 20,
       "candidate_issue_count": 12,
       "missing_count": 20,
@@ -2871,12 +2791,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000704/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "deferred_oracle_gap_skipped",
       "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 4,
       "missing_count": 0,
@@ -2893,12 +2810,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000704/positive/02/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,
@@ -2915,12 +2829,9 @@
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000704/positive/03/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
-      "scoring_policy": "oracle_gap_normalized",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
-      "scoring_normalizations": [
-        "output_context_variable_aligned"
-      ],
       "official_issue_count": 0,
       "candidate_issue_count": 0,
       "missing_count": 0,

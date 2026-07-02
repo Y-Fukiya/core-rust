@@ -12,26 +12,36 @@ pub(super) fn normalize_deferred_oracle_gap_issue_identity(
 ) -> Vec<String> {
     let mut normalizations = Vec::new();
     if row_locator_oracle_gap_category(case) {
-        clear_issue_record_locators(official);
-        clear_issue_record_locators(candidate);
-        normalizations.push("row_locator_identity_relaxed".to_owned());
+        let official_changed = clear_issue_record_locators(official);
+        let candidate_changed = clear_issue_record_locators(candidate);
+        if official_changed || candidate_changed {
+            normalizations.push("row_locator_identity_relaxed".to_owned());
+        }
     }
-    if output_context_variable_oracle_gap_category(case) {
-        drop_candidate_output_context_variables(official, candidate);
+    if output_context_variable_oracle_gap_category(case)
+        && drop_candidate_output_context_variables(official, candidate)
+    {
         normalizations.push("output_context_variable_aligned".to_owned());
     }
     normalizations
 }
 
-fn clear_issue_record_locators(issues: &mut [IssueKey]) {
+fn clear_issue_record_locators(issues: &mut [IssueKey]) -> bool {
+    let mut changed = false;
     for issue in issues {
+        changed |= !issue.row.is_empty() || !issue.usubjid.is_empty() || !issue.seq.is_empty();
         issue.row.clear();
         issue.usubjid.clear();
         issue.seq.clear();
     }
+    changed
 }
 
-fn drop_candidate_output_context_variables(official: &[IssueKey], candidate: &mut Vec<IssueKey>) {
+fn drop_candidate_output_context_variables(
+    official: &[IssueKey],
+    candidate: &mut Vec<IssueKey>,
+) -> bool {
+    let original_len = candidate.len();
     let official_variables_by_location = official
         .iter()
         .flat_map(|issue| {
@@ -77,4 +87,5 @@ fn drop_candidate_output_context_variables(official: &[IssueKey], candidate: &mu
             .iter()
             .any(|variable| official_variables.contains(variable))
     });
+    candidate.len() != original_len
 }
