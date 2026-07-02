@@ -59,5 +59,5 @@ The next low-risk code slice is:
 - keep public behavior unchanged
 - verify with:
   - `cargo test -p core-api open_rules --locked`
-  - `cargo test -p xtask baseline_warns_when_deferred_oracle_gap_skipped_increases --locked`
+  - `cargo test -p xtask baseline_fails_when_deferred_oracle_gap_skipped_increases --locked`
   - `cargo check --workspace --locked`

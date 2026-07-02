@@ -299,6 +299,9 @@ or unresolved unsupported execution: `supported_mismatch > 0`,
 coverage/oracle gaps, but they do not fail the standalone score command.
 Use `--fail-on-deferred-oracle-gap` when a standalone score command should also
 fail on any `deferred_oracle_gap_skipped` case.
+Baseline comparison is stricter: increases in either
+`deferred_oracle_gap_skipped` or `no_official_oracle` are review-required and
+make the baseline command exit non-zero.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
