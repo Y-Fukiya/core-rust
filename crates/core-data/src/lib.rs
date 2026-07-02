@@ -11,9 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+mod dataset_transforms;
 mod open_rules_data_dir;
 mod open_rules_variables;
 
+pub use dataset_transforms::sort_dataset_by_columns;
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
 
 pub type Result<T> = std::result::Result<T, DataError>;
@@ -8276,42 +8278,6 @@ pub fn group_distinct_values_dataset(
     derive_column_from_values(dataset, column_name, &values)
 }
 
-pub fn sort_dataset_by_columns(
-    dataset: &LoadedDataset,
-    keys: &[String],
-    descending: bool,
-) -> Result<LoadedDataset> {
-    if keys.is_empty() {
-        return Err(DataError::InvalidDatasetPackage(
-            "sort operation requires at least one key".to_owned(),
-        ));
-    }
-    for key in keys {
-        if dataset.frame.column(key).is_err() {
-            return Err(DataError::InvalidDatasetPackage(format!(
-                "sort key not found: {key}"
-            )));
-        }
-    }
-
-    let mut keyed_rows = (0..dataset.frame.height())
-        .map(|row| row_key(&dataset.frame, keys, row).map(|key| (key, row as u32)))
-        .collect::<Result<Vec<_>>>()?;
-    keyed_rows.sort_by(|left, right| {
-        let key_order = if descending {
-            right.0.cmp(&left.0)
-        } else {
-            left.0.cmp(&right.0)
-        };
-        key_order.then_with(|| left.1.cmp(&right.1))
-    });
-    let indices = keyed_rows
-        .into_iter()
-        .map(|(_key, row)| row)
-        .collect::<Vec<_>>();
-    take_dataset_rows(dataset, &indices)
-}
-
 pub fn row_number_dataset(
     dataset: &LoadedDataset,
     column_name: &str,
@@ -8546,7 +8512,7 @@ fn normalize_statistic_name(value: &str) -> String {
         .join("_")
 }
 
-fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Result<LoadedDataset> {
+pub(crate) fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Result<LoadedDataset> {
     let indices = UInt32Chunked::from_vec("row_index".into(), indices.to_vec());
     let frame = dataset
         .frame
@@ -8753,14 +8719,14 @@ fn actual_column_name(frame: &DataFrame, name: &str) -> Option<String> {
         .map(|column| column.as_str().to_owned())
 }
 
-fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
+pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
     keys.iter()
         .map(|key| cell_to_key(frame, key, row))
         .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum RowKeyValue {
+pub(crate) enum RowKeyValue {
     Null,
     Bool(bool),
     Number(NumberKey),
