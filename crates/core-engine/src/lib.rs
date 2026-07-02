@@ -26,7 +26,7 @@ use group_operators::{
 };
 use scalar_operators::{
     expand_domain_placeholder, json_value_to_scalar, resolve_scalar_comparator,
-    resolve_scalar_list_comparator, scalar_contained_by_value, scalar_contains_all,
+    resolve_scalar_list_comparator, scalar_contains_all,
     scalar_equal_with_mode, scalar_is_ordered_subset_of, scalar_matches_comparator,
     scalar_shares_no_elements_with, string_contains_value, string_prefix, string_suffix,
     ScalarValue,
