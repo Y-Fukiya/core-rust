@@ -148,7 +148,7 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
     let mut review_required = Vec::new();
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
     let keys = baseline_cases
         .keys()
         .chain(current_cases.keys())
@@ -265,11 +265,19 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
         ));
     }
     if current.summary.deferred_oracle_gap_skipped > baseline.summary.deferred_oracle_gap_skipped {
-        warnings.push(difference(
+        review_required.push(difference(
             "summary/deferred_oracle_gap_skipped".to_owned(),
             None,
             None,
             "deferred oracle-gap skipped count increased",
+        ));
+    }
+    if current.summary.no_official_oracle > baseline.summary.no_official_oracle {
+        review_required.push(difference(
+            "summary/no_official_oracle".to_owned(),
+            None,
+            None,
+            "no official oracle count increased",
         ));
     }
 
@@ -502,6 +510,7 @@ mod tests {
                 bucket,
                 reason: None,
                 skipped_reasons: Vec::new(),
+                scoring_normalizations: Vec::new(),
                 official_issue_count: Some(1),
                 candidate_issue_count: Some(1),
                 missing_count: Some(0),
@@ -609,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn baseline_warns_when_deferred_oracle_gap_skipped_increases() {
+    fn baseline_fails_when_deferred_oracle_gap_skipped_increases() {
         let baseline = scoreboard(ScoreBucket::SupportedMatch);
         let mut current = scoreboard(ScoreBucket::SupportedMatch);
         current.summary.deferred_oracle_gap_skipped =
@@ -617,10 +626,25 @@ mod tests {
 
         let report = compare_scoreboards(&baseline, &current);
 
-        assert!(!report.should_fail());
-        assert!(report.warnings.iter().any(|warning| {
-            warning.case_key == "summary/deferred_oracle_gap_skipped"
-                && warning.message == "deferred oracle-gap skipped count increased"
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.case_key == "summary/deferred_oracle_gap_skipped"
+                && review.message == "deferred oracle-gap skipped count increased"
+        }));
+    }
+
+    #[test]
+    fn baseline_fails_when_no_official_oracle_increases() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.no_official_oracle = baseline.summary.no_official_oracle + 1;
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.case_key == "summary/no_official_oracle"
+                && review.message == "no official oracle count increased"
         }));
     }
 

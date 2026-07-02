@@ -9,7 +9,7 @@ still too large to review safely:
 | `crates/core-api/src/lib.rs` | 11818 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
 | `crates/core-data/src/lib.rs` | 10660 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader split. |
 | `crates/core-engine/src/lib.rs` | 4900 | Extract multi-row/group operator evaluation into operator modules. |
-| `xtask/src/open_rules/score.rs` | 2823 | Split scoring, gate policy, and test fixtures once upstream baseline work settles. |
+| `xtask/src/open_rules/score.rs` | 2629 | Continue splitting issue normalization and scoring fixtures after the summary/gate policy split. |
 
 ## Principles
 
@@ -32,8 +32,8 @@ still too large to review safely:
 3. `core-data/src/lib.rs`: continue with USDM JSON flattening or dataset
    package helpers after the Open Rules CSV/data-dir loader split.
 4. `core-engine/src/lib.rs`: split group/relationship operator evaluators.
-5. `xtask/src/open_rules/score.rs`: split `ScoreSummary`/`ScoreGate` policy
-   from issue normalization.
+5. `xtask/src/open_rules/score.rs`: continue with issue normalization and
+   test-fixture helpers after the `ScoreSummary`/`ScoreGate` policy split.
 
 ## Completed Slices
 
@@ -47,6 +47,8 @@ still too large to review safely:
   join regression tests.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
   `_variables.csv`, embedded metadata, and CSV data-dir loading.
+- `xtask/src/open_rules/score/summary.rs`: scoreboard summary, deferred
+  oracle-gap breakdown, group summaries, and score gate policy.
 
 ## Next Implementation Slice
 
@@ -59,5 +61,5 @@ The next low-risk code slice is:
 - keep public behavior unchanged
 - verify with:
   - `cargo test -p core-api open_rules --locked`
-  - `cargo test -p xtask baseline_warns_when_deferred_oracle_gap_skipped_increases --locked`
+  - `cargo test -p xtask baseline_fails_when_deferred_oracle_gap_skipped_increases --locked`
   - `cargo check --workspace --locked`

@@ -107,6 +107,35 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support."
             .to_owned(),
         String::new(),
+        "## Deferred Oracle-Gap Breakdown".to_owned(),
+        String::new(),
+        "| Category | Cases |".to_owned(),
+        "|---|---:|".to_owned(),
+        format!(
+            "| Candidate skipped | {} |",
+            summary.deferred_oracle_gap_breakdown.candidate_skipped
+        ),
+        format!(
+            "| Official fixture gap | {} |",
+            summary.deferred_oracle_gap_breakdown.official_fixture_gap
+        ),
+        format!(
+            "| Standard filter oracle gap | {} |",
+            summary
+                .deferred_oracle_gap_breakdown
+                .standard_filter_oracle_gap
+        ),
+        format!(
+            "| Oracle identity gap | {} |",
+            summary.deferred_oracle_gap_breakdown.oracle_identity_gap
+        ),
+        format!(
+            "| Unverified semantics gap | {} |",
+            summary
+                .deferred_oracle_gap_breakdown
+                .unverified_semantics_gap
+        ),
+        String::new(),
         "## Gate".to_owned(),
         String::new(),
         "| Gate | Value |".to_owned(),
@@ -406,6 +435,7 @@ mod tests {
                     bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
+                    scoring_normalizations: Vec::new(),
                     official_issue_count: Some(1),
                     candidate_issue_count: Some(1),
                     missing_count: Some(0),
@@ -428,6 +458,7 @@ mod tests {
                     bucket: ScoreBucket::SkippedUnsupported,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
+                    scoring_normalizations: Vec::new(),
                     official_issue_count: Some(0),
                     candidate_issue_count: Some(0),
                     missing_count: None,
@@ -451,6 +482,7 @@ mod tests {
                             .to_owned(),
                     ),
                     skipped_reasons: Vec::new(),
+                    scoring_normalizations: vec!["row_locator_identity_relaxed".to_owned()],
                     official_issue_count: Some(1),
                     candidate_issue_count: Some(1),
                     missing_count: Some(0),
@@ -476,6 +508,7 @@ mod tests {
                             .to_owned(),
                     ),
                     skipped_reasons: Vec::new(),
+                    scoring_normalizations: Vec::new(),
                     official_issue_count: Some(0),
                     candidate_issue_count: Some(0),
                     missing_count: Some(0),

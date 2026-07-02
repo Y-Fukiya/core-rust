@@ -10,8 +10,8 @@ supported accuracy gate until upstream evidence changes.
 
 | Family | Cases | Local treatment |
 |---|---:|---|
-| `official_oracle_fixture_gap` | 51 | Warning/report-only. File upstream reconciliation issues by bundle. |
-| `standard_filter_oracle_gap` | 4 | Warning/report-only. Ask upstream to confirm fixture standard metadata or rule applicability. |
+| `official_oracle_fixture_gap` | 51 | Report-only in score output; baseline comparison requires review if this count grows. File upstream reconciliation issues by bundle. |
+| `standard_filter_oracle_gap` | 4 | Report-only in score output; baseline comparison requires review if this count grows. Ask upstream to confirm fixture standard metadata or rule applicability. |
 
 ## Filing Order
 

@@ -111,12 +111,17 @@ fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
 domain, variables, and multiset counts. This is limited to manifest-backed
 families where official and candidate issue identity is known to differ only by
 unstable row location; it must not hide missing or extra issue counts.
+Cases where this relaxation is applied record
+`scoring_normalizations: ["row_locator_identity_relaxed"]` in `scoreboard.json`.
 
 For reviewed `empty/non_empty` oracle-gap families, scoring may drop candidate
 output-context variables at the same rule/dataset/domain/row/subject/sequence
 location when the official oracle reports only the failed condition variables.
 This is limited to manifest-backed cases and does not ignore extra rows, missing
 official variables, or different record locators.
+Cases where this relaxation is applied record
+`scoring_normalizations: ["output_context_variable_aligned"]` in
+`scoreboard.json`.
 
 The same output-context-variable normalization applies to reviewed
 positive-zero probe oracle-gap families. It can remove extra candidate variables
@@ -299,6 +304,9 @@ or unresolved unsupported execution: `supported_mismatch > 0`,
 coverage/oracle gaps, but they do not fail the standalone score command.
 Use `--fail-on-deferred-oracle-gap` when a standalone score command should also
 fail on any `deferred_oracle_gap_skipped` case.
+Baseline comparison is stricter: increases in either
+`deferred_oracle_gap_skipped` or `no_official_oracle` are review-required and
+make the baseline command exit non-zero.
 
 CI runs the repository-local executable fixture only. It does not download or
 vendor the full upstream `cdisc-open-rules` repository, so normal pull requests
