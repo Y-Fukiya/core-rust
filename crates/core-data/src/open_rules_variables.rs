@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{
-    normalize_dataset_name, row_string, CsvRecords, DataError, DatasetVariable, OpenRulesDataset,
-    OpenRulesVariable, Result,
-};
+use super::open_rules_data_dir::{OpenRulesDataset, OpenRulesVariable};
+use super::{normalize_dataset_name, row_string, CsvRecords, DataError, DatasetVariable, Result};
 
 fn open_rules_variable_descriptor(
     row: &BTreeMap<String, String>,
