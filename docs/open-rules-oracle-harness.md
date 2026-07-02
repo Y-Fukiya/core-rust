@@ -106,6 +106,12 @@ reclassified after targeted review showed that returning them to supported
 scoring would either contradict the official oracle or create a deferred
 mismatch.
 
+Positive-zero probe rule ids are tracked separately as manifest promotion
+guards, not as active accepted-scoreboard failures. The current baseline has no
+active positive-zero skipped or mismatched cases; see
+`docs/open-rules-positive-zero-probe-inventory.md` for the review rule before
+removing entries from that manifest category.
+
 For reviewed row-locator oracle-gap families, scoring may ignore record locator
 fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
 domain, variables, and multiset counts. This is limited to manifest-backed
@@ -239,13 +245,13 @@ labels for future native semantics work, not supported matches.
 Remaining hard-coded `CORE-xxxxxx` references in `core-api` are inventoried in
 `crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`. That file
 does not make the rules generic; it classifies why each rule-specific reference
-still exists, such as USDM JSONata hand-port semantics, metadata adapters,
+still exists, such as USDM hand-port semantics, metadata adapters,
 standard-filter compatibility, or result post-processing. Unit tests scan the
 core API source files and fail when a new hard-coded CORE id appears without a
 classification row.
 
-USDM JSONata hand-port semantics are isolated in
-`crates/core-api/src/usdm_jsonata.rs`. `core-api/src/lib.rs` should call that
+USDM hand-port semantics are isolated in
+`crates/core-api/src/usdm_hand_ports.rs`. `core-api/src/lib.rs` should call that
 module, not carry inline USDM rule-family lists.
 
 Remaining Open Rules engine-semantics rule-id membership is isolated in

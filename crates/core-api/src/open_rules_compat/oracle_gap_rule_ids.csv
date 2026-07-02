@@ -468,7 +468,7 @@ CORE-000256,record_row_locator,record-level row locator differs from official or
 CORE-000266,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000269,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000270,record_row_locator,record-level row locator differs from official oracle and needs native semantics review,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000407,usdm_jsonata_entity_scope,USDM JSONata entity scope semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000407,usdm_hand_port_entity_scope,USDM hand-port entity scope semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000814,usdm_join_operation,USDM join and grouped operation semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000960,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-001069,xhtml_operation,XHTML operation reporting semantics need native review,core-api,open-rules-scoreboard,open-rules-oracle-harness

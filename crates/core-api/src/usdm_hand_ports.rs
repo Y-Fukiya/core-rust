@@ -10,7 +10,7 @@ use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::{Condition, ConditionGroup, ExecutableRule, Operator, ValueExpr};
 use serde_json::Value;
 
-pub(crate) fn apply_usdm_jsonata_semantics(rule: &mut ExecutableRule) {
+pub(crate) fn apply_usdm_hand_port_semantics(rule: &mut ExecutableRule) {
     apply_usdm_planned_number_jsonata_semantics(rule);
     apply_usdm_study_role_jsonata_semantics(rule);
     apply_usdm_study_design_jsonata_semantics(rule);
@@ -38,7 +38,7 @@ pub(crate) fn apply_usdm_jsonata_semantics(rule: &mut ExecutableRule) {
     apply_usdm_abbreviation_jsonata_semantics(rule);
 }
 
-pub(crate) fn has_usdm_jsonata_semantics(rule: &ExecutableRule) -> bool {
+pub(crate) fn has_usdm_hand_port_semantics(rule: &ExecutableRule) -> bool {
     is_usdm_planned_number_jsonata_rule(rule)
         || is_usdm_study_role_jsonata_rule(rule)
         || is_usdm_study_design_jsonata_rule(rule)
@@ -66,7 +66,7 @@ pub(crate) fn has_usdm_jsonata_semantics(rule: &ExecutableRule) -> bool {
         || is_usdm_abbreviation_jsonata_rule(rule)
 }
 
-pub(crate) fn usdm_jsonata_execution_datasets(
+pub(crate) fn usdm_hand_port_execution_datasets(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<std::result::Result<Vec<LoadedDataset>, RuleValidationResult>> {

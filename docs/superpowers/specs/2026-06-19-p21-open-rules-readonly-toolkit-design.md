@@ -22,7 +22,7 @@ harness treats `cdisc-org/cdisc-open-rules` as an oracle-backed conformance
 corpus and keeps skipped coverage gaps separate from supported correctness
 mismatches. The read-only toolkit must respect that boundary.
 
-The original conversion specification in `/Users/yfukiya/codex_cdisc_rule_conversion_spec.md`
+The original conversion specification in a local user workspace document
 covers the larger future pipeline, including generated CORE-style rules and
 generated test data. This design narrows the first implementation to read-only
 cataloging, mapping, classification, and reporting.

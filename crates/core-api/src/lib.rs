@@ -12,7 +12,7 @@ mod report_variables;
 mod rule_preparation;
 mod standard_filter;
 mod static_codelists;
-mod usdm_jsonata;
+mod usdm_hand_ports;
 
 pub use open_rules_compat::{
     rule_id_has_oracle_gap_category, rule_id_specific_semantics_classification,
@@ -90,8 +90,8 @@ use static_codelists::{
     static_codelist_term_by_code, static_codelist_term_by_pref_term, static_codelist_term_by_value,
     static_codelist_term_matches_version, valid_codelist_dates,
 };
-use usdm_jsonata::{
-    apply_usdm_jsonata_semantics, has_usdm_jsonata_semantics, usdm_jsonata_execution_datasets,
+use usdm_hand_ports::{
+    apply_usdm_hand_port_semantics, has_usdm_hand_port_semantics, usdm_hand_port_execution_datasets,
 };
 
 pub type Result<T> = std::result::Result<T, ApiError>;
@@ -2517,7 +2517,7 @@ fn skipped_unsupported_rule(
         }
     }
 
-    if has_usdm_jsonata_semantics(rule) {
+    if has_usdm_hand_port_semantics(rule) {
         return None;
     }
 
@@ -2750,7 +2750,7 @@ fn prepare_rule_for_execution(
     standard: &Option<String>,
 ) -> ExecutableRule {
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
-    apply_usdm_jsonata_semantics(&mut rule);
+    apply_usdm_hand_port_semantics(&mut rule);
     apply_open_rules_relationship_semantics(&mut rule);
     apply_trial_summary_value_null_flavor_semantics(&mut rule);
     apply_unscheduled_death_ds_flag_semantics(&mut rule);
@@ -3127,7 +3127,7 @@ fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    if let Some(result) = usdm_jsonata_execution_datasets(rule, datasets) {
+    if let Some(result) = usdm_hand_port_execution_datasets(rule, datasets) {
         return result;
     }
 
