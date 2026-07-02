@@ -5,10 +5,10 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 8725 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
 | `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
-| `crates/core-api/src/tests/open_rules_usdm.rs` | 2833 | Continue splitting USDM fixture families into focused sibling modules. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 2101 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
 
@@ -48,6 +48,8 @@ still too large to review safely:
   and row-scope regression tests.
 - `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
   join regression tests.
+- `core-api/src/tests/open_rules_usdm_abbreviations.rs`: USDM abbreviation
+  duplicate text and expanded-text regression tests.
 - `core-api/src/tests/open_rules_usdm_activity.rs`: USDM activity child id,
   children/detail conflict, child ordering, and biomedical concept/category
   overlap regression tests.
@@ -59,6 +61,10 @@ still too large to review safely:
   JSONata regression tests.
 - `core-api/src/tests/open_rules_usdm_population.rs`: USDM planned
   enrollment and completion population/cohort consistency regression tests.
+- `core-api/src/tests/open_rules_usdm_references.rs`: USDM reference,
+  duplicate-object, and broad cross-entity reference regression tests.
+- `core-api/src/tests/open_rules_usdm_schema.rs`: USDM JSON schema check pass
+  and fail regression tests.
 - `core-api/src/tests/open_rules_usdm_study_design.rs`: USDM study-design
   document-version, duplicate code-list, and single/multi-centre regression
   tests.
