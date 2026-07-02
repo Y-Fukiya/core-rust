@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket, ScoredCase};
+use super::provenance::execution_provenance_detail_for_case;
+use super::{
+    ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket, ScoredCase, ScoringPolicy,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScoreSummary {
@@ -56,12 +59,23 @@ pub struct ScoreSummary {
     #[serde(default)]
     pub by_execution_provenance_detail: Vec<ExecutionProvenanceDetailSummary>,
     #[serde(default)]
+    pub by_scoring_policy: Vec<ScoringPolicySummary>,
+    #[serde(default)]
     pub scoring_normalization_counts: Vec<ScoringNormalizationSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionProvenanceDetailSummary {
     pub detail: ExecutionProvenanceDetail,
+    pub supported_match: usize,
+    pub supported_mismatch: usize,
+    pub supported_accuracy: Option<f64>,
+    pub coverage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScoringPolicySummary {
+    pub policy: ScoringPolicy,
     pub supported_match: usize,
     pub supported_mismatch: usize,
     pub supported_accuracy: Option<f64>,
@@ -168,6 +182,7 @@ impl ScoreSummary {
             ExecutionProvenance::Unknown,
         );
         let by_execution_provenance_detail = execution_provenance_detail_summaries(cases);
+        let by_scoring_policy = scoring_policy_summaries(cases);
         let scoring_normalization_counts = scoring_normalization_counts(cases);
         Self {
             total_cases,
@@ -216,6 +231,7 @@ impl ScoreSummary {
                 total_cases,
             ),
             by_execution_provenance_detail,
+            by_scoring_policy,
             scoring_normalization_counts,
         }
     }
@@ -280,7 +296,6 @@ fn execution_provenance_detail_summaries(
         ExecutionProvenanceDetail::GenericEngine,
         ExecutionProvenanceDetail::RuleSpecificEngineSemantics,
         ExecutionProvenanceDetail::CompatibilityPolicy,
-        ExecutionProvenanceDetail::OracleGapNormalized,
         ExecutionProvenanceDetail::RuleIdHandPort,
         ExecutionProvenanceDetail::Unknown,
     ]
@@ -293,6 +308,29 @@ fn execution_provenance_detail_summaries(
         let supported = supported_match + supported_mismatch;
         (supported > 0).then(|| ExecutionProvenanceDetailSummary {
             detail,
+            supported_match,
+            supported_mismatch,
+            supported_accuracy: supported_accuracy_for_counts(supported_match, supported_mismatch),
+            coverage: coverage_for_counts(supported, cases.len()),
+        })
+    })
+    .collect()
+}
+
+fn scoring_policy_summaries(cases: &[ScoredCase]) -> Vec<ScoringPolicySummary> {
+    [
+        ScoringPolicy::StrictIdentity,
+        ScoringPolicy::OracleGapNormalized,
+    ]
+    .into_iter()
+    .filter_map(|policy| {
+        let supported_match =
+            count_supported_by_scoring_policy(cases, ScoreBucket::SupportedMatch, &policy);
+        let supported_mismatch =
+            count_supported_by_scoring_policy(cases, ScoreBucket::SupportedMismatch, &policy);
+        let supported = supported_match + supported_mismatch;
+        (supported > 0).then(|| ScoringPolicySummary {
+            policy,
             supported_match,
             supported_mismatch,
             supported_accuracy: supported_accuracy_for_counts(supported_match, supported_mismatch),
@@ -325,8 +363,22 @@ fn count_supported_by_provenance_detail(
 ) -> usize {
     cases
         .iter()
-        .filter(|case| case.bucket == bucket && &case.execution_provenance_detail == detail)
+        .filter(|case| {
+            case.bucket == bucket && &effective_execution_provenance_detail(case) == detail
+        })
         .count()
+}
+
+fn effective_execution_provenance_detail(case: &ScoredCase) -> ExecutionProvenanceDetail {
+    if case.execution_provenance_detail == ExecutionProvenanceDetail::OracleGapNormalized {
+        execution_provenance_detail_for_case(
+            &case.rule_id,
+            &case.execution_provenance,
+            &case.scoring_normalizations,
+        )
+    } else {
+        case.execution_provenance_detail.clone()
+    }
 }
 
 fn count_supported_by_provenance(
@@ -338,6 +390,25 @@ fn count_supported_by_provenance(
         .iter()
         .filter(|case| case.bucket == bucket && case.execution_provenance == provenance)
         .count()
+}
+
+fn count_supported_by_scoring_policy(
+    cases: &[ScoredCase],
+    bucket: ScoreBucket,
+    policy: &ScoringPolicy,
+) -> usize {
+    cases
+        .iter()
+        .filter(|case| case.bucket == bucket && &effective_scoring_policy(case) == policy)
+        .count()
+}
+
+fn effective_scoring_policy(case: &ScoredCase) -> ScoringPolicy {
+    if case.scoring_normalizations.is_empty() {
+        case.scoring_policy.clone()
+    } else {
+        ScoringPolicy::OracleGapNormalized
+    }
 }
 
 fn deferred_oracle_gap_breakdown(cases: &[ScoredCase]) -> DeferredOracleGapBreakdown {

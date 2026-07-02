@@ -43,6 +43,23 @@ jobs:
           fi
           echo "Scoreboard generated; compatibility gaps are tracked in uploaded artifacts."
 
+      - name: Run full upstream strict scoring audit
+        run: |
+          set +e
+          cargo run -p xtask -- open-rules score \
+            --open-rules-root ../cdisc-open-rules \
+            --core-rs-results-root target/open-rules-core-rs-upstream \
+            --out target/open-rules-scoreboard-upstream-strict \
+            --strict-scoring
+          strict_score_status=$?
+          set -e
+          echo "open-rules upstream strict observe exit code: ${strict_score_status}"
+          if [ ! -f target/open-rules-scoreboard-upstream-strict/scoreboard.json ]; then
+            echo "strict scoreboard.json was not generated; this is an infrastructure or harness failure"
+            exit 1
+          fi
+          echo "Strict scoring scoreboard generated as a non-gating audit artifact."
+
       - name: Upload upstream scoreboard
         if: always()
         uses: actions/upload-artifact@v4
@@ -50,6 +67,7 @@ jobs:
           name: open-rules-upstream-scoreboard
           path: |
             target/open-rules-scoreboard-upstream
+            target/open-rules-scoreboard-upstream-strict
             target/open-rules-core-rs-upstream/run-summary.json
 
   upstream-regression:

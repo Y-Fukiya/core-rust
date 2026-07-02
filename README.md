@@ -90,7 +90,9 @@ For audit runs, `xtask open-rules score --strict-scoring` disables oracle-gap
 reclassification and oracle-informed identity/output-context normalizations.
 That strict score is intentionally harsher and is the right lens for estimating
 how much the compatibility scorer, manifests, and normalization policy affect
-the headline gate metrics.
+the headline gate metrics. The scheduled upstream observe workflow uploads both
+the default compatibility scoreboard and a non-gating strict-scoring scoreboard
+so the two reads can be compared.
 
 These fixtures make regressions visible, but they are not a substitute for broad
 parallel runs against the official CDISC Validator or the Python rules engine on

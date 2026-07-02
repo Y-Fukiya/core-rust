@@ -159,14 +159,19 @@ Read these fields together:
 - `coverage`: supported cases divided by total discovered cases.
 - `native_engine_coverage`: non-hand-port supported coverage; this can include
   generic engine behavior, rule-specific engine semantics, compatibility
-  policy, and oracle-gap normalization. Use the provenance detail fields for a
-  narrower read.
+  policy. Use the provenance detail fields for a narrower read, and use
+  `scoring_policy` / `scoring_normalization_counts` to see scorer-side
+  oracle-gap identity normalization.
 - `rule_id_hand_port_coverage`: share of all discovered cases covered by
   supported rule-id hand-port execution.
 - `execution_provenance_detail`: case-level refinement of execution provenance.
   It separates `generic_engine`, `rule_specific_engine_semantics`,
-  `compatibility_policy`, `oracle_gap_normalized`, `rule_id_hand_port`, and
-  `unknown`.
+  `compatibility_policy`, `rule_id_hand_port`, and `unknown`.
+- `scoring_policy`: case-level scorer policy. `strict_identity` means the
+  official and candidate issue identities were compared without oracle-gap
+  identity relaxation. `oracle_gap_normalized` means a reviewed scorer-side
+  normalization was applied; see `scoring_normalizations` for the exact
+  normalization names.
 - `scoring_normalization_counts`: count of cases where the scorer applied
   compatibility identity normalization such as row-locator relaxation or
   output-context-variable alignment.
@@ -207,8 +212,9 @@ Aggregate `coverage` includes both native engine and rule-id hand-port supported
 cases. `native_engine_coverage` is retained for backward compatibility and means
 "not hand-port", not necessarily pure generic-engine semantics. Use the
 `Execution Provenance Detail` table to separate generic engine support from
-rule-specific engine semantics, compatibility policy, and oracle-gap
-normalization.
+rule-specific engine semantics and compatibility policy. Use `Scoring Policy`
+and `Scoring Normalizations` to identify supported cases whose match required
+oracle-gap identity normalization.
 
 Rule-id hand-port provenance is driven by
 `crates/core-api/src/open_rules_compat/hand_port_rule_ids.csv`, not by an inline
@@ -346,15 +352,17 @@ PR CI and large enough to catch real upstream integration regressions; the
 current subset is 47 rules / 278 cases. The selected rules intentionally cover
 the main execution provenance detail families: `generic_engine`,
 `rule_specific_engine_semantics`, `compatibility_policy`,
-`oracle_gap_normalized`, and `rule_id_hand_port`. It also includes
-representative reference distinct, record-count, USDM codelist, grouped
-distinct, and XHTML operation rules.
+and `rule_id_hand_port`, plus scoring-policy coverage for
+`oracle_gap_normalized` cases. It also includes representative reference
+distinct, record-count, USDM codelist, grouped distinct, and XHTML operation
+rules.
 
 The gap subset rule list lives in `tests/open_rules/curated-gap-rules.txt`.
 It is intentionally separate from the supported subset and keeps a small PR
 signal for accepted non-supported paths: `deferred_oracle_gap_skipped`,
 official fixture gaps, standard-filter oracle gaps, and `no_official_oracle`
-accounting. Full upstream observe/regression remains scheduled/manual.
+accounting. The current gap subset is 31 rules / 135 cases. Full upstream
+observe/regression remains scheduled/manual.
 
 When refreshing an accepted upstream baseline, generate it from a scoreboard
 with the canonicalizer rather than editing paths by hand:

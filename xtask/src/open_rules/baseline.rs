@@ -10,8 +10,9 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::score::{
-    issue_fingerprint_hash, ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket,
-    Scoreboard, ScoredCase,
+    execution_provenance_detail_for_case, issue_fingerprint_hash,
+    scoring_policy_for_normalizations, ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket,
+    Scoreboard, ScoredCase, ScoringPolicy,
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -55,6 +56,10 @@ pub struct BaselineDifference {
     pub baseline_execution_provenance_detail: Option<ExecutionProvenanceDetail>,
     #[serde(default)]
     pub current_execution_provenance_detail: Option<ExecutionProvenanceDetail>,
+    #[serde(default)]
+    pub baseline_scoring_policy: Option<ScoringPolicy>,
+    #[serde(default)]
+    pub current_scoring_policy: Option<ScoringPolicy>,
     #[serde(default)]
     pub baseline_official_issue_count: Option<usize>,
     #[serde(default)]
@@ -101,11 +106,13 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
                 &regression.baseline_bucket,
                 &regression.baseline_execution_provenance,
                 &regression.baseline_execution_provenance_detail,
+                &regression.baseline_scoring_policy,
             ),
             bucket_and_provenance(
                 &regression.current_bucket,
                 &regression.current_execution_provenance,
                 &regression.current_execution_provenance_detail,
+                &regression.current_scoring_policy,
             ),
             regression.message
         );
@@ -118,11 +125,13 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
                 &improvement.baseline_bucket,
                 &improvement.baseline_execution_provenance,
                 &improvement.baseline_execution_provenance_detail,
+                &improvement.baseline_scoring_policy,
             ),
             bucket_and_provenance(
                 &improvement.current_bucket,
                 &improvement.current_execution_provenance,
                 &improvement.current_execution_provenance_detail,
+                &improvement.current_scoring_policy,
             )
         );
     }
@@ -134,11 +143,13 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
                 &review.baseline_bucket,
                 &review.baseline_execution_provenance,
                 &review.baseline_execution_provenance_detail,
+                &review.baseline_scoring_policy,
             ),
             bucket_and_provenance(
                 &review.current_bucket,
                 &review.current_execution_provenance,
                 &review.current_execution_provenance_detail,
+                &review.current_scoring_policy,
             ),
             review.message
         );
@@ -151,11 +162,13 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
                 &warning.baseline_bucket,
                 &warning.baseline_execution_provenance,
                 &warning.baseline_execution_provenance_detail,
+                &warning.baseline_scoring_policy,
             ),
             bucket_and_provenance(
                 &warning.current_bucket,
                 &warning.current_execution_provenance,
                 &warning.current_execution_provenance_detail,
+                &warning.current_scoring_policy,
             ),
             warning.message
         );
@@ -188,6 +201,12 @@ fn canonicalize_scoreboard_for_baseline(mut scoreboard: Scoreboard) -> Scoreboar
         case.official_results_csv = canonicalize_scoreboard_path(&case.official_results_csv);
         case.candidate_report_csv = canonicalize_scoreboard_path(&case.candidate_report_csv);
         case.reason = case.reason.take().map(canonicalize_reason_text);
+        case.scoring_policy = scoring_policy_for_normalizations(&case.scoring_normalizations);
+        case.execution_provenance_detail = execution_provenance_detail_for_case(
+            &case.rule_id,
+            &case.execution_provenance,
+            &case.scoring_normalizations,
+        );
         case.missing_count = Some(case_missing_count(case));
         case.extra_count = Some(case_extra_count(case));
         case.issue_fingerprint_hash = Some(case_issue_fingerprint_hash(case));
@@ -238,6 +257,18 @@ fn canonicalize_scoreboard_path(path: &Path) -> PathBuf {
         .iter()
         .position(|component| component.as_os_str() == "target")
     {
+        if components
+            .get(index + 1)
+            .and_then(|component| component.as_os_str().to_str())
+            .is_some_and(|component| component.starts_with("open-rules-core-rs-"))
+        {
+            let mut path = PathBuf::from("target");
+            path.push("<core-rs-results-root>");
+            for component in &components[index + 2..] {
+                path.push(component.as_os_str());
+            }
+            return path;
+        }
         return components_to_path(&components[index..]);
     }
     if let Some(index) = components
@@ -364,6 +395,13 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(current_case),
                         "new failing case appeared",
                     ));
+                } else if !current_case.scoring_normalizations.is_empty() {
+                    review_required.push(difference(
+                        key,
+                        None,
+                        Some(current_case),
+                        "new case uses scoring normalizations",
+                    ));
                 }
             }
             (None, None) => {}
@@ -417,6 +455,14 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
             None,
             None,
             "no official oracle count increased",
+        ));
+    }
+    if scoring_normalization_counts_increased(baseline, current) {
+        review_required.push(difference(
+            "summary/scoring_normalization_counts".to_owned(),
+            None,
+            None,
+            "scoring normalization count increased",
         ));
     }
 
@@ -513,7 +559,6 @@ fn provenance_detail_requires_review(baseline: &ScoredCase, current: &ScoredCase
             ExecutionProvenanceDetail::GenericEngine
                 | ExecutionProvenanceDetail::RuleSpecificEngineSemantics
                 | ExecutionProvenanceDetail::CompatibilityPolicy
-                | ExecutionProvenanceDetail::OracleGapNormalized
                 | ExecutionProvenanceDetail::RuleIdHandPort
         )
     )
@@ -540,12 +585,6 @@ fn supported_match_provenance_changed(baseline: &ScoredCase, current: &ScoredCas
 }
 
 fn scoring_normalizations_require_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
-    if current.bucket != ScoreBucket::SupportedMatch {
-        return false;
-    }
-    if baseline.bucket != ScoreBucket::SupportedMatch {
-        return !current.scoring_normalizations.is_empty();
-    }
     normalized_scoring_normalizations(&baseline.scoring_normalizations)
         != normalized_scoring_normalizations(&current.scoring_normalizations)
 }
@@ -555,6 +594,25 @@ fn normalized_scoring_normalizations(values: &[String]) -> Vec<String> {
     values.sort();
     values.dedup();
     values
+}
+
+fn scoring_normalization_counts_increased(baseline: &Scoreboard, current: &Scoreboard) -> bool {
+    let baseline_counts = baseline
+        .summary
+        .scoring_normalization_counts
+        .iter()
+        .map(|entry| (entry.normalization.as_str(), entry.cases))
+        .collect::<BTreeMap<_, _>>();
+    current
+        .summary
+        .scoring_normalization_counts
+        .iter()
+        .any(|entry| {
+            entry.cases
+                > *baseline_counts
+                    .get(entry.normalization.as_str())
+                    .unwrap_or(&0)
+        })
 }
 
 fn same_bucket_issue_details_regressed(baseline: &ScoredCase, current: &ScoredCase) -> bool {
@@ -619,6 +677,8 @@ fn difference(
             .map(|case| case.execution_provenance_detail.clone()),
         current_execution_provenance_detail: current_case
             .map(|case| case.execution_provenance_detail.clone()),
+        baseline_scoring_policy: baseline_case.map(|case| case.scoring_policy.clone()),
+        current_scoring_policy: current_case.map(|case| case.scoring_policy.clone()),
         baseline_official_issue_count: baseline_case.and_then(|case| case.official_issue_count),
         current_official_issue_count: current_case.and_then(|case| case.official_issue_count),
         baseline_candidate_issue_count: baseline_case.and_then(|case| case.candidate_issue_count),
@@ -657,9 +717,10 @@ fn bucket_and_provenance(
     bucket: &Option<ScoreBucket>,
     provenance: &Option<ExecutionProvenance>,
     detail: &Option<ExecutionProvenanceDetail>,
+    scoring_policy: &Option<ScoringPolicy>,
 ) -> String {
     let bucket = bucket_name(bucket);
-    match (provenance, detail) {
+    let base = match (provenance, detail) {
         (Some(provenance), Some(detail)) => {
             format!(
                 "{bucket}/{}/{}",
@@ -670,6 +731,10 @@ fn bucket_and_provenance(
         (Some(provenance), None) => format!("{bucket}/{}", provenance_name(provenance)),
         (None, Some(detail)) => format!("{bucket}/{}", detail.as_str()),
         (None, None) => bucket.to_owned(),
+    };
+    match scoring_policy {
+        Some(scoring_policy) => format!("{base}/{}", scoring_policy.as_str()),
+        None => base,
     }
 }
 
@@ -708,6 +773,7 @@ mod tests {
                 execution_provenance: ExecutionProvenance::Unknown,
                 execution_provenance_detail:
                     crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
+                scoring_policy: ScoringPolicy::StrictIdentity,
                 bucket,
                 reason: None,
                 skipped_reasons: Vec::new(),
@@ -986,6 +1052,71 @@ mod tests {
     }
 
     #[test]
+    fn baseline_requires_review_when_deferred_normalizations_change() {
+        let mut baseline = scoreboard(ScoreBucket::DeferredOracleGapSkipped);
+        baseline.cases[0].scoring_normalizations = vec!["row_locator_identity_relaxed".to_owned()];
+        let mut current = scoreboard(ScoreBucket::DeferredOracleGapSkipped);
+        current.cases[0].scoring_normalizations = vec![
+            "row_locator_identity_relaxed".to_owned(),
+            "output_context_variable_aligned".to_owned(),
+        ];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.message == "scoring normalizations require review"
+                && review.baseline_bucket == Some(ScoreBucket::DeferredOracleGapSkipped)
+                && review.current_bucket == Some(ScoreBucket::DeferredOracleGapSkipped)
+        }));
+    }
+
+    #[test]
+    fn baseline_requires_review_when_new_case_uses_normalization() {
+        let baseline = Scoreboard::new(
+            UpstreamInfo {
+                repo: "https://github.com/cdisc-org/cdisc-open-rules.git".to_owned(),
+                expected_sha: Some("expected".to_owned()),
+                observed_sha: Some("expected".to_owned()),
+                lock_path: "tests/open_rules/upstream.lock".into(),
+                warnings: Vec::new(),
+            },
+            Vec::new(),
+        );
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.cases[0].scoring_normalizations =
+            vec!["output_context_variable_aligned".to_owned()];
+        current.summary = crate::open_rules::score::ScoreSummary::from_cases(&current.cases);
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.message == "new case uses scoring normalizations"
+                && review.case_key == "Published/CORE-OPEN-0001/negative/01"
+        }));
+    }
+
+    #[test]
+    fn baseline_requires_review_when_summary_normalization_count_increases() {
+        let baseline = scoreboard(ScoreBucket::SupportedMatch);
+        let mut current = scoreboard(ScoreBucket::SupportedMatch);
+        current.summary.scoring_normalization_counts =
+            vec![crate::open_rules::score::ScoringNormalizationSummary {
+                normalization: "output_context_variable_aligned".to_owned(),
+                cases: 1,
+            }];
+
+        let report = compare_scoreboards(&baseline, &current);
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.case_key == "summary/scoring_normalization_counts"
+                && review.message == "scoring normalization count increased"
+        }));
+    }
+
+    #[test]
     fn baseline_requires_review_when_improvement_uses_normalization() {
         let baseline = scoreboard(ScoreBucket::SupportedMismatch);
         let mut current = scoreboard(ScoreBucket::SupportedMatch);
@@ -1064,7 +1195,7 @@ mod tests {
         assert_eq!(
             canonicalized.cases[0].candidate_report_csv,
             PathBuf::from(
-                "target/open-rules-core-rs-upstream/Published/CORE-OPEN-0001/negative/01/report.csv"
+                "target/<core-rs-results-root>/Published/CORE-OPEN-0001/negative/01/report.csv"
             )
         );
         assert_eq!(

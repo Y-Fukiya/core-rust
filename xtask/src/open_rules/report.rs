@@ -104,7 +104,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             summary.unknown_provenance_coverage,
         ),
         String::new(),
-        "Aggregate coverage includes native-engine and rule-id hand-port supported cases. Native engine coverage means non-hand-port coverage; it may include rule-specific engine semantics, compatibility policy, and oracle-gap normalization. Use the Execution Provenance Detail table to estimate generic-engine support."
+        "Aggregate coverage includes native-engine and rule-id hand-port supported cases. Native engine coverage means non-hand-port execution; it may include rule-specific engine semantics and compatibility policy. Use the Execution Provenance Detail table to estimate generic-engine support, and use Scoring Policy / Scoring Normalizations to see oracle-gap identity normalization."
             .to_owned(),
         String::new(),
         "## Execution Provenance Detail".to_owned(),
@@ -120,6 +120,24 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             detail.supported_accuracy,
             detail.coverage,
         ));
+    }
+    if !summary.by_scoring_policy.is_empty() {
+        lines.extend([
+            String::new(),
+            "## Scoring Policy".to_owned(),
+            String::new(),
+            "| Policy | Supported match | Supported mismatch | Accuracy | Coverage |".to_owned(),
+            "|---|---:|---:|---:|---:|".to_owned(),
+        ]);
+        for policy in &summary.by_scoring_policy {
+            lines.push(provenance_row(
+                policy.policy.as_str(),
+                policy.supported_match,
+                policy.supported_mismatch,
+                policy.supported_accuracy,
+                policy.coverage,
+            ));
+        }
     }
     if !summary.scoring_normalization_counts.is_empty() {
         lines.extend([
@@ -438,7 +456,7 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::open_rules::score::{
-        ExecutionProvenance, ScoreBucket, ScoreSummary, Scoreboard, ScoredCase,
+        ExecutionProvenance, ScoreBucket, ScoreSummary, Scoreboard, ScoredCase, ScoringPolicy,
     };
     use crate::open_rules::upstream::UpstreamInfo;
 
@@ -467,6 +485,7 @@ mod tests {
                     execution_provenance: ExecutionProvenance::NativeEngine,
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::GenericEngine,
+                    scoring_policy: ScoringPolicy::StrictIdentity,
                     bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
@@ -492,6 +511,7 @@ mod tests {
                     execution_provenance: ExecutionProvenance::Unknown,
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
+                    scoring_policy: ScoringPolicy::StrictIdentity,
                     bucket: ScoreBucket::SkippedUnsupported,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
@@ -514,7 +534,8 @@ mod tests {
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::NativeEngine,
                     execution_provenance_detail:
-                        crate::open_rules::score::ExecutionProvenanceDetail::OracleGapNormalized,
+                        crate::open_rules::score::ExecutionProvenanceDetail::GenericEngine,
+                    scoring_policy: ScoringPolicy::OracleGapNormalized,
                     bucket: ScoreBucket::DeferredOracleGapMismatch,
                     reason: Some(
                         "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
@@ -543,6 +564,7 @@ mod tests {
                     execution_provenance: ExecutionProvenance::RuleIdHandPort,
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::RuleIdHandPort,
+                    scoring_policy: ScoringPolicy::StrictIdentity,
                     bucket: ScoreBucket::SupportedMatch,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
@@ -582,8 +604,10 @@ mod tests {
         assert!(markdown.contains("## Execution Provenance"));
         assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 25.00% |"));
         assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 25.00% |"));
-        assert!(markdown.contains("Native engine coverage means non-hand-port coverage"));
+        assert!(markdown.contains("Native engine coverage means non-hand-port execution"));
         assert!(markdown.contains("Use the Execution Provenance Detail table"));
+        assert!(markdown.contains("## Scoring Policy"));
+        assert!(markdown.contains("| strict_identity | 1 | 1 | 50.00% | 50.00% |"));
         assert!(markdown.contains("provenance=native_engine"));
         assert!(markdown.contains(
             "- `CORE-000005` negative/01 provenance=native_engine official=1 candidate=1"

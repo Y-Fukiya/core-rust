@@ -51,6 +51,15 @@
         "coverage": 1.0
       }
     ],
+    "by_scoring_policy": [
+      {
+        "policy": "strict_identity",
+        "supported_match": 2,
+        "supported_mismatch": 0,
+        "supported_accuracy": 1.0,
+        "coverage": 1.0
+      }
+    ],
     "scoring_normalization_counts": []
   },
   "gate": {
@@ -107,6 +116,15 @@
             "coverage": 1.0
           }
         ],
+        "by_scoring_policy": [
+          {
+            "policy": "strict_identity",
+            "supported_match": 2,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ],
         "scoring_normalization_counts": []
       }
     }
@@ -151,6 +169,15 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
+            "supported_match": 1,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ],
+        "by_scoring_policy": [
+          {
+            "policy": "strict_identity",
             "supported_match": 1,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
@@ -205,6 +232,15 @@
             "coverage": 1.0
           }
         ],
+        "by_scoring_policy": [
+          {
+            "policy": "strict_identity",
+            "supported_match": 1,
+            "supported_mismatch": 0,
+            "supported_accuracy": 1.0,
+            "coverage": 1.0
+          }
+        ],
         "scoring_normalization_counts": []
       }
     }
@@ -217,9 +253,10 @@
       "case_id": "01",
       "case_dir": "Published/CORE-OPEN-0001/negative/01",
       "official_results_csv": "Published/CORE-OPEN-0001/negative/01/results/results.csv",
-      "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/negative/01/report.csv",
+      "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-OPEN-0001/negative/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
       "official_issue_count": 1,
@@ -235,9 +272,10 @@
       "case_id": "01",
       "case_dir": "Published/CORE-OPEN-0001/positive/01",
       "official_results_csv": "Published/CORE-OPEN-0001/positive/01/results/results.csv",
-      "candidate_report_csv": "target/open-rules-core-rs-fixture/Published/CORE-OPEN-0001/positive/01/report.csv",
+      "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-OPEN-0001/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
+      "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
       "official_issue_count": 0,
