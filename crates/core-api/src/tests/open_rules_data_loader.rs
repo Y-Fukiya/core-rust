@@ -1,6 +1,6 @@
 use std::fs;
 
-use core_engine::ExecutionStatus;
+use core_engine::{ExecutionStatus, SkippedReason};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -173,6 +173,166 @@ fn run_validation_treats_safe_usdm_missing_nested_columns_as_null() {
     assert_eq!(outcome.results.len(), 1);
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
     assert_eq!(outcome.results[0].skipped_reason, None);
+}
+
+#[test]
+fn run_validation_skips_missing_column_oracle_gap_rules() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    fs::write(
+        rules_dir.join("CORE-000017.json"),
+        r#"{
+  "Core": { "Id": "CORE-000017", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["AE", "CM"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "POOLID",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "USUBJID has oracle-specific missing-column semantics" }
+}"#,
+    )
+    .expect("write rule");
+    fs::write(
+        rules_dir.join("CORE-000092.json"),
+        r#"{
+  "Core": { "Id": "CORE-000092", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["EC"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "ECSTAT",
+    "operator": "not_equal_to",
+    "value": ""
+  },
+  "Outcome": { "Message": "ECSTAT has oracle-specific missing-column semantics" }
+}"#,
+    )
+    .expect("write second rule");
+    fs::write(
+        rules_dir.join("CORE-000016.json"),
+        r#"{
+  "Core": { "Id": "CORE-000016", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["EC"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "name": "ECMOOD",
+    "operator": "empty"
+  },
+  "Outcome": { "Message": "ECMOOD has oracle-specific missing-column semantics" }
+}"#,
+    )
+    .expect("write empty missing-column rule");
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": [""]
+      }
+    },
+    {
+      "filename": "ec.xpt",
+      "domain": "EC",
+      "records": {
+        "USUBJID": ["S1"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 3);
+    assert!(outcome
+        .results
+        .iter()
+        .all(|result| result.execution_status == ExecutionStatus::Skipped));
+    assert!(outcome
+        .results
+        .iter()
+        .all(|result| result.skipped_reason == Some(SkippedReason::OracleSemanticsGap)));
+}
+
+#[test]
+fn run_validation_skips_core_000674_missing_placeholder_column_as_oracle_gap() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000674.json"),
+        r#"{
+  "Core": { "Id": "CORE-000674", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["IQ"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {
+    "all": [
+      { "name": "--VALTRG", "operator": "matches_regex", "value": "^-?([1-9]\\d*|0)(\\.\\d+)?$" },
+      { "name": "--VALMAX", "operator": "matches_regex", "value": "^.+$" },
+      { "name": "--VALTRG", "operator": "greater_than", "value": "--VALMAX" }
+    ]
+  },
+  "Outcome": { "Message": "--VALTRG must be <= --VALMAX" }
+}"#,
+    )
+    .expect("write core 674 rule");
+
+    let dataset_path = data_dir.join("iq.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "iq.csv",
+      "domain": "IQ",
+      "records": {
+        "IQVALTRG": [1]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write core 674 data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    assert_eq!(
+        outcome.results[0].skipped_reason,
+        Some(SkippedReason::OracleSemanticsGap)
+    );
 }
 
 #[test]

@@ -7,6 +7,258 @@ use tempfile::tempdir;
 use crate::{run_validation, ValidateRequest};
 
 #[test]
+fn run_validation_skips_core_000039_missing_svpresp_as_oracle_gap() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000039.json"),
+        r#"{
+  "Core": { "Id": "CORE-000039", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["SV", "TV"] }, "Classes": {} },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    { "domain": "TV", "id": "$tv_visitnum", "name": "VISITNUM", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "SVPRESP", "operator": "equal_to", "value": "Y" },
+      { "name": "VISITNUM", "operator": "is_not_contained_by", "value": "$tv_visitnum" }
+    ]
+  },
+  "Outcome": {
+    "Message": "VISITNUM for planned visit is not in TV.",
+    "Output Variables": ["SVPRESP", "VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write core 39 rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "tv.csv",
+      "domain": "TV",
+      "records": {
+        "VISITNUM": ["1", "2"]
+      }
+    },
+    {
+      "filename": "sv.csv",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1", "S2"],
+        "SVSEQ": [1, 1],
+        "VISITNUM": [1, 99]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write core 39 data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    assert_eq!(
+        outcome.results[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    assert_eq!(
+        outcome.results[0].skipped_reason,
+        Some(SkippedReason::OracleSemanticsGap)
+    );
+}
+
+#[test]
+fn run_validation_executes_grouped_reference_distinct_without_aliases() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000168.json"),
+        r#"{
+  "Core": { "Id": "CORE-000168", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["SV"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    { "domain": "SV", "group": ["USUBJID"], "id": "$sv_visitnum", "name": "VISITNUM", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "VISITNUM", "operator": "non_empty" },
+      { "name": "VISITNUM", "operator": "is_not_contained_by", "value": "$sv_visitnum" }
+    ]
+  },
+  "Outcome": {
+    "Message": "VISITNUM should be among subject-level SV.VISITNUM values.",
+    "Output Variables": ["VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write grouped reference distinct rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "sv.csv",
+      "domain": "SV",
+      "records": {
+        "USUBJID": ["S1", "S1", "S2"],
+        "VISITNUM": ["1", "1.01", "2"],
+        "SVPRESP": ["Y", "", "Y"]
+      }
+    },
+    {
+      "filename": "lb.csv",
+      "domain": "LB",
+      "records": {
+        "USUBJID": ["S1", "S1", "S2"],
+        "LBSEQ": [1, 2, 3],
+        "VISITNUM": ["1.01", "3", "2"]
+      }
+    },
+    {
+      "filename": "tv.csv",
+      "domain": "TV",
+      "records": {
+        "VISITNUM": ["3"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write grouped reference distinct data");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let lb = outcome
+        .results
+        .iter()
+        .find(|result| result.dataset == "LB")
+        .expect("LB result");
+    assert_eq!(lb.execution_status, ExecutionStatus::Failed);
+    assert_eq!(lb.skipped_reason, None);
+    assert_eq!(lb.error_count, 1, "{:?}", lb.errors);
+    assert_eq!(lb.errors[0].row, Some(2));
+
+    assert!(
+        outcome.results.iter().all(|result| result.dataset != "TV"),
+        "datasets without the grouped reference key are not applicable"
+    );
+}
+
+#[test]
+fn run_validation_reference_distinct_keeps_decimal_source_values_from_open_rules_csv() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000168.json"),
+        r#"{
+  "Core": { "Id": "CORE-000168", "Status": "Published" },
+  "Scope": { "Domains": { "Exclude": ["SV"] }, "Classes": { "Include": ["ALL"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [
+    { "domain": "SV", "group": ["USUBJID"], "id": "$sv_visitnum", "name": "VISITNUM", "operator": "distinct" }
+  ],
+  "Check": {
+    "all": [
+      { "name": "VISITNUM", "operator": "non_empty" },
+      { "name": "VISITNUM", "operator": "is_not_contained_by", "value": "$sv_visitnum" }
+    ]
+  },
+  "Outcome": {
+    "Message": "VISITNUM should be among subject-level SV.VISITNUM values.",
+    "Output Variables": ["VISITNUM"]
+  }
+}"#,
+    )
+    .expect("write grouped reference distinct rule");
+
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nsv,Subject Visits\nlb,Laboratory Test Results\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nSV,USUBJID,Unique Subject Identifier,Char,20\nSV,SVSEQ,Sequence Number,Num,8\nSV,VISITNUM,Visit Number,Num,8\nSV,SVPRESP,Planned Visit Flag,Char,1\nLB,USUBJID,Unique Subject Identifier,Char,20\nLB,LBSEQ,Sequence Number,Num,8\nLB,VISITNUM,Visit Number,Num,8\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("sv.csv"),
+        "USUBJID,SVSEQ,VISITNUM,SVPRESP\nCDISC008,25,1.01,\n",
+    )
+    .expect("write sv csv");
+    fs::write(
+        data_dir.join("lb.csv"),
+        "USUBJID,LBSEQ,VISITNUM\nCDISC008,652,1.01\nCDISC008,665,99\n",
+    )
+    .expect("write lb csv");
+
+    let loaded = core_data::load_open_rules_data_dir(&data_dir).expect("load fixture data");
+    let sv = loaded
+        .iter()
+        .find(|dataset| dataset.metadata.name == "SV")
+        .expect("SV dataset");
+    assert_eq!(
+        core_data::dataset_column_values(sv, "VISITNUM").expect("SV VISITNUM"),
+        vec![serde_json::json!(1.01)]
+    );
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![data_dir.clone()],
+        open_rules_oracle_compat: true,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let lb = outcome
+        .results
+        .iter()
+        .find(|result| result.dataset == "LB")
+        .expect("LB result");
+    assert_eq!(lb.execution_status, ExecutionStatus::Failed);
+    assert_eq!(lb.skipped_reason, None);
+    assert_eq!(lb.error_count, 1, "{:?}", lb.errors);
+    assert_eq!(lb.errors[0].row, Some(2), "{:?}", lb.errors);
+}
+
+#[test]
 fn run_validation_executes_core_000172_reference_distinct_operation() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
