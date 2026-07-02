@@ -67,3 +67,26 @@ jobs:
           cargo run -p xtask -- open-rules baseline \
             --scoreboard target/open-rules-scoreboard-fixture/scoreboard.json \
             --baseline tests/open_rules/baseline.json
+
+      - name: Checkout pinned cdisc-open-rules for curated subset
+        run: |
+          upstream_repo="$(sed -n 's/^repo=//p' tests/open_rules/upstream.lock)"
+          upstream_sha="$(sed -n 's/^sha=//p' tests/open_rules/upstream.lock)"
+          git clone "$upstream_repo" ../cdisc-open-rules
+          git -C ../cdisc-open-rules checkout "$upstream_sha"
+
+      - name: Open Rules curated upstream subset oracle
+        run: |
+          mkdir -p ../cdisc-open-rules-curated/Published
+          for rule_id in CORE-000001 CORE-000007 CORE-000012 CORE-000047 CORE-000119; do
+            cp -R "../cdisc-open-rules/Published/${rule_id}" ../cdisc-open-rules-curated/Published/
+          done
+          cargo run -p xtask -- open-rules run-score \
+            --open-rules-root ../cdisc-open-rules-curated \
+            --core-rs-results-root target/open-rules-core-rs-curated-upstream \
+            --out target/open-rules-scoreboard-curated-upstream \
+            --min-coverage 1.0 \
+            --max-skipped-unsupported 0
+          cargo run -p xtask -- open-rules baseline \
+            --scoreboard target/open-rules-scoreboard-curated-upstream/scoreboard.json \
+            --baseline tests/open_rules/curated-upstream-baseline.json

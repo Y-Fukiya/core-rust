@@ -316,12 +316,20 @@ Baseline comparison is stricter: increases in either
 `deferred_oracle_gap_skipped` or `no_official_oracle` are review-required and
 make the baseline command exit non-zero.
 
-CI runs the repository-local curated executable fixture only. It does not
-download or vendor the full upstream `cdisc-open-rules` repository, so normal
-pull requests are not blocked by network access or upstream drift. The curated
-fixture gate compares against `tests/open_rules/baseline.json`, which includes
-provenance detail and scoring-normalization fields so schema regressions are
-caught in PR CI. Full upstream observe/regression remains scheduled/manual.
+CI runs two lightweight gates:
+
+- the repository-local curated executable fixture, compared against
+  `tests/open_rules/baseline.json`
+- a pinned upstream curated subset copied from `cdisc-open-rules` at
+  `tests/open_rules/upstream.lock`, compared against
+  `tests/open_rules/curated-upstream-baseline.json`
+
+The upstream subset intentionally covers the main execution provenance detail
+families: `generic_engine`, `rule_specific_engine_semantics`,
+`compatibility_policy`, `oracle_gap_normalized`, and `rule_id_hand_port`. It is
+small enough for PR CI but stronger than the local fixture because it uses real
+upstream rule/data/oracle directories. Full upstream observe/regression remains
+scheduled/manual.
 
 The full upstream oracle run is fixed as a separate GitHub Actions workflow,
 `Open Rules Upstream`. It can be started manually with `workflow_dispatch` and
