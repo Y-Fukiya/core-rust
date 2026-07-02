@@ -1,6 +1,6 @@
 # Open Rules Standard Applicability Gap Candidates
 
-Snapshot: `target/open-rules-scoreboard-upstream-v29/scoreboard.json`
+Snapshot: `target/open-rules-scoreboard-upstream-v31/scoreboard.json`
 
 These cases are classified as `standard_filter_oracle_gap` and excluded from
 supported accuracy. They are skipped because the fixture standard/version does

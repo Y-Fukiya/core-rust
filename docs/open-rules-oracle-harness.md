@@ -90,7 +90,7 @@ supported matches and must not be used as native engine conformance evidence.
 The current full-upstream inventory is maintained in
 `docs/open-rules-deferred-gap-inventory.md`.
 
-As of the v29 upstream scoreboard, the remaining 55
+As of the v31 upstream scoreboard, the remaining 55
 `deferred_oracle_gap_skipped` cases are split into:
 
 - 51 `official_oracle_fixture_gap` cases, tracked as upstream oracle/data review
@@ -101,7 +101,7 @@ As of the v29 upstream scoreboard, the remaining 55
   `docs/open-rules-standard-filter-gap-candidates.md`.
 
 There are no remaining `required_value_metadata` or `defer_distinct_operation`
-skipped cases in the v29 inventory. Those previously ambiguous cases were
+skipped cases in the v31 inventory. Those previously ambiguous cases were
 reclassified after targeted review showed that returning them to supported
 scoring would either contradict the official oracle or create a deferred
 mismatch.

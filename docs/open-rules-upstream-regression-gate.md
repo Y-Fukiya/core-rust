@@ -28,7 +28,7 @@ The full upstream baseline should warn, but not fail, when:
 
 - `deferred_oracle_gap_skipped` increases
 
-The accepted v29 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
+The accepted v31 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
 `official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.
 These are not supported matches and are not conformance evidence. Treat them as
 review backlog that must not grow silently. New cases in this bucket should be

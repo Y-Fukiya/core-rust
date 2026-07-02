@@ -115,6 +115,10 @@ pub(crate) fn usdm_jsonata_execution_datasets(
         ));
     }
 
+    if matches!(rule.core_id.as_str(), "CORE-001016") {
+        return Some(required_dataset(rule, datasets, "ScheduleTimeline"));
+    }
+
     if is_usdm_timeline_jsonata_rule(rule) {
         return Some(required_dataset(rule, datasets, "StudyDesign"));
     }
