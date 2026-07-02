@@ -9,7 +9,8 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::open_rules::score::{
-    issue_fingerprint_hash, ExecutionProvenance, ScoreBucket, Scoreboard, ScoredCase,
+    issue_fingerprint_hash, ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket,
+    Scoreboard, ScoredCase,
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -40,6 +41,10 @@ pub struct BaselineDifference {
     pub baseline_execution_provenance: Option<ExecutionProvenance>,
     #[serde(default)]
     pub current_execution_provenance: Option<ExecutionProvenance>,
+    #[serde(default)]
+    pub baseline_execution_provenance_detail: Option<ExecutionProvenanceDetail>,
+    #[serde(default)]
+    pub current_execution_provenance_detail: Option<ExecutionProvenanceDetail>,
     #[serde(default)]
     pub baseline_official_issue_count: Option<usize>,
     #[serde(default)]
@@ -81,10 +86,12 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             bucket_and_provenance(
                 &regression.baseline_bucket,
                 &regression.baseline_execution_provenance,
+                &regression.baseline_execution_provenance_detail,
             ),
             bucket_and_provenance(
                 &regression.current_bucket,
                 &regression.current_execution_provenance,
+                &regression.current_execution_provenance_detail,
             ),
             regression.message
         );
@@ -96,10 +103,12 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             bucket_and_provenance(
                 &improvement.baseline_bucket,
                 &improvement.baseline_execution_provenance,
+                &improvement.baseline_execution_provenance_detail,
             ),
             bucket_and_provenance(
                 &improvement.current_bucket,
                 &improvement.current_execution_provenance,
+                &improvement.current_execution_provenance_detail,
             )
         );
     }
@@ -110,8 +119,13 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             bucket_and_provenance(
                 &review.baseline_bucket,
                 &review.baseline_execution_provenance,
+                &review.baseline_execution_provenance_detail,
             ),
-            bucket_and_provenance(&review.current_bucket, &review.current_execution_provenance,),
+            bucket_and_provenance(
+                &review.current_bucket,
+                &review.current_execution_provenance,
+                &review.current_execution_provenance_detail,
+            ),
             review.message
         );
     }
@@ -122,10 +136,12 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
             bucket_and_provenance(
                 &warning.baseline_bucket,
                 &warning.baseline_execution_provenance,
+                &warning.baseline_execution_provenance_detail,
             ),
             bucket_and_provenance(
                 &warning.current_bucket,
                 &warning.current_execution_provenance,
+                &warning.current_execution_provenance_detail,
             ),
             warning.message
         );
@@ -180,6 +196,13 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
                         Some(baseline_case),
                         Some(current_case),
                         "execution provenance requires review",
+                    ));
+                } else if provenance_detail_requires_review(baseline_case, current_case) {
+                    review_required.push(difference(
+                        key,
+                        Some(baseline_case),
+                        Some(current_case),
+                        "execution provenance detail requires review",
                     ));
                 } else if bucket_transition_requires_review(baseline_case, current_case) {
                     review_required.push(difference(
@@ -357,6 +380,29 @@ fn provenance_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bo
         && current.execution_provenance == ExecutionProvenance::NativeEngine
 }
 
+fn provenance_detail_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
+    if baseline.bucket != ScoreBucket::SupportedMatch
+        || current.bucket != ScoreBucket::SupportedMatch
+        || baseline.execution_provenance_detail == current.execution_provenance_detail
+    {
+        return false;
+    }
+    !matches!(
+        (
+            &baseline.execution_provenance_detail,
+            &current.execution_provenance_detail
+        ),
+        (
+            ExecutionProvenanceDetail::Unknown,
+            ExecutionProvenanceDetail::GenericEngine
+                | ExecutionProvenanceDetail::RuleSpecificEngineSemantics
+                | ExecutionProvenanceDetail::CompatibilityPolicy
+                | ExecutionProvenanceDetail::OracleGapNormalized
+                | ExecutionProvenanceDetail::RuleIdHandPort
+        )
+    )
+}
+
 fn bucket_transition_requires_review(baseline: &ScoredCase, current: &ScoredCase) -> bool {
     baseline.bucket == ScoreBucket::SupportedMismatch
         && current.bucket == ScoreBucket::DeferredOracleGapMismatch
@@ -435,6 +481,10 @@ fn difference(
         current_bucket: current_case.map(|case| case.bucket.clone()),
         baseline_execution_provenance: baseline_case.map(|case| case.execution_provenance.clone()),
         current_execution_provenance: current_case.map(|case| case.execution_provenance.clone()),
+        baseline_execution_provenance_detail: baseline_case
+            .map(|case| case.execution_provenance_detail.clone()),
+        current_execution_provenance_detail: current_case
+            .map(|case| case.execution_provenance_detail.clone()),
         baseline_official_issue_count: baseline_case.and_then(|case| case.official_issue_count),
         current_official_issue_count: current_case.and_then(|case| case.official_issue_count),
         baseline_candidate_issue_count: baseline_case.and_then(|case| case.candidate_issue_count),
@@ -466,11 +516,20 @@ fn bucket_name(bucket: &Option<ScoreBucket>) -> &'static str {
 fn bucket_and_provenance(
     bucket: &Option<ScoreBucket>,
     provenance: &Option<ExecutionProvenance>,
+    detail: &Option<ExecutionProvenanceDetail>,
 ) -> String {
     let bucket = bucket_name(bucket);
-    match provenance {
-        Some(provenance) => format!("{bucket}/{}", provenance_name(provenance)),
-        None => bucket.to_owned(),
+    match (provenance, detail) {
+        (Some(provenance), Some(detail)) => {
+            format!(
+                "{bucket}/{}/{}",
+                provenance_name(provenance),
+                detail.as_str()
+            )
+        }
+        (Some(provenance), None) => format!("{bucket}/{}", provenance_name(provenance)),
+        (None, Some(detail)) => format!("{bucket}/{}", detail.as_str()),
+        (None, None) => bucket.to_owned(),
     }
 }
 
@@ -530,6 +589,17 @@ mod tests {
     ) -> Scoreboard {
         let mut scoreboard = scoreboard(bucket);
         scoreboard.cases[0].execution_provenance = execution_provenance;
+        scoreboard.summary = crate::open_rules::score::ScoreSummary::from_cases(&scoreboard.cases);
+        scoreboard
+    }
+
+    fn scoreboard_with_provenance_detail(
+        bucket: ScoreBucket,
+        execution_provenance_detail: ExecutionProvenanceDetail,
+    ) -> Scoreboard {
+        let mut scoreboard = scoreboard(bucket);
+        scoreboard.cases[0].execution_provenance = ExecutionProvenance::NativeEngine;
+        scoreboard.cases[0].execution_provenance_detail = execution_provenance_detail;
         scoreboard.summary = crate::open_rules::score::ScoreSummary::from_cases(&scoreboard.cases);
         scoreboard
     }
@@ -742,6 +812,29 @@ mod tests {
         assert!(report.improvements.is_empty());
         assert!(report.regressions.is_empty());
         assert!(report.review_required.is_empty());
+    }
+
+    #[test]
+    fn baseline_fails_when_supported_match_detail_requires_review() {
+        let report = compare_scoreboards(
+            &scoreboard_with_provenance_detail(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenanceDetail::GenericEngine,
+            ),
+            &scoreboard_with_provenance_detail(
+                ScoreBucket::SupportedMatch,
+                ExecutionProvenanceDetail::OracleGapNormalized,
+            ),
+        );
+
+        assert!(report.should_fail());
+        assert!(report.review_required.iter().any(|review| {
+            review.message == "execution provenance detail requires review"
+                && review.baseline_execution_provenance_detail
+                    == Some(ExecutionProvenanceDetail::GenericEngine)
+                && review.current_execution_provenance_detail
+                    == Some(ExecutionProvenanceDetail::OracleGapNormalized)
+        }));
     }
 
     #[test]

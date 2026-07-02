@@ -13,6 +13,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 core-api.workspace = true
+core-engine.workspace = true
 core-report.workspace = true
 
 [dev-dependencies]
