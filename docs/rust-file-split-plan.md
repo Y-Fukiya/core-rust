@@ -5,10 +5,10 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 8719 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 8720 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
 | `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
-| `crates/core-api/src/tests/open_rules_usdm.rs` | 4519 | Continue splitting USDM fixture families into focused sibling modules. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 4160 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
 
@@ -48,6 +48,9 @@ still too large to review safely:
   and row-scope regression tests.
 - `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
   join regression tests.
+- `core-api/src/tests/open_rules_usdm_activity.rs`: USDM activity child id,
+  children/detail conflict, child ordering, and biomedical concept/category
+  overlap regression tests.
 - `core-api/src/tests/open_rules_usdm_narrative.rs`: USDM narrative content
   JSONata regression tests.
 - `core-api/src/tests/open_rules_dates.rs`: Open Rules date, partial-date,
@@ -94,9 +97,8 @@ still too large to review safely:
 
 The next low-risk code slice is:
 
-- move the next cohesive row-scope or remaining match-dataset fixture family
-  from `core-api/src/tests.rs` into an existing `tests/open_rules_*.rs`
-  module,
+- move the next cohesive USDM fixture family from
+  `core-api/src/tests/open_rules_usdm.rs` into a focused sibling module,
   or split the next pure USDM collector family from `core-data/src/lib.rs`
 - prefer code that already has focused tests and does not require behavior
   changes

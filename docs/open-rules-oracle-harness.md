@@ -106,6 +106,12 @@ reclassified after targeted review showed that returning them to supported
 scoring would either contradict the official oracle or create a deferred
 mismatch.
 
+Positive-zero probe rule ids are tracked separately as manifest promotion
+guards, not as active accepted-scoreboard failures. The current baseline has no
+active positive-zero skipped or mismatched cases; see
+`docs/open-rules-positive-zero-probe-inventory.md` for the review rule before
+removing entries from that manifest category.
+
 For reviewed row-locator oracle-gap families, scoring may ignore record locator
 fields (`row`, `usubjid`, and `seq`) while still comparing rule id, dataset,
 domain, variables, and multiset counts. This is limited to manifest-backed
