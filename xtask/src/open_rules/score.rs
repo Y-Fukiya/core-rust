@@ -9,7 +9,11 @@ use crate::open_rules::normalize::{normalize_csv, normalize_scalar, IssueKey, Re
 use crate::open_rules::report::write_scoreboard;
 use crate::open_rules::upstream::{load_upstream_info, UpstreamInfo};
 
+mod provenance;
 mod summary;
+pub use provenance::{
+    execution_provenance_for_rule_id, ExecutionProvenance, ExecutionProvenanceDetail,
+};
 pub use summary::{GroupSummary, ScoreGate, ScoreSummary};
 
 type IssueSignature = (String, String, String, Vec<String>);
@@ -52,15 +56,6 @@ pub enum ScoreBucket {
     HarnessError,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionProvenance {
-    NativeEngine,
-    RuleIdHandPort,
-    #[default]
-    Unknown,
-}
-
 impl ScoreBucket {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -76,16 +71,6 @@ impl ScoreBucket {
     }
 }
 
-impl ExecutionProvenance {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::NativeEngine => "native_engine",
-            Self::RuleIdHandPort => "rule_id_hand_port",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScoredCase {
     pub scope: String,
@@ -97,6 +82,8 @@ pub struct ScoredCase {
     pub candidate_report_csv: PathBuf,
     #[serde(default)]
     pub execution_provenance: ExecutionProvenance,
+    #[serde(default)]
+    pub execution_provenance_detail: ExecutionProvenanceDetail,
     pub bucket: ScoreBucket,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -160,6 +147,8 @@ pub fn relative_candidate_report_path(case: &OpenRulesCase) -> PathBuf {
 
 fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
     let candidate_report_csv = core_rs_results_root.join(relative_candidate_report_path(case));
+    let execution_provenance =
+        provenance::candidate_execution_provenance(case, &candidate_report_csv);
     let base = ScoredCase {
         scope: case.scope.clone(),
         rule_id: case.rule_id.clone(),
@@ -168,7 +157,12 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         case_dir: case.case_dir.clone(),
         official_results_csv: case.official_results_csv.clone(),
         candidate_report_csv: candidate_report_csv.clone(),
-        execution_provenance: candidate_execution_provenance(case, &candidate_report_csv),
+        execution_provenance: execution_provenance.clone(),
+        execution_provenance_detail: provenance::execution_provenance_detail_for_case(
+            &case.rule_id,
+            &execution_provenance,
+            &[],
+        ),
         bucket: ScoreBucket::HarnessError,
         reason: None,
         skipped_reasons: Vec::new(),
@@ -288,6 +282,11 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         &mut official_issues,
         &mut candidate_issues,
     );
+    let execution_provenance_detail = provenance::execution_provenance_detail_for_case(
+        &case.rule_id,
+        &base.execution_provenance,
+        &scoring_normalizations,
+    );
     let official_issue_count = official_issues.len();
     let candidate_issue_count = candidate_issues.len();
     let (missing, extra) = issue_multiset_diff(official_issues, candidate_issues);
@@ -298,6 +297,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         if official_oracle_fixture_gap_category(case) {
             return ScoredCase {
                 bucket: ScoreBucket::DeferredOracleGapSkipped,
+                execution_provenance_detail: execution_provenance_detail.clone(),
                 reason: Some(
                     "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled"
                         .to_owned(),
@@ -317,6 +317,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
         if let Some(reason) = deferred_default_engine_oracle_gap_reason(case) {
             return ScoredCase {
                 bucket: ScoreBucket::DeferredOracleGapMismatch,
+                execution_provenance_detail: execution_provenance_detail.clone(),
                 reason: Some(reason.clone()),
                 skipped_reasons: Vec::new(),
                 scoring_normalizations: scoring_normalizations.clone(),
@@ -339,6 +340,7 @@ fn score_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> ScoredCase {
 
     ScoredCase {
         bucket,
+        execution_provenance_detail,
         scoring_normalizations,
         official_issue_count: Some(official_issue_count),
         candidate_issue_count: Some(candidate_issue_count),
@@ -763,42 +765,6 @@ fn fnv1a_update(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-fn candidate_execution_provenance(case: &OpenRulesCase, path: &Path) -> ExecutionProvenance {
-    read_candidate_execution_provenance(path)
-        .unwrap_or_else(|| execution_provenance_for_rule_id(&case.rule_id))
-}
-
-fn read_candidate_execution_provenance(path: &Path) -> Option<ExecutionProvenance> {
-    let source = std::fs::read_to_string(path).ok()?;
-    let mut reader = csv::ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(source.as_bytes());
-    let headers = reader.headers().ok()?.clone();
-    let index = headers
-        .iter()
-        .position(|header| header.trim().eq_ignore_ascii_case("execution_provenance"))?;
-    for record in reader.records().flatten() {
-        let provenance = record.get(index).unwrap_or_default().trim();
-        if provenance.is_empty() {
-            continue;
-        }
-        return Some(match provenance.to_ascii_lowercase().as_str() {
-            "native_engine" => ExecutionProvenance::NativeEngine,
-            "rule_id_hand_port" => ExecutionProvenance::RuleIdHandPort,
-            _ => ExecutionProvenance::Unknown,
-        });
-    }
-    None
-}
-
-pub fn execution_provenance_for_rule_id(rule_id: &str) -> ExecutionProvenance {
-    if core_api::rule_id_uses_hand_port(rule_id) {
-        ExecutionProvenance::RuleIdHandPort
-    } else {
-        ExecutionProvenance::NativeEngine
-    }
-}
-
 fn deferred_default_engine_oracle_gap_reason(case: &OpenRulesCase) -> Option<String> {
     let reason = deferred_default_engine_oracle_gap_reason_text(case)?;
     Some(format!(
@@ -983,6 +949,7 @@ mod tests {
             official_results_csv: PathBuf::from("results.csv"),
             candidate_report_csv: PathBuf::from("report.csv"),
             execution_provenance: ExecutionProvenance::NativeEngine,
+            execution_provenance_detail: ExecutionProvenanceDetail::GenericEngine,
             bucket,
             reason: reason.map(str::to_owned),
             skipped_reasons: Vec::new(),
@@ -1317,6 +1284,10 @@ CORE-000027,failed,TE,TE,1,ETCD|TEDUR|TEENRL,bad,1,,,\n",
             scored[0].scoring_normalizations,
             vec!["output_context_variable_aligned".to_owned()]
         );
+        assert_eq!(
+            scored[0].execution_provenance_detail,
+            ExecutionProvenanceDetail::OracleGapNormalized
+        );
         assert_eq!(summary.supported_match, 1);
         assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
     }
@@ -1537,6 +1508,10 @@ CORE-000137,failed,EC,EC,13,ECDOSE,bad,1,,,\n",
             scored[0].scoring_normalizations,
             vec!["row_locator_identity_relaxed".to_owned()]
         );
+        assert_eq!(
+            scored[0].execution_provenance_detail,
+            ExecutionProvenanceDetail::OracleGapNormalized
+        );
         assert_eq!(summary.supported_match, 1);
         assert_eq!(summary.deferred_oracle_gap_mismatch, 0);
     }
@@ -1698,8 +1673,16 @@ CORE-PROV,failed,DM,DM,1,USUBJID,bad,1,,,,native_engine\n",
             scored[0].execution_provenance,
             ExecutionProvenance::NativeEngine
         );
+        assert_eq!(
+            scored[0].execution_provenance_detail,
+            ExecutionProvenanceDetail::GenericEngine
+        );
         assert_eq!(summary.native_engine_supported_match, 1);
         assert_eq!(summary.native_engine_coverage, Some(1.0));
+        assert_eq!(
+            summary.by_execution_provenance_detail[0].detail,
+            ExecutionProvenanceDetail::GenericEngine
+        );
     }
 
     #[test]
@@ -1751,6 +1734,10 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
         assert_eq!(
             scored[0].execution_provenance,
             ExecutionProvenance::RuleIdHandPort
+        );
+        assert_eq!(
+            scored[0].execution_provenance_detail,
+            ExecutionProvenanceDetail::RuleIdHandPort
         );
         assert_eq!(summary.rule_id_hand_port_supported_match, 1);
         assert_eq!(summary.unknown_provenance_supported_match, 0);

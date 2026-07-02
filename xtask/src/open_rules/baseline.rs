@@ -507,6 +507,8 @@ mod tests {
                 official_results_csv: "official.csv".into(),
                 candidate_report_csv: "report.csv".into(),
                 execution_provenance: ExecutionProvenance::Unknown,
+                execution_provenance_detail:
+                    crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
                 bucket,
                 reason: None,
                 skipped_reasons: Vec::new(),

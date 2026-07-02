@@ -7,7 +7,10 @@ mod open_rules_compat;
 mod standard_filter;
 mod usdm_jsonata;
 
-pub use open_rules_compat::{rule_id_has_oracle_gap_category, rule_id_uses_hand_port};
+pub use open_rules_compat::{
+    rule_id_has_oracle_gap_category, rule_id_specific_semantics_classification,
+    rule_id_uses_hand_port,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

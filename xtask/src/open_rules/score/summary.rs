@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ExecutionProvenance, ScoreBucket, ScoredCase};
+use super::{ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket, ScoredCase};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScoreSummary {
@@ -53,6 +53,17 @@ pub struct ScoreSummary {
     pub unknown_provenance_supported_accuracy: Option<f64>,
     #[serde(default)]
     pub unknown_provenance_coverage: Option<f64>,
+    #[serde(default)]
+    pub by_execution_provenance_detail: Vec<ExecutionProvenanceDetailSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExecutionProvenanceDetailSummary {
+    pub detail: ExecutionProvenanceDetail,
+    pub supported_match: usize,
+    pub supported_mismatch: usize,
+    pub supported_accuracy: Option<f64>,
+    pub coverage: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -148,6 +159,7 @@ impl ScoreSummary {
             ScoreBucket::SupportedMismatch,
             ExecutionProvenance::Unknown,
         );
+        let by_execution_provenance_detail = execution_provenance_detail_summaries(cases);
         Self {
             total_cases,
             supported_match,
@@ -194,6 +206,7 @@ impl ScoreSummary {
                 unknown_provenance_supported_match + unknown_provenance_supported_mismatch,
                 total_cases,
             ),
+            by_execution_provenance_detail,
         }
     }
 
@@ -248,6 +261,46 @@ pub(super) fn grouped_summary(
             summary: ScoreSummary::from_cases(&cases),
         })
         .collect()
+}
+
+fn execution_provenance_detail_summaries(
+    cases: &[ScoredCase],
+) -> Vec<ExecutionProvenanceDetailSummary> {
+    [
+        ExecutionProvenanceDetail::GenericEngine,
+        ExecutionProvenanceDetail::RuleSpecificEngineSemantics,
+        ExecutionProvenanceDetail::CompatibilityPolicy,
+        ExecutionProvenanceDetail::OracleGapNormalized,
+        ExecutionProvenanceDetail::RuleIdHandPort,
+        ExecutionProvenanceDetail::Unknown,
+    ]
+    .into_iter()
+    .filter_map(|detail| {
+        let supported_match =
+            count_supported_by_provenance_detail(cases, ScoreBucket::SupportedMatch, &detail);
+        let supported_mismatch =
+            count_supported_by_provenance_detail(cases, ScoreBucket::SupportedMismatch, &detail);
+        let supported = supported_match + supported_mismatch;
+        (supported > 0).then(|| ExecutionProvenanceDetailSummary {
+            detail,
+            supported_match,
+            supported_mismatch,
+            supported_accuracy: supported_accuracy_for_counts(supported_match, supported_mismatch),
+            coverage: coverage_for_counts(supported, cases.len()),
+        })
+    })
+    .collect()
+}
+
+fn count_supported_by_provenance_detail(
+    cases: &[ScoredCase],
+    bucket: ScoreBucket,
+    detail: &ExecutionProvenanceDetail,
+) -> usize {
+    cases
+        .iter()
+        .filter(|case| case.bucket == bucket && &case.execution_provenance_detail == detail)
+        .count()
 }
 
 fn count_supported_by_provenance(

@@ -86,19 +86,18 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
     "variable_metadata",
     "xhtml_operation",
 ];
-#[cfg(test)]
 const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
     include_str!("open_rules_compat/rule_specific_semantics.csv");
-#[cfg(test)]
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,scope";
-#[cfg(test)]
 const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 263;
 
 static HAND_PORT_RULE_IDS: LazyLock<BTreeSet<&'static str>> =
     LazyLock::new(load_hand_port_rule_ids);
 static ORACLE_GAP_RULE_IDS: LazyLock<BTreeSet<(&'static str, &'static str)>> =
     LazyLock::new(load_oracle_gap_rule_ids);
+static RULE_SPECIFIC_SEMANTICS: LazyLock<BTreeSet<(&'static str, &'static str)>> =
+    LazyLock::new(load_rule_specific_semantics);
 
 pub fn rule_id_uses_hand_port(rule_id: &str) -> bool {
     let rule_id = rule_id.trim();
@@ -113,6 +112,18 @@ pub fn rule_id_has_oracle_gap_category(rule_id: &str, category: &str) -> bool {
         && ORACLE_GAP_RULE_IDS.contains(&(category, rule_id))
 }
 
+pub fn rule_id_specific_semantics_classification(rule_id: &str) -> Option<&'static str> {
+    let rule_id = rule_id.trim();
+    if rule_id.is_empty() {
+        return None;
+    }
+    RULE_SPECIFIC_SEMANTICS
+        .iter()
+        .find_map(|(classified_rule_id, classification)| {
+            (*classified_rule_id == rule_id).then_some(*classification)
+        })
+}
+
 #[cfg(test)]
 fn hand_port_rule_ids() -> impl Iterator<Item = &'static str> {
     HAND_PORT_RULE_IDS.iter().copied()
@@ -125,8 +136,9 @@ fn oracle_gap_rule_ids() -> impl Iterator<Item = (&'static str, &'static str)> {
 
 #[cfg(test)]
 fn rule_specific_semantics_rule_ids() -> impl Iterator<Item = &'static str> {
-    load_rule_specific_semantics_rule_ids_from_manifest(RULE_SPECIFIC_SEMANTICS_MANIFEST)
-        .into_iter()
+    RULE_SPECIFIC_SEMANTICS
+        .iter()
+        .map(|(rule_id, _classification)| *rule_id)
 }
 
 fn load_hand_port_rule_ids() -> BTreeSet<&'static str> {
@@ -170,24 +182,33 @@ fn load_oracle_gap_rule_ids_from_manifest(
     rule_ids
 }
 
-#[cfg(test)]
-fn load_rule_specific_semantics_rule_ids_from_manifest(
+fn load_rule_specific_semantics() -> BTreeSet<(&'static str, &'static str)> {
+    let entries = load_rule_specific_semantics_from_manifest(RULE_SPECIFIC_SEMANTICS_MANIFEST);
+    assert_eq!(
+        entries.len(),
+        EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT,
+        "unexpected rule-specific semantics manifest rule count"
+    );
+    entries
+}
+
+fn load_rule_specific_semantics_from_manifest(
     manifest: &'static str,
-) -> BTreeSet<&'static str> {
+) -> BTreeSet<(&'static str, &'static str)> {
     validate_rule_specific_semantics_manifest_header(manifest);
+    let mut entries = BTreeSet::new();
     let mut rule_ids = BTreeSet::new();
-    for rule_id in parse_rule_specific_semantics_rule_ids(manifest) {
+    for (rule_id, classification) in parse_rule_specific_semantics(manifest) {
         assert!(
             rule_ids.insert(rule_id),
             "duplicate rule-specific semantics rule id {rule_id}"
         );
+        assert!(
+            entries.insert((rule_id, classification)),
+            "duplicate rule-specific semantics entry for rule id {rule_id}"
+        );
     }
-    assert_eq!(
-        rule_ids.len(),
-        EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT,
-        "unexpected rule-specific semantics manifest rule count"
-    );
-    rule_ids
+    entries
 }
 
 fn validate_hand_port_manifest_header(manifest: &str) {
@@ -218,7 +239,6 @@ fn validate_oracle_gap_manifest_header(manifest: &str) {
     );
 }
 
-#[cfg(test)]
 fn validate_rule_specific_semantics_manifest_header(manifest: &str) {
     let header = manifest
         .lines()
@@ -281,10 +301,9 @@ fn parse_oracle_gap_manifest_rule_ids(
         })
 }
 
-#[cfg(test)]
-fn parse_rule_specific_semantics_rule_ids(
+fn parse_rule_specific_semantics(
     manifest: &'static str,
-) -> impl Iterator<Item = &'static str> {
+) -> impl Iterator<Item = (&'static str, &'static str)> {
     let mut header_seen = false;
     manifest
         .lines()
@@ -303,7 +322,7 @@ fn parse_rule_specific_semantics_rule_ids(
                 header_seen = true;
                 return None;
             }
-            parse_rule_specific_semantics_rule_id((index, line))
+            parse_rule_specific_semantics_entry((index, line))
         })
 }
 
@@ -391,10 +410,9 @@ fn parse_oracle_gap_manifest_rule_id(
     Some((category, rule_id))
 }
 
-#[cfg(test)]
-fn parse_rule_specific_semantics_rule_id(
+fn parse_rule_specific_semantics_entry(
     (index, line): (usize, &'static str),
-) -> Option<&'static str> {
+) -> Option<(&'static str, &'static str)> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return None;
@@ -442,7 +460,7 @@ fn parse_rule_specific_semantics_rule_id(
         scope, ORACLE_GAP_SCOPE,
         "invalid rule-specific semantics scope for {rule_id}"
     );
-    Some(rule_id)
+    Some((rule_id, classification))
 }
 
 #[cfg(test)]
@@ -493,6 +511,19 @@ mod tests {
         assert!(rule_id_uses_hand_port(" CORE-001077 "));
         assert!(!rule_id_uses_hand_port("CORE-PROV"));
         assert!(!rule_id_uses_hand_port(""));
+    }
+
+    #[test]
+    fn rule_specific_semantics_classification_is_loaded_from_manifest() {
+        assert_eq!(
+            rule_id_specific_semantics_classification("CORE-000478"),
+            Some("compatibility_policy")
+        );
+        assert_eq!(
+            rule_id_specific_semantics_classification("CORE-000583"),
+            Some("engine_semantics")
+        );
+        assert_eq!(rule_id_specific_semantics_classification("CORE-PROV"), None);
     }
 
     #[test]

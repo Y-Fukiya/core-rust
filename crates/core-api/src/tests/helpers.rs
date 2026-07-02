@@ -1,5 +1,48 @@
 use std::fs;
 
+pub(super) fn write_rule(dir: &std::path::Path, id: &str, expected_domain: &str) {
+    fs::write(
+        dir.join(format!("{id}.json")),
+        format!(
+            r#"{{
+  "Core": {{ "Id": "{id}", "Status": "Published" }},
+  "Scope": {{ "Domains": {{}}, "Classes": {{}} }},
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Check": {{
+    "name": "DOMAIN",
+    "operator": "not_equal_to",
+    "value": "{expected_domain}"
+  }},
+  "Outcome": {{ "Message": "DOMAIN must be {expected_domain}" }}
+}}"#
+        ),
+    )
+    .expect("write rule");
+}
+
+pub(super) fn write_dataset(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "AESEQ": [1, 2],
+        "DOMAIN": ["AE", "CM"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+    path
+}
+
 pub(super) fn write_test_xpt_char_dataset(
     path: &std::path::Path,
     dataset_name: &str,

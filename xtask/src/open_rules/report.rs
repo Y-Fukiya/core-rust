@@ -107,6 +107,22 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
         "Aggregate coverage includes both native engine and rule-id hand-port supported cases. Use native engine coverage to understand generic engine support."
             .to_owned(),
         String::new(),
+        "## Execution Provenance Detail".to_owned(),
+        String::new(),
+        "| Detail | Supported match | Supported mismatch | Accuracy | Coverage |".to_owned(),
+        "|---|---:|---:|---:|---:|".to_owned(),
+    ];
+    for detail in &summary.by_execution_provenance_detail {
+        lines.push(provenance_row(
+            detail.detail.as_str(),
+            detail.supported_match,
+            detail.supported_mismatch,
+            detail.supported_accuracy,
+            detail.coverage,
+        ));
+    }
+    lines.extend([
+        String::new(),
         "## Deferred Oracle-Gap Breakdown".to_owned(),
         String::new(),
         "| Category | Cases |".to_owned(),
@@ -136,6 +152,8 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
                 .unverified_semantics_gap
         ),
         String::new(),
+    ]);
+    lines.extend([
         "## Gate".to_owned(),
         String::new(),
         "| Gate | Value |".to_owned(),
@@ -190,7 +208,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
                 .unwrap_or("not available")
         ),
         String::new(),
-    ];
+    ]);
 
     if summary.unverified_synthetic_oracle_match > 0 {
         lines.push("## Synthetic Oracle Notice".to_owned());
@@ -432,6 +450,8 @@ mod tests {
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::NativeEngine,
+                    execution_provenance_detail:
+                        crate::open_rules::score::ExecutionProvenanceDetail::GenericEngine,
                     bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
@@ -455,6 +475,8 @@ mod tests {
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::Unknown,
+                    execution_provenance_detail:
+                        crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
                     bucket: ScoreBucket::SkippedUnsupported,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
@@ -476,6 +498,8 @@ mod tests {
                     official_results_csv: "official.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::NativeEngine,
+                    execution_provenance_detail:
+                        crate::open_rules::score::ExecutionProvenanceDetail::OracleGapNormalized,
                     bucket: ScoreBucket::DeferredOracleGapMismatch,
                     reason: Some(
                         "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
@@ -502,6 +526,8 @@ mod tests {
                     official_results_csv: "missing-results.csv".into(),
                     candidate_report_csv: "report.csv".into(),
                     execution_provenance: ExecutionProvenance::RuleIdHandPort,
+                    execution_provenance_detail:
+                        crate::open_rules::score::ExecutionProvenanceDetail::RuleIdHandPort,
                     bucket: ScoreBucket::SupportedMatch,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
