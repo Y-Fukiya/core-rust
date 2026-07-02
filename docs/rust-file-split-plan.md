@@ -5,7 +5,7 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 23983 | Move Open Rules oracle-gate and loader tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/tests.rs` | 18778 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 11818 | Continue extracting Open Rules compatibility helpers after the existing `open_rules_compat`, `standard_filter`, `usdm_jsonata`, and `condition_inspect` modules. |
 | `crates/core-data/src/lib.rs` | 11264 | Extract Open Rules CSV/data-dir loading next to `open_rules_variables.rs`. |
 | `crates/core-engine/src/lib.rs` | 4900 | Extract multi-row/group operator evaluation into operator modules. |
@@ -27,8 +27,8 @@ still too large to review safely:
    `open_rules_compat/` and sibling modules. The oracle-gap classifier and
    condition-inspection slices have already moved out of `lib.rs`.
 2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
-   `tests/open_rules_*.rs` modules. The first loader/row-scope slice now lives
-   in `tests/open_rules_data_loader.rs`.
+   `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
+   out already.
 3. `core-data/src/lib.rs`: move `_datasets.csv` and Open Rules data-dir loader
    code beside `open_rules_variables.rs`.
 4. `core-engine/src/lib.rs`: split group/relationship operator evaluators.
@@ -43,12 +43,14 @@ still too large to review safely:
   used by Open Rules compatibility classification.
 - `core-api/src/tests/open_rules_data_loader.rs`: first Open Rules data-loader
   and row-scope regression tests.
+- `core-api/src/tests/open_rules_usdm.rs`: USDM/Open Rules JSONata and USDM
+  join regression tests.
 
 ## Next Implementation Slice
 
 The next low-risk code slice is:
 
-- move another cohesive test family from `core-api/src/tests.rs` into
+- move another cohesive non-USDM test family from `core-api/src/tests.rs` into
   `crates/core-api/src/tests/open_rules_*.rs`
 - prefer tests that already build fixtures in memory and do not require
   production code changes

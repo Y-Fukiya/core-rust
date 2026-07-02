@@ -41,6 +41,21 @@ committed official rows do not line up with the literal rule/fixture semantics.
 After upstream confirms or corrects those expected rows, revisit them as native
 engine semantics work.
 
+## Filed Upstream Issues
+
+The first filing wave has been submitted to `cdisc-org/cdisc-open-rules`:
+
+| Bundle | Upstream issue |
+|---|---|
+| Paired PDVAL bound oracle review | [cdisc-org/cdisc-open-rules#66](https://github.com/cdisc-org/cdisc-open-rules/issues/66) |
+| Official-empty large-output timing fixtures | [cdisc-org/cdisc-open-rules#67](https://github.com/cdisc-org/cdisc-open-rules/issues/67) |
+| Positive fixtures with issues | [cdisc-org/cdisc-open-rules#68](https://github.com/cdisc-org/cdisc-open-rules/issues/68) |
+| Standard applicability mismatch | [cdisc-org/cdisc-open-rules#69](https://github.com/cdisc-org/cdisc-open-rules/issues/69) |
+
+Keep the remaining 34 `official_oracle_fixture_gap` cases local/report-only
+until upstream responds to this first wave or a reviewer asks for more granular
+follow-ups.
+
 ## Evidence To Attach
 
 For every upstream issue or PR, include:
