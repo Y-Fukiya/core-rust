@@ -3,7 +3,9 @@
 The weekly upstream workflow has two lanes:
 
 - `upstream-observe` always runs the pinned full corpus, uploads artifacts, and
-  only fails when the scoreboard is not generated.
+  fails only when a scoreboard is not generated or when the default-vs-strict
+  delta validation finds that the two scoreboards do not describe the same
+  pinned corpus.
 - `upstream-regression` runs only when
   `tests/open_rules/upstream-baseline.json` exists. It compares the generated
   full-corpus scoreboard against that accepted baseline.
