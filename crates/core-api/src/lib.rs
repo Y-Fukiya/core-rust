@@ -3,6 +3,7 @@
 
 mod cdisc_context;
 mod condition_inspect;
+mod dataset_helpers;
 mod domain_presence;
 mod engine_semantics;
 mod execution_provenance;
@@ -69,6 +70,10 @@ pub(crate) use condition_inspect::{
     contains_presence_operator, contains_sort_operator, contains_target,
     contains_unique_set_operator,
 };
+pub(crate) use dataset_helpers::{
+    dataset_column_name, dataset_domain_value, dataset_has_column, push_unique_string,
+};
+use dataset_helpers::{dataset_metadata_name, value_is_blank};
 use domain_presence::domain_presence_execution_datasets;
 use execution_provenance::annotate_results_execution_provenance;
 use json_values::{json_distinct_value_string, json_report_string, json_scalar_string};
@@ -2691,14 +2696,6 @@ fn add_core_000039_missing_svpresp(
     derive_column_from_values(dataset, "SVPRESP", &values)
 }
 
-fn value_is_blank(value: &Value) -> bool {
-    match value {
-        Value::Null => true,
-        Value::String(value) => value.trim().is_empty(),
-        _ => false,
-    }
-}
-
 fn should_treat_missing_condition_columns_as_null(rule: &ExecutableRule) -> bool {
     has_oracle_gap_rule_id(rule, "missing_condition_columns_as_null")
 }
@@ -2779,19 +2776,6 @@ fn contains_missing_target_column(group: &ConditionGroup, dataset: &LoadedDatase
             !dataset_has_column(dataset, &target)
         }),
     }
-}
-
-pub(crate) fn dataset_has_column(dataset: &LoadedDataset, name: &str) -> bool {
-    dataset_column_name(dataset, name).is_some()
-}
-
-pub(crate) fn dataset_column_name(dataset: &LoadedDataset, name: &str) -> Option<String> {
-    dataset
-        .frame()
-        .get_column_names()
-        .iter()
-        .find(|column| column.as_str().eq_ignore_ascii_case(name))
-        .map(|column| column.as_str().to_owned())
 }
 
 fn expand_domain_placeholder_for_dataset(dataset: &LoadedDataset, name: &str) -> String {
@@ -2985,12 +2969,6 @@ pub(crate) fn condition_targets_column(group: &ConditionGroup, column: &str) -> 
             .target
             .as_deref()
             .is_some_and(|target| target.eq_ignore_ascii_case(column)),
-    }
-}
-
-pub(crate) fn push_unique_string(values: &mut Vec<String>, value: &str) {
-    if !values.iter().any(|existing| existing == value) {
-        values.push(value.to_owned());
     }
 }
 
@@ -3360,34 +3338,6 @@ fn is_missing_findings_about_parent_dataset(name: &str, dataset_names: &BTreeSet
     }
     let parent = &name[name.len().saturating_sub(2)..];
     !dataset_names.contains(parent)
-}
-
-fn dataset_metadata_name(dataset: &LoadedDataset) -> String {
-    dataset
-        .metadata
-        .filename
-        .split('.')
-        .next()
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or(&dataset.metadata.name)
-        .to_ascii_uppercase()
-}
-
-pub(crate) fn dataset_domain_value(dataset: &LoadedDataset) -> String {
-    dataset_column_values(dataset, "DOMAIN")
-        .ok()
-        .and_then(|values| {
-            values.into_iter().find_map(|value| {
-                value
-                    .as_str()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned)
-            })
-        })
-        .or_else(|| dataset.metadata.domain.clone())
-        .unwrap_or_else(|| dataset.metadata.name.clone())
-        .to_ascii_uppercase()
 }
 
 fn resolved_dataset_column_values(dataset: &LoadedDataset, column: &str) -> Option<Vec<Value>> {
