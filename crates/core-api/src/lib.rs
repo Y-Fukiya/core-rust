@@ -3,6 +3,7 @@
 
 mod cdisc_context;
 mod condition_inspect;
+mod domain_presence;
 mod engine_semantics;
 mod execution_provenance;
 mod json_values;
@@ -16,6 +17,7 @@ mod operation_references;
 mod report_variables;
 mod rule_preparation;
 mod scope_filter;
+mod split_domain_unique_set;
 mod standard_filter;
 mod static_codelists;
 mod usdm_hand_ports;
@@ -64,6 +66,7 @@ pub(crate) use condition_inspect::{
     contains_presence_operator, contains_sort_operator, contains_target,
     contains_unique_set_operator,
 };
+use domain_presence::domain_presence_execution_datasets;
 use execution_provenance::annotate_results_execution_provenance;
 use json_values::{json_distinct_value_string, json_report_string, json_scalar_string};
 use match_datasets::{
@@ -116,9 +119,10 @@ use report_variables::{
 };
 use rule_preparation::apply_entity_instance_type_literals;
 use scope_filter::{
-    class_scope_matches, domain_class_name, domain_scope_matches, filter_datasets_by_rule_scope,
-    scope_contains_all, scope_matches, scope_values,
+    domain_scope_matches, filter_datasets_by_rule_scope, scope_contains_all, scope_matches,
+    scope_values,
 };
+use split_domain_unique_set::core_000750_split_domain_unique_set_results;
 use standard_filter::{apply_standard_filter, apply_standard_oracle_gap_filter};
 use static_codelists::{
     ddf_valid_codelist_dates, static_codelist, static_codelist_matches_version,
@@ -2701,7 +2705,7 @@ fn collect_condition_target_columns(group: &ConditionGroup, columns: &mut BTreeS
     }
 }
 
-fn presence_target_columns(group: &ConditionGroup) -> BTreeSet<String> {
+pub(crate) fn presence_target_columns(group: &ConditionGroup) -> BTreeSet<String> {
     let mut columns = BTreeSet::new();
     collect_presence_target_columns(group, &mut columns);
     columns
@@ -3364,237 +3368,6 @@ pub(crate) fn dataset_domain_value(dataset: &LoadedDataset) -> String {
         .or_else(|| dataset.metadata.domain.clone())
         .unwrap_or_else(|| dataset.metadata.name.clone())
         .to_ascii_uppercase()
-}
-
-#[derive(Debug, Clone)]
-struct SplitDomainUniqueSetRow {
-    dataset: String,
-    domain: String,
-    row: usize,
-    usubjid: Option<String>,
-    poolid: Option<String>,
-    seq_column: String,
-    seq: String,
-}
-
-fn core_000750_split_domain_unique_set_results(
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-    existing_results: &[RuleValidationResult],
-) -> Vec<RuleValidationResult> {
-    if rule.core_id != engine_semantics::CORE_000750 {
-        return Vec::new();
-    }
-
-    let mut rows = Vec::new();
-    for dataset in datasets
-        .iter()
-        .filter(|dataset| core_000750_split_domain_dataset_allowed(rule, dataset))
-    {
-        let Some(seq_column) = split_domain_sequence_column(dataset) else {
-            continue;
-        };
-        let Some(seq_values) = resolved_dataset_column_values(dataset, &seq_column) else {
-            continue;
-        };
-        let domain_values = resolved_dataset_column_values(dataset, "DOMAIN").unwrap_or_default();
-        let usubjid_values = resolved_dataset_column_values(dataset, "USUBJID").unwrap_or_default();
-        let poolid_values = resolved_dataset_column_values(dataset, "POOLID").unwrap_or_default();
-        let dataset_name = dataset.metadata.name.to_ascii_uppercase();
-        for row in 0..dataset.frame().height() {
-            let seq = json_report_string(seq_values.get(row).unwrap_or(&Value::Null));
-            if seq.trim().is_empty() {
-                continue;
-            }
-            let domain = domain_values
-                .get(row)
-                .map(json_report_string)
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| dataset_domain_value(dataset));
-            let usubjid = usubjid_values
-                .get(row)
-                .map(json_report_string)
-                .filter(|value| !value.trim().is_empty());
-            let poolid = poolid_values
-                .get(row)
-                .map(json_report_string)
-                .filter(|value| !value.trim().is_empty());
-            rows.push(SplitDomainUniqueSetRow {
-                dataset: dataset_name.clone(),
-                domain: domain.to_ascii_uppercase(),
-                row: row + 1,
-                usubjid,
-                poolid,
-                seq_column: seq_column.clone(),
-                seq,
-            });
-        }
-    }
-
-    let mut key_datasets = BTreeMap::<Vec<String>, BTreeSet<String>>::new();
-    for row in &rows {
-        for key in split_domain_unique_set_keys(row) {
-            key_datasets
-                .entry(key)
-                .or_default()
-                .insert(row.dataset.clone());
-        }
-    }
-
-    let existing = existing_results
-        .iter()
-        .flat_map(|result| result.errors.iter())
-        .filter_map(|issue| {
-            Some((
-                issue.dataset.to_ascii_uppercase(),
-                issue.row?,
-                issue.seq.clone().unwrap_or_default(),
-            ))
-        })
-        .collect::<BTreeSet<_>>();
-    let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
-    let mut issues_by_dataset = BTreeMap::<String, Vec<ValidationIssue>>::new();
-    let mut seen_rows = BTreeSet::<(String, usize, String)>::new();
-    for row in rows {
-        let crosses_split_dataset = split_domain_unique_set_keys(&row).into_iter().any(|key| {
-            key_datasets
-                .get(&key)
-                .is_some_and(|datasets| datasets.len() > 1)
-        });
-        if !crosses_split_dataset {
-            continue;
-        }
-        let issue_key = (row.dataset.clone(), row.row, row.seq.clone());
-        if existing.contains(&issue_key) || !seen_rows.insert(issue_key) {
-            continue;
-        }
-        let mut variables = vec![row.seq_column.clone()];
-        if row.usubjid.is_some() {
-            variables.insert(0, "USUBJID".to_owned());
-        }
-        push_unique_string(&mut variables, "POOLID");
-        let issue = ValidationIssue {
-            rule_id: rule.core_id.clone(),
-            dataset: row.dataset.clone(),
-            domain: Some(row.domain),
-            row: Some(row.row),
-            variables,
-            message: message.clone(),
-            usubjid: row.usubjid,
-            seq: Some(row.seq),
-        };
-        issues_by_dataset
-            .entry(issue.dataset.clone())
-            .or_default()
-            .push(issue);
-    }
-
-    issues_by_dataset
-        .into_iter()
-        .map(|(dataset, errors)| RuleValidationResult {
-            rule_id: rule.core_id.clone(),
-            execution_status: core_engine::ExecutionStatus::Failed,
-            execution_provenance: None,
-            skipped_reason: None,
-            dataset,
-            domain: errors.first().and_then(|issue| issue.domain.clone()),
-            message: message.clone(),
-            error_count: errors.len(),
-            errors,
-        })
-        .collect()
-}
-
-fn core_000750_split_domain_dataset_allowed(
-    rule: &ExecutableRule,
-    dataset: &LoadedDataset,
-) -> bool {
-    let row_domain = dataset_domain_value(dataset);
-    let domains = [
-        dataset.metadata.name.as_str(),
-        dataset
-            .metadata
-            .domain
-            .as_deref()
-            .unwrap_or(&dataset.metadata.name),
-        row_domain.as_str(),
-    ];
-
-    if !core_000750_split_domain_class_scope_allows(rule.classes.as_ref(), &domains) {
-        return false;
-    }
-
-    let includes = scope_values(rule.domains.as_ref(), "Include");
-    let excludes = scope_values(rule.domains.as_ref(), "Exclude");
-
-    if domains
-        .iter()
-        .any(|domain| scope_matches(&excludes, domain))
-    {
-        return false;
-    }
-
-    includes.is_empty()
-        || scope_contains_all(&includes)
-        || domains
-            .iter()
-            .any(|domain| scope_matches(&includes, domain))
-}
-
-fn core_000750_split_domain_class_scope_allows(scope: Option<&Value>, domains: &[&str]) -> bool {
-    let includes = scope_values(scope, "Include");
-    let excludes = scope_values(scope, "Exclude");
-    let classes = domains
-        .iter()
-        .filter_map(|domain| domain_class_name(domain))
-        .collect::<Vec<_>>();
-
-    if classes.is_empty() {
-        return true;
-    }
-    if classes
-        .iter()
-        .any(|class| class_scope_matches(&excludes, class))
-    {
-        return false;
-    }
-    includes.is_empty()
-        || scope_contains_all(&includes)
-        || classes
-            .iter()
-            .any(|class| class_scope_matches(&includes, class))
-}
-
-fn split_domain_unique_set_keys(row: &SplitDomainUniqueSetRow) -> Vec<Vec<String>> {
-    let mut keys = Vec::new();
-    if let Some(usubjid) = &row.usubjid {
-        keys.push(vec![
-            "USUBJID".to_owned(),
-            row.domain.clone(),
-            usubjid.clone(),
-            row.seq.clone(),
-        ]);
-    }
-    if let Some(poolid) = &row.poolid {
-        keys.push(vec![
-            "POOLID".to_owned(),
-            row.domain.clone(),
-            poolid.clone(),
-            row.seq.clone(),
-        ]);
-    }
-    keys
-}
-
-fn split_domain_sequence_column(dataset: &LoadedDataset) -> Option<String> {
-    let domain = dataset_domain_value(dataset);
-    dataset_column_name(dataset, &format!("{domain}SEQ")).or_else(|| {
-        dataset
-            .summary()
-            .columns
-            .into_iter()
-            .find(|column| column.to_ascii_uppercase().ends_with("SEQ"))
-    })
 }
 
 fn resolved_dataset_column_values(dataset: &LoadedDataset, column: &str) -> Option<Vec<Value>> {
@@ -4482,88 +4255,6 @@ fn variable_metadata_operation_execution_datasets(
                 .map_err(|source| operation_skipped_result(rule, source.to_string()))
         })
         .collect()
-}
-
-fn domain_presence_execution_datasets(
-    rule: &ExecutableRule,
-    datasets: &[LoadedDataset],
-) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    let targets = presence_target_columns(&rule.conditions);
-    if targets.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let anchor = targets
-        .iter()
-        .find_map(|target| find_dataset(datasets, target))
-        .or_else(|| datasets.first())
-        .ok_or_else(|| {
-            RuleValidationResult::skipped_rule(
-                rule.core_id.clone(),
-                SkippedReason::EvaluationError,
-                format!(
-                    "Rule {} has no datasets for domain presence check",
-                    rule.core_id
-                ),
-            )
-        })?;
-
-    let mut dataset = filter_dataset_by_mask(
-        anchor,
-        &(0..anchor.summary().row_count)
-            .map(|row| row == 0)
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
-
-    let primary = targets
-        .iter()
-        .find_map(|target| find_dataset(datasets, target).map(|dataset| (target, dataset)));
-    if let Some((target, source_dataset)) = primary {
-        dataset.metadata.name = target.to_ascii_uppercase();
-        dataset.metadata.domain = Some(target.to_ascii_uppercase());
-        dataset.metadata.filename = source_dataset.metadata.filename.clone();
-        dataset.metadata.full_path = source_dataset.metadata.full_path.clone();
-    }
-
-    for target in targets {
-        if let Some(source_dataset) = find_dataset(datasets, &target) {
-            let value = Value::String(source_dataset.metadata.filename.clone());
-            if !dataset_has_column(&dataset, &target) {
-                dataset = derive_literal_column(&dataset, &target, &value)
-                    .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
-            }
-        }
-    }
-
-    for operation in &rule.operations {
-        if operation_name(operation).as_deref() == Some("variable_exists") {
-            let output = string_field(operation, &["id", "target", "as", "output", "column"])
-                .unwrap_or_else(|| "$variable_exists".to_owned());
-            let Some(source_column) = string_field(
-                operation,
-                &[
-                    "name",
-                    "source_column",
-                    "value_column",
-                    "measure",
-                    "variable",
-                ],
-            ) else {
-                return Err(operation_skipped_result(
-                    rule,
-                    "variable_exists operation is missing a source variable",
-                ));
-            };
-            let exists = datasets
-                .iter()
-                .any(|source_dataset| dataset_has_column(source_dataset, &source_column));
-            dataset = derive_literal_column(&dataset, &output, &Value::Bool(exists))
-                .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
-        }
-    }
-
-    Ok(vec![dataset])
 }
 
 fn execute_join_operation(
