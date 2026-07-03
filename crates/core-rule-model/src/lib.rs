@@ -10,8 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+mod name_normalization;
 mod yaml_literals;
 
+pub use name_normalization::normalize_key;
+use name_normalization::normalize_name;
 use yaml_literals::{normalize_yaml_condition_value_literals, yaml_condition_value_literals};
 
 pub type Result<T> = std::result::Result<T, RuleModelError>;
@@ -1913,27 +1916,6 @@ fn string_value(value: Option<&Value>) -> Option<String> {
         Value::String(value) => Some(value.clone()),
         _ => None,
     }
-}
-
-pub fn normalize_key(key: &str) -> String {
-    normalize_name(key)
-}
-
-fn normalize_name(name: &str) -> String {
-    name.trim()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .split('_')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("_")
 }
 
 fn extension(path: &Path) -> Option<String> {
