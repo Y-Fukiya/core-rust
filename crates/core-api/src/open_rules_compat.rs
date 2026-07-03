@@ -143,6 +143,12 @@ static ORACLE_GAP_RULE_IDS: LazyLock<BTreeSet<(&'static str, &'static str)>> =
 static RULE_SPECIFIC_SEMANTICS: LazyLock<BTreeSet<(&'static str, &'static str)>> =
     LazyLock::new(load_rule_specific_semantics);
 
+#[derive(Debug, Clone, Copy)]
+struct RuleSpecificSemanticsEntry {
+    rule_id: &'static str,
+    classification: &'static str,
+}
+
 pub fn rule_id_uses_hand_port(rule_id: &str) -> bool {
     let rule_id = rule_id.trim();
     !rule_id.is_empty() && HAND_PORT_RULE_IDS.contains(rule_id)
@@ -242,14 +248,16 @@ fn load_rule_specific_semantics_from_manifest(
     validate_rule_specific_semantics_manifest_header(manifest);
     let mut entries = BTreeSet::new();
     let mut rule_ids = BTreeSet::new();
-    for (rule_id, classification) in parse_rule_specific_semantics(manifest) {
+    for entry in parse_rule_specific_semantics(manifest) {
         assert!(
-            rule_ids.insert(rule_id),
-            "duplicate rule-specific semantics rule id {rule_id}"
+            rule_ids.insert(entry.rule_id),
+            "duplicate rule-specific semantics rule id {}",
+            entry.rule_id
         );
         assert!(
-            entries.insert((rule_id, classification)),
-            "duplicate rule-specific semantics entry for rule id {rule_id}"
+            entries.insert((entry.rule_id, entry.classification)),
+            "duplicate rule-specific semantics entry for rule id {}",
+            entry.rule_id
         );
     }
     entries
@@ -347,7 +355,7 @@ fn parse_oracle_gap_manifest_rule_ids(
 
 fn parse_rule_specific_semantics(
     manifest: &'static str,
-) -> impl Iterator<Item = (&'static str, &'static str)> {
+) -> impl Iterator<Item = RuleSpecificSemanticsEntry> {
     let mut header_seen = false;
     manifest
         .lines()
@@ -456,7 +464,7 @@ fn parse_oracle_gap_manifest_rule_id(
 
 fn parse_rule_specific_semantics_entry(
     (index, line): (usize, &'static str),
-) -> Option<(&'static str, &'static str)> {
+) -> Option<RuleSpecificSemanticsEntry> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return None;
@@ -522,7 +530,10 @@ fn parse_rule_specific_semantics_entry(
         scope, ORACLE_GAP_SCOPE,
         "invalid rule-specific semantics scope for {rule_id}"
     );
-    Some((rule_id, classification))
+    Some(RuleSpecificSemanticsEntry {
+        rule_id,
+        classification,
+    })
 }
 
 #[cfg(test)]
@@ -915,13 +926,9 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
     #[test]
     fn hand_port_semantics_are_declared_as_hand_port_provenance() {
         let hand_port = hand_port_rule_ids().collect::<BTreeSet<_>>();
-        let hand_port_semantics = RULE_SPECIFIC_SEMANTICS_MANIFEST
-            .lines()
-            .enumerate()
-            .skip(1)
-            .filter_map(parse_rule_specific_semantics_entry)
-            .filter_map(|(rule_id, classification)| {
-                (classification == "hand_port_semantics").then_some(rule_id)
+        let hand_port_semantics = parse_rule_specific_semantics(RULE_SPECIFIC_SEMANTICS_MANIFEST)
+            .filter_map(|entry| {
+                (entry.classification == "hand_port_semantics").then_some(entry.rule_id)
             })
             .collect::<BTreeSet<_>>();
         let missing = hand_port_semantics
@@ -1054,13 +1061,9 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
     #[test]
     fn usdm_hand_port_semantics_are_isolated_outside_core_api_lib() {
         let lib_rule_ids = core_rule_ids_in(include_str!("lib.rs"));
-        let hand_port = RULE_SPECIFIC_SEMANTICS_MANIFEST
-            .lines()
-            .enumerate()
-            .skip(1)
-            .filter_map(parse_rule_specific_semantics_entry)
-            .filter_map(|(rule_id, classification)| {
-                (classification == "hand_port_semantics").then_some(rule_id)
+        let hand_port = parse_rule_specific_semantics(RULE_SPECIFIC_SEMANTICS_MANIFEST)
+            .filter_map(|entry| {
+                (entry.classification == "hand_port_semantics").then_some(entry.rule_id)
             })
             .collect::<BTreeSet<_>>();
         assert!(
@@ -1080,13 +1083,9 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
     #[test]
     fn engine_semantics_rule_ids_are_isolated_outside_core_api_lib() {
         let lib_rule_ids = core_rule_ids_in(include_str!("lib.rs"));
-        let engine_semantics = RULE_SPECIFIC_SEMANTICS_MANIFEST
-            .lines()
-            .enumerate()
-            .skip(1)
-            .filter_map(parse_rule_specific_semantics_entry)
-            .filter_map(|(rule_id, classification)| {
-                (classification == "engine_semantics").then_some(rule_id)
+        let engine_semantics = parse_rule_specific_semantics(RULE_SPECIFIC_SEMANTICS_MANIFEST)
+            .filter_map(|entry| {
+                (entry.classification == "engine_semantics").then_some(entry.rule_id)
             })
             .collect::<BTreeSet<_>>();
         assert!(
