@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::result_large_err)]
 
+mod api_types;
 mod cdisc_context;
 mod condition_inspect;
 mod dataset_helpers;
@@ -26,6 +27,9 @@ mod standard_filter;
 mod static_codelists;
 mod usdm_hand_ports;
 
+pub use api_types::{
+    ApiError, DatasetLoader, Result, RuleSelection, ValidateOutcome, ValidateRequest,
+};
 pub use open_rules_compat::{
     rule_id_has_oracle_gap_category, rule_id_specific_semantics_classification,
     rule_id_uses_hand_port,
@@ -33,7 +37,6 @@ pub use open_rules_compat::{
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
 use core_cdisc_library::{load_define_xml_file, ControlledTerm, DefineXmlMetadata};
 use core_data::{
@@ -45,19 +48,14 @@ use core_data::{
     semi_join_dataset_on, sort_dataset_by_columns, DataError, DatasetSourceFormat, LoadedDataset,
 };
 use core_engine::{
-    evaluate_condition_group, validate_rule, EngineError, RuleValidationResult, SkippedReason,
-    ValidationIssue,
+    evaluate_condition_group, validate_rule, RuleValidationResult, SkippedReason, ValidationIssue,
 };
-use core_report::{
-    write_reports_with_options, ReportError, ReportMetadata, ReportOptions, ReportOutputFormat,
-    WrittenReports,
-};
+use core_report::{write_reports_with_options, ReportMetadata, ReportOptions};
 use core_rule_model::{
     load_rules_from_paths, normalize_condition_value, Condition, ConditionGroup, ExecutableRule,
-    OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
+    OperationSpec, Operator, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
-use thiserror::Error;
 
 #[cfg(test)]
 use cdisc_context::define_codelist_for_condition;
@@ -157,67 +155,6 @@ use static_codelists::{
 use usdm_hand_ports::{
     apply_usdm_hand_port_semantics, has_usdm_hand_port_semantics, usdm_hand_port_execution_datasets,
 };
-
-pub type Result<T> = std::result::Result<T, ApiError>;
-
-#[derive(Debug, Error)]
-pub enum ApiError {
-    #[error("--rules and --exclude-rules cannot be used together")]
-    MutuallyExclusiveRuleFilters,
-    #[error("at least one rule path is required")]
-    MissingRulePaths,
-    #[error("at least one dataset path is required")]
-    MissingDatasetPaths,
-    #[error("failed to load rules: {0}")]
-    RuleLoad(#[from] RuleModelError),
-    #[error("failed to load datasets: {0}")]
-    DataLoad(#[from] DataError),
-    #[error("failed to load CDISC metadata: {0}")]
-    CdiscLibrary(#[from] core_cdisc_library::CdiscLibraryError),
-    #[error("failed to validate rule: {0}")]
-    Engine(#[from] EngineError),
-    #[error("failed to write reports: {0}")]
-    Report(#[from] ReportError),
-    #[error("internal error: {0}")]
-    Internal(String),
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum DatasetLoader {
-    #[default]
-    Generic,
-    OpenRulesDataDir,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ValidateRequest {
-    pub rule_paths: Vec<PathBuf>,
-    pub dataset_paths: Vec<PathBuf>,
-    pub dataset_loader: DatasetLoader,
-    pub open_rules_oracle_compat: bool,
-    pub define_xml_paths: Vec<PathBuf>,
-    pub ct_paths: Vec<PathBuf>,
-    pub external_dictionary_paths: Vec<PathBuf>,
-    pub include_rules: Vec<String>,
-    pub exclude_rules: Vec<String>,
-    pub standard: Option<String>,
-    pub standard_version: Option<String>,
-    pub output_format: ReportOutputFormat,
-    pub log_level: Option<String>,
-    pub output_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ValidateOutcome {
-    pub results: Vec<RuleValidationResult>,
-    pub reports: Option<WrittenReports>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RuleSelection {
-    pub selected: Vec<ExecutableRule>,
-    pub skipped: Vec<RuleValidationResult>,
-}
 
 pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     if !request.include_rules.is_empty() && !request.exclude_rules.is_empty() {
