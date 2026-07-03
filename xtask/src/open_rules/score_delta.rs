@@ -516,6 +516,13 @@ fn case_transition_label(default_case: &ScoredCase, strict_case: &ScoredCase) ->
         )
     } else if default_case.scoring_normalizations != strict_case.scoring_normalizations {
         "scoring_normalizations changed".to_owned()
+    } else if default_case.official_issue_count != strict_case.official_issue_count
+        || default_case.candidate_issue_count != strict_case.candidate_issue_count
+        || default_case.missing_count != strict_case.missing_count
+        || default_case.extra_count != strict_case.extra_count
+        || default_case.issue_fingerprint_hash != strict_case.issue_fingerprint_hash
+    {
+        "issue details changed".to_owned()
     } else {
         "metadata changed".to_owned()
     }
@@ -525,6 +532,11 @@ fn cases_differ_for_delta(default_case: &ScoredCase, strict_case: &ScoredCase) -
     default_case.bucket != strict_case.bucket
         || default_case.scoring_policy != strict_case.scoring_policy
         || default_case.scoring_normalizations != strict_case.scoring_normalizations
+        || default_case.official_issue_count != strict_case.official_issue_count
+        || default_case.candidate_issue_count != strict_case.candidate_issue_count
+        || default_case.missing_count != strict_case.missing_count
+        || default_case.extra_count != strict_case.extra_count
+        || default_case.issue_fingerprint_hash != strict_case.issue_fingerprint_hash
 }
 
 fn transition_summaries(counts: BTreeMap<String, usize>) -> Vec<TransitionSummary> {
@@ -1012,6 +1024,45 @@ mod tests {
         assert!(
             error.to_string().contains("duplicate case keys"),
             "{error:?}"
+        );
+    }
+
+    #[test]
+    fn reports_case_level_issue_detail_changes() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let mut strict_case = case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        );
+        strict_case.candidate_issue_count = Some(2);
+        strict_case.extra_count = Some(1);
+        strict_case.issue_fingerprint_hash = Some("changed".to_owned());
+        let strict = scoreboard(vec![strict_case]);
+
+        let delta = ScoreboardDelta::new(
+            "default.json".into(),
+            "strict.json".into(),
+            &default,
+            &strict,
+        );
+        let markdown = markdown_delta(&delta);
+
+        assert!(
+            markdown.contains("| `CORE-000001` | 1 | `issue details changed` |"),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains(
+                "| `CORE-000001` | `negative` | `01` | `issue details changed` | `none` |"
+            ),
+            "{markdown}"
         );
     }
 
