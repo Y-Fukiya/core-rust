@@ -106,6 +106,15 @@ reclassified after targeted review showed that returning them to supported
 scoring would either contradict the official oracle or create a deferred
 mismatch.
 
+The reviewed upstream filing set for these deferred gaps is tracked outside
+core-rust in `cdisc-org/cdisc-open-rules` issues #66 through #69. While those
+issues are open or have no upstream resolution, keep the related cases in the
+deferred oracle-gap inventory rather than forcing core-rust engine behavior to
+match fixture/oracle inconsistencies. When upstream accepts a data or oracle
+fix, refresh the pinned upstream checkout, rerun the full upstream scoreboard,
+and then either return the case to supported scoring or update the accepted
+baseline with the reviewed upstream evidence.
+
 Positive-zero probe rule ids are tracked separately as manifest promotion
 guards, not as active accepted-scoreboard failures. The current baseline has no
 active positive-zero skipped or mismatched cases; see
@@ -184,6 +193,22 @@ Read these fields together:
 - `no_official_oracle`: cases retained for accounting but excluded from
   supported accuracy.
 
+Treat `no_official_oracle` as an oracle-supply gap, not as a pass bucket. The
+current upstream corpus has a non-trivial missing-official set, so the operating
+policy is:
+
+1. Keep missing-official cases visible in total-case accounting and baseline
+   regression checks.
+2. Do not synthesize `supported_match` from candidate output, even when the
+   candidate report is empty or looks reasonable.
+3. Split future cleanup into explicit tracks: upstream `results.csv` filing
+   when the expected issue set is clear, permanent exclusion only when the
+   upstream case intentionally has no oracle, and separate synthetic fixtures
+   only outside the official-oracle score.
+4. Treat any increase in `no_official_oracle` as review-required in baseline
+   comparison. A decrease is an improvement only when it is backed by official
+   upstream oracle data or a reviewed baseline update.
+
 The synthetic oracle counters remain in the JSON schema for older scoreboard
 compatibility, but current scoring should leave them at zero.
 
@@ -259,6 +284,15 @@ text independent of oracle observation. Promotion from `compatibility_policy` or
 fixture shape, and regression evidence. If a rule-specific post-process is kept
 because it matches official output but lacks rule-text justification, classify it
 as compatibility policy rather than native engine semantics.
+
+The manifest also carries `evidence_type` and `promotion_basis` columns so this
+distinction is machine-readable. `implementation_inventory` /
+`classification_inventory` entries document existing rule-id branches that still
+need classification discipline. `oracle_observation` /
+`rule_text_and_regression_review` entries indicate that upstream oracle behavior
+was compared and the rule text or adapter semantics were reviewed before treating
+the path as engine semantics. These columns are guardrails; changing them should
+be reviewed like changing the classification itself.
 
 USDM hand-port semantics are isolated in
 `crates/core-api/src/usdm_hand_ports.rs`. `core-api/src/lib.rs` should call that

@@ -92,12 +92,18 @@ const ORACLE_GAP_CATEGORIES_USED_BY_CODE: &[&str] = &[
 const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
     include_str!("open_rules_compat/rule_specific_semantics.csv");
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
-    "rule_id,classification,category,reason,owner,evidence,scope";
+    "rule_id,classification,category,reason,owner,evidence,evidence_type,promotion_basis,scope";
 const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 263;
 const RULE_SPECIFIC_SEMANTICS_CLASSIFICATIONS: &[&str] = &[
     "compatibility_policy",
     "engine_semantics",
     "hand_port_semantics",
+];
+const RULE_SPECIFIC_SEMANTICS_EVIDENCE_TYPES: &[&str] =
+    &["implementation_inventory", "oracle_observation"];
+const RULE_SPECIFIC_SEMANTICS_PROMOTION_BASES: &[&str] = &[
+    "classification_inventory",
+    "rule_text_and_regression_review",
 ];
 const RULE_SPECIFIC_SEMANTICS_CATEGORIES: &[&str] = &[
     "condition_rewrite",
@@ -458,8 +464,8 @@ fn parse_rule_specific_semantics_entry(
     let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
     assert_eq!(
         fields.len(),
-        7,
-        "invalid rule-specific semantics manifest row {}: expected 7 columns",
+        9,
+        "invalid rule-specific semantics manifest row {}: expected 9 columns",
         index + 1
     );
     let rule_id = fields[0];
@@ -468,7 +474,9 @@ fn parse_rule_specific_semantics_entry(
     let reason = fields[3];
     let owner = fields[4];
     let evidence = fields[5];
-    let scope = fields[6];
+    let evidence_type = fields[6];
+    let promotion_basis = fields[7];
+    let scope = fields[8];
     assert!(
         is_core_rule_id(rule_id),
         "invalid rule-specific semantics rule id in manifest row {}: {rule_id}",
@@ -501,6 +509,14 @@ fn parse_rule_specific_semantics_entry(
     assert!(
         !evidence.is_empty(),
         "missing evidence for rule-specific semantics rule id {rule_id}"
+    );
+    assert!(
+        RULE_SPECIFIC_SEMANTICS_EVIDENCE_TYPES.contains(&evidence_type),
+        "invalid rule-specific semantics evidence type for rule id {rule_id}: {evidence_type}"
+    );
+    assert!(
+        RULE_SPECIFIC_SEMANTICS_PROMOTION_BASES.contains(&promotion_basis),
+        "invalid rule-specific semantics promotion basis for rule id {rule_id}: {promotion_basis}"
     );
     assert_eq!(
         scope, ORACLE_GAP_SCOPE,
@@ -904,7 +920,7 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
             .skip(1)
             .filter_map(|line| {
                 let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
-                (fields.len() == 7 && fields[1] == "hand_port_semantics").then_some(fields[0])
+                (fields.len() == 9 && fields[1] == "hand_port_semantics").then_some(fields[0])
             })
             .collect::<BTreeSet<_>>();
         let missing = hand_port_semantics
@@ -952,7 +968,7 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
     fn rule_specific_semantics_manifest_rejects_invalid_classification() {
         parse_rule_specific_semantics_entry((
             1,
-            "CORE-000583,engine_sematnics,metadata_adapter,reason,core-api,evidence,open-rules-oracle-harness",
+            "CORE-000583,engine_sematnics,metadata_adapter,reason,core-api,evidence,implementation_inventory,classification_inventory,open-rules-oracle-harness",
         ));
     }
 
@@ -961,7 +977,25 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
     fn rule_specific_semantics_manifest_rejects_invalid_category() {
         parse_rule_specific_semantics_entry((
             1,
-            "CORE-000583,engine_semantics,metadata_adatper,reason,core-api,evidence,open-rules-oracle-harness",
+            "CORE-000583,engine_semantics,metadata_adatper,reason,core-api,evidence,implementation_inventory,classification_inventory,open-rules-oracle-harness",
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid rule-specific semantics evidence type")]
+    fn rule_specific_semantics_manifest_rejects_invalid_evidence_type() {
+        parse_rule_specific_semantics_entry((
+            1,
+            "CORE-000583,engine_semantics,metadata_adapter,reason,core-api,evidence,unsupported_evidence,classification_inventory,open-rules-oracle-harness",
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid rule-specific semantics promotion basis")]
+    fn rule_specific_semantics_manifest_rejects_invalid_promotion_basis() {
+        parse_rule_specific_semantics_entry((
+            1,
+            "CORE-000583,engine_semantics,metadata_adapter,reason,core-api,evidence,implementation_inventory,unsupported_basis,open-rules-oracle-harness",
         ));
     }
 
