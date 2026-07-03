@@ -175,6 +175,48 @@ pub(crate) fn collect_usdm_timeline_rows(value: &Value, rows: &mut Vec<BTreeMap<
     }
 }
 
+pub(crate) fn collect_usdm_scheduled_instance_rows(
+    value: &Value,
+    rows: &mut Vec<BTreeMap<String, Value>>,
+) {
+    let Some(versions) = value
+        .get("study")
+        .and_then(|study| study.get("versions"))
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+
+    for (version_index, version) in versions.iter().enumerate() {
+        let Some(study_designs) = version.get("studyDesigns").and_then(Value::as_array) else {
+            continue;
+        };
+        let epoch_parent_designs = usdm_child_parent_designs(study_designs, "epochs");
+        let encounter_parent_designs = usdm_child_parent_designs(study_designs, "encounters");
+        for (design_index, design) in study_designs.iter().enumerate() {
+            let Some(timelines) = design.get("scheduleTimelines").and_then(Value::as_array) else {
+                continue;
+            };
+            for (timeline_index, timeline) in timelines.iter().enumerate() {
+                let Some(instances) = timeline.get("instances").and_then(Value::as_array) else {
+                    continue;
+                };
+                for (instance_index, instance) in instances.iter().enumerate() {
+                    rows.push(usdm_scheduled_instance_row(
+                        instance,
+                        design,
+                        &epoch_parent_designs,
+                        &encounter_parent_designs,
+                        &format!(
+                            "/study/versions/{version_index}/studyDesigns/{design_index}/scheduleTimelines/{timeline_index}/instances/{instance_index}"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
 fn display_section_number_counts_for_version(contents: &[Value]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for content in contents {
@@ -566,6 +608,102 @@ fn usdm_document_content_reference_row(
         Value::Bool(invalid_section_keys.contains(&(applies_to_id, section_number, section_title))),
     );
     row
+}
+
+fn usdm_child_parent_designs(
+    study_designs: &[Value],
+    child_collection: &str,
+) -> HashMap<String, String> {
+    let mut parents = HashMap::new();
+    for design in study_designs {
+        let design_id = design.get("id").and_then(value_string).unwrap_or_default();
+        for child in design
+            .get(child_collection)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(id) = child.get("id").and_then(value_string) {
+                parents.insert(id, design_id.clone());
+            }
+        }
+    }
+    parents
+}
+
+fn usdm_scheduled_instance_row(
+    instance: &Value,
+    design: &Value,
+    epoch_parent_designs: &HashMap<String, String>,
+    encounter_parent_designs: &HashMap<String, String>,
+    path: &str,
+) -> BTreeMap<String, Value> {
+    let design_id = design.get("id").and_then(value_string).unwrap_or_default();
+    let epoch_id = instance.get("epochId").and_then(value_string);
+    let encounter_id = instance.get("encounterId").and_then(value_string);
+    let referenced_epoch_parent = epoch_id
+        .as_deref()
+        .and_then(|id| epoch_parent_designs.get(id))
+        .cloned()
+        .unwrap_or_else(|| "[Invalid epochId]".to_owned());
+    let referenced_encounter_parent = encounter_id
+        .as_deref()
+        .and_then(|id| encounter_parent_designs.get(id))
+        .cloned()
+        .unwrap_or_else(|| "[Invalid encounterId]".to_owned());
+    let mut row = BTreeMap::new();
+    insert_study_design_context(&mut row, design);
+    row.insert("path".to_owned(), Value::String(path.to_owned()));
+    row.insert(
+        "instanceType".to_owned(),
+        json_string(instance.get("instanceType")),
+    );
+    row.insert("id".to_owned(), json_string(instance.get("id")));
+    row.insert("name".to_owned(), json_string(instance.get("name")));
+    row.insert(
+        "epochId".to_owned(),
+        epoch_id.clone().map(Value::String).unwrap_or(Value::Null),
+    );
+    row.insert(
+        "encounterId".to_owned(),
+        encounter_id
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    row.insert(
+        "Referenced epoch's parent StudyDesign.id".to_owned(),
+        Value::String(referenced_epoch_parent.clone()),
+    );
+    row.insert(
+        "Referenced encounter's parent StudyDesign.id".to_owned(),
+        Value::String(referenced_encounter_parent.clone()),
+    );
+    row.insert(
+        "scheduled_instance_epoch_wrong_design".to_owned(),
+        Value::Bool(
+            epoch_id
+                .as_deref()
+                .is_some_and(|_| referenced_epoch_parent != design_id),
+        ),
+    );
+    row.insert(
+        "scheduled_instance_encounter_wrong_design".to_owned(),
+        Value::Bool(
+            encounter_id
+                .as_deref()
+                .is_some_and(|_| referenced_encounter_parent != design_id),
+        ),
+    );
+    row
+}
+
+fn insert_study_design_context(row: &mut BTreeMap<String, Value>, design: &Value) {
+    row.insert("StudyDesign.id".to_owned(), json_string(design.get("id")));
+    row.insert(
+        "StudyDesign.name".to_owned(),
+        json_string(design.get("name")),
+    );
 }
 
 fn usdm_timeline_row(
