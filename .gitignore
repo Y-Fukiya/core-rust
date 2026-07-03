@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+.codegraph/
 *.fileprovider-placeholder
 *.fileprovider-conflict-placeholder
 *.fileprovider-placeholder/
