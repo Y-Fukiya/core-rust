@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+mod csv_records;
 mod dataset_package;
+mod dataset_paths;
 mod dataset_transforms;
 mod json_table;
 mod open_rules_data_dir;
@@ -30,7 +32,14 @@ mod usdm_timeline;
 mod usdm_values;
 mod xpt;
 
+pub(crate) use csv_records::{
+    csv_records_to_dict_rows, normalize_dataset_name, normalize_metadata_name, read_csv_dict_rows,
+    read_csv_records, row_string, CsvRecords,
+};
 pub use dataset_package::load_dataset_package_json;
+pub(crate) use dataset_paths::{
+    canonical_or_original, column_names, extension, file_name, file_stem, file_stem_str,
+};
 pub use dataset_transforms::sort_dataset_by_columns;
 pub(crate) use json_table::records_to_frame;
 use json_table::{json_rows_dataset, series_from_json_values};
@@ -3440,92 +3449,6 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
     Ok(LoadedDataset::new(metadata, frame))
 }
 
-#[derive(Debug)]
-struct CsvRecords {
-    headers: Vec<String>,
-    records: Vec<Vec<String>>,
-}
-
-fn read_csv_records(path: &Path) -> Result<CsvRecords> {
-    let source = fs::read_to_string(path).map_err(|source| DataError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let mut reader = csv::ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(source.as_bytes());
-    let headers = reader
-        .headers()
-        .map_err(|source| DataError::CsvParse {
-            path: path.to_path_buf(),
-            source,
-        })?
-        .iter()
-        .map(|header| header.trim().to_owned())
-        .collect::<Vec<_>>();
-    let mut records = Vec::new();
-    for record in reader.records() {
-        records.push(
-            record
-                .map_err(|source| DataError::CsvParse {
-                    path: path.to_path_buf(),
-                    source,
-                })?
-                .iter()
-                .map(str::to_owned)
-                .collect::<Vec<_>>(),
-        );
-    }
-    Ok(CsvRecords { headers, records })
-}
-
-fn read_csv_dict_rows(path: &Path) -> Result<Vec<BTreeMap<String, String>>> {
-    let records = read_csv_records(path)?;
-    Ok(csv_records_to_dict_rows(&records))
-}
-
-fn csv_records_to_dict_rows(records: &CsvRecords) -> Vec<BTreeMap<String, String>> {
-    records
-        .records
-        .iter()
-        .map(|record| {
-            records
-                .headers
-                .iter()
-                .zip(record.iter())
-                .map(|(key, value)| (key.clone(), value.trim().to_owned()))
-                .collect::<BTreeMap<_, _>>()
-        })
-        .collect()
-}
-
-fn row_string(row: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find_map(|key| {
-            row.get(*key).or_else(|| {
-                row.iter()
-                    .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
-                    .map(|(_key, value)| value)
-            })
-        })
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-fn normalize_dataset_name(value: &str) -> String {
-    file_stem_str(value.trim()).to_ascii_uppercase()
-}
-
-fn normalize_metadata_name(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .filter(|ch| !matches!(ch, ' ' | '_' | '-'))
-        .collect::<String>()
-        .to_ascii_lowercase()
-}
-
 fn normalize_csv_frame_types(frame: DataFrame, path: &Path) -> Result<DataFrame> {
     let height = frame.height();
     let mut columns = Vec::with_capacity(frame.width());
@@ -3638,45 +3561,6 @@ fn is_canonical_integer_digits(value: &str) -> bool {
         return false;
     }
     value == "0" || !value.starts_with('0')
-}
-
-fn column_names(frame: &DataFrame) -> Vec<String> {
-    frame
-        .get_column_names()
-        .into_iter()
-        .map(|name| name.as_str().to_owned())
-        .collect()
-}
-
-fn file_name(path: &Path) -> Result<String> {
-    path.file_name()
-        .and_then(|value| value.to_str())
-        .map(str::to_owned)
-        .ok_or_else(|| DataError::InvalidDatasetPackage(format!("missing file name: {path:?}")))
-}
-
-fn file_stem(path: &Path) -> Result<String> {
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .map(str::to_owned)
-        .ok_or_else(|| DataError::InvalidDatasetPackage(format!("missing file stem: {path:?}")))
-}
-
-pub(crate) fn file_stem_str(filename: &str) -> &str {
-    Path::new(filename)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or(filename)
-}
-
-pub(crate) fn canonical_or_original(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn extension(path: &Path) -> Option<String> {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| extension.to_ascii_lowercase())
 }
 
 fn is_supported_dataset_file(path: &Path) -> bool {
