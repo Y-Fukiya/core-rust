@@ -6,7 +6,7 @@ still too large to review safely:
 | File | Current lines | First split target |
 |---|---:|---|
 | `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
+| `crates/core-api/src/lib.rs` | 8435 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, operation-field, and metadata-support helper splits. |
 | `crates/core-data/src/lib.rs` | 6473 | Continue extracting USDM collector and row-builder helpers after the content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
@@ -26,8 +26,8 @@ still too large to review safely:
 
 1. `core-api/src/lib.rs`: continue extracting small pure helper families into
    `open_rules_compat/` and sibling modules. The oracle-gap classifier,
-   condition-inspection, CDISC context, static codelist, and operation-field
-   helper slices have already moved out of `lib.rs`.
+   condition-inspection, CDISC context, static codelist, operation-field, and
+   metadata-support helper slices have already moved out of `lib.rs`.
 2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
    `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
    out already.
@@ -95,6 +95,9 @@ still too large to review safely:
 - `core-api/src/operation_fields.rs`: Open Rules operation name, key
   normalization, string/list/map field extraction, and expression literal
   parsing helpers.
+- `core-api/src/metadata_support.rs`: metadata rule support predicates,
+  operation support predicates, group alias checks, and operation dataset-name
+  helpers.
 - `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
@@ -131,8 +134,8 @@ still too large to review safely:
 The next low-risk code slice is:
 
 - split the next pure USDM collector or row-builder family from
-  `core-data/src/lib.rs`, or move the next cohesive USDM fixture family from
-  `core-api/src/tests/open_rules_usdm.rs` into a focused sibling module
+  `core-data/src/lib.rs`, or extract another pure metadata/operation helper
+  family from `core-api/src/lib.rs`
 - prefer code that already has focused tests and does not require behavior
   changes
 - keep public behavior unchanged
