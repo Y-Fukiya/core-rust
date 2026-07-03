@@ -380,16 +380,35 @@ fn normalization_transitions(default: &Scoreboard, strict: &Scoreboard) -> Vec<T
     let strict_cases = cases_by_key(&strict.cases);
     let mut counts = BTreeMap::<String, usize>::new();
     for (key, default_case) in default_cases {
-        if default_case.scoring_normalizations.is_empty() {
-            continue;
-        }
         let strict_case = strict_cases
             .get(&key)
             .expect("case key set is validated before delta generation");
+        let default_normalizations = default_case
+            .scoring_normalizations
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let strict_normalizations = strict_case
+            .scoring_normalizations
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if default_normalizations.is_empty() && strict_normalizations.is_empty() {
+            continue;
+        }
         let transition = bucket_transition(default_case, strict_case);
-        for normalization in &default_case.scoring_normalizations {
+        for normalization in default_normalizations.union(&strict_normalizations) {
+            let direction = match (
+                default_normalizations.contains(normalization),
+                strict_normalizations.contains(normalization),
+            ) {
+                (true, true) => "unchanged",
+                (true, false) => "removed",
+                (false, true) => "added",
+                (false, false) => unreachable!("normalization comes from the union"),
+            };
             *counts
-                .entry(format!("{normalization}: {transition}"))
+                .entry(format!("{normalization} {direction}: {transition}"))
                 .or_default() += 1;
         }
     }
@@ -867,7 +886,7 @@ mod tests {
             "{markdown}"
         );
         assert!(markdown.contains(
-            "| `row_locator_identity_relaxed: supported_match -> supported_mismatch` | 1 |"
+            "| `row_locator_identity_relaxed removed: supported_match -> supported_mismatch` | 1 |"
         ));
         assert!(
             markdown.contains("| `CORE-000002` | 1 | `supported_match -> supported_mismatch` |"),
@@ -1061,6 +1080,37 @@ mod tests {
         assert!(
             markdown.contains(
                 "| `CORE-000001` | `negative` | `01` | `issue details changed` | `none` |"
+            ),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn reports_strict_only_normalization_transitions() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let strict = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::OracleGapNormalized,
+            vec!["strict_only_normalization"],
+        )]);
+
+        let delta = ScoreboardDelta::new(
+            "default.json".into(),
+            "strict.json".into(),
+            &default,
+            &strict,
+        );
+        let markdown = markdown_delta(&delta);
+
+        assert!(
+            markdown.contains(
+                "| `strict_only_normalization added: supported_match -> supported_match` | 1 |"
             ),
             "{markdown}"
         );
