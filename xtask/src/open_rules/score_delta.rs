@@ -76,11 +76,13 @@ struct RuleImpactSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct ChangedCaseExample {
+    scope: String,
     rule_id: String,
     case_kind: String,
     case_id: String,
     transition: String,
-    scoring_normalizations: Vec<String>,
+    default_scoring_normalizations: Vec<String>,
+    strict_scoring_normalizations: Vec<String>,
 }
 
 pub fn run(args: ScoreDeltaArgs) -> Result<bool> {
@@ -474,17 +476,20 @@ fn example_changed_cases(
                 return None;
             }
             Some(ChangedCaseExample {
+                scope: default_case.scope.clone(),
                 rule_id: default_case.rule_id.clone(),
                 case_kind: default_case.case_kind.clone(),
                 case_id: default_case.case_id.clone(),
                 transition: case_transition_label(default_case, strict_case),
-                scoring_normalizations: default_case.scoring_normalizations.clone(),
+                default_scoring_normalizations: default_case.scoring_normalizations.clone(),
+                strict_scoring_normalizations: strict_case.scoring_normalizations.clone(),
             })
         })
         .collect::<Vec<_>>();
     examples.sort_by(|left, right| {
-        left.rule_id
-            .cmp(&right.rule_id)
+        left.scope
+            .cmp(&right.scope)
+            .then_with(|| left.rule_id.cmp(&right.rule_id))
             .then_with(|| left.case_kind.cmp(&right.case_kind))
             .then_with(|| left.case_id.cmp(&right.case_id))
     });
@@ -780,21 +785,33 @@ fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[Chan
     lines.extend([
         format!("## {title}"),
         String::new(),
-        "| Rule ID | Kind | Case | Transition | Default normalizations |".to_owned(),
-        "|---|---|---|---|---|".to_owned(),
+        "| Scope | Rule ID | Kind | Case | Transition | Default normalizations | Strict normalizations |"
+            .to_owned(),
+        "|---|---|---|---|---|---|---|".to_owned(),
     ]);
     for row in rows {
-        let normalizations = if row.scoring_normalizations.is_empty() {
-            "none".to_owned()
-        } else {
-            row.scoring_normalizations.join(", ")
-        };
+        let default_normalizations = normalizations_text(&row.default_scoring_normalizations);
+        let strict_normalizations = normalizations_text(&row.strict_scoring_normalizations);
         lines.push(format!(
-            "| `{}` | `{}` | `{}` | `{}` | `{}` |",
-            row.rule_id, row.case_kind, row.case_id, row.transition, normalizations
+            "| `{}` | `{}` | `{}` | `{}` | `{}` | `{}` | `{}` |",
+            row.scope,
+            row.rule_id,
+            row.case_kind,
+            row.case_id,
+            row.transition,
+            default_normalizations,
+            strict_normalizations
         ));
     }
     lines.push(String::new());
+}
+
+fn normalizations_text(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_owned()
+    } else {
+        values.join(", ")
+    }
 }
 
 fn percent_or_na(value: Option<f64>) -> String {
@@ -1079,7 +1096,7 @@ mod tests {
         );
         assert!(
             markdown.contains(
-                "| `CORE-000001` | `negative` | `01` | `issue details changed` | `none` |"
+                "| `Published` | `CORE-000001` | `negative` | `01` | `issue details changed` | `none` | `none` |"
             ),
             "{markdown}"
         );
@@ -1111,6 +1128,12 @@ mod tests {
         assert!(
             markdown.contains(
                 "| `strict_only_normalization added: supported_match -> supported_match` | 1 |"
+            ),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains(
+                "| `Published` | `CORE-000001` | `negative` | `01` | `scoring_policy strict_identity -> oracle_gap_normalized` | `none` | `strict_only_normalization` |"
             ),
             "{markdown}"
         );
