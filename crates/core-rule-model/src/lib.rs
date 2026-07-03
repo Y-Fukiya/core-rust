@@ -13,6 +13,7 @@ use thiserror::Error;
 mod name_normalization;
 mod yaml_literals;
 
+pub use name_normalization::normalize_key;
 use name_normalization::normalize_name;
 use yaml_literals::{normalize_yaml_condition_value_literals, yaml_condition_value_literals};
 
@@ -1915,10 +1916,6 @@ fn string_value(value: Option<&Value>) -> Option<String> {
         Value::String(value) => Some(value.clone()),
         _ => None,
     }
-}
-
-pub fn normalize_key(key: &str) -> String {
-    normalize_name(key)
 }
 
 fn extension(path: &Path) -> Option<String> {

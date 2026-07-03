@@ -1,3 +1,7 @@
+pub fn normalize_key(key: &str) -> String {
+    normalize_name(key)
+}
+
 pub(crate) fn normalize_name(name: &str) -> String {
     name.trim()
         .chars()
