@@ -18,6 +18,7 @@ mod open_rules_jsonata;
 mod open_rules_match_datasets;
 mod open_rules_metadata;
 mod open_rules_operations;
+mod open_rules_operations_record_count;
 mod open_rules_oracle_semantics;
 mod open_rules_reference_distinct;
 mod open_rules_scope;
