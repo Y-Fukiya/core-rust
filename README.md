@@ -14,7 +14,7 @@ CORE rules engine can look like.
 
 - Experimenting with CDISC CORE-like rules in a small, fast Rust codebase.
 - Running supplemental validation against SDTM/ADaM-style fixture or study data.
-- Comparing Rust behavior with Python/CDISC-compatible expected outputs.
+- Comparing Rust behavior with golden expected outputs.
 - Producing JSON, CSV, and log reports for traceable validation results.
 - Developing validation engine features such as rule normalization, dataset
   operations, targeted hand-ported USDM/Open Rules checks, Define-XML metadata, controlled
@@ -72,7 +72,7 @@ The repository includes golden fixtures and Open Rules oracle harnesses for:
 - integrated DatasetPackageJson + Define-XML + CT flows
 - SDTM/ADaM-like multi-domain packages
 - regulatory-style SDTM/ADaM fixtures
-- Python/CDISC-compatible expected output comparisons
+- golden expected output comparisons
 - issue identity traceability with `usubjid` and sequence fields
 - CSV and log report structure
 - GitHub Actions CI running format, check, and workspace tests
@@ -85,6 +85,10 @@ excluded. It is a regression-gate invariant, not a claim that the full upstream
 corpus is completely implemented. Read it together with `coverage`,
 `native_engine_coverage`, `rule_id_hand_port_coverage`,
 `deferred_oracle_gap_skipped`, and `no_official_oracle`.
+
+Validation `report.json` includes per-result `execution_provenance` when the
+API can classify the rule path (`native_engine` or `rule_id_hand_port`). This is
+intended for auditability; CSV output keeps the stable issue-row schema.
 
 For audit runs, `xtask open-rules score --strict-scoring` disables oracle-gap
 reclassification and oracle-informed identity/output-context normalizations.
@@ -337,9 +341,10 @@ Minimal generated outputs include:
 
 ## Compatibility Position
 
-The goal is to move toward Python/CDISC-compatible behavior where practical, but
-the project intentionally publishes its current state as a technical preview.
-Compatibility should be treated as evidence-based rather than guaranteed:
+The goal is to make behavior reproducible against reviewed golden fixtures where
+practical, but the project intentionally publishes its current state as a
+technical preview. Compatibility should be treated as evidence-based rather than
+guaranteed:
 
 - If a behavior is covered by a golden fixture, regressions should be caught by
   CI.

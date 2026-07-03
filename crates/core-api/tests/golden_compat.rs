@@ -65,10 +65,10 @@ struct IdentityManifest {
 }
 
 #[test]
-fn python_compat_cases_match_stored_expected_outputs() {
+fn golden_compat_cases_match_stored_expected_outputs() {
     let fixtures = fixture_root();
-    let mut case_paths = fs::read_dir(fixtures.join("python_compat/cases"))
-        .expect("read python compat cases")
+    let mut case_paths = fs::read_dir(fixtures.join("golden_compat/cases"))
+        .expect("read golden compat cases")
         .collect::<std::result::Result<Vec<_>, _>>()
         .expect("read case entries")
         .into_iter()
@@ -79,7 +79,7 @@ fn python_compat_cases_match_stored_expected_outputs() {
 
     assert!(
         case_paths.len() >= 7,
-        "expected at least seven Python compat cases"
+        "expected at least seven golden compat cases"
     );
 
     for case_path in case_paths {
@@ -104,7 +104,7 @@ fn python_compat_cases_match_stored_expected_outputs() {
         assert_eq!(
             actual,
             expected,
-            "Python compat case {} did not match{}",
+            "golden compatibility case {} did not match{}",
             case.name,
             case.description
                 .as_deref()
@@ -115,10 +115,10 @@ fn python_compat_cases_match_stored_expected_outputs() {
 }
 
 #[test]
-fn python_compat_cases_match_issue_identity_manifest() {
+fn golden_compat_cases_match_issue_identity_manifest() {
     let fixtures = fixture_root();
     let manifest: IdentityManifest = serde_json::from_str(
-        &fs::read_to_string(fixtures.join("python_compat/identity_manifest.json"))
+        &fs::read_to_string(fixtures.join("golden_compat/identity_manifest.json"))
             .expect("read identity manifest"),
     )
     .expect("parse identity manifest");
@@ -138,10 +138,10 @@ fn python_compat_cases_match_issue_identity_manifest() {
 }
 
 #[test]
-fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
+fn golden_compat_matrix_covers_sdtm_adam_study_shapes() {
     let fixtures = fixture_root();
-    let case_names = fs::read_dir(fixtures.join("python_compat/cases"))
-        .expect("read python compat cases")
+    let case_names = fs::read_dir(fixtures.join("golden_compat/cases"))
+        .expect("read golden compat cases")
         .collect::<std::result::Result<Vec<_>, _>>()
         .expect("read case entries")
         .into_iter()
@@ -202,7 +202,7 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     );
 
     let regulatory_full =
-        read_case(&fixtures.join("python_compat/cases/regulatory_full_study_package.json"));
+        read_case(&fixtures.join("golden_compat/cases/regulatory_full_study_package.json"));
     assert!(
         regulatory_full
             .external_dictionary_paths
@@ -212,8 +212,8 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     );
 
     let regulatory_filters = [
-        read_case(&fixtures.join("python_compat/cases/regulatory_adamig_filter.json")),
-        read_case(&fixtures.join("python_compat/cases/regulatory_sdtmig_filter.json")),
+        read_case(&fixtures.join("golden_compat/cases/regulatory_adamig_filter.json")),
+        read_case(&fixtures.join("golden_compat/cases/regulatory_sdtmig_filter.json")),
     ];
     assert!(
         regulatory_filters.iter().all(|case| case.standard.is_some()
@@ -223,7 +223,7 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
     );
 
     let regulatory_include =
-        read_case(&fixtures.join("python_compat/cases/regulatory_include_missing_rules.json"));
+        read_case(&fixtures.join("golden_compat/cases/regulatory_include_missing_rules.json"));
     assert!(
         regulatory_include
             .include_rules
@@ -234,10 +234,10 @@ fn python_compat_matrix_covers_sdtm_adam_study_shapes() {
 }
 
 #[test]
-fn python_compat_coverage_manifest_matches_fixture_matrix() {
+fn golden_compat_coverage_manifest_matches_fixture_matrix() {
     let fixtures = fixture_root();
     let manifest: CoverageManifest = serde_json::from_str(
-        &fs::read_to_string(fixtures.join("python_compat/coverage_manifest.json"))
+        &fs::read_to_string(fixtures.join("golden_compat/coverage_manifest.json"))
             .expect("read coverage manifest"),
     )
     .expect("parse coverage manifest");
@@ -422,8 +422,8 @@ fn read_case(path: &Path) -> PythonCompatCase {
 }
 
 fn read_cases_by_name(root: &Path) -> BTreeMap<String, PythonCompatCase> {
-    fs::read_dir(root.join("python_compat/cases"))
-        .expect("read python compat cases")
+    fs::read_dir(root.join("golden_compat/cases"))
+        .expect("read golden compat cases")
         .collect::<std::result::Result<Vec<_>, _>>()
         .expect("read case entries")
         .into_iter()

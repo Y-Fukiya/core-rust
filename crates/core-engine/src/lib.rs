@@ -90,6 +90,8 @@ pub struct RuleValidationResult {
     pub rule_id: String,
     pub execution_status: ExecutionStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_provenance: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skipped_reason: Option<SkippedReason>,
     pub dataset: String,
     pub domain: Option<String>,
@@ -119,6 +121,7 @@ impl RuleValidationResult {
         Self {
             rule_id: rule_id.into(),
             execution_status: ExecutionStatus::Skipped,
+            execution_provenance: None,
             skipped_reason: Some(reason),
             dataset: String::new(),
             domain: None,
@@ -177,6 +180,7 @@ pub fn validate_rule(
         } else {
             ExecutionStatus::Failed
         },
+        execution_provenance: None,
         skipped_reason: None,
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),

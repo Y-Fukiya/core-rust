@@ -539,6 +539,7 @@ mod tests {
             RuleValidationResult {
                 rule_id: "CORE-TEST-0001".to_owned(),
                 execution_status: ExecutionStatus::Failed,
+                execution_provenance: None,
                 skipped_reason: None,
                 dataset: "AE".to_owned(),
                 domain: Some("AE".to_owned()),
@@ -570,6 +571,7 @@ mod tests {
             RuleValidationResult {
                 rule_id: "CORE-TEST-0002".to_owned(),
                 execution_status: ExecutionStatus::Passed,
+                execution_provenance: None,
                 skipped_reason: None,
                 dataset: "CM".to_owned(),
                 domain: Some("CM".to_owned()),
@@ -621,6 +623,7 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
         let results = vec![RuleValidationResult {
             rule_id: "=CORE-TEST-0001".to_owned(),
             execution_status: ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: "+AE".to_owned(),
             domain: Some("-AE".to_owned()),
@@ -652,6 +655,7 @@ CORE-TEST-0002,passed,CM,CM,,,CM passed,0,,,\n"
         let results = vec![RuleValidationResult {
             rule_id: "CORE\nINJECT".to_owned(),
             execution_status: ExecutionStatus::Passed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: "AE\tTAB".to_owned(),
             domain: Some("DM\rCR".to_owned()),
