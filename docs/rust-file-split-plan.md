@@ -7,8 +7,8 @@ still too large to review safely:
 |---|---:|---|
 | `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
-| `crates/core-data/src/lib.rs` | 7983 | Continue extracting USDM JSON flattening and dataset-package helpers after the Open Rules data-dir loader, transform, reference, and test splits. |
-| `crates/core-api/src/tests/open_rules_usdm.rs` | 2101 | Continue splitting USDM fixture families into focused sibling modules. |
+| `crates/core-data/src/lib.rs` | 7607 | Continue extracting USDM collector and row-builder helpers after the JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
 
@@ -99,6 +99,12 @@ still too large to review safely:
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
   `_variables.csv`, embedded metadata, and CSV data-dir loading.
+- `core-data/src/json_table.rs`: JSON record-to-DataFrame conversion plus
+  USDM/Open Rules JSON row dataset wrapping.
+- `core-data/src/usdm_values.rs`: shared USDM JSON scalar, list, code, and
+  quantity formatting helpers.
+- `core-data/src/usdm_population_columns.rs`: USDM population/cohort quantity
+  and planned-sex derived column helpers.
 - `core-engine/src/group_operators.rs`: unique-set, relationship, and
   inconsistent-across-dataset operator evaluation.
 - `xtask/src/open_rules/score/summary.rs`: scoreboard summary, deferred
@@ -114,9 +120,9 @@ still too large to review safely:
 
 The next low-risk code slice is:
 
-- move the next cohesive USDM fixture family from
-  `core-api/src/tests/open_rules_usdm.rs` into a focused sibling module,
-  or split the next pure USDM collector family from `core-data/src/lib.rs`
+- split the next pure USDM collector or row-builder family from
+  `core-data/src/lib.rs`, or move the next cohesive USDM fixture family from
+  `core-api/src/tests/open_rules_usdm.rs` into a focused sibling module
 - prefer code that already has focused tests and does not require behavior
   changes
 - keep public behavior unchanged

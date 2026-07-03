@@ -18,21 +18,29 @@ mod open_rules_data_dir;
 mod open_rules_variables;
 mod usdm_collectors;
 mod usdm_json_schema;
+mod usdm_population_columns;
 mod usdm_references;
 mod usdm_row_builders;
+mod usdm_values;
 
 pub use dataset_package::load_dataset_package_json;
 pub use dataset_transforms::sort_dataset_by_columns;
-use json_table::{records_to_frame, series_from_json_values};
+use json_table::{json_rows_dataset, records_to_frame, series_from_json_values};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
 use usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
     collect_usdm_range_rows,
 };
 use usdm_json_schema::collect_usdm_json_schema_issue_rows;
+use usdm_population_columns::{insert_planned_sex_columns, insert_quantity_columns};
 use usdm_references::{
     collect_usdm_id_instance_types, collect_usdm_reference_keys, parameter_map_reference_invalid,
     usdm_ref_references, usdm_tag_references,
+};
+use usdm_values::{
+    format_code, format_quantity_single, format_quantity_single_with_missing_unit,
+    format_semicolon_list, format_string_list, json_string, string_array, value_exists,
+    value_string,
 };
 
 pub type Result<T> = std::result::Result<T, DataError>;
@@ -796,69 +804,6 @@ fn load_open_rules_json_data_dir(data_dir: &Path) -> Result<LoadDataResult> {
         datasets,
         warnings: Vec::new(),
     })
-}
-
-fn json_rows_dataset(
-    data_dir: &Path,
-    name: &str,
-    filename: &str,
-    rows: &[BTreeMap<String, Value>],
-) -> Result<LoadedDataset> {
-    let columns = if name == "JSONSchemaIssue" && rows.is_empty() {
-        json_schema_issue_columns()
-    } else {
-        rows_to_columns(rows)
-    };
-    let frame = records_to_frame(&columns).map_err(|source| DataError::Polars {
-        path: data_dir.to_path_buf(),
-        source,
-    })?;
-    let variables = column_names(&frame)
-        .into_iter()
-        .map(|name| DatasetVariable {
-            name,
-            label: None,
-            variable_type: None,
-            length: None,
-            extra: BTreeMap::new(),
-        })
-        .collect();
-    let metadata = DatasetMetadata {
-        name: name.to_owned(),
-        domain: Some(name.to_owned()),
-        label: None,
-        filename: filename.to_owned(),
-        full_path: canonical_or_original(data_dir),
-        source_format: DatasetSourceFormat::DatasetPackageJson,
-        variables,
-    };
-
-    Ok(LoadedDataset::new(metadata, frame))
-}
-
-fn json_schema_issue_columns() -> IndexMap<String, Vec<Value>> {
-    ["path", "validator", "error_attribute", "message"]
-        .into_iter()
-        .map(|name| (name.to_owned(), Vec::new()))
-        .collect()
-}
-
-fn rows_to_columns(rows: &[BTreeMap<String, Value>]) -> IndexMap<String, Vec<Value>> {
-    let mut names = BTreeSet::new();
-    for row in rows {
-        names.extend(row.keys().cloned());
-    }
-
-    names
-        .into_iter()
-        .map(|name| {
-            let values = rows
-                .iter()
-                .map(|row| row.get(&name).cloned().unwrap_or(Value::Null))
-                .collect();
-            (name, values)
-        })
-        .collect()
 }
 
 fn collect_usdm_population_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
@@ -5626,107 +5571,6 @@ fn named_usdm_object_name(values: &[Value], id: &str) -> Option<String> {
         .and_then(|value| value_string(value.get("name").unwrap_or(&Value::Null)))
 }
 
-fn insert_quantity_columns(
-    row: &mut BTreeMap<String, Value>,
-    name: &str,
-    quantity: &Value,
-    cohorts: &[Value],
-) {
-    row.insert(format!("{name}.id"), json_string(quantity.get("id")));
-    row.insert(
-        format!("{name}(value/range)"),
-        Value::String(format_quantity(quantity)),
-    );
-    row.insert(
-        format!("{name}.present"),
-        Value::Bool(quantity_present(quantity)),
-    );
-    row.insert(
-        format!("{name}.has_unit"),
-        Value::Bool(quantity_has_unit(quantity)),
-    );
-    let cohort_present = cohorts
-        .iter()
-        .map(|cohort| cohort.get(name).is_some_and(quantity_present))
-        .collect::<Vec<_>>();
-    let cohort_missing = cohorts
-        .iter()
-        .map(|cohort| {
-            !cohort
-                .as_object()
-                .is_some_and(|object| object.contains_key(name))
-        })
-        .collect::<Vec<_>>();
-    row.insert(
-        format!("cohorts.{name}.any_present"),
-        Value::Bool(cohort_present.iter().any(|present| *present)),
-    );
-    row.insert(
-        format!("cohorts.{name}.all_present"),
-        Value::Bool(!cohorts.is_empty() && cohort_present.iter().all(|present| *present)),
-    );
-    row.insert(
-        format!("cohorts.{name}.any_missing"),
-        Value::Bool(cohort_missing.iter().any(|missing| *missing)),
-    );
-    row.insert(
-        format!("cohorts.{name}.has_unit"),
-        Value::Bool(
-            cohorts
-                .iter()
-                .any(|cohort| cohort.get(name).is_some_and(quantity_has_unit)),
-        ),
-    );
-    row.insert(
-        "cohorts.name".to_owned(),
-        Value::String(format_cohort_names(cohorts)),
-    );
-    row.insert(
-        format!("cohorts.{name}.id"),
-        Value::String(format_cohort_quantity_ids(cohorts, name)),
-    );
-    row.insert(
-        format!("cohorts.{name}(value/range)"),
-        Value::String(format_cohort_quantities(cohorts, name)),
-    );
-}
-
-fn insert_planned_sex_columns(row: &mut BTreeMap<String, Value>, planned_sex: Option<&Value>) {
-    let values = planned_sex
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    row.insert(
-        "plannedSex".to_owned(),
-        Value::String(format_planned_sex(&values)),
-    );
-    row.insert(
-        "plannedSex.invalid".to_owned(),
-        Value::Bool(planned_sex_invalid(&values)),
-    );
-}
-
-fn json_string(value: Option<&Value>) -> Value {
-    value
-        .and_then(value_string)
-        .map(Value::String)
-        .unwrap_or(Value::Null)
-}
-
-fn value_string(value: &Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::String(value) => Some(value.clone()),
-        Value::Bool(value) => Some(value.to_string()),
-        Value::Number(value) => Some(value.to_string()),
-        _ => None,
-    }
-}
-
-fn value_exists(value: Option<&Value>) -> bool {
-    !matches!(value, None | Some(Value::Null))
-}
-
 fn collect_direct_ids(value: Option<&Value>) -> HashSet<String> {
     value
         .and_then(Value::as_array)
@@ -5780,21 +5624,6 @@ fn collect_managed_site_ids(version: &Value) -> HashSet<String> {
                 .filter_map(|site| site.get("id").and_then(value_string))
         })
         .collect()
-}
-
-fn string_array(value: Option<&Value>) -> Vec<String> {
-    value
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(value_string).collect())
-        .unwrap_or_default()
-}
-
-fn format_string_list(values: &[String]) -> String {
-    format!("[{}]", values.join(", "))
-}
-
-fn format_semicolon_list(values: &[String]) -> String {
-    format!("[{}]", values.join("; "))
 }
 
 fn format_usdm_id_name(value: &Value) -> Option<String> {
@@ -5881,22 +5710,6 @@ fn format_usdm_object_order(values: &[String]) -> String {
     format!("[ {} ]", values.join(" > "))
 }
 
-fn format_code(code: Option<&Value>) -> String {
-    let Some(code) = code else {
-        return String::new();
-    };
-    let decode = code
-        .get("decode")
-        .and_then(value_string)
-        .unwrap_or_default();
-    let code_value = code.get("code").and_then(value_string).unwrap_or_default();
-    if code_value.is_empty() {
-        decode
-    } else {
-        format!("{decode} ({code_value})")
-    }
-}
-
 fn format_organization_ids(ids: &[String], organizations: &[Value]) -> String {
     if ids.is_empty() {
         return String::new();
@@ -5966,42 +5779,6 @@ fn usdm_format_quantity_or_missing(value: &Value) -> String {
         Value::Null => "Missing".to_owned(),
         _ => value_string(value).unwrap_or_else(|| value.to_string()),
     }
-}
-
-fn format_quantity_single(value: &Value) -> String {
-    let Some(object) = value.as_object() else {
-        return value_string(value).unwrap_or_else(|| value.to_string());
-    };
-    let quantity = object
-        .get("value")
-        .and_then(value_string)
-        .unwrap_or_default();
-    let unit = object
-        .get("unit")
-        .and_then(|unit| unit.get("standardCode"))
-        .map(|code| format_code(Some(code)))
-        .unwrap_or_default();
-    if unit.is_empty() {
-        quantity
-    } else {
-        format!("{quantity} {unit}")
-    }
-}
-
-fn format_quantity_single_with_missing_unit(value: &Value) -> String {
-    let Some(object) = value.as_object() else {
-        return value_string(value).unwrap_or_else(|| value.to_string());
-    };
-    let quantity = object
-        .get("value")
-        .and_then(value_string)
-        .unwrap_or_default();
-    let unit = object
-        .get("unit")
-        .and_then(|unit| unit.get("standardCode"))
-        .map(|code| format_code(Some(code)))
-        .unwrap_or_else(|| "unit not specified".to_owned());
-    format!("{quantity} {unit}")
 }
 
 fn format_code_object_list(values: &[&Value]) -> String {
@@ -6275,24 +6052,6 @@ fn format_sponsor_roles(roles: &[&Value]) -> String {
     )
 }
 
-fn format_planned_sex(values: &[Value]) -> String {
-    format!(
-        "[{}]",
-        values
-            .iter()
-            .map(|value| {
-                format!(
-                    "{}: {} ({})",
-                    value_string(value.get("id").unwrap_or(&Value::Null)).unwrap_or_default(),
-                    value_string(value.get("decode").unwrap_or(&Value::Null)).unwrap_or_default(),
-                    value_string(value.get("code").unwrap_or(&Value::Null)).unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("; ")
-    )
-}
-
 fn format_timeline_names(timelines: &[&Value]) -> String {
     if timelines.is_empty() {
         return "null".to_owned();
@@ -6312,141 +6071,6 @@ fn format_timeline_names(timelines: &[&Value]) -> String {
                 } else {
                     format!("{id} [{name}]")
                 }
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-fn planned_sex_invalid(values: &[Value]) -> bool {
-    let codes = values
-        .iter()
-        .filter_map(|value| value.get("code").and_then(value_string))
-        .collect::<Vec<_>>();
-    let distinct = codes.iter().collect::<BTreeSet<_>>().len();
-    codes.len() != distinct
-        || codes
-            .iter()
-            .any(|code| !matches!(code.as_str(), "C16576" | "C20197"))
-}
-
-fn quantity_present(quantity: &Value) -> bool {
-    !quantity.is_null()
-}
-
-fn quantity_has_unit(quantity: &Value) -> bool {
-    quantity.get("unit").is_some_and(|unit| !unit.is_null())
-        || quantity
-            .get("minValue")
-            .and_then(|value| value.get("unit"))
-            .is_some_and(|unit| !unit.is_null())
-        || quantity
-            .get("maxValue")
-            .and_then(|value| value.get("unit"))
-            .is_some_and(|unit| !unit.is_null())
-}
-
-fn format_quantity(quantity: &Value) -> String {
-    if quantity.is_null() {
-        return "null".to_owned();
-    }
-    if let Some(value) = quantity.get("value").and_then(value_string) {
-        return if quantity.get("unit").is_some_and(|unit| !unit.is_null()) {
-            format!("{value} {}", format_unit(quantity.get("unit")))
-        } else {
-            value
-        };
-    }
-    if let Some(min_value) = quantity.get("minValue") {
-        let max_value = quantity.get("maxValue").unwrap_or(&Value::Null);
-        let min = min_value
-            .get("value")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let max = max_value
-            .get("value")
-            .and_then(value_string)
-            .unwrap_or_default();
-        return if quantity_has_unit(quantity) {
-            format!(
-                "{min} {} to {max} {}",
-                format_unit(min_value.get("unit")),
-                format_unit(max_value.get("unit"))
-            )
-        } else {
-            format!("{min} to {max}")
-        };
-    }
-    value_string(quantity).unwrap_or_else(|| "null".to_owned())
-}
-
-fn format_unit(unit: Option<&Value>) -> String {
-    let Some(unit) = unit else {
-        return String::new();
-    };
-    let decode = unit
-        .get("standardCode")
-        .and_then(|code| code.get("decode"))
-        .and_then(value_string)
-        .unwrap_or_default();
-    let code = unit
-        .get("standardCode")
-        .and_then(|code| code.get("code"))
-        .and_then(value_string)
-        .unwrap_or_default();
-    if code.is_empty() {
-        decode
-    } else {
-        format!("{decode} ({code})")
-    }
-}
-
-fn format_cohort_names(cohorts: &[Value]) -> String {
-    format!(
-        "[{}]",
-        cohorts
-            .iter()
-            .map(|cohort| {
-                format!(
-                    "{}: {}",
-                    value_string(cohort.get("id").unwrap_or(&Value::Null)).unwrap_or_default(),
-                    value_string(cohort.get("name").unwrap_or(&Value::Null)).unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-fn format_cohort_quantity_ids(cohorts: &[Value], name: &str) -> String {
-    format!(
-        "[{}]",
-        cohorts
-            .iter()
-            .map(|cohort| {
-                let quantity = cohort.get(name).unwrap_or(&Value::Null);
-                format!(
-                    "{}: {}",
-                    value_string(cohort.get("id").unwrap_or(&Value::Null)).unwrap_or_default(),
-                    value_string(quantity.get("id").unwrap_or(&Value::Null)).unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-fn format_cohort_quantities(cohorts: &[Value], name: &str) -> String {
-    format!(
-        "[{}]",
-        cohorts
-            .iter()
-            .map(|cohort| {
-                format!(
-                    "{}: {}",
-                    value_string(cohort.get("id").unwrap_or(&Value::Null)).unwrap_or_default(),
-                    format_quantity(cohort.get(name).unwrap_or(&Value::Null))
-                )
             })
             .collect::<Vec<_>>()
             .join(", ")
