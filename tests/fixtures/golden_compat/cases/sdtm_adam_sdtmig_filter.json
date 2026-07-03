@@ -1,6 +1,6 @@
 {
   "name": "sdtm_adam_sdtmig_filter",
-  "description": "Stored Python/CDISC-compatible expected output for SDTMIG-filtered subset of the SDTM/ADaM-like package.",
+  "description": "Stored golden expected output for SDTMIG-filtered subset of the SDTM/ADaM-like package.",
   "rule_paths": ["rules/sdtm_adam"],
   "dataset_paths": ["datasets/sdtm_adam/study_package.json"],
   "define_xml_paths": ["cdisc/sdtm_adam_define.xml"],
@@ -8,5 +8,5 @@
   "external_dictionary_paths": ["cdisc/sdtm_adam_external_dictionary.json"],
   "standard": "SDTMIG",
   "standard_version": "3.4",
-  "expected_path": "python_compat/expected/sdtm_adam_sdtmig_filter.json"
+  "expected_path": "golden_compat/expected/sdtm_adam_sdtmig_filter.json"
 }

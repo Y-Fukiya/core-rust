@@ -181,7 +181,7 @@ fn golden_validates_sdtm_adam_like_study_package() {
 
     let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
     let expected =
-        read_json(&fixtures.join("python_compat/expected/sdtm_adam_full_study_package.json"));
+        read_json(&fixtures.join("golden_compat/expected/sdtm_adam_full_study_package.json"));
 
     assert_eq!(actual, expected);
 }
@@ -300,7 +300,7 @@ fn golden_validates_regulatory_like_study_package() {
 
     let actual = comparable_validation_output(&serde_json::to_value(outcome.results).unwrap());
     let expected =
-        read_json(&fixtures.join("python_compat/expected/regulatory_full_study_package.json"));
+        read_json(&fixtures.join("golden_compat/expected/regulatory_full_study_package.json"));
 
     assert_eq!(actual, expected);
 }
@@ -342,7 +342,7 @@ fn golden_writes_regulatory_json_csv_and_log_reports() {
 
     let actual_json = comparable_validation_output(&report_json["results"]);
     let expected_json =
-        read_json(&fixtures.join("python_compat/expected/regulatory_full_study_package.json"));
+        read_json(&fixtures.join("golden_compat/expected/regulatory_full_study_package.json"));
     assert_eq!(actual_json, expected_json);
 
     let actual_csv =

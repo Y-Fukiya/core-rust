@@ -6,5 +6,5 @@
   "define_xml_paths": ["cdisc/regulatory_define.xml"],
   "ct_paths": ["cdisc/regulatory_ct.json"],
   "external_dictionary_paths": ["cdisc/regulatory_external_dictionary.csv"],
-  "expected_path": "python_compat/expected/regulatory_full_study_package.json"
+  "expected_path": "golden_compat/expected/regulatory_full_study_package.json"
 }

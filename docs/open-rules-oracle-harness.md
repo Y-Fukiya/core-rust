@@ -250,6 +250,16 @@ standard-filter compatibility, or result post-processing. Unit tests scan the
 core API source files and fail when a new hard-coded CORE id appears without a
 classification row.
 
+Treat the manifest `evidence` column as an evidence source, not as proof that a
+rule-specific path is generic engine semantics. For example,
+`full-upstream-baseline` means the behavior was observed against the pinned Open
+Rules corpus; it does not by itself prove that the behavior follows from rule
+text independent of oracle observation. Promotion from `compatibility_policy` or
+`hand_port_semantics` into `engine_semantics` requires review of the rule text,
+fixture shape, and regression evidence. If a rule-specific post-process is kept
+because it matches official output but lacks rule-text justification, classify it
+as compatibility policy rather than native engine semantics.
+
 USDM hand-port semantics are isolated in
 `crates/core-api/src/usdm_hand_ports.rs`. `core-api/src/lib.rs` should call that
 module, not carry inline USDM rule-family lists.

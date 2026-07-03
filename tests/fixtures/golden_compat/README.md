@@ -1,6 +1,6 @@
-# Python compatibility fixtures
+# Golden compatibility fixtures
 
-This directory stores Python/CDISC-compatible expected validation outputs.
+This directory stores golden expected validation outputs.
 
 Each `cases/*.json` file defines one comparison case:
 
@@ -11,7 +11,7 @@ Each `cases/*.json` file defines one comparison case:
 - `external_dictionary_paths`: optional external dictionary JSON/CSV files, relative to `tests/fixtures`
 - `include_rules` / `exclude_rules`: optional rule filters
 - `standard` / `standard_version`: optional standard filters
-- `expected_path`: stored Python/CDISC expected output, relative to `tests/fixtures`
+- `expected_path`: stored golden expected output, relative to `tests/fixtures`
 
 The Rust harness compares only stable validation fields:
 

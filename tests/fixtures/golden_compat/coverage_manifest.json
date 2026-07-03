@@ -187,27 +187,27 @@
     {
       "name": "standard_filter_sdtmig",
       "evidence": [
-        "python_compat/cases/sdtm_adam_sdtmig_filter.json",
-        "python_compat/cases/regulatory_sdtmig_filter.json"
+        "golden_compat/cases/sdtm_adam_sdtmig_filter.json",
+        "golden_compat/cases/regulatory_sdtmig_filter.json"
       ]
     },
     {
       "name": "standard_filter_adamig",
       "evidence": [
-        "python_compat/cases/regulatory_adamig_filter.json"
+        "golden_compat/cases/regulatory_adamig_filter.json"
       ]
     },
     {
       "name": "include_rules_and_missing_rule_skip",
       "evidence": [
-        "python_compat/cases/regulatory_include_missing_rules.json",
-        "python_compat/expected/regulatory_include_missing_rules.json"
+        "golden_compat/cases/regulatory_include_missing_rules.json",
+        "golden_compat/expected/regulatory_include_missing_rules.json"
       ]
     },
     {
       "name": "issue_identity_traceability",
       "evidence": [
-        "python_compat/identity_manifest.json"
+        "golden_compat/identity_manifest.json"
       ]
     },
     {
