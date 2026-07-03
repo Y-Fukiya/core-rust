@@ -253,6 +253,18 @@ Rust `matches!` list. Treat that manifest as an Open Rules oracle-harness
 compatibility policy file: entries should be reviewed like coverage exceptions,
 not like generic engine semantics.
 
+The hand-port provenance manifest is intentionally broader than the
+`hand_port_semantics` rows in
+`crates/core-api/src/open_rules_compat/rule_specific_semantics.csv`.
+`hand_port_semantics` documents explicit rule-specific rewrite branches that
+remain in the core API execution path. `hand_port_rule_ids.csv` documents the
+observable execution provenance reported to users and to the Open Rules
+scoreboard; it can also include rules selected by pattern-based hand-port
+predicates or shared USDM adapters rather than by a one-rule rewrite branch.
+The required invariant is one-way: every `hand_port_semantics` rule must be
+declared as `rule_id_hand_port` provenance. The reverse is not required unless
+the rule has a dedicated rule-id branch that needs source-level inventory.
+
 Open Rules oracle-gap rule-id membership is similarly driven by
 `crates/core-api/src/open_rules_compat/oracle_gap_rule_ids.csv`. Each row carries
 the rule id, gap category, reason, owner, evidence source, and scope. The Rust
@@ -293,6 +305,14 @@ need classification discipline. `oracle_observation` /
 was compared and the rule text or adapter semantics were reviewed before treating
 the path as engine semantics. These columns are guardrails; changing them should
 be reviewed like changing the classification itself.
+
+For new candidates, use the two columns as workflow state, not just labels. A
+rule-id path may first enter the manifest as `oracle_observation` /
+`classification_inventory` when the official oracle suggests a behavior but the
+rule-text review is not complete. Promote it to `oracle_observation` /
+`rule_text_and_regression_review` only after the rule text, fixture shape, and
+regression result all support the engine-semantics classification. This prevents
+oracle-matching behavior from being silently relabeled as native semantics.
 
 USDM hand-port semantics are isolated in
 `crates/core-api/src/usdm_hand_ports.rs`. `core-api/src/lib.rs` should call that
