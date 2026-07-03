@@ -28,14 +28,14 @@
     "harness_error": 0,
     "supported_accuracy": 1.0,
     "coverage": 0.8967770034843205,
-    "native_engine_supported_match": 1728,
+    "native_engine_supported_match": 1724,
     "native_engine_supported_mismatch": 0,
     "native_engine_supported_accuracy": 1.0,
-    "native_engine_coverage": 0.7526132404181185,
-    "rule_id_hand_port_supported_match": 331,
+    "native_engine_coverage": 0.7508710801393729,
+    "rule_id_hand_port_supported_match": 335,
     "rule_id_hand_port_supported_mismatch": 0,
     "rule_id_hand_port_supported_accuracy": 1.0,
-    "rule_id_hand_port_coverage": 0.1441637630662021,
+    "rule_id_hand_port_coverage": 0.14590592334494773,
     "unknown_provenance_supported_match": 0,
     "unknown_provenance_supported_mismatch": 0,
     "unknown_provenance_supported_accuracy": null,
@@ -50,10 +50,10 @@
       },
       {
         "detail": "rule_specific_engine_semantics",
-        "supported_match": 318,
+        "supported_match": 314,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.13850174216027875
+        "coverage": 0.1367595818815331
       },
       {
         "detail": "compatibility_policy",
@@ -64,10 +64,10 @@
       },
       {
         "detail": "rule_id_hand_port",
-        "supported_match": 331,
+        "supported_match": 335,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.1441637630662021
+        "coverage": 0.14590592334494773
       }
     ],
     "by_scoring_policy": [
@@ -130,14 +130,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 0.8967770034843205,
-        "native_engine_supported_match": 1728,
+        "native_engine_supported_match": 1724,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7526132404181185,
-        "rule_id_hand_port_supported_match": 331,
+        "native_engine_coverage": 0.7508710801393729,
+        "rule_id_hand_port_supported_match": 335,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.1441637630662021,
+        "rule_id_hand_port_coverage": 0.14590592334494773,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -152,10 +152,10 @@
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 318,
+            "supported_match": 314,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.13850174216027875
+            "coverage": 0.1367595818815331
           },
           {
             "detail": "compatibility_policy",
@@ -166,10 +166,10 @@
           },
           {
             "detail": "rule_id_hand_port",
-            "supported_match": 331,
+            "supported_match": 335,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.1441637630662021
+            "coverage": 0.14590592334494773
           }
         ],
         "by_scoring_policy": [
@@ -226,14 +226,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 0.887620719929763,
-        "native_engine_supported_match": 842,
+        "native_engine_supported_match": 840,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7392449517120281,
-        "rule_id_hand_port_supported_match": 169,
+        "native_engine_coverage": 0.7374890254609306,
+        "rule_id_hand_port_supported_match": 171,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.14837576821773485,
+        "rule_id_hand_port_coverage": 0.15013169446883232,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -248,10 +248,10 @@
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 155,
+            "supported_match": 153,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.1360842844600527
+            "coverage": 0.13432835820895522
           },
           {
             "detail": "compatibility_policy",
@@ -262,10 +262,10 @@
           },
           {
             "detail": "rule_id_hand_port",
-            "supported_match": 169,
+            "supported_match": 171,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14837576821773485
+            "coverage": 0.15013169446883232
           }
         ],
         "by_scoring_policy": [
@@ -320,14 +320,14 @@
         "harness_error": 0,
         "supported_accuracy": 1.0,
         "coverage": 0.905790838375108,
-        "native_engine_supported_match": 886,
+        "native_engine_supported_match": 884,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7657735522904062,
-        "rule_id_hand_port_supported_match": 162,
+        "native_engine_coverage": 0.7640449438202247,
+        "rule_id_hand_port_supported_match": 164,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
-        "rule_id_hand_port_coverage": 0.14001728608470182,
+        "rule_id_hand_port_coverage": 0.14174589455488332,
         "unknown_provenance_supported_match": 0,
         "unknown_provenance_supported_mismatch": 0,
         "unknown_provenance_supported_accuracy": null,
@@ -342,10 +342,10 @@
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 163,
+            "supported_match": 161,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14088159031979255
+            "coverage": 0.13915298184961106
           },
           {
             "detail": "compatibility_policy",
@@ -356,10 +356,10 @@
           },
           {
             "detail": "rule_id_hand_port",
-            "supported_match": 162,
+            "supported_match": 164,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14001728608470182
+            "coverage": 0.14174589455488332
           }
         ],
         "by_scoring_policy": [
@@ -16082,8 +16082,8 @@
       "case_dir": "Published/CORE-000407/negative/01",
       "official_results_csv": "Published/CORE-000407/negative/01/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000407/negative/01/report.csv",
-      "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance": "rule_id_hand_port",
+      "execution_provenance_detail": "rule_id_hand_port",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -16101,8 +16101,8 @@
       "case_dir": "Published/CORE-000407/negative/02",
       "official_results_csv": "Published/CORE-000407/negative/02/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000407/negative/02/report.csv",
-      "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance": "rule_id_hand_port",
+      "execution_provenance_detail": "rule_id_hand_port",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -16120,8 +16120,8 @@
       "case_dir": "Published/CORE-000407/positive/01",
       "official_results_csv": "Published/CORE-000407/positive/01/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000407/positive/01/report.csv",
-      "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance": "rule_id_hand_port",
+      "execution_provenance_detail": "rule_id_hand_port",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -16139,8 +16139,8 @@
       "case_dir": "Published/CORE-000407/positive/02",
       "official_results_csv": "Published/CORE-000407/positive/02/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000407/positive/02/report.csv",
-      "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance": "rule_id_hand_port",
+      "execution_provenance_detail": "rule_id_hand_port",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -27673,7 +27673,7 @@
       "case_kind": "positive",
       "case_id": "01",
       "case_dir": "Published/CORE-000749/positive/01",
-      "official_results_csv": "Published/CORE-000749/positive/01/results/results.csv",
+      "official_results_csv": "Published/CORE-000749/positive/01/Results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000749/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
