@@ -406,6 +406,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         }
     }
 
+    annotate_results_execution_provenance(&mut results);
+
     let reports = request
         .output_dir
         .map(|output_dir| {
@@ -432,6 +434,22 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         .transpose()?;
 
     Ok(ValidateOutcome { results, reports })
+}
+
+fn annotate_results_execution_provenance(results: &mut [RuleValidationResult]) {
+    for result in results {
+        if result.execution_provenance.is_some() || result.rule_id.trim().is_empty() {
+            continue;
+        }
+        result.execution_provenance = Some(
+            if rule_id_uses_hand_port(&result.rule_id) {
+                "rule_id_hand_port"
+            } else {
+                "native_engine"
+            }
+            .to_owned(),
+        );
+    }
 }
 
 fn normalize_validation_result(
@@ -1408,6 +1426,7 @@ fn core_000206_idvarval_rdomain_result(
         return Some(RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Passed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: result_dataset.metadata.name.clone(),
             domain: result_dataset.metadata.domain.clone(),
@@ -1420,6 +1439,7 @@ fn core_000206_idvarval_rdomain_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: errors
             .first()
@@ -1524,6 +1544,7 @@ fn core_000677_pooldef_poolid_result(
     let passed = || RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: source.metadata.name.clone(),
         domain: source.metadata.domain.clone(),
@@ -1599,6 +1620,7 @@ fn core_000677_pooldef_poolid_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: errors
             .first()
@@ -1666,6 +1688,7 @@ fn core_000884_ts_age_parameter_count_result(
         return Some(RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: ts.metadata.name.clone(),
             domain: ts.metadata.domain.clone(),
@@ -1678,6 +1701,7 @@ fn core_000884_ts_age_parameter_count_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: ts.metadata.name.clone(),
         domain: ts.metadata.domain.clone(),
@@ -1800,6 +1824,7 @@ fn core_000744_relrec_faobj_result(
         return Some(RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: fa.metadata.name.clone(),
             domain: fa.metadata.domain.clone(),
@@ -1812,6 +1837,7 @@ fn core_000744_relrec_faobj_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: fa.metadata.name.clone(),
         domain: fa.metadata.domain.clone(),
@@ -2188,6 +2214,7 @@ fn core_000757_intervention_relrec_faobj_result(
         return Some(RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset: errors
                 .first()
@@ -2206,6 +2233,7 @@ fn core_000757_intervention_relrec_faobj_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: fa.metadata.name.clone(),
         domain: fa.metadata.domain.clone(),
@@ -2223,6 +2251,7 @@ fn core_000757_passed_result(
     RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Passed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: dataset.metadata.name.clone(),
         domain: dataset.metadata.domain.clone(),
@@ -3479,6 +3508,7 @@ fn core_000750_split_domain_unique_set_results(
         .map(|(dataset, errors)| RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset,
             domain: errors.first().and_then(|issue| issue.domain.clone()),
@@ -3712,6 +3742,7 @@ fn core_000878_invalid_condition_context_results(
         .map(|(dataset, errors)| RuleValidationResult {
             rule_id: rule.core_id.clone(),
             execution_status: core_engine::ExecutionStatus::Failed,
+            execution_provenance: None,
             skipped_reason: None,
             dataset,
             domain: errors.first().and_then(|issue| issue.domain.clone()),
@@ -7028,6 +7059,7 @@ fn evaluation_skipped_result(
     RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Skipped,
+        execution_provenance: None,
         skipped_reason: Some(SkippedReason::EvaluationError),
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),
@@ -7048,6 +7080,7 @@ fn missing_column_skipped_result(
     RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Skipped,
+        execution_provenance: None,
         skipped_reason: Some(SkippedReason::OracleSemanticsGap),
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),
@@ -7086,6 +7119,7 @@ fn missing_scope_wide_reference_target_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),
@@ -7130,6 +7164,7 @@ fn missing_tpt_relationship_target_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),
@@ -7192,6 +7227,7 @@ fn missing_tpt_relationship_pp_dataset_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: "PP".to_owned(),
         domain: Some("PP".to_owned()),
@@ -7250,6 +7286,7 @@ fn missing_scoped_dataset_presence_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: domain.clone(),
         domain: Some(domain.clone()),
@@ -7292,6 +7329,7 @@ fn core_000138_dm_dataset_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: dm.metadata().name.clone(),
         domain: Some("DM".to_owned()),
@@ -7335,6 +7373,7 @@ fn core_000095_se_dataset_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: se.metadata().name.clone(),
         domain: Some("SE".to_owned()),
@@ -7378,6 +7417,7 @@ fn core_000572_cm_dataset_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: cm.metadata().name.clone(),
         domain: Some("CM".to_owned()),
@@ -7421,6 +7461,7 @@ fn core_000466_pp_dataset_result(
     Some(RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Failed,
+        execution_provenance: None,
         skipped_reason: None,
         dataset: pp.metadata().name.clone(),
         domain: Some("PP".to_owned()),
@@ -7447,6 +7488,7 @@ fn entity_column_ref_skipped_result(
     RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: core_engine::ExecutionStatus::Skipped,
+        execution_provenance: None,
         skipped_reason: Some(SkippedReason::OracleSemanticsGap),
         dataset: dataset.metadata().name.clone(),
         domain: dataset.metadata().domain.clone(),

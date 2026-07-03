@@ -28,7 +28,7 @@ pub(crate) use classifier::{
 
 const HAND_PORT_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/hand_port_rule_ids.csv");
 const HAND_PORT_RULE_ID_HEADER: &str = "rule_id,execution_provenance,owner,scope";
-const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 119;
+const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 120;
 const HAND_PORT_PROVENANCE: &str = "rule_id_hand_port";
 const HAND_PORT_SCOPE: &str = "open-rules-oracle-harness";
 const ORACLE_GAP_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/oracle_gap_rule_ids.csv");
@@ -894,6 +894,57 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
             missing.is_empty(),
             "rule-specific semantics manifest is missing {missing:?}"
         );
+    }
+
+    #[test]
+    fn hand_port_semantics_are_declared_as_hand_port_provenance() {
+        let hand_port = hand_port_rule_ids().collect::<BTreeSet<_>>();
+        let hand_port_semantics = RULE_SPECIFIC_SEMANTICS_MANIFEST
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
+                (fields.len() == 7 && fields[1] == "hand_port_semantics").then_some(fields[0])
+            })
+            .collect::<BTreeSet<_>>();
+        let missing = hand_port_semantics
+            .difference(&hand_port)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "hand-port semantics missing hand-port provenance entries: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn oracle_gap_hand_port_overlap_is_explicitly_limited() {
+        let hand_port = hand_port_rule_ids().collect::<BTreeSet<_>>();
+        let oracle_gap_overlap = oracle_gap_rule_ids()
+            .filter_map(|(category, rule_id)| {
+                hand_port.contains(rule_id).then_some((category, rule_id))
+            })
+            .collect::<BTreeSet<_>>();
+        let allowed_categories = BTreeSet::from([
+            "date_operator",
+            "defer_date_operator",
+            "defer_relrec_or_supp_match_dataset",
+            "missing_condition_columns_as_null",
+            "relrec_or_supp_match_dataset",
+            "scope_wide_reference_distinct",
+            "supported_reference_distinct",
+            "usdm_hand_port_entity_scope",
+        ]);
+        let unexpected = oracle_gap_overlap
+            .iter()
+            .filter(|(category, _rule_id)| !allowed_categories.contains(category))
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            unexpected.is_empty(),
+            "hand-port provenance overlaps unexpected oracle-gap categories: {unexpected:?}"
+        );
+        assert!(oracle_gap_overlap.contains(&("usdm_hand_port_entity_scope", "CORE-000407")));
     }
 
     #[test]

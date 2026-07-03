@@ -158,11 +158,20 @@ fn run_validation_filters_rules_and_writes_reports() {
     assert_eq!(outcome.results[1].rule_id, "CORE-TEST-0001");
     assert_eq!(outcome.results[1].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[1].error_count, 1);
-    assert!(outcome
-        .reports
-        .expect("reports")
-        .json
-        .expect("json report")
-        .exists());
+    let json_report = outcome.reports.expect("reports").json.expect("json report");
+    assert!(json_report.exists());
     assert!(output_dir.join("report.csv").exists());
+
+    let report_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(json_report).expect("read report json"))
+            .expect("parse report json");
+    let results = report_json["results"].as_array().expect("results array");
+    let core_test_result = results
+        .iter()
+        .find(|result| result["rule_id"] == "CORE-TEST-0001")
+        .expect("CORE-TEST-0001 result");
+    assert_eq!(
+        core_test_result["execution_provenance"],
+        serde_json::Value::String("native_engine".to_owned())
+    );
 }
