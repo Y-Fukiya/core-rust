@@ -5,8 +5,8 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 7035 | Continue moving the remaining fixture-style and rule-specific regression tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 6129 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, operation-field, metadata-support, operation-execution, operation-dataset, metadata-execution, scope-filter, operation-reference, execution-provenance, domain-presence, split-domain unique-set, and result override helper splits. |
+| `crates/core-api/src/lib.rs` | 5982 | Maintenance mode: keep new helper families in focused sibling modules rather than adding back to `lib.rs`. |
+| `crates/core-api/src/tests.rs` | 5797 | Maintenance mode: keep new fixture-style and rule-specific regression tests in focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-data/src/lib.rs` | 4965 | Continue extracting USDM collector and row-builder helpers after the product/administration, design, content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
 | `crates/core-api/src/tests/open_rules_operations.rs` | 4513 | Split further only if operation families grow again; recent work moved the remaining operation pipeline, grouped distinct, record-count, and schema-normalized key tests here. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
@@ -25,16 +25,16 @@ still too large to review safely:
 
 ## Recommended Order
 
-1. `core-api/src/lib.rs`: continue extracting small pure helper families into
+1. `core-api/src/lib.rs`: keep extracting any new pure helper families into
    `open_rules_compat/` and sibling modules. The oracle-gap classifier,
    condition-inspection, CDISC context, static codelist, operation-field,
-   metadata-support, operation-execution, metadata-execution, scope-filter,
-   operation-reference, execution-provenance, domain-presence, split-domain
-   unique-set, and result override helper slices have already moved out of
-   `lib.rs`; operation-derived dataset helpers have also moved out.
-2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
-   `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
-   out already.
+   metadata-support, operation-execution, operation-column, operation-dataset,
+   metadata-execution, scope-filter, operation-reference, execution-provenance,
+   domain-presence, split-domain unique-set, and result override helper slices
+   have already moved out of `lib.rs`.
+2. `core-api/src/tests.rs`: keep moving any new Open Rules fixture-style tests
+   into `tests/open_rules_*.rs` modules. Loader/row-scope, oracle-semantics,
+   standard-filter, operation, and USDM slices have moved out already.
 3. `core-data/src/lib.rs`: continue with USDM JSON flattening or dataset
    package helpers after the Open Rules CSV/data-dir loader split.
 4. `core-engine/src/lib.rs`: continue splitting scalar/date/operator helper
@@ -82,6 +82,12 @@ still too large to review safely:
   aggregate, domain label, XHTML, DY, match-dataset operation, operation
   pipeline, grouped distinct, record-count, inline-filter, and
   schema-normalized operation tests.
+- `core-api/src/tests/open_rules_oracle_semantics.rs`: Open Rules oracle
+  semantics, dataset-presence gap, empty/non-empty gap, unique-set gap, and
+  timepoint relationship regression tests.
+- `core-api/src/tests/open_rules_standard_filter.rs`: standard/version
+  filtering, standard mismatch skip, standard oracle-gap, and standard-family
+  compatibility regression tests.
 - `core-api/src/tests/open_rules_codelists.rs`: static CDISC codelist,
   package-version scoping, Define-XML/CT enrichment, and entity codelist
   operation tests.
@@ -128,6 +134,9 @@ still too large to review safely:
   domain labels, study domains, variable counts, study day derivation, metadata
   extraction, codelist terms, split-by, parent model order, and XHTML error
   projections.
+- `core-api/src/operation_columns.rs`: operation column projection helpers,
+  schema/domain placeholder expansion, operation input selection, and simple
+  JSONata-like derive-column transforms.
 - `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
