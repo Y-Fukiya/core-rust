@@ -19,12 +19,11 @@ As of the current upstream baseline:
 | Positive-zero manifest cases deferred for other reviewed reasons | 31 |
 | Positive-zero manifest cases with `no_official_oracle` | 8 |
 
-The accepted scoreboard therefore has no positive-zero `supported_mismatch`,
-`deferred_oracle_gap_mismatch`, or `deferred_oracle_gap_skipped` cases. The
-manifest entries are retained as a reviewed no-auto-promotion guard. The
-positive-zero rule ids are still present in the upstream baseline; the zero
-count above means no accepted case is currently deferred or failing for the
-positive-zero probe reason itself.
+The accepted scoreboard has no cases whose active bucket or deferral reason is
+attributed to the positive-zero probe itself. Some positive-zero manifest rule
+ids are still deferred for other reviewed reasons. The manifest entries are
+retained as a reviewed no-auto-promotion guard, and the positive-zero rule ids
+remain present in the upstream baseline.
 
 ## Review Rule
 
