@@ -899,6 +899,94 @@ fn load_xpt_dataset_rejects_oversized_file_before_reading() {
 }
 
 #[test]
+fn load_xpt_dataset_rejects_short_file() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("short.xpt");
+    fs::write(&path, vec![b' '; XPT_CARD_LEN - 1]).expect("write short xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("short xpt rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("shorter than one 80-byte record"))
+    );
+}
+
+#[test]
+fn load_xpt_dataset_rejects_excessive_namestr_count_before_allocation() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("too-many-vars.xpt");
+    let mut bytes = Vec::new();
+    push_xpt_card(
+        &mut bytes,
+        "HEADER RECORD*******LIBRARY HEADER RECORD!!!!!!!000000000000000000000000000000",
+    );
+    push_xpt_card(
+        &mut bytes,
+        &format!(
+            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!{:030}",
+            10_001
+        ),
+    );
+    fs::write(&path, bytes).expect("write xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("excessive variable count rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("declares too many variables"))
+    );
+}
+
+#[test]
+fn load_xpt_dataset_rejects_truncated_namestr_records() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("truncated-namestr.xpt");
+    let mut bytes = Vec::new();
+    push_xpt_card(
+        &mut bytes,
+        "HEADER RECORD*******LIBRARY HEADER RECORD!!!!!!!000000000000000000000000000000",
+    );
+    push_xpt_card(
+        &mut bytes,
+        "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000000000000000000000000001",
+    );
+    bytes.extend([0_u8; XPT_NAMESTR_LEN - 1]);
+    fs::write(&path, bytes).expect("write xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("truncated namestr rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("ended before all NAMESTR records"))
+    );
+}
+
+#[test]
+fn load_xpt_dataset_treats_invalid_utf8_character_values_as_empty() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("invalid-text.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::character(
+            "DOMAIN",
+            2,
+            "Domain Abbreviation",
+        )],
+        &[vec![TestXptValue::Text("AE")]],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    let obs_header = find_test_xpt_card(&bytes, "HEADER RECORD*******OBS").expect("obs header");
+    let row_start = obs_header + XPT_CARD_LEN;
+    bytes[row_start] = 0xff;
+    bytes[row_start + 1] = 0xfe;
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let domain = dataset.frame().column("DOMAIN").expect("domain column");
+
+    assert_eq!(domain.get(0).expect("row 1").extract_str(), Some(""));
+}
+
+#[test]
 fn load_xpt_dataset_preserves_zero_numeric_values() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("ae.xpt");
@@ -1720,6 +1808,13 @@ fn pad_to_xpt_card(bytes: &mut Vec<u8>) {
     if remainder != 0 {
         bytes.resize(bytes.len() + XPT_CARD_LEN - remainder, b' ');
     }
+}
+
+fn find_test_xpt_card(bytes: &[u8], needle: &str) -> Option<usize> {
+    bytes
+        .chunks_exact(XPT_CARD_LEN)
+        .position(|card| String::from_utf8_lossy(card).starts_with(needle))
+        .map(|index| index * XPT_CARD_LEN)
 }
 
 fn f64_to_ibm_float(value: f64) -> [u8; 8] {
