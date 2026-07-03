@@ -987,6 +987,120 @@ fn load_xpt_dataset_treats_invalid_utf8_character_values_as_empty() {
 }
 
 #[test]
+fn load_xpt_dataset_rejects_zero_length_namestr_variable() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("zero-length-var.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::character(
+            "DOMAIN",
+            2,
+            "Domain Abbreviation",
+        )],
+        &[vec![TestXptValue::Text("AE")]],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    let namestr_start = find_test_xpt_namestr_start(&bytes).expect("namestr start");
+    bytes[namestr_start + 4..namestr_start + 6].copy_from_slice(&0_u16.to_be_bytes());
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("zero-length variable rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("zero length"))
+    );
+}
+
+#[test]
+fn load_xpt_dataset_rejects_numeric_namestr_length_greater_than_eight() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("wide-numeric.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::numeric("AESEQ", "Sequence Number")],
+        &[vec![TestXptValue::Number(1.0)]],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    let namestr_start = find_test_xpt_namestr_start(&bytes).expect("namestr start");
+    bytes[namestr_start + 4..namestr_start + 6].copy_from_slice(&9_u16.to_be_bytes());
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("wide numeric variable rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("unsupported length 9"))
+    );
+}
+
+#[test]
+fn load_xpt_dataset_ignores_padding_only_trailing_observations() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("padded.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::character(
+            "DOMAIN",
+            2,
+            "Domain Abbreviation",
+        )],
+        &[vec![TestXptValue::Text("AE")]],
+    );
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+
+    assert_eq!(dataset.summary().row_count, 1);
+}
+
+#[test]
+fn load_xpt_dataset_decodes_ibm_float_fraction_and_sign() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("fractional.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::numeric("AEVAL", "Analysis Value")],
+        &[
+            vec![TestXptValue::Number(0.5)],
+            vec![TestXptValue::Number(-2.25)],
+        ],
+    );
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let values = dataset.frame().column("AEVAL").expect("value column");
+
+    assert_float_value(values.get(0).expect("row 1"), 0.5);
+    assert_float_value(values.get(1).expect("row 2"), -2.25);
+}
+
+#[test]
+fn load_xpt_dataset_treats_numeric_missing_payload_as_null() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("missing-numeric.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::numeric("AEVAL", "Analysis Value")],
+        &[vec![TestXptValue::Number(123.0)]],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    let obs_header = find_test_xpt_card(&bytes, "HEADER RECORD*******OBS").expect("obs header");
+    let row_start = obs_header + XPT_CARD_LEN;
+    bytes[row_start] = b'_';
+    for byte in &mut bytes[row_start + 1..row_start + 8] {
+        *byte = 0;
+    }
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let values = dataset.frame().column("AEVAL").expect("value column");
+
+    assert_eq!(values.get(0).expect("row 1"), AnyValue::Null);
+}
+
+#[test]
 fn load_xpt_dataset_preserves_zero_numeric_values() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("ae.xpt");
@@ -1815,6 +1929,22 @@ fn find_test_xpt_card(bytes: &[u8], needle: &str) -> Option<usize> {
         .chunks_exact(XPT_CARD_LEN)
         .position(|card| String::from_utf8_lossy(card).starts_with(needle))
         .map(|index| index * XPT_CARD_LEN)
+}
+
+fn find_test_xpt_namestr_start(bytes: &[u8]) -> Option<usize> {
+    find_test_xpt_card(bytes, "HEADER RECORD*******NAMESTR").map(|offset| offset + XPT_CARD_LEN)
+}
+
+fn assert_float_value(value: AnyValue<'_>, expected: f64) {
+    let actual = match value {
+        AnyValue::Float64(value) => value,
+        AnyValue::Float32(value) => value as f64,
+        other => panic!("expected floating-point value, got {other:?}"),
+    };
+    assert!(
+        (actual - expected).abs() < 1e-12,
+        "expected {expected}, got {actual}"
+    );
 }
 
 fn f64_to_ibm_float(value: f64) -> [u8; 8] {
