@@ -48,6 +48,38 @@ pub(crate) fn json_rows_dataset(
     Ok(LoadedDataset::new(metadata, frame))
 }
 
+pub fn metadata_row_dataset(
+    source: &LoadedDataset,
+    values: &BTreeMap<String, Value>,
+) -> Result<LoadedDataset> {
+    let columns = values
+        .iter()
+        .map(|(name, value)| series_from_json_values(name, std::slice::from_ref(value)).into())
+        .collect::<Vec<_>>();
+    let frame = DataFrame::new(1, columns).map_err(|source_error| DataError::Polars {
+        path: source.metadata.full_path.clone(),
+        source: source_error,
+    })?;
+
+    Ok(LoadedDataset::new(source.metadata.clone(), frame))
+}
+
+pub fn metadata_rows_dataset(
+    source: &LoadedDataset,
+    rows: &[BTreeMap<String, Value>],
+) -> Result<LoadedDataset> {
+    let columns = rows_to_columns(rows)
+        .into_iter()
+        .map(|(name, values)| series_from_json_values(&name, &values).into())
+        .collect::<Vec<_>>();
+    let frame = DataFrame::new(rows.len(), columns).map_err(|source_error| DataError::Polars {
+        path: source.metadata.full_path.clone(),
+        source: source_error,
+    })?;
+
+    Ok(LoadedDataset::new(source.metadata.clone(), frame))
+}
+
 fn json_schema_issue_columns() -> IndexMap<String, Vec<Value>> {
     ["path", "validator", "error_attribute", "message"]
         .into_iter()

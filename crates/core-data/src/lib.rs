@@ -33,6 +33,7 @@ mod usdm_values;
 pub use dataset_package::load_dataset_package_json;
 pub use dataset_transforms::sort_dataset_by_columns;
 use json_table::{json_rows_dataset, records_to_frame, series_from_json_values};
+pub use json_table::{metadata_row_dataset, metadata_rows_dataset};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
 use usdm_abbreviations::collect_usdm_abbreviation_rows;
 use usdm_collectors::{
@@ -174,48 +175,6 @@ impl LoadedDataset {
     pub fn frame(&self) -> &DataFrame {
         &self.frame
     }
-}
-
-pub fn metadata_row_dataset(
-    source: &LoadedDataset,
-    values: &BTreeMap<String, Value>,
-) -> Result<LoadedDataset> {
-    let columns = values
-        .iter()
-        .map(|(name, value)| series_from_json_values(name, std::slice::from_ref(value)).into())
-        .collect::<Vec<_>>();
-    let frame = DataFrame::new(1, columns).map_err(|source_error| DataError::Polars {
-        path: source.metadata.full_path.clone(),
-        source: source_error,
-    })?;
-
-    Ok(LoadedDataset::new(source.metadata.clone(), frame))
-}
-
-pub fn metadata_rows_dataset(
-    source: &LoadedDataset,
-    rows: &[BTreeMap<String, Value>],
-) -> Result<LoadedDataset> {
-    let names = rows
-        .iter()
-        .flat_map(|row| row.keys().cloned())
-        .collect::<BTreeSet<_>>();
-    let columns = names
-        .iter()
-        .map(|name| {
-            let values = rows
-                .iter()
-                .map(|row| row.get(name).cloned().unwrap_or(Value::Null))
-                .collect::<Vec<_>>();
-            series_from_json_values(name, &values).into()
-        })
-        .collect::<Vec<_>>();
-    let frame = DataFrame::new(rows.len(), columns).map_err(|source_error| DataError::Polars {
-        path: source.metadata.full_path.clone(),
-        source: source_error,
-    })?;
-
-    Ok(LoadedDataset::new(source.metadata.clone(), frame))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
