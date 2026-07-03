@@ -39,8 +39,6 @@ pub struct BaselineReport {
     pub improvements: Vec<BaselineDifference>,
     #[serde(default)]
     pub review_required: Vec<BaselineDifference>,
-    #[serde(default)]
-    pub warnings: Vec<BaselineDifference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -92,11 +90,10 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
     let current = read_scoreboard(&args.scoreboard)?;
     let report = compare_scoreboards(&baseline, &current);
     println!(
-        "open-rules baseline: {} regression(s), {} improvement(s), {} review-required, {} warning(s)",
+        "open-rules baseline: {} regression(s), {} improvement(s), {} review-required",
         report.regressions.len(),
         report.improvements.len(),
         report.review_required.len(),
-        report.warnings.len()
     );
     for regression in &report.regressions {
         println!(
@@ -152,25 +149,6 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
                 &review.current_scoring_policy,
             ),
             review.message
-        );
-    }
-    for warning in &report.warnings {
-        println!(
-            "warning {}: {} -> {} ({})",
-            warning.case_key,
-            bucket_and_provenance(
-                &warning.baseline_bucket,
-                &warning.baseline_execution_provenance,
-                &warning.baseline_execution_provenance_detail,
-                &warning.baseline_scoring_policy,
-            ),
-            bucket_and_provenance(
-                &warning.current_bucket,
-                &warning.current_execution_provenance,
-                &warning.current_execution_provenance_detail,
-                &warning.current_scoring_policy,
-            ),
-            warning.message
         );
     }
     Ok(report.should_fail())
@@ -305,7 +283,6 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
     let mut review_required = Vec::new();
-    let warnings = Vec::new();
     let keys = baseline_cases
         .keys()
         .chain(current_cases.keys())
@@ -471,7 +448,6 @@ pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> Basel
         regressions,
         improvements,
         review_required,
-        warnings,
     }
 }
 
