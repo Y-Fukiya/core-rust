@@ -7,7 +7,7 @@ still too large to review safely:
 |---|---:|---|
 | `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8629 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, and operation-field helper splits. |
-| `crates/core-data/src/lib.rs` | 6599 | Continue extracting USDM collector and row-builder helpers after the content/timeline, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
+| `crates/core-data/src/lib.rs` | 6473 | Continue extracting USDM collector and row-builder helpers after the content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
@@ -113,8 +113,8 @@ still too large to review safely:
   governance-date collection, global duplicate type detection, and associated
   row builders.
 - `core-data/src/usdm_content.rs`: USDM narrative content,
-  document-content-reference, and schedule timeline collection plus associated
-  row builders.
+  document-content-reference, schedule timeline, and scheduled-instance
+  collection plus associated row builders.
 - `core-engine/src/group_operators.rs`: unique-set, relationship, and
   inconsistent-across-dataset operator evaluation.
 - `xtask/src/open_rules/score/summary.rs`: scoreboard summary, deferred
