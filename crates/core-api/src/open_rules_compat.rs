@@ -1055,12 +1055,17 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
         let lib_rule_ids = core_rule_ids_in(include_str!("lib.rs"));
         let hand_port = RULE_SPECIFIC_SEMANTICS_MANIFEST
             .lines()
+            .enumerate()
             .skip(1)
-            .filter_map(|line| {
-                let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
-                (fields.len() == 7 && fields[1] == "hand_port_semantics").then_some(fields[0])
+            .filter_map(parse_rule_specific_semantics_entry)
+            .filter_map(|(rule_id, classification)| {
+                (classification == "hand_port_semantics").then_some(rule_id)
             })
             .collect::<BTreeSet<_>>();
+        assert!(
+            !hand_port.is_empty(),
+            "hand-port semantics manifest subset unexpectedly empty"
+        );
         let leaked = lib_rule_ids
             .intersection(&hand_port)
             .copied()
@@ -1076,12 +1081,17 @@ CORE-000773,operation,reason,core-api,evidence,open-rules-oracle-harness\n",
         let lib_rule_ids = core_rule_ids_in(include_str!("lib.rs"));
         let engine_semantics = RULE_SPECIFIC_SEMANTICS_MANIFEST
             .lines()
+            .enumerate()
             .skip(1)
-            .filter_map(|line| {
-                let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
-                (fields.len() == 7 && fields[1] == "engine_semantics").then_some(fields[0])
+            .filter_map(parse_rule_specific_semantics_entry)
+            .filter_map(|(rule_id, classification)| {
+                (classification == "engine_semantics").then_some(rule_id)
             })
             .collect::<BTreeSet<_>>();
+        assert!(
+            !engine_semantics.is_empty(),
+            "engine semantics manifest subset unexpectedly empty"
+        );
         let leaked = lib_rule_ids
             .intersection(&engine_semantics)
             .copied()
