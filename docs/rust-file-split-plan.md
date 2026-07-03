@@ -118,6 +118,8 @@ still too large to review safely:
 - `core-data/src/usdm_content.rs`: USDM narrative content,
   document-content-reference, schedule timeline, and scheduled-instance
   collection plus associated row builders.
+- `core-data/src/usdm_timeline.rs`: USDM timeline-ordering and object-label
+  formatting helpers used by study-design row construction.
 - `core-engine/src/group_operators.rs`: unique-set, relationship, and
   inconsistent-across-dataset operator evaluation.
 - `xtask/src/open_rules/score/summary.rs`: scoreboard summary, deferred
