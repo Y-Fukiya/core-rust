@@ -16,8 +16,10 @@ mod dataset_transforms;
 mod json_table;
 mod open_rules_data_dir;
 mod open_rules_variables;
+mod usdm_abbreviations;
 mod usdm_collectors;
 mod usdm_json_schema;
+mod usdm_objects;
 mod usdm_population_columns;
 mod usdm_references;
 mod usdm_row_builders;
@@ -27,11 +29,13 @@ pub use dataset_package::load_dataset_package_json;
 pub use dataset_transforms::sort_dataset_by_columns;
 use json_table::{json_rows_dataset, records_to_frame, series_from_json_values};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
+use usdm_abbreviations::collect_usdm_abbreviation_rows;
 use usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
     collect_usdm_range_rows,
 };
 use usdm_json_schema::collect_usdm_json_schema_issue_rows;
+use usdm_objects::{apply_usdm_object_duplicate_flags, collect_usdm_object_rows};
 use usdm_population_columns::{insert_planned_sex_columns, insert_quantity_columns};
 use usdm_references::{
     collect_usdm_id_instance_types, collect_usdm_reference_keys, parameter_map_reference_invalid,
@@ -2064,59 +2068,6 @@ fn values_as_slice(value: &Value) -> Vec<&Value> {
         Value::Array(values) => values.iter().collect(),
         Value::Object(_) => vec![value],
         _ => Vec::new(),
-    }
-}
-
-fn collect_usdm_abbreviation_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let Some(versions) = value
-        .get("study")
-        .and_then(|study| study.get("versions"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-
-    for (version_index, version) in versions.iter().enumerate() {
-        let Some(abbreviations) = version.get("abbreviations").and_then(Value::as_array) else {
-            continue;
-        };
-        let mut version_rows = abbreviations
-            .iter()
-            .enumerate()
-            .map(|(abbreviation_index, abbreviation)| {
-                usdm_abbreviation_row(abbreviation, version, version_index, abbreviation_index)
-            })
-            .collect::<Vec<_>>();
-        apply_abbreviation_duplicate_flags(&mut version_rows);
-        rows.extend(version_rows);
-    }
-}
-
-fn collect_usdm_object_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    collect_usdm_object_rows_at(value, "", rows);
-}
-
-fn collect_usdm_object_rows_at(value: &Value, path: &str, rows: &mut Vec<BTreeMap<String, Value>>) {
-    match value {
-        Value::Object(object) => {
-            if object.contains_key("id") {
-                rows.push(usdm_object_row(value, path));
-            }
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_object_rows_at(child, &child_path, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_object_rows_at(child, &format!("{path}/{index}"), rows);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -4833,89 +4784,6 @@ fn usdm_narrative_content_row(
     row
 }
 
-fn usdm_abbreviation_row(
-    abbreviation: &Value,
-    version: &Value,
-    version_index: usize,
-    abbreviation_index: usize,
-) -> BTreeMap<String, Value> {
-    let mut row = BTreeMap::new();
-    row.insert(
-        "path".to_owned(),
-        Value::String(format!(
-            "/study/versions/{version_index}/abbreviations/{abbreviation_index}"
-        )),
-    );
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(abbreviation.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(abbreviation.get("id")));
-    row.insert("StudyVersion.id".to_owned(), json_string(version.get("id")));
-    row.insert(
-        "StudyVersion.versionIdentifier".to_owned(),
-        json_string(version.get("versionIdentifier")),
-    );
-    row.insert(
-        "abbreviatedText".to_owned(),
-        json_string(abbreviation.get("abbreviatedText")),
-    );
-    row.insert(
-        "expandedText".to_owned(),
-        json_string(abbreviation.get("expandedText")),
-    );
-    row
-}
-
-fn apply_abbreviation_duplicate_flags(rows: &mut [BTreeMap<String, Value>]) {
-    let mut expanded_counts: HashMap<String, usize> = HashMap::new();
-    let mut abbreviated_counts: HashMap<String, usize> = HashMap::new();
-    for row in rows.iter() {
-        let expanded = row
-            .get("expandedText")
-            .and_then(value_string)
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if !expanded.is_empty() {
-            *expanded_counts.entry(expanded).or_insert(0) += 1;
-        }
-        let abbreviated = row
-            .get("abbreviatedText")
-            .and_then(value_string)
-            .unwrap_or_default();
-        if !abbreviated.is_empty() {
-            *abbreviated_counts.entry(abbreviated).or_insert(0) += 1;
-        }
-    }
-    for row in rows.iter_mut() {
-        let expanded = row
-            .get("expandedText")
-            .and_then(value_string)
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let expanded_duplicate = !expanded.is_empty()
-            && expanded_counts
-                .get(&expanded)
-                .is_some_and(|count| *count > 1);
-        let abbreviated = row
-            .get("abbreviatedText")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let abbreviated_duplicate = !abbreviated.is_empty()
-            && abbreviated_counts
-                .get(&abbreviated)
-                .is_some_and(|count| *count > 1);
-        row.insert(
-            "abbreviation_expanded_text_duplicate".to_owned(),
-            Value::Bool(expanded_duplicate),
-        );
-        row.insert(
-            "abbreviation_text_duplicate".to_owned(),
-            Value::Bool(abbreviated_duplicate),
-        );
-    }
-}
-
 fn duplicate_strings(values: &[String]) -> Vec<String> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for value in values {
@@ -4928,67 +4796,6 @@ fn duplicate_strings(values: &[String]) -> Vec<String> {
         .collect::<Vec<_>>();
     duplicates.sort();
     duplicates
-}
-
-fn usdm_object_row(object: &Value, path: &str) -> BTreeMap<String, Value> {
-    let id = value_string(object.get("id").unwrap_or(&Value::Null)).unwrap_or_default();
-    let mut row = BTreeMap::new();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(object.get("instanceType")),
-    );
-    row.insert("id".to_owned(), Value::String(id.clone()));
-    row.insert("name".to_owned(), json_string(object.get("name")));
-    row.insert(
-        "usdm_id_contains_space".to_owned(),
-        Value::Bool(id.contains(' ')),
-    );
-    row.insert(
-        "usdm_duplicate_name_for_class".to_owned(),
-        Value::Bool(false),
-    );
-    row.insert("usdm_duplicate_id".to_owned(), Value::Bool(false));
-    row
-}
-
-fn apply_usdm_object_duplicate_flags(rows: &mut [BTreeMap<String, Value>]) {
-    let mut name_counts: HashMap<(String, String), usize> = HashMap::new();
-    let mut id_counts: HashMap<String, usize> = HashMap::new();
-    for row in rows.iter() {
-        let instance_type = row
-            .get("instanceType")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let name = row.get("name").and_then(value_string).unwrap_or_default();
-        if !instance_type.is_empty() && !name.is_empty() {
-            *name_counts.entry((instance_type, name)).or_insert(0) += 1;
-        }
-        let id = row.get("id").and_then(value_string).unwrap_or_default();
-        if !id.is_empty() {
-            *id_counts.entry(id).or_insert(0) += 1;
-        }
-    }
-
-    for row in rows.iter_mut() {
-        let instance_type = row
-            .get("instanceType")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let name = row.get("name").and_then(value_string).unwrap_or_default();
-        let duplicate_name = !instance_type.is_empty()
-            && !name.is_empty()
-            && name_counts
-                .get(&(instance_type, name))
-                .is_some_and(|count| *count > 1);
-        let id = row.get("id").and_then(value_string).unwrap_or_default();
-        let duplicate_id = !id.is_empty() && id_counts.get(&id).is_some_and(|count| *count > 1);
-        row.insert(
-            "usdm_duplicate_name_for_class".to_owned(),
-            Value::Bool(duplicate_name),
-        );
-        row.insert("usdm_duplicate_id".to_owned(), Value::Bool(duplicate_id));
-    }
 }
 
 fn usdm_geographic_scope_row(scope: &Value, path: &str) -> BTreeMap<String, Value> {
