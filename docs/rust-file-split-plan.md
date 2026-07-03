@@ -7,7 +7,7 @@ still too large to review safely:
 |---|---:|---|
 | `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
 | `crates/core-api/src/lib.rs` | 8435 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, operation-field, and metadata-support helper splits. |
-| `crates/core-data/src/lib.rs` | 5635 | Continue extracting USDM collector and row-builder helpers after the design, content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
+| `crates/core-data/src/lib.rs` | 4965 | Continue extracting USDM collector and row-builder helpers after the product/administration, design, content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
@@ -123,6 +123,9 @@ still too large to review safely:
 - `core-data/src/usdm_design.rs`: USDM study-design, interventional-design,
   duplicate design-list, intervention reference, blinding-role, and primary
   endpoint row construction.
+- `core-data/src/usdm_product.rs`: USDM administrable product, administration,
+  ingredient strength, amendment reason, and product organization role
+  collection plus row construction.
 - `core-engine/src/group_operators.rs`: unique-set, relationship, and
   inconsistent-across-dataset operator evaluation.
 - `xtask/src/open_rules/score/summary.rs`: scoreboard summary, deferred
