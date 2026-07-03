@@ -4,6 +4,7 @@
 mod cdisc_context;
 mod condition_inspect;
 mod engine_semantics;
+mod execution_provenance;
 mod json_values;
 mod match_datasets;
 mod metadata_execution;
@@ -63,6 +64,7 @@ pub(crate) use condition_inspect::{
     contains_presence_operator, contains_sort_operator, contains_target,
     contains_unique_set_operator,
 };
+use execution_provenance::annotate_results_execution_provenance;
 use json_values::{json_distinct_value_string, json_report_string, json_scalar_string};
 use match_datasets::{
     add_source_row_column, execute_match_datasets, match_dataset_name,
@@ -434,22 +436,6 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         .transpose()?;
 
     Ok(ValidateOutcome { results, reports })
-}
-
-fn annotate_results_execution_provenance(results: &mut [RuleValidationResult]) {
-    for result in results {
-        if result.execution_provenance.is_some() || result.rule_id.trim().is_empty() {
-            continue;
-        }
-        result.execution_provenance = Some(
-            if rule_id_uses_hand_port(&result.rule_id) {
-                "rule_id_hand_port"
-            } else {
-                "native_engine"
-            }
-            .to_owned(),
-        );
-    }
 }
 
 fn normalize_validation_result(
