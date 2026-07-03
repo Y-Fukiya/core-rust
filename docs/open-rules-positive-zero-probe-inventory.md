@@ -13,11 +13,18 @@ As of the current upstream baseline:
 |---|---:|
 | `defer_positive_zero_probe` manifest entries | 141 |
 | `unsafe_positive_zero_probe` manifest entries | 2 |
-| Active positive-zero cases in `tests/open_rules/upstream-baseline.json` | 0 |
+| Positive-zero-probe-classified active scoreboard failures | 0 |
+| Baseline cases whose rule id is in a positive-zero probe manifest | 355 |
+| Positive-zero manifest cases scored as `supported_match` | 316 |
+| Positive-zero manifest cases deferred for other reviewed reasons | 31 |
+| Positive-zero manifest cases with `no_official_oracle` | 8 |
 
 The accepted scoreboard therefore has no positive-zero `supported_mismatch`,
 `deferred_oracle_gap_mismatch`, or `deferred_oracle_gap_skipped` cases. The
-manifest entries are retained as a reviewed no-auto-promotion guard.
+manifest entries are retained as a reviewed no-auto-promotion guard. The
+positive-zero rule ids are still present in the upstream baseline; the zero
+count above means no accepted case is currently deferred or failing for the
+positive-zero probe reason itself.
 
 ## Review Rule
 

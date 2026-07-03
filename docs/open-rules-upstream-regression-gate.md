@@ -22,7 +22,8 @@ The full upstream baseline should fail when:
 - `deferred_oracle_gap_skipped` increases
 - `coverage` decreases
 - `skipped_unsupported` increases
-- scoring normalization traces change for a `supported_match` case
+- case-level scoring normalization traces change, including supported and
+  deferred cases
 - a case improves to `supported_match` only through a scoring normalization
 - same-bucket issue counts or issue fingerprints regress
 - a baseline case disappears from the current scoreboard
