@@ -40,7 +40,12 @@ The upstream observe workflow also writes
 `xtask open-rules score-delta`, to summarize default-vs-strict differences in
 bucket counts, coverage, execution provenance detail, scoring policy, and
 scoring normalization counts. Treat this delta as the first place to inspect how
-much compatibility scoring changes the headline default metrics.
+much compatibility scoring changes the headline default metrics. The delta
+command validates that both scoreboards refer to the same pinned upstream repo,
+SHAs, total case count, and case key set before writing the report. It also
+includes bucket transitions, normalization-affected transitions, deferred
+oracle-gap breakdown deltas, and the most affected rule ids so reviewers can
+move from the summary impact to the cases/rules that changed.
 
 The accepted v31 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
 `official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.

@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::open_rules::score::{ScoreSummary, Scoreboard};
+use crate::open_rules::score::{ScoreSummary, Scoreboard, ScoredCase};
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreDeltaArgs {
@@ -27,9 +27,13 @@ struct ScoreboardDelta {
     strict_scoreboard: PathBuf,
     counts: Vec<CountDelta>,
     ratios: Vec<RatioDelta>,
+    deferred_oracle_gap_breakdown: Vec<CountDelta>,
     execution_provenance_detail: Vec<CountDelta>,
     scoring_policy: Vec<CountDelta>,
     scoring_normalizations: Vec<CountDelta>,
+    bucket_transitions: Vec<TransitionSummary>,
+    normalization_transitions: Vec<TransitionSummary>,
+    top_affected_rules: Vec<RuleImpactSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,9 +52,31 @@ struct RatioDelta {
     delta_percentage_points: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+struct CaseKey {
+    scope: String,
+    rule_id: String,
+    case_kind: String,
+    case_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct TransitionSummary {
+    transition: String,
+    cases: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct RuleImpactSummary {
+    rule_id: String,
+    cases_affected: usize,
+    main_transition: String,
+}
+
 pub fn run(args: ScoreDeltaArgs) -> Result<bool> {
     let default = read_scoreboard(&args.default_scoreboard)?;
     let strict = read_scoreboard(&args.strict_scoreboard)?;
+    validate_scoreboard_pair(&default, &strict)?;
     let delta = ScoreboardDelta::new(
         args.default_scoreboard.clone(),
         args.strict_scoreboard.clone(),
@@ -95,6 +121,10 @@ impl ScoreboardDelta {
             strict_scoreboard,
             counts: count_deltas(&default.summary, &strict.summary),
             ratios: ratio_deltas(&default.summary, &strict.summary),
+            deferred_oracle_gap_breakdown: deferred_oracle_gap_breakdown_deltas(
+                &default.summary,
+                &strict.summary,
+            ),
             execution_provenance_detail: map_deltas(
                 execution_provenance_detail_counts(&default.summary),
                 execution_provenance_detail_counts(&strict.summary),
@@ -107,8 +137,61 @@ impl ScoreboardDelta {
                 scoring_normalization_counts(&default.summary),
                 scoring_normalization_counts(&strict.summary),
             ),
+            bucket_transitions: bucket_transitions(default, strict),
+            normalization_transitions: normalization_transitions(default, strict),
+            top_affected_rules: top_affected_rules(default, strict, 20),
         }
     }
+}
+
+fn validate_scoreboard_pair(default: &Scoreboard, strict: &Scoreboard) -> Result<()> {
+    if default.upstream.repo != strict.upstream.repo {
+        bail!(
+            "scoreboards use different upstream repos: default={} strict={}",
+            default.upstream.repo,
+            strict.upstream.repo
+        );
+    }
+    if default.upstream.expected_sha != strict.upstream.expected_sha {
+        bail!(
+            "scoreboards use different expected upstream SHAs: default={:?} strict={:?}",
+            default.upstream.expected_sha,
+            strict.upstream.expected_sha
+        );
+    }
+    if default.upstream.observed_sha != strict.upstream.observed_sha {
+        bail!(
+            "scoreboards use different observed upstream SHAs: default={:?} strict={:?}",
+            default.upstream.observed_sha,
+            strict.upstream.observed_sha
+        );
+    }
+    if default.summary.total_cases != strict.summary.total_cases {
+        bail!(
+            "scoreboards have different total case counts: default={} strict={}",
+            default.summary.total_cases,
+            strict.summary.total_cases
+        );
+    }
+
+    let default_keys = case_key_set(&default.cases);
+    let strict_keys = case_key_set(&strict.cases);
+    if default_keys != strict_keys {
+        let missing_from_strict = default_keys
+            .difference(&strict_keys)
+            .take(5)
+            .map(case_key_label)
+            .collect::<Vec<_>>();
+        let extra_in_strict = strict_keys
+            .difference(&default_keys)
+            .take(5)
+            .map(case_key_label)
+            .collect::<Vec<_>>();
+        bail!(
+            "scoreboards have different case key sets: missing_from_strict={missing_from_strict:?} extra_in_strict={extra_in_strict:?}"
+        );
+    }
+    Ok(())
 }
 
 fn count_deltas(default: &ScoreSummary, strict: &ScoreSummary) -> Vec<CountDelta> {
@@ -197,6 +280,209 @@ fn ratio_deltas(default: &ScoreSummary, strict: &ScoreSummary) -> Vec<RatioDelta
     .collect()
 }
 
+fn deferred_oracle_gap_breakdown_deltas(
+    default: &ScoreSummary,
+    strict: &ScoreSummary,
+) -> Vec<CountDelta> {
+    [
+        (
+            "candidate_skipped",
+            default.deferred_oracle_gap_breakdown.candidate_skipped,
+            strict.deferred_oracle_gap_breakdown.candidate_skipped,
+        ),
+        (
+            "official_fixture_gap",
+            default.deferred_oracle_gap_breakdown.official_fixture_gap,
+            strict.deferred_oracle_gap_breakdown.official_fixture_gap,
+        ),
+        (
+            "standard_filter_oracle_gap",
+            default
+                .deferred_oracle_gap_breakdown
+                .standard_filter_oracle_gap,
+            strict
+                .deferred_oracle_gap_breakdown
+                .standard_filter_oracle_gap,
+        ),
+        (
+            "oracle_identity_gap",
+            default.deferred_oracle_gap_breakdown.oracle_identity_gap,
+            strict.deferred_oracle_gap_breakdown.oracle_identity_gap,
+        ),
+        (
+            "unverified_semantics_gap",
+            default
+                .deferred_oracle_gap_breakdown
+                .unverified_semantics_gap,
+            strict
+                .deferred_oracle_gap_breakdown
+                .unverified_semantics_gap,
+        ),
+    ]
+    .into_iter()
+    .map(|(metric, default, strict)| CountDelta::new(metric, default, strict))
+    .collect()
+}
+
+fn bucket_transitions(default: &Scoreboard, strict: &Scoreboard) -> Vec<TransitionSummary> {
+    let default_cases = cases_by_key(&default.cases);
+    let strict_cases = cases_by_key(&strict.cases);
+    let mut counts = BTreeMap::<String, usize>::new();
+    for (key, default_case) in default_cases {
+        let strict_case = strict_cases
+            .get(&key)
+            .expect("case key set is validated before delta generation");
+        if default_case.bucket != strict_case.bucket {
+            *counts
+                .entry(bucket_transition(default_case, strict_case))
+                .or_default() += 1;
+        }
+    }
+    transition_summaries(counts)
+}
+
+fn normalization_transitions(default: &Scoreboard, strict: &Scoreboard) -> Vec<TransitionSummary> {
+    let default_cases = cases_by_key(&default.cases);
+    let strict_cases = cases_by_key(&strict.cases);
+    let mut counts = BTreeMap::<String, usize>::new();
+    for (key, default_case) in default_cases {
+        if default_case.scoring_normalizations.is_empty() {
+            continue;
+        }
+        let strict_case = strict_cases
+            .get(&key)
+            .expect("case key set is validated before delta generation");
+        let transition = bucket_transition(default_case, strict_case);
+        for normalization in &default_case.scoring_normalizations {
+            *counts
+                .entry(format!("{normalization}: {transition}"))
+                .or_default() += 1;
+        }
+    }
+    transition_summaries(counts)
+}
+
+fn top_affected_rules(
+    default: &Scoreboard,
+    strict: &Scoreboard,
+    limit: usize,
+) -> Vec<RuleImpactSummary> {
+    let default_cases = cases_by_key(&default.cases);
+    let strict_cases = cases_by_key(&strict.cases);
+    let mut by_rule = BTreeMap::<String, Vec<String>>::new();
+    for (key, default_case) in default_cases {
+        let strict_case = strict_cases
+            .get(&key)
+            .expect("case key set is validated before delta generation");
+        if cases_differ_for_delta(default_case, strict_case) {
+            by_rule
+                .entry(default_case.rule_id.clone())
+                .or_default()
+                .push(case_transition_label(default_case, strict_case));
+        }
+    }
+    let mut summaries = by_rule
+        .into_iter()
+        .map(|(rule_id, transitions)| {
+            let cases_affected = transitions.len();
+            let main_transition =
+                most_common_transition(transitions).unwrap_or_else(|| "unknown".to_owned());
+            RuleImpactSummary {
+                rule_id,
+                cases_affected,
+                main_transition,
+            }
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .cases_affected
+            .cmp(&left.cases_affected)
+            .then_with(|| left.rule_id.cmp(&right.rule_id))
+    });
+    summaries.truncate(limit);
+    summaries
+}
+
+fn cases_by_key(cases: &[ScoredCase]) -> BTreeMap<CaseKey, &ScoredCase> {
+    cases.iter().map(|case| (case_key(case), case)).collect()
+}
+
+fn case_key_set(cases: &[ScoredCase]) -> BTreeSet<CaseKey> {
+    cases.iter().map(case_key).collect()
+}
+
+fn case_key(case: &ScoredCase) -> CaseKey {
+    CaseKey {
+        scope: case.scope.clone(),
+        rule_id: case.rule_id.clone(),
+        case_kind: case.case_kind.clone(),
+        case_id: case.case_id.clone(),
+    }
+}
+
+fn case_key_label(key: &CaseKey) -> String {
+    format!(
+        "{}/{}/{}/{}",
+        key.scope, key.rule_id, key.case_kind, key.case_id
+    )
+}
+
+fn bucket_transition(default_case: &ScoredCase, strict_case: &ScoredCase) -> String {
+    format!(
+        "{} -> {}",
+        default_case.bucket.as_str(),
+        strict_case.bucket.as_str()
+    )
+}
+
+fn case_transition_label(default_case: &ScoredCase, strict_case: &ScoredCase) -> String {
+    if default_case.bucket != strict_case.bucket {
+        bucket_transition(default_case, strict_case)
+    } else if default_case.scoring_policy != strict_case.scoring_policy {
+        format!(
+            "scoring_policy {} -> {}",
+            default_case.scoring_policy.as_str(),
+            strict_case.scoring_policy.as_str()
+        )
+    } else if default_case.scoring_normalizations != strict_case.scoring_normalizations {
+        "scoring_normalizations changed".to_owned()
+    } else {
+        "metadata changed".to_owned()
+    }
+}
+
+fn cases_differ_for_delta(default_case: &ScoredCase, strict_case: &ScoredCase) -> bool {
+    default_case.bucket != strict_case.bucket
+        || default_case.scoring_policy != strict_case.scoring_policy
+        || default_case.scoring_normalizations != strict_case.scoring_normalizations
+}
+
+fn transition_summaries(counts: BTreeMap<String, usize>) -> Vec<TransitionSummary> {
+    let mut summaries = counts
+        .into_iter()
+        .map(|(transition, cases)| TransitionSummary { transition, cases })
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .cases
+            .cmp(&left.cases)
+            .then_with(|| left.transition.cmp(&right.transition))
+    });
+    summaries
+}
+
+fn most_common_transition(transitions: Vec<String>) -> Option<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for transition in transitions {
+        *counts.entry(transition).or_default() += 1;
+    }
+    transition_summaries(counts)
+        .into_iter()
+        .next()
+        .map(|summary| summary.transition)
+}
+
 fn execution_provenance_detail_counts(summary: &ScoreSummary) -> BTreeMap<String, usize> {
     summary
         .by_execution_provenance_detail
@@ -277,15 +563,32 @@ fn markdown_delta(delta: &ScoreboardDelta) -> String {
     push_ratio_table(&mut lines, "Coverage And Accuracy", &delta.ratios);
     push_count_table(
         &mut lines,
+        "Deferred Oracle-Gap Breakdown",
+        &delta.deferred_oracle_gap_breakdown,
+    );
+    push_count_table(
+        &mut lines,
         "Execution Provenance Detail Counts",
         &delta.execution_provenance_detail,
     );
     push_count_table(&mut lines, "Scoring Policy Counts", &delta.scoring_policy);
+    lines.push(
+        "Scoring Policy counts supported match/mismatch cases. Scoring Normalization Counts include all scored cases, including deferred cases."
+            .to_owned(),
+    );
+    lines.push(String::new());
     push_count_table(
         &mut lines,
         "Scoring Normalization Counts",
         &delta.scoring_normalizations,
     );
+    push_transition_table(&mut lines, "Bucket Transitions", &delta.bucket_transitions);
+    push_transition_table(
+        &mut lines,
+        "Normalization-Affected Transitions",
+        &delta.normalization_transitions,
+    );
+    push_rule_impact_table(&mut lines, "Top Affected Rules", &delta.top_affected_rules);
     lines.join("\n") + "\n"
 }
 
@@ -325,6 +628,41 @@ fn push_ratio_table(lines: &mut Vec<String>, title: &str, rows: &[RatioDelta]) {
             percent_or_na(row.default),
             percent_or_na(row.strict),
             signed_percentage_points_or_na(row.delta_percentage_points)
+        ));
+    }
+    lines.push(String::new());
+}
+
+fn push_transition_table(lines: &mut Vec<String>, title: &str, rows: &[TransitionSummary]) {
+    if rows.is_empty() {
+        return;
+    }
+    lines.extend([
+        format!("## {title}"),
+        String::new(),
+        "| Transition | Cases |".to_owned(),
+        "|---|---:|".to_owned(),
+    ]);
+    for row in rows {
+        lines.push(format!("| `{}` | {} |", row.transition, row.cases));
+    }
+    lines.push(String::new());
+}
+
+fn push_rule_impact_table(lines: &mut Vec<String>, title: &str, rows: &[RuleImpactSummary]) {
+    if rows.is_empty() {
+        return;
+    }
+    lines.extend([
+        format!("## {title}"),
+        String::new(),
+        "| Rule ID | Cases affected | Main transition |".to_owned(),
+        "|---|---:|---|".to_owned(),
+    ]);
+    for row in rows {
+        lines.push(format!(
+            "| `{}` | {} | `{}` |",
+            row.rule_id, row.cases_affected, row.main_transition
         ));
     }
     lines.push(String::new());
@@ -412,9 +750,45 @@ mod tests {
         assert!(markdown.contains("| `supported_mismatch` | 0 | 1 | +1 |"));
         assert!(markdown.contains("| `coverage` | 100.00% | 100.00% | +0.00 pp |"));
         assert!(markdown.contains("| `oracle_gap_normalized` | 1 | 0 | -1 |"));
+        assert!(markdown.contains("## Deferred Oracle-Gap Breakdown"));
+        assert!(markdown.contains("Scoring Policy counts supported match/mismatch cases."));
+        assert!(
+            markdown.contains("| `supported_match -> supported_mismatch` | 1 |"),
+            "{markdown}"
+        );
+        assert!(markdown.contains(
+            "| `row_locator_identity_relaxed: supported_match -> supported_mismatch` | 1 |"
+        ));
+        assert!(
+            markdown.contains("| `CORE-000002` | 1 | `supported_match -> supported_mismatch` |"),
+            "{markdown}"
+        );
 
         let json = fs::read_to_string(out.join("scoreboard-delta.json")).expect("read delta json");
         assert!(json.contains("\"metric\": \"supported_mismatch\""));
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_different_case_sets() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let strict = scoreboard(vec![case(
+            "CORE-000002",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("case set mismatch");
+
+        assert!(
+            error.to_string().contains("different case key sets"),
+            "{error:?}"
+        );
     }
 
     fn scoreboard(cases: Vec<ScoredCase>) -> Scoreboard {
