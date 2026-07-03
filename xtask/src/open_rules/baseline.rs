@@ -241,7 +241,8 @@ fn canonicalize_reason_text(reason: String) -> String {
 fn canonicalize_reason_path(token: &str) -> Option<PathBuf> {
     let path = Path::new(token);
     if !path.is_absolute() {
-        return None;
+        let canonicalized = canonicalize_scoreboard_path(path);
+        return (canonicalized != path).then_some(canonicalized);
     }
     let canonicalized = canonicalize_scoreboard_path(path);
     if canonicalized.is_absolute() {
@@ -1172,7 +1173,7 @@ mod tests {
             "git rev-parse failed for /private/tmp/cdisc-open-rules: not a git checkout".to_owned(),
         ];
         scoreboard.cases[0].reason = Some(
-            "official results.csv is malformed: CSV contains merge conflict markers: /private/tmp/cdisc-open-rules/Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
+            "official results.csv is malformed: CSV contains merge conflict markers: /private/tmp/cdisc-open-rules/Published/CORE-OPEN-0001/negative/01/results/results.csv; and ../cdisc-open-rules/Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
                 .to_owned(),
         );
         scoreboard.cases[0].missing = vec![issue("1")];
@@ -1209,7 +1210,7 @@ mod tests {
         assert_eq!(
             canonicalized.cases[0].reason.as_deref(),
             Some(
-                "official results.csv is malformed: CSV contains merge conflict markers: Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
+                "official results.csv is malformed: CSV contains merge conflict markers: Published/CORE-OPEN-0001/negative/01/results/results.csv; and Published/CORE-OPEN-0001/negative/01/results/results.csv; excluded"
             )
         );
         assert!(canonicalized.cases[0].missing.is_empty());
