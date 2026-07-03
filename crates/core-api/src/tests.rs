@@ -19,6 +19,7 @@ mod open_rules_match_datasets;
 mod open_rules_metadata;
 mod open_rules_operations;
 mod open_rules_oracle_semantics;
+mod open_rules_reference_distinct;
 mod open_rules_scope;
 mod open_rules_standard_filter;
 mod open_rules_usdm;

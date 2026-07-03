@@ -38,6 +38,8 @@ enum OpenRulesSubcommand {
     RunScore(open_rules::RunScoreArgs),
     /// Score existing core-rust reports against official Open Rules results.
     Score(open_rules::ScoreArgs),
+    /// Compare default and strict Open Rules scoreboards.
+    ScoreDelta(open_rules::ScoreDeltaArgs),
 }
 
 fn main() -> Result<ExitCode> {
@@ -51,6 +53,7 @@ fn main() -> Result<ExitCode> {
             OpenRulesSubcommand::Run(args) => open_rules::run(args)?,
             OpenRulesSubcommand::RunScore(args) => open_rules::run_score(args)?,
             OpenRulesSubcommand::Score(args) => open_rules::score(args)?,
+            OpenRulesSubcommand::ScoreDelta(args) => open_rules::score_delta(args)?,
         },
     };
 

@@ -60,6 +60,13 @@ jobs:
           fi
           echo "Strict scoring scoreboard generated as a non-gating audit artifact."
 
+      - name: Write default-vs-strict scoring delta
+        run: |
+          cargo run -p xtask -- open-rules score-delta \
+            --default-scoreboard target/open-rules-scoreboard-upstream/scoreboard.json \
+            --strict-scoreboard target/open-rules-scoreboard-upstream-strict/scoreboard.json \
+            --out target/open-rules-scoreboard-upstream-delta
+
       - name: Upload upstream scoreboard
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,6 +75,7 @@ jobs:
           path: |
             target/open-rules-scoreboard-upstream
             target/open-rules-scoreboard-upstream-strict
+            target/open-rules-scoreboard-upstream-delta
             target/open-rules-core-rs-upstream/run-summary.json
 
   upstream-regression:
