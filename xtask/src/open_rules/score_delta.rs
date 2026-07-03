@@ -34,6 +34,7 @@ struct ScoreboardDelta {
     bucket_transitions: Vec<TransitionSummary>,
     normalization_transitions: Vec<TransitionSummary>,
     top_affected_rules: Vec<RuleImpactSummary>,
+    example_changed_cases: Vec<ChangedCaseExample>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +72,15 @@ struct RuleImpactSummary {
     rule_id: String,
     cases_affected: usize,
     main_transition: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ChangedCaseExample {
+    rule_id: String,
+    case_kind: String,
+    case_id: String,
+    transition: String,
+    scoring_normalizations: Vec<String>,
 }
 
 pub fn run(args: ScoreDeltaArgs) -> Result<bool> {
@@ -140,6 +150,7 @@ impl ScoreboardDelta {
             bucket_transitions: bucket_transitions(default, strict),
             normalization_transitions: normalization_transitions(default, strict),
             top_affected_rules: top_affected_rules(default, strict, 20),
+            example_changed_cases: example_changed_cases(default, strict, 20),
         }
     }
 }
@@ -174,6 +185,9 @@ fn validate_scoreboard_pair(default: &Scoreboard, strict: &Scoreboard) -> Result
         );
     }
 
+    reject_duplicate_case_keys("default", &default.cases)?;
+    reject_duplicate_case_keys("strict", &strict.cases)?;
+
     let default_keys = case_key_set(&default.cases);
     let strict_keys = case_key_set(&strict.cases);
     if default_keys != strict_keys {
@@ -190,6 +204,26 @@ fn validate_scoreboard_pair(default: &Scoreboard, strict: &Scoreboard) -> Result
         bail!(
             "scoreboards have different case key sets: missing_from_strict={missing_from_strict:?} extra_in_strict={extra_in_strict:?}"
         );
+    }
+    Ok(())
+}
+
+fn reject_duplicate_case_keys(label: &str, cases: &[ScoredCase]) -> Result<()> {
+    let mut seen = BTreeSet::<CaseKey>::new();
+    let mut duplicates = BTreeSet::<CaseKey>::new();
+    for case in cases {
+        let key = case_key(case);
+        if !seen.insert(key.clone()) {
+            duplicates.insert(key);
+        }
+    }
+    if !duplicates.is_empty() {
+        let examples = duplicates
+            .iter()
+            .take(5)
+            .map(case_key_label)
+            .collect::<Vec<_>>();
+        bail!("{label} scoreboard has duplicate case keys: {examples:?}");
     }
     Ok(())
 }
@@ -404,6 +438,41 @@ fn top_affected_rules(
     summaries
 }
 
+fn example_changed_cases(
+    default: &Scoreboard,
+    strict: &Scoreboard,
+    limit: usize,
+) -> Vec<ChangedCaseExample> {
+    let default_cases = cases_by_key(&default.cases);
+    let strict_cases = cases_by_key(&strict.cases);
+    let mut examples = default_cases
+        .into_iter()
+        .filter_map(|(key, default_case)| {
+            let strict_case = strict_cases
+                .get(&key)
+                .expect("case key set is validated before delta generation");
+            if !cases_differ_for_delta(default_case, strict_case) {
+                return None;
+            }
+            Some(ChangedCaseExample {
+                rule_id: default_case.rule_id.clone(),
+                case_kind: default_case.case_kind.clone(),
+                case_id: default_case.case_id.clone(),
+                transition: case_transition_label(default_case, strict_case),
+                scoring_normalizations: default_case.scoring_normalizations.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    examples.sort_by(|left, right| {
+        left.rule_id
+            .cmp(&right.rule_id)
+            .then_with(|| left.case_kind.cmp(&right.case_kind))
+            .then_with(|| left.case_id.cmp(&right.case_id))
+    });
+    examples.truncate(limit);
+    examples
+}
+
 fn cases_by_key(cases: &[ScoredCase]) -> BTreeMap<CaseKey, &ScoredCase> {
     cases.iter().map(|case| (case_key(case), case)).collect()
 }
@@ -589,6 +658,11 @@ fn markdown_delta(delta: &ScoreboardDelta) -> String {
         &delta.normalization_transitions,
     );
     push_rule_impact_table(&mut lines, "Top Affected Rules", &delta.top_affected_rules);
+    push_changed_case_examples(
+        &mut lines,
+        "Example Changed Cases",
+        &delta.example_changed_cases,
+    );
     lines.join("\n") + "\n"
 }
 
@@ -663,6 +737,30 @@ fn push_rule_impact_table(lines: &mut Vec<String>, title: &str, rows: &[RuleImpa
         lines.push(format!(
             "| `{}` | {} | `{}` |",
             row.rule_id, row.cases_affected, row.main_transition
+        ));
+    }
+    lines.push(String::new());
+}
+
+fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[ChangedCaseExample]) {
+    if rows.is_empty() {
+        return;
+    }
+    lines.extend([
+        format!("## {title}"),
+        String::new(),
+        "| Rule ID | Kind | Case | Transition | Default normalizations |".to_owned(),
+        "|---|---|---|---|---|".to_owned(),
+    ]);
+    for row in rows {
+        let normalizations = if row.scoring_normalizations.is_empty() {
+            "none".to_owned()
+        } else {
+            row.scoring_normalizations.join(", ")
+        };
+        lines.push(format!(
+            "| `{}` | `{}` | `{}` | `{}` | `{}` |",
+            row.rule_id, row.case_kind, row.case_id, row.transition, normalizations
         ));
     }
     lines.push(String::new());
@@ -763,9 +861,16 @@ mod tests {
             markdown.contains("| `CORE-000002` | 1 | `supported_match -> supported_mismatch` |"),
             "{markdown}"
         );
+        assert!(
+            markdown.contains(
+                "| `CORE-000002` | `negative` | `01` | `supported_match -> supported_mismatch` | `row_locator_identity_relaxed` |"
+            ),
+            "{markdown}"
+        );
 
         let json = fs::read_to_string(out.join("scoreboard-delta.json")).expect("read delta json");
         assert!(json.contains("\"metric\": \"supported_mismatch\""));
+        assert!(json.contains("\"example_changed_cases\""));
     }
 
     #[test]
@@ -787,6 +892,125 @@ mod tests {
 
         assert!(
             error.to_string().contains("different case key sets"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_different_upstream_repo() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let mut strict = default.clone();
+        strict.upstream.repo = "https://example.invalid/corpus.git".to_owned();
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("repo mismatch");
+
+        assert!(
+            error.to_string().contains("different upstream repos"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_different_expected_sha() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let mut strict = default.clone();
+        strict.upstream.expected_sha = Some("different".to_owned());
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("expected sha mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("different expected upstream SHAs"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_different_observed_sha() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let mut strict = default.clone();
+        strict.upstream.observed_sha = Some("different".to_owned());
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("observed sha mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("different observed upstream SHAs"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_different_total_cases() {
+        let default = scoreboard(vec![case(
+            "CORE-000001",
+            ScoreBucket::SupportedMatch,
+            ScoringPolicy::StrictIdentity,
+            vec![],
+        )]);
+        let mut strict = default.clone();
+        strict.summary.total_cases += 1;
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("total cases mismatch");
+
+        assert!(
+            error.to_string().contains("different total case counts"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_scoreboards_with_duplicate_case_keys() {
+        let default = scoreboard(vec![
+            case(
+                "CORE-000001",
+                ScoreBucket::SupportedMatch,
+                ScoringPolicy::StrictIdentity,
+                vec![],
+            ),
+            case(
+                "CORE-000001",
+                ScoreBucket::SupportedMismatch,
+                ScoringPolicy::StrictIdentity,
+                vec![],
+            ),
+        ]);
+        let strict = scoreboard(vec![
+            case(
+                "CORE-000001",
+                ScoreBucket::SupportedMatch,
+                ScoringPolicy::StrictIdentity,
+                vec![],
+            ),
+            case(
+                "CORE-000001",
+                ScoreBucket::SupportedMatch,
+                ScoringPolicy::StrictIdentity,
+                vec![],
+            ),
+        ]);
+
+        let error = validate_scoreboard_pair(&default, &strict).expect_err("duplicate key");
+
+        assert!(
+            error.to_string().contains("duplicate case keys"),
             "{error:?}"
         );
     }
