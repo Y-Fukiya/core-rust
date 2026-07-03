@@ -5,9 +5,10 @@ still too large to review safely:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/tests.rs` | 8728 | Continue moving Open Rules fixture-style tests into focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-api/src/lib.rs` | 6780 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, operation-field, metadata-support, operation-execution, metadata-execution, scope-filter, operation-reference, execution-provenance, domain-presence, split-domain unique-set, and result override helper splits. |
+| `crates/core-api/src/tests.rs` | 7035 | Continue moving the remaining fixture-style and rule-specific regression tests into focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-api/src/lib.rs` | 6129 | Continue extracting Open Rules compatibility helpers after the CDISC context, static codelist, operation-field, metadata-support, operation-execution, operation-dataset, metadata-execution, scope-filter, operation-reference, execution-provenance, domain-presence, split-domain unique-set, and result override helper splits. |
 | `crates/core-data/src/lib.rs` | 4965 | Continue extracting USDM collector and row-builder helpers after the product/administration, design, content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
+| `crates/core-api/src/tests/open_rules_operations.rs` | 4513 | Split further only if operation families grow again; recent work moved the remaining operation pipeline, grouped distinct, record-count, and schema-normalized key tests here. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
 | `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
@@ -30,7 +31,7 @@ still too large to review safely:
    metadata-support, operation-execution, metadata-execution, scope-filter,
    operation-reference, execution-provenance, domain-presence, split-domain
    unique-set, and result override helper slices have already moved out of
-   `lib.rs`.
+   `lib.rs`; operation-derived dataset helpers have also moved out.
 2. `core-api/src/tests.rs`: continue moving Open Rules fixture-style tests into
    `tests/open_rules_*.rs` modules. Loader/row-scope and USDM slices have moved
    out already.
@@ -78,7 +79,9 @@ still too large to review safely:
 - `core-api/src/tests/open_rules_metadata.rs`: domain presence, dataset
   metadata, variable metadata, library metadata, and Define metadata tests.
 - `core-api/src/tests/open_rules_operations.rs`: reference distinct, grouped
-  aggregate, domain label, XHTML, DY, and match-dataset operation tests.
+  aggregate, domain label, XHTML, DY, match-dataset operation, operation
+  pipeline, grouped distinct, record-count, inline-filter, and
+  schema-normalized operation tests.
 - `core-api/src/tests/open_rules_codelists.rs`: static CDISC codelist,
   package-version scoping, Define-XML/CT enrichment, and entity codelist
   operation tests.
@@ -121,6 +124,10 @@ still too large to review safely:
 - `core-api/src/result_overrides.rs`: skipped-result construction,
   oracle-gap result overrides, missing dataset/scope result construction, and
   preflight unsupported operator/operation helpers.
+- `core-api/src/operation_datasets.rs`: operation-derived dataset helpers for
+  domain labels, study domains, variable counts, study day derivation, metadata
+  extraction, codelist terms, split-by, parent model order, and XHTML error
+  projections.
 - `core-data/src/tests.rs`: core-data loader, XPT, join, transform, and Open
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
