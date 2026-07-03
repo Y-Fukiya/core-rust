@@ -6,6 +6,7 @@ mod condition_inspect;
 mod engine_semantics;
 mod json_values;
 mod match_datasets;
+mod metadata_support;
 mod open_rules_compat;
 mod operation_fields;
 mod report_variables;
@@ -41,8 +42,8 @@ use core_report::{
     WrittenReports,
 };
 use core_rule_model::{
-    load_rules_from_paths, normalize_condition_value, normalize_key, Condition, ConditionGroup,
-    ExecutableRule, OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
+    load_rules_from_paths, normalize_condition_value, Condition, ConditionGroup, ExecutableRule,
+    OperationSpec, Operator, RuleModelError, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -62,6 +63,16 @@ use json_values::{json_distinct_value_string, json_report_string, json_scalar_st
 use match_datasets::{
     add_source_row_column, execute_match_datasets, match_dataset_name,
     rule_referenced_columns_with_suffix, rule_references_match_dataset_prefixed_column,
+};
+use metadata_support::{
+    has_dataset_column_order_operation, has_dataset_level_record_count_operation, has_dy_operation,
+    has_expected_variables_operation, has_group_aliases, has_group_date_operation,
+    has_match_dataset_dependent_operation, has_model_column_order_operation,
+    has_model_filtered_variables_operation, has_reference_distinct_operation,
+    has_required_variables_operation, has_unsupported_reference_distinct_operation,
+    has_variable_count_operation, has_variable_metadata_domain_prefix_operations,
+    is_supported_dataset_metadata_rule, is_supported_value_metadata_rule,
+    is_supported_variable_metadata_rule, operation_dataset_name,
 };
 use open_rules_compat::{
     has_oracle_gap_rule_id, is_dataset_presence_oracle_gap_rule,
@@ -2862,191 +2873,6 @@ fn prepare_rule_with_cdisc_context(
     rule
 }
 
-pub(crate) fn has_reference_distinct_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some("distinct" | "unique")
-        ) && operation_dataset_name(operation).is_some()
-            && string_field(operation, &["id", "target", "as", "output", "column"]).is_some()
-    })
-}
-
-fn has_variable_count_operation(rule: &ExecutableRule) -> bool {
-    rule.operations
-        .iter()
-        .any(|operation| operation_name(operation).as_deref() == Some("variable_count"))
-}
-
-fn has_dataset_level_record_count_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        operation_name(operation).as_deref() == Some("record_count")
-            && string_list_field(
-                operation,
-                &["by", "keys", "group", "group_by", "group_keys"],
-            )
-            .map(|keys| keys.is_empty())
-            .unwrap_or(true)
-    })
-}
-
-fn has_dataset_names_operation(rule: &ExecutableRule) -> bool {
-    rule.operations
-        .iter()
-        .any(|operation| operation_name(operation).as_deref() == Some("dataset_names"))
-}
-
-fn is_supported_dataset_metadata_rule(rule: &ExecutableRule) -> bool {
-    (rule.operations.is_empty()
-        || rule.operations.iter().all(|operation| {
-            matches!(
-                operation_name(operation).as_deref(),
-                Some("record_count" | "dataset_names")
-            )
-        }) && (has_dataset_level_record_count_operation(rule)
-            || has_dataset_names_operation(rule)))
-        && (engine_semantics::supports_column_ref_metadata_comparator(rule)
-            || !contains_column_ref_comparator(&rule.conditions))
-        && unsupported_operator(&rule.conditions).is_none()
-}
-
-fn is_supported_variable_metadata_rule(rule: &ExecutableRule) -> bool {
-    (rule.operations.is_empty()
-        || rule.operations.iter().all(|operation| {
-            matches!(
-                operation_name(operation).as_deref(),
-                Some(
-                    "expected_variables"
-                        | "required_variables"
-                        | "get_column_order_from_dataset"
-                        | "get_column_order_from_library"
-                        | "get_model_column_order"
-                        | "get_model_filtered_variables"
-                        | "distinct"
-                        | "domain_is_custom"
-                        | "codelist_terms"
-                )
-            )
-        }) && ((has_dataset_column_order_operation(rule)
-            && (has_expected_variables_operation(rule)
-                || has_required_variables_operation(rule)
-                || has_model_filtered_variables_operation(rule)))
-            || has_variable_metadata_domain_prefix_operations(rule))
-        || has_model_column_order_operation(rule)
-        || engine_semantics::is_domain_codelist_metadata_rule(rule))
-        && (engine_semantics::supports_column_ref_metadata_comparator(rule)
-            || engine_semantics::is_library_variable_metadata_rule(rule)
-            || !references_library_metadata_variables(rule))
-        && (engine_semantics::can_skip_metadata_column_ref_comparator(rule)
-            || !contains_column_ref_comparator(&rule.conditions))
-        && unsupported_operator(&rule.conditions).is_none()
-}
-
-fn is_supported_value_metadata_rule(rule: &ExecutableRule) -> bool {
-    engine_semantics::is_supported_value_metadata_rule_id(rule)
-        && rule.operations.is_empty()
-        && !contains_column_ref_comparator(&rule.conditions)
-        && unsupported_operator(&rule.conditions).is_none()
-}
-
-fn references_library_metadata_variables(rule: &ExecutableRule) -> bool {
-    rule.output_variables
-        .iter()
-        .any(|variable| is_library_metadata_variable(variable))
-        || condition_references_library_metadata_variable(&rule.conditions)
-}
-
-fn condition_references_library_metadata_variable(group: &ConditionGroup) -> bool {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => groups
-            .iter()
-            .any(condition_references_library_metadata_variable),
-        ConditionGroup::Not(group) => condition_references_library_metadata_variable(group),
-        ConditionGroup::Leaf(condition) => {
-            condition
-                .target
-                .as_deref()
-                .is_some_and(is_library_metadata_variable)
-                || matches!(&condition.comparator, ValueExpr::ColumnRef(column) if is_library_metadata_variable(column))
-        }
-    }
-}
-
-fn is_library_metadata_variable(variable: &str) -> bool {
-    normalize_key(variable).starts_with("library_")
-}
-
-fn has_expected_variables_operation(rule: &ExecutableRule) -> bool {
-    rule.operations
-        .iter()
-        .any(|operation| operation_name(operation).as_deref() == Some("expected_variables"))
-}
-
-fn has_required_variables_operation(rule: &ExecutableRule) -> bool {
-    rule.operations
-        .iter()
-        .any(|operation| operation_name(operation).as_deref() == Some("required_variables"))
-}
-
-fn has_dataset_column_order_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        operation_name(operation).as_deref() == Some("get_column_order_from_dataset")
-    })
-}
-
-fn has_model_filtered_variables_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        operation_name(operation).as_deref() == Some("get_model_filtered_variables")
-    })
-}
-
-fn has_model_column_order_operation(rule: &ExecutableRule) -> bool {
-    engine_semantics::is_model_column_order_rule(rule)
-        && rule.operations.iter().any(|operation| {
-            matches!(
-                operation_name(operation).as_deref(),
-                Some("get_model_column_order" | "get_column_order_from_library")
-            )
-        })
-}
-
-fn has_variable_metadata_domain_prefix_operations(rule: &ExecutableRule) -> bool {
-    engine_semantics::is_variable_metadata_domain_prefix_rule(rule)
-        && rule.operations.iter().any(|operation| {
-            operation_name(operation).as_deref() == Some("distinct")
-                && string_field(operation, &["name", "column", "variable"])
-                    .is_some_and(|name| name.eq_ignore_ascii_case("DOMAIN"))
-        })
-        && rule
-            .operations
-            .iter()
-            .any(|operation| operation_name(operation).as_deref() == Some("domain_is_custom"))
-}
-
-fn has_dy_operation(rule: &ExecutableRule) -> bool {
-    rule.operations
-        .iter()
-        .any(|operation| operation_name(operation).as_deref() == Some("dy"))
-}
-
-fn has_group_date_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some("min_date" | "max_date")
-        )
-    })
-}
-
-fn has_match_dataset_dependent_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some("map" | "codelist_extensible" | "codelist_terms")
-        )
-    })
-}
-
 fn has_match_dataset_prefixed_column_reference(rule: &ExecutableRule) -> bool {
     rule.datasets
         .as_deref()
@@ -3063,22 +2889,6 @@ fn has_match_dataset_suffixed_column_reference(rule: &ExecutableRule) -> bool {
         .iter()
         .filter_map(match_dataset_name)
         .any(|name| !rule_referenced_columns_with_suffix(rule, &name).is_empty())
-}
-
-fn has_group_aliases(operation: &OperationSpec) -> bool {
-    string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
-        .is_some_and(|aliases| !aliases.is_empty())
-}
-
-fn has_unsupported_reference_distinct_operation(rule: &ExecutableRule) -> bool {
-    rule.operations.iter().any(|operation| {
-        matches!(
-            operation_name(operation).as_deref(),
-            Some("distinct" | "unique")
-        ) && operation_dataset_name(operation).is_some()
-            && string_field(operation, &["id", "target", "as", "output", "column"]).is_some()
-            && !bool_field(operation, &["value_is_reference"]).unwrap_or(false)
-    })
 }
 
 fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
@@ -7914,10 +7724,6 @@ fn operation_input_datasets(
     }
 }
 
-fn operation_dataset_name(operation: &OperationSpec) -> Option<String> {
-    string_field(operation, &["dataset", "domain", "input", "source"])
-}
-
 fn derive_jsonata_column(
     dataset: &LoadedDataset,
     column: &str,
@@ -8539,7 +8345,7 @@ pub(crate) fn dataset_matches_name(dataset: &LoadedDataset, name: &str) -> bool 
         || dataset.metadata.filename.eq_ignore_ascii_case(name)
 }
 
-fn unsupported_operator(group: &ConditionGroup) -> Option<&Operator> {
+pub(crate) fn unsupported_operator(group: &ConditionGroup) -> Option<&Operator> {
     match group {
         ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
             groups.iter().find_map(unsupported_operator)
