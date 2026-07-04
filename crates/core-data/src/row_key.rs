@@ -283,7 +283,59 @@ fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeSet, HashSet};
+    use proptest::prelude::*;
+    use std::collections::{hash_map::DefaultHasher, BTreeSet, HashSet};
+
+    fn row_key_value_strategy() -> impl Strategy<Value = RowKeyValue> {
+        prop_oneof![
+            Just(RowKeyValue::Null),
+            any::<bool>().prop_map(RowKeyValue::Bool),
+            prop::sample::select(vec![
+                i64::MIN,
+                -9_007_199_254_740_993,
+                -42,
+                -1,
+                0,
+                1,
+                42,
+                9_007_199_254_740_992,
+                9_007_199_254_740_993,
+                i64::MAX,
+            ])
+            .prop_map(RowKeyValue::SignedInteger),
+            prop::sample::select(vec![
+                0_u64,
+                1,
+                42,
+                9_007_199_254_740_992,
+                9_007_199_254_740_993,
+                u64::MAX,
+            ])
+            .prop_map(RowKeyValue::UnsignedInteger),
+            prop::sample::select(vec![
+                f64::from_bits(0xfff8_0000_0000_0000),
+                f64::NEG_INFINITY,
+                -9_007_199_254_740_992.0,
+                -42.0,
+                -0.5,
+                -0.0,
+                0.0,
+                0.5,
+                42.0,
+                9_007_199_254_740_992.0,
+                f64::INFINITY,
+                f64::NAN,
+            ])
+            .prop_map(|value| RowKeyValue::Float(NumberKey::new(value))),
+            "[A-Z0-9_]{0,8}".prop_map(RowKeyValue::String),
+        ]
+    }
+
+    fn hash_value(value: &RowKeyValue) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
 
     #[test]
     fn row_key_numeric_equality_hashes_integral_values_consistently_across_types() {
@@ -341,5 +393,32 @@ mod tests {
             );
         }
         assert_eq!(ordered.into_iter().collect::<BTreeSet<_>>().len(), 9);
+    }
+
+    proptest! {
+        #[test]
+        fn row_key_eq_hash_and_cmp_equal_stay_consistent(
+            left in row_key_value_strategy(),
+            right in row_key_value_strategy(),
+        ) {
+            prop_assert_eq!(left == right, left.cmp(&right) == Ordering::Equal);
+            if left == right {
+                prop_assert_eq!(hash_value(&left), hash_value(&right));
+            }
+        }
+
+        #[test]
+        fn row_key_ordering_is_transitive(
+            a in row_key_value_strategy(),
+            b in row_key_value_strategy(),
+            c in row_key_value_strategy(),
+        ) {
+            if a <= b && b <= c {
+                prop_assert!(a <= c);
+            }
+            if a >= b && b >= c {
+                prop_assert!(a >= c);
+            }
+        }
     }
 }

@@ -219,7 +219,7 @@ def _write_extra_issue_report(output: Path, rule_id: str) -> None:
 
 def _write_wrong_issue_report(output: Path, rule_id: str) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    errors = [{"rule_id": rule_id, "dataset": "AE", "row": 1, "variables": ["AETERM"]}]
+    errors = [{"rule_id": rule_id, "dataset": "CM", "row": 2, "variables": ["AETERM"]}]
     payload = {
         "summary": {"error_count": len(errors)},
         "results": [{"rule_id": rule_id, "error_count": len(errors), "errors": errors}],
