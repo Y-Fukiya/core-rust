@@ -10,6 +10,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from cdisc_rulekit.load_open_rules import load_open_rules  # noqa: E402
+from cdisc_rulekit.map_rules import map_p21_to_core  # noqa: E402
+from cdisc_rulekit.models import CanonicalRule  # noqa: E402
+
 FIXTURE_ROOT = ROOT / "tests" / "cdisc_rulekit" / "fixtures"
 P21_FIXTURE_ROOT = FIXTURE_ROOT / "p21"
 P21PORT_FIXTURE_ROOT = FIXTURE_ROOT / "p21port"
@@ -160,12 +166,29 @@ def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> No
     _write_empty_report(actual_root / rule_id / "negative" / "01")
 
 
+def _fuzzy_mapping_probe() -> str:
+    core_rules, _inventory, _warnings = load_open_rules(FIXTURE_ROOT / "open_rules")
+    p21_rule = CanonicalRule(
+        source="P21",
+        source_rule_id="FUZZY1",
+        p21_rule_id="FUZZY1",
+        standard_name="SDTM-IG",
+        p21_rule_type="Match",
+        domains=["AE"],
+        variables=["AETERM"],
+        message="AETERM must be present.",
+        description="AETERM must be populated.",
+    )
+    return map_p21_to_core([p21_rule], core_rules)[0].match_type
+
+
 def run(work_dir: Path) -> dict[str, object]:
     work_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
     read_only = work_dir / "read_only"
     generated = work_dir / "generated"
+    unsupported_probe = work_dir / "unsupported_probe"
     run_out = work_dir / "run"
     failure_probe = work_dir / "failure_probe"
     reports = work_dir / "reports"
@@ -212,6 +235,27 @@ def run(work_dir: Path) -> dict[str, object]:
         env=env,
     )
     generation_summary = json.loads((generated / "reports" / "generation_summary.json").read_text(encoding="utf-8"))
+
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "generate",
+            "--p21-catalog",
+            str(read_only / "catalog" / "p21_rules_normalized.jsonl"),
+            "--conversion-status",
+            str(read_only / "catalog" / "conversion_status.csv"),
+            "--operator-inventory",
+            str(read_only / "catalog" / "core_operator_inventory.csv"),
+            "--out",
+            str(unsupported_probe),
+        ],
+        env=env,
+    )
+    unsupported_generation_summary = json.loads(
+        (unsupported_probe / "reports" / "generation_summary.json").read_text(encoding="utf-8"),
+    )
 
     _run(
         [
@@ -294,9 +338,12 @@ def run(work_dir: Path) -> dict[str, object]:
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
+        "fuzzy_probe_match_type": _fuzzy_mapping_probe(),
         "generated_count": generation_summary["generated_count"],
         "generated_skipped_count": generation_summary["skipped_count"],
         "run_core_pass_count": sum(1 for row in run_summary_rows if row["status"] == "PASS"),
+        "unsupported_probe_generated_count": unsupported_generation_summary["generated_count"],
+        "unsupported_probe_skipped_count": unsupported_generation_summary["skipped_count"],
     }
     reports.mkdir(parents=True, exist_ok=True)
     (reports / "p21port_smoke_summary.json").write_text(

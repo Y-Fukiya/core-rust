@@ -22,6 +22,9 @@ struct ReleaseManifest {
     package_version: String,
     rust_version: String,
     source_date_epoch: Option<String>,
+    cargo_lock_sha256: Option<String>,
+    target_triple: Option<String>,
+    ci_run_url: Option<String>,
     git: GitProvenance,
     artifacts: Vec<ReleaseArtifact>,
     verification_commands: Vec<String>,
@@ -46,6 +49,9 @@ struct ReleaseManifestInput {
     git_dirty: Option<bool>,
     rust_version: String,
     source_date_epoch: Option<String>,
+    cargo_lock_sha256: Option<String>,
+    target_triple: Option<String>,
+    ci_run_url: Option<String>,
     artifacts: Vec<ReleaseArtifact>,
 }
 
@@ -61,6 +67,9 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         rust_version: command_output("rustc", ["--version"])
             .unwrap_or_else(|| "unknown".to_owned()),
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
+        cargo_lock_sha256: sha256_file(Path::new("Cargo.lock")).ok(),
+        target_triple: rust_target_triple(),
+        ci_run_url: github_actions_run_url(),
         artifacts,
     });
     write_release_manifest(&args.out, &manifest)?;
@@ -76,6 +85,9 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         rust_version: input.rust_version,
         source_date_epoch: input.source_date_epoch,
+        cargo_lock_sha256: input.cargo_lock_sha256,
+        target_triple: input.target_triple,
+        ci_run_url: input.ci_run_url,
         git: GitProvenance {
             available: git_commit.is_some() && input.git_dirty.is_some(),
             commit: git_commit,
@@ -148,6 +160,24 @@ fn command_output<const N: usize>(program: &str, args: [&str; N]) -> Option<Stri
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+fn rust_target_triple() -> Option<String> {
+    command_output("rustc", ["-vV"]).and_then(|output| {
+        output.lines().find_map(|line| {
+            line.strip_prefix("host:")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+    })
+}
+
+fn github_actions_run_url() -> Option<String> {
+    let server = std::env::var("GITHUB_SERVER_URL").ok()?;
+    let repository = std::env::var("GITHUB_REPOSITORY").ok()?;
+    let run_id = std::env::var("GITHUB_RUN_ID").ok()?;
+    Some(format!("{server}/{repository}/actions/runs/{run_id}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +189,9 @@ mod tests {
             git_dirty: Some(false),
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: Some("1783123200".to_owned()),
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
             artifacts: Vec::new(),
         });
 
@@ -180,6 +213,9 @@ mod tests {
             git_dirty: Some(false),
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
             artifacts: Vec::new(),
         });
 
@@ -201,6 +237,9 @@ mod tests {
             git_dirty: None,
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
             artifacts: Vec::new(),
         });
 
@@ -218,6 +257,9 @@ mod tests {
             git_dirty: Some(true),
             rust_version: "rustc test".to_owned(),
             source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
             artifacts: Vec::new(),
         });
 
@@ -235,6 +277,9 @@ mod tests {
             git_dirty: Some(false),
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: None,
+            cargo_lock_sha256: Some("lockhash".to_owned()),
+            target_triple: Some("aarch64-apple-darwin".to_owned()),
+            ci_run_url: Some("https://github.example/run/1".to_owned()),
             artifacts: vec![ReleaseArtifact {
                 path: "target/release/core-rs".to_owned(),
                 sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -247,6 +292,15 @@ mod tests {
         assert_eq!(
             manifest.artifacts[0].sha256,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+        assert_eq!(manifest.cargo_lock_sha256.as_deref(), Some("lockhash"));
+        assert_eq!(
+            manifest.target_triple.as_deref(),
+            Some("aarch64-apple-darwin")
+        );
+        assert_eq!(
+            manifest.ci_run_url.as_deref(),
+            Some("https://github.example/run/1")
         );
     }
 }
