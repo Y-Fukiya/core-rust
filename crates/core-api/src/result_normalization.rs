@@ -1241,12 +1241,7 @@ pub(crate) fn core_000884_ts_age_parameter_count_result(
             dataset: ts.metadata.name.clone(),
             domain: ts.metadata.domain.clone(),
             row: None,
-            variables: vec![
-                "$age_count".to_owned(),
-                "DOMAIN".to_owned(),
-                "$ageu_count".to_owned(),
-                "$agetxt_count".to_owned(),
-            ],
+            variables: vec!["DOMAIN".to_owned(), "$ageu_count".to_owned()],
             message: message.clone(),
             usubjid: None,
             seq: None,

@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use polars::prelude::*;
@@ -11,11 +12,13 @@ pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone)]
 pub(crate) enum RowKeyValue {
     Null,
     Bool(bool),
-    Number(NumberKey),
+    SignedInteger(i64),
+    UnsignedInteger(u64),
+    Float(NumberKey),
     String(String),
 }
 
@@ -30,10 +33,107 @@ impl RowKeyValue {
         if let Some(value) = value.extract_str() {
             return Self::String(value.to_owned());
         }
-        if let Some(value) = value.extract::<f64>() {
-            return Self::Number(NumberKey::new(value));
+        match value {
+            AnyValue::Int8(value) => return Self::SignedInteger(value.into()),
+            AnyValue::Int16(value) => return Self::SignedInteger(value.into()),
+            AnyValue::Int32(value) => return Self::SignedInteger(value.into()),
+            AnyValue::Int64(value) => return Self::SignedInteger(value),
+            AnyValue::UInt8(value) => return Self::UnsignedInteger(value.into()),
+            AnyValue::UInt16(value) => return Self::UnsignedInteger(value.into()),
+            AnyValue::UInt32(value) => return Self::UnsignedInteger(value.into()),
+            AnyValue::UInt64(value) => return Self::UnsignedInteger(value),
+            AnyValue::Float32(value) => return Self::Float(NumberKey::new(value.into())),
+            AnyValue::Float64(value) => return Self::Float(NumberKey::new(value)),
+            _ => {}
         }
         Self::String(value.to_string())
+    }
+
+    fn numeric_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Self::SignedInteger(left), Self::SignedInteger(right)) => Some(left.cmp(right)),
+            (Self::UnsignedInteger(left), Self::UnsignedInteger(right)) => Some(left.cmp(right)),
+            (Self::Float(left), Self::Float(right)) => Some(left.cmp(right)),
+            (Self::SignedInteger(left), Self::UnsignedInteger(right)) => {
+                Some(compare_i64_u64(*left, *right))
+            }
+            (Self::UnsignedInteger(left), Self::SignedInteger(right)) => {
+                Some(compare_i64_u64(*right, *left).reverse())
+            }
+            (Self::SignedInteger(left), Self::Float(right)) => {
+                Some(compare_i64_f64(*left, right.value()))
+            }
+            (Self::Float(left), Self::SignedInteger(right)) => {
+                Some(compare_i64_f64(*right, left.value()).reverse())
+            }
+            (Self::UnsignedInteger(left), Self::Float(right)) => {
+                Some(compare_u64_f64(*left, right.value()))
+            }
+            (Self::Float(left), Self::UnsignedInteger(right)) => {
+                Some(compare_u64_f64(*right, left.value()).reverse())
+            }
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq for RowKeyValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for RowKeyValue {}
+
+impl Hash for RowKeyValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Null => {
+                0_u8.hash(state);
+            }
+            Self::Bool(value) => {
+                1_u8.hash(state);
+                value.hash(state);
+            }
+            Self::SignedInteger(value) => {
+                hash_numeric_integer(*value, state);
+            }
+            Self::UnsignedInteger(value) => {
+                hash_numeric_unsigned(*value, state);
+            }
+            Self::Float(value) => {
+                hash_numeric_float(*value, state);
+            }
+            Self::String(value) => {
+                3_u8.hash(state);
+                value.hash(state);
+            }
+        }
+    }
+}
+
+impl PartialOrd for RowKeyValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RowKeyValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Null, Self::Null) => Ordering::Equal,
+            (Self::Null, _) => Ordering::Less,
+            (_, Self::Null) => Ordering::Greater,
+            (Self::Bool(left), Self::Bool(right)) => left.cmp(right),
+            (Self::Bool(_), _) => Ordering::Less,
+            (_, Self::Bool(_)) => Ordering::Greater,
+            (Self::String(left), Self::String(right)) => left.cmp(right),
+            (Self::String(_), _) => Ordering::Greater,
+            (_, Self::String(_)) => Ordering::Less,
+            _ => self
+                .numeric_cmp(other)
+                .expect("non-string non-bool non-null row keys are numeric"),
+        }
     }
 }
 
@@ -60,6 +160,109 @@ impl PartialOrd for NumberKey {
 impl Ord for NumberKey {
     fn cmp(&self, other: &Self) -> Ordering {
         self.value().total_cmp(&other.value())
+    }
+}
+
+fn compare_i64_u64(left: i64, right: u64) -> Ordering {
+    if left < 0 {
+        return Ordering::Less;
+    }
+    (left as u64).cmp(&right)
+}
+
+fn compare_i64_f64(left: i64, right: f64) -> Ordering {
+    if let Some(right) = integer_i64_from_f64(right) {
+        return left.cmp(&right);
+    }
+    if right.is_nan() {
+        return 0.0_f64.total_cmp(&right);
+    }
+    if right == f64::INFINITY {
+        return Ordering::Less;
+    }
+    if right == f64::NEG_INFINITY || right < i64::MIN as f64 {
+        return Ordering::Greater;
+    }
+    if right >= i64::MAX as f64 {
+        return Ordering::Less;
+    }
+    let floor = right.floor() as i64;
+    if left <= floor {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+fn compare_u64_f64(left: u64, right: f64) -> Ordering {
+    if let Some(right) = integer_u64_from_f64(right) {
+        return left.cmp(&right);
+    }
+    if right.is_nan() {
+        return 0.0_f64.total_cmp(&right);
+    }
+    if right == f64::INFINITY {
+        return Ordering::Less;
+    }
+    if right == f64::NEG_INFINITY || right < 0.0 {
+        return Ordering::Greater;
+    }
+    if right >= u64::MAX as f64 {
+        return Ordering::Less;
+    }
+    let floor = right.floor() as u64;
+    if left <= floor {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+fn integer_i64_from_f64(value: f64) -> Option<i64> {
+    if !value.is_finite() || value.fract() != 0.0 {
+        return None;
+    }
+    if value < i64::MIN as f64 || value >= i64::MAX as f64 {
+        return None;
+    }
+    let integer = value as i64;
+    ((integer as f64) == value).then_some(integer)
+}
+
+fn integer_u64_from_f64(value: f64) -> Option<u64> {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 {
+        return None;
+    }
+    if value >= u64::MAX as f64 {
+        return None;
+    }
+    let integer = value as u64;
+    ((integer as f64) == value).then_some(integer)
+}
+
+fn hash_numeric_integer<H: Hasher>(value: i64, state: &mut H) {
+    if value < 0 {
+        2_u8.hash(state);
+        value.hash(state);
+    } else {
+        hash_numeric_unsigned(value as u64, state);
+    }
+}
+
+fn hash_numeric_unsigned<H: Hasher>(value: u64, state: &mut H) {
+    2_u8.hash(state);
+    value.hash(state);
+}
+
+fn hash_numeric_float<H: Hasher>(value: NumberKey, state: &mut H) {
+    let value = value.value();
+    if let Some(value) = integer_i64_from_f64(value) {
+        hash_numeric_integer(value, state);
+    } else if let Some(value) = integer_u64_from_f64(value) {
+        hash_numeric_unsigned(value, state);
+    } else {
+        2_u8.hash(state);
+        value.to_bits().hash(state);
     }
 }
 

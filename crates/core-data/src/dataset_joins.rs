@@ -1,12 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use super::{row_key, take_dataset_rows, DataError, LoadedDataset, Result, RowKeyValue};
 use polars::prelude::*;
-use serde_json::Value;
-
-use super::{
-    cell_to_json_value, row_key, series_from_json_values, take_dataset_rows, DataError,
-    LoadedDataset, Result, RowKeyValue,
-};
 
 pub fn left_join_dataset(
     left: &LoadedDataset,
@@ -85,6 +80,19 @@ fn join_dataset_on(
         .map(|name| name.as_str().to_owned())
         .collect::<BTreeSet<_>>();
 
+    let right_indices = UInt32Chunked::from_iter_options(
+        "right_row_index".into(),
+        right_rows.iter().map(|row| row.map(|row| row as u32)),
+    );
+    let right_frame = right
+        .frame
+        .take(&right_indices)
+        .map_err(|source| DataError::Polars {
+            path: right.metadata.full_path.clone(),
+            source,
+        })?;
+
+    let mut joined_names = BTreeSet::new();
     let mut joined_columns = Vec::new();
     for right_column in right.frame.get_column_names() {
         let right_column = right_column.as_str();
@@ -93,19 +101,22 @@ fn join_dataset_on(
         }
 
         let joined_name = format!("{right_prefix}{right_column}");
-        if left_columns.contains(&joined_name) {
+        if right_keys.iter().any(|key| key == right_column) && left_columns.contains(&joined_name) {
             continue;
         }
+        let joined_name =
+            deduplicate_joined_column_name(&joined_name, &left_columns, &joined_names);
+        let mut column = right_frame
+            .column(right_column)
+            .map_err(|source| DataError::Polars {
+                path: right.metadata.full_path.clone(),
+                source,
+            })?
+            .clone();
+        column.rename(joined_name.clone().into());
 
-        let values = right_rows
-            .iter()
-            .map(|right_row| {
-                right_row.map_or(Ok(Value::Null), |row| {
-                    cell_to_json_value(&right.frame, right_column, row)
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        joined_columns.push(series_from_json_values(&joined_name, &values).into());
+        joined_names.insert(joined_name);
+        joined_columns.push(column);
     }
 
     frame
@@ -116,6 +127,27 @@ fn join_dataset_on(
         })?;
 
     Ok(LoadedDataset::new(left.metadata.clone(), frame))
+}
+
+fn deduplicate_joined_column_name(
+    requested: &str,
+    left_columns: &BTreeSet<String>,
+    joined_columns: &BTreeSet<String>,
+) -> String {
+    if !left_columns.contains(requested) && !joined_columns.contains(requested) {
+        return requested.to_owned();
+    }
+    let base = format!("{requested}_right");
+    if !left_columns.contains(&base) && !joined_columns.contains(&base) {
+        return base;
+    }
+    for index in 2.. {
+        let candidate = format!("{base}_{index}");
+        if !left_columns.contains(&candidate) && !joined_columns.contains(&candidate) {
+            return candidate;
+        }
+    }
+    unreachable!("unbounded join column suffix search must return")
 }
 
 pub fn semi_join_dataset_on(
