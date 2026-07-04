@@ -234,6 +234,31 @@ fn load_xpt_dataset_ignores_padding_only_trailing_observations() {
 }
 
 #[test]
+fn load_xpt_dataset_rejects_non_padding_partial_observation_tail() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("partial-tail.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::character(
+            "DOMAIN",
+            2,
+            "Domain Abbreviation",
+        )],
+        &[vec![TestXptValue::Text("AE")]],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    bytes.push(b'X');
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let error = load_xpt_dataset(&path).expect_err("partial non-padding OBS tail rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("partial observation tail"))
+    );
+}
+
+#[test]
 fn load_xpt_dataset_decodes_ibm_float_fraction_and_sign() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("fractional.xpt");
@@ -252,6 +277,29 @@ fn load_xpt_dataset_decodes_ibm_float_fraction_and_sign() {
 
     assert_float_value(values.get(0).expect("row 1"), 0.5);
     assert_float_value(values.get(1).expect("row 2"), -2.25);
+}
+
+#[test]
+fn load_xpt_dataset_decodes_ibm_float_value_matrix() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("numeric-matrix.xpt");
+    let expected = [0.0625, 0.5, 1.0, 16.0, -0.125, -32.5];
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::numeric("AEVAL", "Analysis Value")],
+        &expected
+            .iter()
+            .map(|value| vec![TestXptValue::Number(*value)])
+            .collect::<Vec<_>>(),
+    );
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let values = dataset.frame().column("AEVAL").expect("value column");
+
+    for (index, expected) in expected.into_iter().enumerate() {
+        assert_float_value(values.get(index).expect("row"), expected);
+    }
 }
 
 #[test]
