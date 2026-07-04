@@ -71,10 +71,8 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
             "cargo clippy --workspace --locked -- -D warnings".to_owned(),
             "cargo test --workspace --locked".to_owned(),
             "PYTHONPATH=src python3 -m pytest -q".to_owned(),
-            "PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly --p21-rules <p21-rules.csv> --open-rules-repo <cdisc-open-rules> --out <p21-workflow-out>".to_owned(),
-            "PYTHONPATH=src python3 -m cdisc_rulekit.cli validate-structure --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/reports".to_owned(),
-            "PYTHONPATH=src python3 -m cdisc_rulekit.cli run-core --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/core-runs --dry-run".to_owned(),
-            "PYTHONPATH=src python3 -m cdisc_rulekit.cli compare-results --generated-rules <p21-workflow-out>/generated --actual-root <p21-workflow-out>/core-runs --out <p21-workflow-out>/reports".to_owned(),
+            "PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>"
+                .to_owned(),
         ],
     }
 }
@@ -139,11 +137,12 @@ mod tests {
         assert!(manifest
             .verification_commands
             .iter()
-            .any(|command| command.contains("cdisc_rulekit.cli build-readonly")));
-        assert!(manifest
+            .any(|command| command.contains("scripts/p21port_smoke.py")));
+        assert!(!manifest
             .verification_commands
             .iter()
-            .any(|command| command.contains("cdisc_rulekit.cli compare-results")));
+            .any(|command| command.contains("cdisc_rulekit.cli run-core")
+                && command.contains("--dry-run")));
     }
 
     #[test]

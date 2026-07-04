@@ -16,5 +16,9 @@ test = ["pytest>=8"]
 where = ["src"]
 
 [tool.pytest.ini_options]
+addopts = ["-m", "not integration"]
+markers = [
+    "integration: slower subprocess-heavy workflow smoke tests run by explicit CI steps",
+]
 pythonpath = ["src"]
 testpaths = ["tests"]
