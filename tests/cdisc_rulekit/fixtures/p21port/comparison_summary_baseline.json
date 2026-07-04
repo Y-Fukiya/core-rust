@@ -5,32 +5,48 @@
   "pass_count": 4,
   "rows": [
     {
-      "actual_issue_count": 0,
+      "actual_issue_count": 1,
       "case_id": "01",
-      "case_type": "positive",
-      "expected_issue_count": 0,
-      "status": "PASS"
-    },
-    {
-      "actual_issue_count": 0,
-      "case_id": "01",
-      "case_type": "positive",
-      "expected_issue_count": 0,
-      "status": "PASS"
+      "case_type": "negative",
+      "dataset": "AE",
+      "expected_issue_count": 1,
+      "generated_rule_id": "P21PORT-SDTMIG-SD0002-35DD9145",
+      "rule_id": "P21PORT-SDTMIG-SD0002-35DD9145",
+      "status": "PASS",
+      "variables": "AEDTC|DOMAIN"
     },
     {
       "actual_issue_count": 1,
       "case_id": "01",
       "case_type": "negative",
+      "dataset": "AE",
       "expected_issue_count": 1,
-      "status": "PASS"
+      "generated_rule_id": "P21PORT-SDTMIG-SD0003-1803FB20",
+      "rule_id": "P21PORT-SDTMIG-SD0003-1803FB20",
+      "status": "PASS",
+      "variables": "AESTDTC|DOMAIN"
     },
     {
-      "actual_issue_count": 1,
+      "actual_issue_count": 0,
       "case_id": "01",
-      "case_type": "negative",
-      "expected_issue_count": 1,
-      "status": "PASS"
+      "case_type": "positive",
+      "dataset": "AE",
+      "expected_issue_count": 0,
+      "generated_rule_id": "P21PORT-SDTMIG-SD0002-35DD9145",
+      "rule_id": "P21PORT-SDTMIG-SD0002-35DD9145",
+      "status": "PASS",
+      "variables": ""
+    },
+    {
+      "actual_issue_count": 0,
+      "case_id": "01",
+      "case_type": "positive",
+      "dataset": "AE",
+      "expected_issue_count": 0,
+      "generated_rule_id": "P21PORT-SDTMIG-SD0003-1803FB20",
+      "rule_id": "P21PORT-SDTMIG-SD0003-1803FB20",
+      "status": "PASS",
+      "variables": ""
     }
   ]
 }

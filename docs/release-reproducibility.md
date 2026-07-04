@@ -18,6 +18,7 @@ cargo run -p xtask -- release-manifest \
 cargo run -p xtask -- release-verify \
   --manifest target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
+  --source-root . \
   --target-triple <expected-target-triple> \
   --require-clean-git \
   --require-ci-run-url \
@@ -44,12 +45,15 @@ root so long-lived manifests do not leak local absolute paths. Artifacts outside
 the root are rejected.
 `release-verify` recomputes artifact SHA-256 values and returns a failing exit
 status when a recorded artifact is missing or has changed. When the manifest
-contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` next
-to the manifest so dependency drift is caught before archive publication.
+contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
+`--source-root` so dependency drift is caught before archive publication. If
+`--source-root` is omitted, the current working directory is used.
 Use the stricter policy flags for reviewed release bundles:
 
 - `--target-triple <triple>` requires the manifest's recorded Rust host/target
   triple to match the reviewed build target.
+- `--source-root <dir>` points verification at the source checkout whose
+  `Cargo.lock` should match the manifest.
 - `--require-clean-git` requires available git provenance and `dirty=false`.
 - `--require-ci-run-url` requires the manifest to record the GitHub Actions run
   URL that produced or verified the artifact.
