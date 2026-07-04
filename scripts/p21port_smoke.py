@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_ROOT = ROOT / "tests" / "cdisc_rulekit" / "fixtures"
+P21_FIXTURE_ROOT = FIXTURE_ROOT / "p21"
+P21PORT_FIXTURE_ROOT = FIXTURE_ROOT / "p21port"
+
+
+def _run(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _json_array(value: str) -> list[str]:
+    if not value:
+        return []
+    payload = json.loads(value)
+    return [str(item) for item in payload]
+
+
+def _mapping_rows(path: Path) -> list[dict[str, object]]:
+    rows = []
+    for row in _read_csv(path):
+        rows.append(
+            {
+                "p21_rule_id": row["p21_rule_id"],
+                "core_rule_id": row["core_rule_id"],
+                "match_type": row["match_type"],
+                "confidence": row["confidence"],
+                "cdisc_rule_ids": ";".join(_json_array(row["cdisc_rule_id_overlap"])),
+            },
+        )
+    return rows
+
+
+def _baseline_mapping_rows() -> list[dict[str, str]]:
+    return _read_csv(P21PORT_FIXTURE_ROOT / "p21_to_core_mapping_baseline.csv")
+
+
+def _write_fake_engine(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "from __future__ import annotations",
+                "import csv",
+                "import json",
+                "import pathlib",
+                "import sys",
+                "",
+                "args = sys.argv[1:]",
+                "output = pathlib.Path(args[args.index('--output') + 1])",
+                "rule_path = pathlib.Path(args[args.index('--local-rules') + 1])",
+                "rule_dir = rule_path.parent",
+                "case_type = output.parent.name",
+                "case_id = output.name",
+                "expected_path = rule_dir / 'expected_results.csv'",
+                "with expected_path.open(newline='', encoding='utf-8') as handle:",
+                "    expected_rows = [row for row in csv.DictReader(handle) if row['case_type'] == case_type and row['case_id'] == case_id]",
+                "issue_count = int(expected_rows[0]['expected_issue_count']) if expected_rows else 0",
+                "errors = []",
+                "for row in expected_rows:",
+                "    if int(row['expected_issue_count']) <= 0:",
+                "        continue",
+                "    errors.append({",
+                "        'rule_id': row['rule_id'],",
+                "        'dataset': row['dataset'],",
+                "        'row': int(row['row']) if row['row'] else '',",
+                "        'variables': [part for part in row['variables'].split('|') if part],",
+                "    })",
+                "payload = {'summary': {'error_count': issue_count}, 'results': []}",
+                "if errors:",
+                "    payload['results'].append({'rule_id': errors[0]['rule_id'], 'error_count': issue_count, 'errors': errors})",
+                "output.mkdir(parents=True, exist_ok=True)",
+                "(output / 'report.json').write_text(json.dumps(payload, sort_keys=True), encoding='utf-8')",
+                "(output / 'report.csv').write_text('rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\\n', encoding='utf-8')",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _comparison_baseline() -> dict[str, object]:
+    payload = json.loads((P21PORT_FIXTURE_ROOT / "comparison_summary_baseline.json").read_text(encoding="utf-8"))
+    payload["rows"].sort(key=lambda row: (row["case_type"], row["case_id"]))
+    return payload
+
+
+def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
+    rows = []
+    for row in summary["rows"]:
+        rows.append(
+            {
+                "actual_issue_count": int(row["actual_issue_count"]),
+                "case_id": row["case_id"],
+                "case_type": row["case_type"],
+                "expected_issue_count": int(row["expected_issue_count"]),
+                "status": row["status"],
+            },
+        )
+    rows.sort(key=lambda row: (row["case_type"], row["case_id"]))
+    return {
+        "fail_count": summary["fail_count"],
+        "gate_ok": summary["gate_ok"],
+        "ok": summary["ok"],
+        "pass_count": summary["pass_count"],
+        "rows": rows,
+    }
+
+
+def run(work_dir: Path) -> dict[str, object]:
+    work_dir.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    read_only = work_dir / "read_only"
+    generated = work_dir / "generated"
+    run_out = work_dir / "run"
+    reports = work_dir / "reports"
+
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "build-readonly",
+            "--p21-rules",
+            str(P21_FIXTURE_ROOT / "cdisc_rule_definitions_latest_2204.csv"),
+            "--p21-domain-map",
+            str(P21_FIXTURE_ROOT / "cdisc_rule_domain_map.csv"),
+            "--open-rules-repo",
+            str(FIXTURE_ROOT / "open_rules"),
+            "--out",
+            str(read_only),
+            "--standard",
+            "SDTM-IG",
+        ],
+        env=env,
+    )
+    mapping_rows = _mapping_rows(read_only / "mapping" / "p21_to_core_mapping.csv")
+    baseline_mapping = _baseline_mapping_rows()
+    if mapping_rows != baseline_mapping:
+        raise AssertionError(f"P21 mapping baseline mismatch: {mapping_rows!r} != {baseline_mapping!r}")
+
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "generate",
+            "--p21-catalog",
+            str(read_only / "catalog" / "p21_rules_normalized.jsonl"),
+            "--conversion-status",
+            str(read_only / "catalog" / "conversion_status.csv"),
+            "--operator-inventory",
+            str(P21PORT_FIXTURE_ROOT / "core_operator_inventory_for_generation.csv"),
+            "--out",
+            str(generated),
+        ],
+        env=env,
+    )
+    generation_summary = json.loads((generated / "reports" / "generation_summary.json").read_text(encoding="utf-8"))
+
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "validate-structure",
+            "--generated-rules",
+            str(generated / "generated_rules"),
+            "--out",
+            str(reports),
+        ],
+        env=env,
+    )
+
+    fake_engine = work_dir / "fake_core_engine.py"
+    _write_fake_engine(fake_engine)
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "run-core",
+            "--generated-rules",
+            str(generated / "generated_rules"),
+            "--out",
+            str(run_out),
+            "--engine-command",
+            f"{sys.executable} {fake_engine}",
+        ],
+        env=env,
+    )
+    run_summary_rows = _read_csv(run_out / "reports" / "core_run_execution_summary.csv")
+
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "compare-results",
+            "--generated-rules",
+            str(generated / "generated_rules"),
+            "--actual-root",
+            str(run_out / "core_runs"),
+            "--out",
+            str(reports),
+        ],
+        env=env,
+    )
+    comparison_summary = json.loads((reports / "comparison_summary.json").read_text(encoding="utf-8"))
+    comparison_projection = _comparison_projection(comparison_summary)
+    comparison_baseline = _comparison_baseline()
+    if comparison_projection != comparison_baseline:
+        raise AssertionError(
+            f"P21 comparison baseline mismatch: {comparison_projection!r} != {comparison_baseline!r}",
+        )
+
+    summary = {
+        "build_readonly_mapping_rows": len(mapping_rows),
+        "comparison_fail_count": comparison_summary["fail_count"],
+        "comparison_pass_count": comparison_summary["pass_count"],
+        "generated_count": generation_summary["generated_count"],
+        "run_core_pass_count": sum(1 for row in run_summary_rows if row["status"] == "PASS"),
+    }
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "p21port_smoke_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return summary
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the lightweight P21PORT smoke workflow.")
+    parser.add_argument("--work-dir", type=Path, required=True)
+    args = parser.parse_args()
+    run(args.work_dir)
+    print("p21port smoke complete: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

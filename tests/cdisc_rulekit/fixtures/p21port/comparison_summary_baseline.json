@@ -1,0 +1,22 @@
+{
+  "fail_count": 0,
+  "gate_ok": true,
+  "ok": true,
+  "pass_count": 2,
+  "rows": [
+    {
+      "actual_issue_count": 0,
+      "case_id": "01",
+      "case_type": "positive",
+      "expected_issue_count": 0,
+      "status": "PASS"
+    },
+    {
+      "actual_issue_count": 1,
+      "case_id": "01",
+      "case_type": "negative",
+      "expected_issue_count": 1,
+      "status": "PASS"
+    }
+  ]
+}
