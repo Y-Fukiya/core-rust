@@ -34,6 +34,8 @@ The manifest records:
 - `Cargo.lock` SHA-256 when available
 - Rust target triple when `rustc -vV` is available
 - GitHub Actions run URL when written inside GitHub Actions
+- GitHub Actions run metadata when available: run id, run attempt, workflow,
+  job, ref name/type, commit SHA, and actor
 - optional `SOURCE_DATE_EPOCH`
 - verification commands expected for release review
 
@@ -84,8 +86,9 @@ PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>
 This P21PORT smoke check exercises `build-readonly`, `generate`,
 `validate-structure`, real `run-core` orchestration through a reviewed fake
 engine, `compare-results` against committed golden fixtures, an expected
-comparison failure, fuzzy mapping, and unsupported generation probes. It is not
-a Pinnacle 21 or official CDISC Validator equivalence check.
+comparison failure in both missing-issue and extra-issue directions, fuzzy
+mapping, duplicate P21 rule-id preservation, and unsupported generation probes.
+It is not a Pinnacle 21 or official CDISC Validator equivalence check.
 
 The default pytest configuration excludes subprocess-heavy integration tests.
 Run the P21PORT smoke explicitly with either:

@@ -53,6 +53,7 @@ struct ReleaseManifest {
     cargo_lock_sha256: Option<String>,
     target_triple: Option<String>,
     ci_run_url: Option<String>,
+    ci: Option<CiProvenance>,
     git: GitProvenance,
     artifacts: Vec<ReleaseArtifact>,
     verification_commands: Vec<String>,
@@ -69,6 +70,19 @@ struct GitProvenance {
     available: bool,
     commit: Option<String>,
     dirty: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+struct CiProvenance {
+    run_url: Option<String>,
+    run_id: Option<String>,
+    run_attempt: Option<String>,
+    workflow: Option<String>,
+    job: Option<String>,
+    ref_name: Option<String>,
+    ref_type: Option<String>,
+    sha: Option<String>,
+    actor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +103,8 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         .iter()
         .map(|path| release_artifact(path.as_path(), args.artifact_root.as_deref()))
         .collect::<Result<Vec<_>>>()?;
-    let manifest = build_release_manifest(ReleaseManifestInput {
+    let ci = github_actions_ci_provenance();
+    let mut manifest = build_release_manifest(ReleaseManifestInput {
         git_commit: git_output(["rev-parse", "HEAD"]),
         git_dirty: git_output(["status", "--porcelain"]).map(|status| !status.is_empty()),
         rust_version: command_output("rustc", ["--version"])
@@ -97,8 +112,14 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
         cargo_lock_sha256: sha256_file(Path::new("Cargo.lock")).ok(),
         target_triple: rust_target_triple(),
-        ci_run_url: github_actions_run_url(),
+        ci_run_url: ci.as_ref().and_then(|metadata| metadata.run_url.clone()),
         artifacts,
+    });
+    manifest.ci = ci.or_else(|| {
+        manifest.ci_run_url.as_ref().map(|run_url| CiProvenance {
+            run_url: Some(run_url.clone()),
+            ..Default::default()
+        })
     });
     write_release_manifest(&args.out, &manifest)?;
     Ok(false)
@@ -128,7 +149,11 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
         source_date_epoch: input.source_date_epoch,
         cargo_lock_sha256: input.cargo_lock_sha256,
         target_triple: input.target_triple,
-        ci_run_url: input.ci_run_url,
+        ci_run_url: input.ci_run_url.clone(),
+        ci: input.ci_run_url.map(|run_url| CiProvenance {
+            run_url: Some(run_url),
+            ..Default::default()
+        }),
         git: GitProvenance {
             available: git_commit.is_some() && input.git_dirty.is_some(),
             commit: git_commit,
@@ -325,11 +350,70 @@ fn rust_target_triple() -> Option<String> {
     })
 }
 
-fn github_actions_run_url() -> Option<String> {
-    let server = std::env::var("GITHUB_SERVER_URL").ok()?;
-    let repository = std::env::var("GITHUB_REPOSITORY").ok()?;
-    let run_id = std::env::var("GITHUB_RUN_ID").ok()?;
-    Some(format!("{server}/{repository}/actions/runs/{run_id}"))
+fn github_actions_ci_provenance() -> Option<CiProvenance> {
+    github_actions_ci_provenance_from_values(
+        std::env::var("GITHUB_SERVER_URL").ok().as_deref(),
+        std::env::var("GITHUB_REPOSITORY").ok().as_deref(),
+        std::env::var("GITHUB_RUN_ID").ok().as_deref(),
+        std::env::var("GITHUB_RUN_ATTEMPT").ok().as_deref(),
+        std::env::var("GITHUB_WORKFLOW").ok().as_deref(),
+        std::env::var("GITHUB_JOB").ok().as_deref(),
+        std::env::var("GITHUB_REF_NAME").ok().as_deref(),
+        std::env::var("GITHUB_REF_TYPE").ok().as_deref(),
+        std::env::var("GITHUB_SHA").ok().as_deref(),
+        std::env::var("GITHUB_ACTOR").ok().as_deref(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn github_actions_ci_provenance_from_values(
+    server: Option<&str>,
+    repository: Option<&str>,
+    run_id: Option<&str>,
+    run_attempt: Option<&str>,
+    workflow: Option<&str>,
+    job: Option<&str>,
+    ref_name: Option<&str>,
+    ref_type: Option<&str>,
+    sha: Option<&str>,
+    actor: Option<&str>,
+) -> Option<CiProvenance> {
+    let run_url = match (server, repository, run_id) {
+        (Some(server), Some(repository), Some(run_id))
+            if !server.is_empty() && !repository.is_empty() && !run_id.is_empty() =>
+        {
+            Some(format!("{server}/{repository}/actions/runs/{run_id}"))
+        }
+        _ => None,
+    };
+    let metadata = CiProvenance {
+        run_url,
+        run_id: non_empty(run_id),
+        run_attempt: non_empty(run_attempt),
+        workflow: non_empty(workflow),
+        job: non_empty(job),
+        ref_name: non_empty(ref_name),
+        ref_type: non_empty(ref_type),
+        sha: non_empty(sha),
+        actor: non_empty(actor),
+    };
+    let has_metadata = metadata.run_url.is_some()
+        || metadata.run_id.is_some()
+        || metadata.run_attempt.is_some()
+        || metadata.workflow.is_some()
+        || metadata.job.is_some()
+        || metadata.ref_name.is_some()
+        || metadata.ref_type.is_some()
+        || metadata.sha.is_some()
+        || metadata.actor.is_some();
+    has_metadata.then_some(metadata)
+}
+
+fn non_empty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -456,6 +540,40 @@ mod tests {
             manifest.ci_run_url.as_deref(),
             Some("https://github.example/run/1")
         );
+        assert_eq!(
+            manifest.ci.as_ref().and_then(|ci| ci.run_url.as_deref()),
+            Some("https://github.example/run/1")
+        );
+    }
+
+    #[test]
+    fn release_manifest_records_structured_ci_metadata() {
+        let ci = github_actions_ci_provenance_from_values(
+            Some("https://github.com"),
+            Some("Y-Fukiya/core-rust"),
+            Some("123456"),
+            Some("2"),
+            Some("Release"),
+            Some("build"),
+            Some("main"),
+            Some("branch"),
+            Some("abc123"),
+            Some("Y-Fukiya"),
+        )
+        .expect("ci metadata");
+
+        assert_eq!(
+            ci.run_url.as_deref(),
+            Some("https://github.com/Y-Fukiya/core-rust/actions/runs/123456")
+        );
+        assert_eq!(ci.run_id.as_deref(), Some("123456"));
+        assert_eq!(ci.run_attempt.as_deref(), Some("2"));
+        assert_eq!(ci.workflow.as_deref(), Some("Release"));
+        assert_eq!(ci.job.as_deref(), Some("build"));
+        assert_eq!(ci.ref_name.as_deref(), Some("main"));
+        assert_eq!(ci.ref_type.as_deref(), Some("branch"));
+        assert_eq!(ci.sha.as_deref(), Some("abc123"));
+        assert_eq!(ci.actor.as_deref(), Some("Y-Fukiya"));
     }
 
     #[test]
