@@ -34,6 +34,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
         "build_readonly_mapping_rows": 3,
         "comparison_fail_count": 0,
         "comparison_pass_count": 4,
+        "duplicate_probe_unique_keys": 2,
         "failure_probe_fail_count": 2,
         "failure_probe_failed_cases": [
             {
@@ -57,6 +58,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
                 "variables": "AESTDTC|DOMAIN",
             },
         ],
+        "fuzzy_probe_confidence_above_threshold": True,
         "fuzzy_probe_match_type": "FUZZY",
         "generated_count": 2,
         "generated_skipped_count": 1,

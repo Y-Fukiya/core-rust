@@ -188,7 +188,7 @@ def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> No
         _write_empty_report(actual_root / rule_id / "negative" / "01")
 
 
-def _fuzzy_mapping_probe() -> str:
+def _fuzzy_mapping_probe() -> dict[str, object]:
     core_rules, _inventory, _warnings = load_open_rules(FIXTURE_ROOT / "open_rules")
     p21_rule = CanonicalRule(
         source="P21",
@@ -201,7 +201,42 @@ def _fuzzy_mapping_probe() -> str:
         message="AETERM must be present.",
         description="AETERM must be populated.",
     )
-    return map_p21_to_core([p21_rule], core_rules)[0].match_type
+    mapping = map_p21_to_core([p21_rule], core_rules)[0]
+    return {
+        "confidence_above_threshold": mapping.confidence >= 0.60,
+        "match_type": mapping.match_type,
+    }
+
+
+def _duplicate_rule_id_probe() -> int:
+    duplicate_rules = [
+        CanonicalRule(
+            source="P21",
+            source_rule_id="DUP001",
+            source_rule_key="config-a|DUP001",
+            p21_rule_id="DUP001",
+            standard_name="SDTM-IG",
+            p21_rule_type="Required",
+            domains=["DM"],
+            variables=["USUBJID"],
+            message="USUBJID is required.",
+            description="USUBJID is required.",
+        ),
+        CanonicalRule(
+            source="P21",
+            source_rule_id="DUP001",
+            source_rule_key="config-b|DUP001",
+            p21_rule_id="DUP001",
+            standard_name="SDTM-IG",
+            p21_rule_type="Required",
+            domains=["AE"],
+            variables=["AETERM"],
+            message="AETERM is required.",
+            description="AETERM is required.",
+        ),
+    ]
+    mappings = map_p21_to_core(duplicate_rules, [])
+    return len({mapping.p21_rule_key for mapping in mappings})
 
 
 def run(work_dir: Path) -> dict[str, object]:
@@ -355,13 +390,16 @@ def run(work_dir: Path) -> dict[str, object]:
         (failure_probe / "reports" / "comparison_summary.json").read_text(encoding="utf-8"),
     )
 
+    fuzzy_probe = _fuzzy_mapping_probe()
     summary = {
         "build_readonly_mapping_rows": len(mapping_rows),
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
+        "duplicate_probe_unique_keys": _duplicate_rule_id_probe(),
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
         "failure_probe_failed_cases": _failure_case_projection(failure_probe_summary),
-        "fuzzy_probe_match_type": _fuzzy_mapping_probe(),
+        "fuzzy_probe_confidence_above_threshold": fuzzy_probe["confidence_above_threshold"],
+        "fuzzy_probe_match_type": fuzzy_probe["match_type"],
         "generated_count": generation_summary["generated_count"],
         "generated_skipped_count": generation_summary["skipped_count"],
         "run_core_pass_count": sum(1 for row in run_summary_rows if row["status"] == "PASS"),
