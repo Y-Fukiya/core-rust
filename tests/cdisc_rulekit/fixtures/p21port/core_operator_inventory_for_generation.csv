@@ -1,0 +1,4 @@
+core_rule_id,source_path,operator,path,node_kind,name_values,raw_keys
+P21PORT-FIXTURE,fixtures/p21port,all,Check.all,dict,"[""AEDTC"", ""DOMAIN""]","[""all""]"
+P21PORT-FIXTURE,fixtures/p21port,equal_to,Check.all[0].equal_to,dict,"[""DOMAIN""]","[""equal_to""]"
+P21PORT-FIXTURE,fixtures/p21port,not_matches_regex,Check.all[1].not_matches_regex,dict,"[""AEDTC""]","[""not_matches_regex""]"

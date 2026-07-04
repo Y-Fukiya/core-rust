@@ -29,6 +29,9 @@ jobs:
       - name: Test Python
         run: PYTHONDONTWRITEBYTECODE=1 python -B -m pytest -p no:cacheprovider -q
 
+      - name: P21PORT smoke workflow
+        run: PYTHONDONTWRITEBYTECODE=1 python -B scripts/p21port_smoke.py --work-dir target/p21port-smoke
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
