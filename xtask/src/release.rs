@@ -1,10 +1,12 @@
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Parser)]
 pub struct ReleaseManifestArgs {
@@ -12,6 +14,8 @@ pub struct ReleaseManifestArgs {
     pub out: PathBuf,
     #[arg(long, value_name = "FILE")]
     pub artifact: Vec<PathBuf>,
+    #[arg(long, value_name = "DIR")]
+    pub artifact_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,7 +63,7 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
     let artifacts = args
         .artifact
         .iter()
-        .map(|path| release_artifact(path.as_path()))
+        .map(|path| release_artifact(path.as_path(), args.artifact_root.as_deref()))
         .collect::<Result<Vec<_>>>()?;
     let manifest = build_release_manifest(ReleaseManifestInput {
         git_commit: git_output(["rev-parse", "HEAD"]),
@@ -106,9 +110,9 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
     }
 }
 
-fn release_artifact(path: &Path) -> Result<ReleaseArtifact> {
+fn release_artifact(path: &Path, artifact_root: Option<&Path>) -> Result<ReleaseArtifact> {
     Ok(ReleaseArtifact {
-        path: path.display().to_string(),
+        path: release_artifact_path(path, artifact_root)?,
         sha256: sha256_file(path)?,
     })
 }
@@ -117,23 +121,47 @@ fn sha256_file(path: &Path) -> Result<String> {
     if !path.is_file() {
         anyhow::bail!("artifact is not a file: {}", path.display());
     }
-    let output = Command::new("shasum")
-        .arg("-a")
-        .arg("256")
-        .arg(path)
-        .output()
-        .or_else(|_| Command::new("sha256sum").arg(path).output())
-        .with_context(|| format!("sha256 {}", path.display()))?;
-    if !output.status.success() {
-        anyhow::bail!("sha256 failed for {}", path.display());
+
+    let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("read {}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .split_whitespace()
-        .next()
-        .filter(|hash| hash.len() == 64)
-        .map(str::to_owned)
-        .with_context(|| format!("parse sha256 output for {}", path.display()))
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn release_artifact_path(path: &Path, artifact_root: Option<&Path>) -> Result<String> {
+    let Some(root) = artifact_root else {
+        return Ok(path.display().to_string());
+    };
+
+    let canonical_path = path
+        .canonicalize()
+        .with_context(|| format!("canonicalize {}", path.display()))?;
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("canonicalize artifact root {}", root.display()))?;
+    let relative = canonical_path
+        .strip_prefix(&canonical_root)
+        .with_context(|| {
+            format!(
+                "artifact {} is not under artifact root {}",
+                path.display(),
+                root.display()
+            )
+        })?;
+    Ok(relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 fn write_release_manifest(path: &Path, manifest: &ReleaseManifest) -> Result<()> {
@@ -302,5 +330,35 @@ mod tests {
             manifest.ci_run_url.as_deref(),
             Some("https://github.example/run/1")
         );
+    }
+
+    #[test]
+    fn release_artifact_records_root_relative_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = root.join("bin").join("core-rs");
+        std::fs::create_dir_all(artifact.parent().expect("artifact parent")).expect("mkdir");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+
+        let artifact = release_artifact(&artifact, Some(&root)).expect("artifact");
+
+        assert_eq!(artifact.path, "bin/core-rs");
+        assert_eq!(
+            artifact.sha256,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn release_artifact_rejects_paths_outside_artifact_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = dir.path().join("outside.bin");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+
+        let error = release_artifact(&artifact, Some(&root)).expect_err("outside root should fail");
+
+        assert!(format!("{error:#}").contains("is not under artifact root"));
     }
 }

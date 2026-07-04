@@ -13,7 +13,8 @@ release provenance manifest:
 ```sh
 cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
-  --artifact <release-artifact>
+  --artifact-root target/release-provenance \
+  --artifact target/release-provenance/<release-artifact>
 ```
 
 The manifest records:
@@ -28,6 +29,10 @@ The manifest records:
 - GitHub Actions run URL when written inside GitHub Actions
 - optional `SOURCE_DATE_EPOCH`
 - verification commands expected for release review
+
+When `--artifact-root` is supplied, artifact paths are recorded relative to that
+root so long-lived manifests do not leak local absolute paths. Artifacts outside
+the root are rejected.
 
 If `dirty` is `true`, do not publish the artifact as a reviewed release unless
 the uncommitted diff is intentionally included and separately archived.
@@ -59,8 +64,17 @@ PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>
 
 This P21PORT smoke check exercises `build-readonly`, `generate`,
 `validate-structure`, real `run-core` orchestration through a reviewed fake
-engine, and `compare-results` against committed golden fixtures. It is not a
-Pinnacle 21 or official CDISC Validator equivalence check.
+engine, `compare-results` against committed golden fixtures, an expected
+comparison failure, fuzzy mapping, and unsupported generation probes. It is not
+a Pinnacle 21 or official CDISC Validator equivalence check.
+
+The default pytest configuration excludes subprocess-heavy integration tests.
+Run the P21PORT smoke explicitly with either:
+
+```sh
+PYTHONPATH=src python3 -m pytest -q -m integration
+PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke
+```
 
 For Open Rules compatibility artifacts, also archive the default scoreboard,
 strict scoreboard, and default-vs-strict delta artifact from the upstream
@@ -76,7 +90,8 @@ changes the headline metrics.
   baselines.
 - Store release artifacts together with `release-manifest.json`, the exact git
   commit, and CI run URLs.
-- Pass every reviewed binary/archive through `--artifact` so its SHA-256 digest
-  is recorded in the manifest.
+- Pass every reviewed binary/archive through `--artifact` and, where practical,
+  pair it with `--artifact-root` so its SHA-256 digest and portable relative
+  path are recorded in the manifest.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.
