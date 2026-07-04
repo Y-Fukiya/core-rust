@@ -217,6 +217,16 @@ def _write_extra_issue_report(output: Path, rule_id: str) -> None:
     (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
 
+def _write_wrong_issue_report(output: Path, rule_id: str) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    errors = [{"rule_id": rule_id, "dataset": "AE", "row": 1, "variables": ["AETERM"]}]
+    payload = {
+        "summary": {"error_count": len(errors)},
+        "results": [{"rule_id": rule_id, "error_count": len(errors), "errors": errors}],
+    }
+    (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
 def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> None:
     rule_dirs = sorted(path for path in generated_rules.iterdir() if path.is_dir())
     if not rule_dirs:
@@ -225,7 +235,7 @@ def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> No
         rule_id = rule_dir.name
         _write_empty_report(actual_root / rule_id / "positive" / "01")
         if index == 0:
-            _write_empty_report(actual_root / rule_id / "negative" / "01")
+            _write_wrong_issue_report(actual_root / rule_id / "negative" / "01", rule_id)
         else:
             _write_extra_issue_report(actual_root / rule_id / "negative" / "01", rule_id)
 
