@@ -171,19 +171,7 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
     }
 
     let row_count = observation_row_count(&bytes[data_start..], observation_len);
-    if row_count > XPT_MAX_ROWS {
-        return Err(DataError::InvalidDatasetPackage(format!(
-            "XPT row count exceeds maximum supported count of {XPT_MAX_ROWS}"
-        )));
-    }
-    let cell_count = row_count
-        .checked_mul(variable_count)
-        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT cell count overflow".to_owned()))?;
-    if cell_count > XPT_MAX_CELLS {
-        return Err(DataError::InvalidDatasetPackage(format!(
-            "XPT cell count exceeds maximum supported count of {XPT_MAX_CELLS}"
-        )));
-    }
+    validate_xpt_row_and_cell_limits(row_count, variable_count)?;
     let mut records = variables
         .iter()
         .map(|variable| (variable.name.clone(), Vec::with_capacity(row_count)))
@@ -314,6 +302,23 @@ fn observation_row_count(data: &[u8], observation_len: usize) -> usize {
     row_count
 }
 
+fn validate_xpt_row_and_cell_limits(row_count: usize, variable_count: usize) -> Result<()> {
+    if row_count > XPT_MAX_ROWS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT row count exceeds maximum supported count of {XPT_MAX_ROWS}"
+        )));
+    }
+    let cell_count = row_count
+        .checked_mul(variable_count)
+        .ok_or_else(|| DataError::InvalidDatasetPackage("XPT cell count overflow".to_owned()))?;
+    if cell_count > XPT_MAX_CELLS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "XPT cell count exceeds maximum supported count of {XPT_MAX_CELLS}"
+        )));
+    }
+    Ok(())
+}
+
 fn observation_chunks(
     data: &[u8],
     observation_len: usize,
@@ -388,4 +393,75 @@ fn round_up_to_card(value: usize) -> Result<usize> {
         .div_ceil(XPT_CARD_LEN)
         .checked_mul(XPT_CARD_LEN)
         .ok_or_else(|| DataError::InvalidDatasetPackage("XPT card length overflow".to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expect_invalid_dataset_package(error: DataError, expected: &str) {
+        assert!(
+            matches!(error, DataError::InvalidDatasetPackage(ref message) if message.contains(expected)),
+            "expected InvalidDatasetPackage containing {expected:?}, got {error:?}",
+        );
+    }
+
+    #[test]
+    fn parse_xpt_namestr_rejects_non_namestr_lengths() {
+        for length in [0, 1, 79, XPT_NAMESTR_LEN - 1, XPT_NAMESTR_LEN + 1, 280] {
+            let error = parse_xpt_namestr(&vec![0; length])
+                .expect_err("invalid NAMESTR byte length should fail");
+            expect_invalid_dataset_package(error, "invalid length");
+        }
+    }
+
+    #[test]
+    fn observation_row_count_trims_padding_rows_and_ignores_partial_tail() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"AE");
+        data.extend_from_slice(b"  ");
+        data.push(b'X');
+
+        assert_eq!(observation_row_count(&data, 2), 1);
+    }
+
+    #[test]
+    fn decode_xpt_numeric_missing_marker_payloads_are_null() {
+        for marker in [b'.', b'_', b'A', b'M', b'Z'] {
+            let mut payload = [0_u8; 8];
+            payload[0] = marker;
+            assert_eq!(decode_xpt_numeric(&payload), Value::Null);
+        }
+    }
+
+    #[test]
+    fn ibm_float_to_f64_decodes_sign_exponent_and_fraction() {
+        let positive_one = [0x41, 0x10, 0, 0, 0, 0, 0, 0];
+        let negative_one = [0xc1, 0x10, 0, 0, 0, 0, 0, 0];
+        let positive_half = [0x40, 0x80, 0, 0, 0, 0, 0, 0];
+
+        assert_eq!(decode_xpt_numeric(&positive_one), Value::from(1));
+        assert_eq!(decode_xpt_numeric(&negative_one), Value::from(-1));
+        assert_eq!(decode_xpt_numeric(&positive_half), Value::from(0.5));
+    }
+
+    #[test]
+    fn validate_xpt_row_and_cell_limits_rejects_oversized_boundaries() {
+        let row_error = validate_xpt_row_and_cell_limits(XPT_MAX_ROWS + 1, 1)
+            .expect_err("row count over cap should fail");
+        expect_invalid_dataset_package(row_error, "row count exceeds");
+
+        let rows_under_cap = XPT_MAX_CELLS / 11 + 1;
+        assert!(rows_under_cap <= XPT_MAX_ROWS);
+        let cell_error = validate_xpt_row_and_cell_limits(rows_under_cap, 11)
+            .expect_err("cell count over cap should fail");
+        expect_invalid_dataset_package(cell_error, "cell count exceeds");
+    }
+
+    #[test]
+    fn validate_xpt_row_and_cell_limits_rejects_cell_count_overflow() {
+        let error = validate_xpt_row_and_cell_limits(2, usize::MAX)
+            .expect_err("cell count overflow should fail");
+        expect_invalid_dataset_package(error, "cell count overflow");
+    }
 }
