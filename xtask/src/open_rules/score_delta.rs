@@ -34,6 +34,7 @@ struct ScoreboardDelta {
     bucket_transitions: Vec<TransitionSummary>,
     normalization_transitions: Vec<TransitionSummary>,
     top_affected_rules: Vec<RuleImpactSummary>,
+    changed_cases: Vec<ChangedCaseExample>,
     example_changed_cases: Vec<ChangedCaseExample>,
 }
 
@@ -128,6 +129,8 @@ impl ScoreboardDelta {
         default: &Scoreboard,
         strict: &Scoreboard,
     ) -> Self {
+        let changed_cases = changed_cases(default, strict);
+        let example_changed_cases = changed_cases.iter().take(20).cloned().collect();
         Self {
             default_scoreboard,
             strict_scoreboard,
@@ -152,7 +155,8 @@ impl ScoreboardDelta {
             bucket_transitions: bucket_transitions(default, strict),
             normalization_transitions: normalization_transitions(default, strict),
             top_affected_rules: top_affected_rules(default, strict, 20),
-            example_changed_cases: example_changed_cases(default, strict, 20),
+            changed_cases,
+            example_changed_cases,
         }
     }
 }
@@ -459,14 +463,10 @@ fn top_affected_rules(
     summaries
 }
 
-fn example_changed_cases(
-    default: &Scoreboard,
-    strict: &Scoreboard,
-    limit: usize,
-) -> Vec<ChangedCaseExample> {
+fn changed_cases(default: &Scoreboard, strict: &Scoreboard) -> Vec<ChangedCaseExample> {
     let default_cases = cases_by_key(&default.cases);
     let strict_cases = cases_by_key(&strict.cases);
-    let mut examples = default_cases
+    let mut changed = default_cases
         .into_iter()
         .filter_map(|(key, default_case)| {
             let strict_case = strict_cases
@@ -486,15 +486,14 @@ fn example_changed_cases(
             })
         })
         .collect::<Vec<_>>();
-    examples.sort_by(|left, right| {
+    changed.sort_by(|left, right| {
         left.scope
             .cmp(&right.scope)
             .then_with(|| left.rule_id.cmp(&right.rule_id))
             .then_with(|| left.case_kind.cmp(&right.case_kind))
             .then_with(|| left.case_id.cmp(&right.case_id))
     });
-    examples.truncate(limit);
-    examples
+    changed
 }
 
 fn cases_by_key(cases: &[ScoredCase]) -> BTreeMap<CaseKey, &ScoredCase> {
@@ -785,6 +784,9 @@ fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[Chan
     lines.extend([
         format!("## {title}"),
         String::new(),
+        "Showing the first changed cases in sorted order. The full changed-case list is available in `scoreboard-delta.json` as `changed_cases`."
+            .to_owned(),
+        String::new(),
         "| Scope | Rule ID | Kind | Case | Transition | Default normalizations | Strict normalizations |"
             .to_owned(),
         "|---|---|---|---|---|---|---|".to_owned(),
@@ -918,6 +920,7 @@ mod tests {
 
         let json = fs::read_to_string(out.join("scoreboard-delta.json")).expect("read delta json");
         assert!(json.contains("\"metric\": \"supported_mismatch\""));
+        assert!(json.contains("\"changed_cases\""));
         assert!(json.contains("\"example_changed_cases\""));
     }
 
