@@ -2,10 +2,14 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 import scripts.p21port_smoke as p21port_smoke
+
+
+FIXTURE_ROOT = Path("tests/cdisc_rulekit/fixtures/p21port")
 
 
 @pytest.mark.integration
@@ -30,21 +34,26 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
     assert "p21port smoke complete: ok" in result.stdout
     summary_path = tmp_path / "p21port" / "reports" / "p21port_smoke_summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    comparison_baseline = json.loads(
+        (FIXTURE_ROOT / "comparison_summary_baseline.json").read_text(encoding="utf-8"),
+    )
     assert summary == {
         "build_readonly_mapping_rows": 3,
         "comparison_fail_count": 0,
         "comparison_pass_count": 4,
+        "comparison_projection_rows": comparison_baseline["rows"],
         "duplicate_probe_unique_keys": 2,
         "failure_probe_extra_issue_fail_count": 1,
+        "failure_probe_equal_count_mismatch_fail_count": 1,
         "failure_probe_fail_count": 2,
         "failure_probe_failed_cases": [
             {
-                "actual_issue_count": 0,
+                "actual_issue_count": 1,
                 "case_id": "01",
                 "case_type": "negative",
                 "expected_issue_count": 1,
                 "generated_rule_id": "P21PORT-SDTMIG-SD0002-35DD9145",
-                "notes": "issue count mismatch",
+                "notes": "structural issue fields did not match",
                 "status": "FAIL",
                 "variables": "AEDTC|DOMAIN",
             },
@@ -59,7 +68,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
                 "variables": "AESTDTC|DOMAIN",
             },
         ],
-        "failure_probe_missing_issue_fail_count": 1,
+        "failure_probe_missing_issue_fail_count": 0,
         "fuzzy_probe_confidence_above_threshold": True,
         "fuzzy_probe_match_type": "FUZZY",
         "generated_count": 2,
