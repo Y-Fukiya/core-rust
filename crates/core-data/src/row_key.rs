@@ -279,3 +279,67 @@ fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKe
     })?;
     Ok(RowKeyValue::from_any_value(value))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn row_key_numeric_equality_hashes_integral_values_consistently_across_types() {
+        let values = [
+            RowKeyValue::SignedInteger(42),
+            RowKeyValue::UnsignedInteger(42),
+            RowKeyValue::Float(NumberKey::new(42.0)),
+            RowKeyValue::Float(NumberKey::new(42.0_f32.into())),
+        ];
+
+        for left in &values {
+            for right in &values {
+                assert_eq!(left, right);
+            }
+        }
+
+        assert_eq!(values.into_iter().collect::<HashSet<_>>().len(), 1);
+    }
+
+    #[test]
+    fn row_key_numeric_equality_does_not_round_large_integer_keys() {
+        let precise_integer = RowKeyValue::SignedInteger(9_007_199_254_740_993);
+        let rounded_float = RowKeyValue::Float(NumberKey::new(9_007_199_254_740_992.0));
+
+        assert_ne!(precise_integer, rounded_float);
+        assert_eq!(
+            [precise_integer, rounded_float]
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn row_key_numeric_ordering_keeps_nan_consistent_with_float_total_cmp() {
+        let ordered = [
+            RowKeyValue::Float(NumberKey::new(f64::from_bits(0xfff8_0000_0000_0000))),
+            RowKeyValue::Float(NumberKey::new(f64::NEG_INFINITY)),
+            RowKeyValue::SignedInteger(-1),
+            RowKeyValue::Float(NumberKey::new(-0.5)),
+            RowKeyValue::SignedInteger(0),
+            RowKeyValue::UnsignedInteger(1),
+            RowKeyValue::Float(NumberKey::new(1.5)),
+            RowKeyValue::Float(NumberKey::new(f64::INFINITY)),
+            RowKeyValue::Float(NumberKey::new(f64::NAN)),
+        ];
+
+        for pair in ordered.windows(2) {
+            assert!(
+                pair[0] < pair[1],
+                "{:?} should sort before {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        assert_eq!(ordered.into_iter().collect::<BTreeSet<_>>().len(), 9);
+    }
+}
