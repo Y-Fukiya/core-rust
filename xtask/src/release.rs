@@ -70,6 +70,10 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
             "cargo clippy --workspace --locked -- -D warnings".to_owned(),
             "cargo test --workspace --locked".to_owned(),
             "PYTHONPATH=src python3 -m pytest -q".to_owned(),
+            "PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly --p21-rules <p21-rules.csv> --open-rules-repo <cdisc-open-rules> --out <p21-workflow-out>".to_owned(),
+            "PYTHONPATH=src python3 -m cdisc_rulekit.cli validate-structure --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/reports".to_owned(),
+            "PYTHONPATH=src python3 -m cdisc_rulekit.cli run-core --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/core-runs --dry-run".to_owned(),
+            "PYTHONPATH=src python3 -m cdisc_rulekit.cli compare-results --generated-rules <p21-workflow-out>/generated --actual-root <p21-workflow-out>/core-runs --out <p21-workflow-out>/reports".to_owned(),
         ],
     }
 }
@@ -119,6 +123,25 @@ mod tests {
         assert!(manifest
             .verification_commands
             .contains(&"cargo test --workspace --locked".to_owned()));
+    }
+
+    #[test]
+    fn release_manifest_includes_p21_workflow_smoke_commands() {
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: "abc123".to_owned(),
+            git_dirty: false,
+            rust_version: "rustc 1.93.0".to_owned(),
+            source_date_epoch: None,
+        });
+
+        assert!(manifest
+            .verification_commands
+            .iter()
+            .any(|command| command.contains("cdisc_rulekit.cli build-readonly")));
+        assert!(manifest
+            .verification_commands
+            .iter()
+            .any(|command| command.contains("cdisc_rulekit.cli compare-results")));
     }
 
     #[test]
