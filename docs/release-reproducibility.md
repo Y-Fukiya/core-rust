@@ -11,7 +11,9 @@ Before publishing a binary, archive, or validation-harness artifact, write a
 release provenance manifest:
 
 ```sh
-cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
+cargo run -p xtask -- release-manifest \
+  --out target/release-provenance/release-manifest.json \
+  --artifact <release-artifact>
 ```
 
 The manifest records:
@@ -20,6 +22,7 @@ The manifest records:
 - xtask package name and version
 - git commit and dirty-worktree status
 - whether git provenance was available when the manifest was written
+- optional artifact paths and SHA-256 digests for files passed with `--artifact`
 - optional `SOURCE_DATE_EPOCH`
 - verification commands expected for release review
 
@@ -70,5 +73,7 @@ changes the headline metrics.
   baselines.
 - Store release artifacts together with `release-manifest.json`, the exact git
   commit, and CI run URLs.
+- Pass every reviewed binary/archive through `--artifact` so its SHA-256 digest
+  is recorded in the manifest.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

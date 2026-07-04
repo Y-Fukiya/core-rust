@@ -7,6 +7,7 @@ The XPT parser has deterministic boundary tests in `core-data` and a
 
 ```bash
 cargo install cargo-fuzz
+cd fuzz
 cargo fuzz run xpt_parser
 ```
 
@@ -20,6 +21,10 @@ This is a robustness harness. It checks for panics, unchecked arithmetic, and
 resource handling problems in malformed XPT input. It is not a semantic
 conformance check for SAS XPORT content and it is not part of the default
 workspace test gate.
+
+The repository also includes a short manual/scheduled GitHub Actions workflow
+(`XPT Fuzz`) that runs the target with `-max_total_time=60`. Treat it as a
+periodic robustness audit artifact rather than a release-blocking CI gate.
 
 Use the deterministic `core-data` XPT tests for regression coverage of known
 boundaries such as NAMESTR length, IBM floating-point decoding, observation
