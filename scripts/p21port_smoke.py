@@ -125,7 +125,7 @@ def _write_fake_engine(path: Path) -> None:
 
 def _comparison_baseline() -> dict[str, object]:
     payload = json.loads((P21PORT_FIXTURE_ROOT / "comparison_summary_baseline.json").read_text(encoding="utf-8"))
-    payload["rows"].sort(key=lambda row: (row["case_type"], row["case_id"]))
+    payload["rows"].sort(key=lambda row: (row["case_type"], row["case_id"], row["generated_rule_id"]))
     return payload
 
 
@@ -137,11 +137,15 @@ def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
                 "actual_issue_count": int(row["actual_issue_count"]),
                 "case_id": row["case_id"],
                 "case_type": row["case_type"],
+                "dataset": row["dataset"],
                 "expected_issue_count": int(row["expected_issue_count"]),
+                "generated_rule_id": row["generated_rule_id"],
+                "rule_id": row["rule_id"],
                 "status": row["status"],
+                "variables": row["variables"],
             },
         )
-    rows.sort(key=lambda row: (row["case_type"], row["case_id"]))
+    rows.sort(key=lambda row: (row["case_type"], row["case_id"], row["generated_rule_id"]))
     return {
         "fail_count": summary["fail_count"],
         "gate_ok": summary["gate_ok"],
@@ -429,6 +433,7 @@ def run(work_dir: Path) -> dict[str, object]:
         "build_readonly_mapping_rows": len(mapping_rows),
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
+        "comparison_projection_rows": comparison_projection["rows"],
         "duplicate_probe_unique_keys": _duplicate_rule_id_probe(),
         "failure_probe_extra_issue_fail_count": failure_probe_directions["extra_issue"],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
