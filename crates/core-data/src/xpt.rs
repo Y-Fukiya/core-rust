@@ -411,6 +411,7 @@ fn round_up_to_card(value: usize) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn expect_invalid_dataset_package(error: DataError, expected: &str) {
         assert!(
@@ -489,5 +490,37 @@ mod tests {
         let error = validate_xpt_row_and_cell_limits(2, usize::MAX)
             .expect_err("cell count overflow should fail");
         expect_invalid_dataset_package(error, "cell count overflow");
+    }
+
+    proptest! {
+        #[test]
+        fn namestr_parser_rejects_arbitrary_non_namestr_lengths(length in 0usize..512) {
+            prop_assume!(length != XPT_NAMESTR_LEN);
+            let error = parse_xpt_namestr(&vec![0; length])
+                .expect_err("non-NAMESTR byte length should fail");
+            prop_assert!(matches!(
+                error,
+                DataError::InvalidDatasetPackage(message) if message.contains("invalid length")
+            ));
+        }
+
+        #[test]
+        fn observation_tail_accepts_only_zero_or_space_padding(
+            complete_rows in 0usize..8,
+            observation_len in 1usize..32,
+            tail in proptest::collection::vec(any::<u8>(), 0..32),
+        ) {
+            let mut data = vec![b'A'; complete_rows * observation_len];
+            data.extend_from_slice(&tail);
+            let tail_is_partial = tail.len() % observation_len != 0;
+            let tail_is_padding = tail.iter().all(|byte| matches!(*byte, 0 | b' '));
+            let result = validate_observation_tail(&data, observation_len);
+
+            if tail_is_partial && !tail_is_padding {
+                prop_assert!(result.is_err());
+            } else {
+                prop_assert!(result.is_ok());
+            }
+        }
     }
 }

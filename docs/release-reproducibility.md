@@ -37,6 +37,19 @@ cargo test --workspace --locked
 PYTHONPATH=src python3 -m pytest -q
 ```
 
+For P21PORT conversion artifacts, also run a representative read-only workflow
+against reviewed local P21/Open Rules inputs:
+
+```sh
+PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly --p21-rules <p21-rules.csv> --open-rules-repo <cdisc-open-rules> --out <p21-workflow-out>
+PYTHONPATH=src python3 -m cdisc_rulekit.cli validate-structure --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/reports
+PYTHONPATH=src python3 -m cdisc_rulekit.cli run-core --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/core-runs --dry-run
+PYTHONPATH=src python3 -m cdisc_rulekit.cli compare-results --generated-rules <p21-workflow-out>/generated --actual-root <p21-workflow-out>/core-runs --out <p21-workflow-out>/reports
+```
+
+This P21PORT smoke check exercises the conversion workflow. It is not a
+Pinnacle 21 or official CDISC Validator equivalence check.
+
 For Open Rules compatibility artifacts, also archive the default scoreboard,
 strict scoreboard, and default-vs-strict delta artifact from the upstream
 workflow. The delta is the first place to inspect how much compatibility scoring
