@@ -48,6 +48,8 @@ status when a recorded artifact is missing or has changed. When the manifest
 contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
 `--source-root` so dependency drift is caught before archive publication. If
 `--source-root` is omitted, the current working directory is used.
+The main CI workflow includes a lightweight release provenance smoke gate that
+creates a multi-artifact manifest and verifies it with the strict policy flags.
 Use the stricter policy flags for reviewed release bundles:
 
 - `--target-triple <triple>` requires the manifest's recorded Rust host/target
