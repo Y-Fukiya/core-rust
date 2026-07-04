@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod open_rules;
+mod release;
 
 use std::process::ExitCode;
 
@@ -18,6 +19,8 @@ struct Cli {
 enum Commands {
     /// CDISC Open Rules compatibility tooling.
     OpenRules(OpenRulesCommand),
+    /// Write a release provenance manifest.
+    ReleaseManifest(release::ReleaseManifestArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -55,6 +58,7 @@ fn main() -> Result<ExitCode> {
             OpenRulesSubcommand::Score(args) => open_rules::score(args)?,
             OpenRulesSubcommand::ScoreDelta(args) => open_rules::score_delta(args)?,
         },
+        Commands::ReleaseManifest(args) => release::run(args)?,
     };
 
     Ok(if should_fail {

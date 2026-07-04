@@ -102,6 +102,11 @@ These fixtures make regressions visible, but they are not a substitute for broad
 parallel runs against the official CDISC Validator or the Python rules engine on
 large real-world study datasets.
 
+Release artifacts should be accompanied by a provenance manifest generated with
+`cargo run -p xtask -- release-manifest --out <path>`. See
+[`docs/release-reproducibility.md`](docs/release-reproducibility.md) for the
+release checklist and reproducibility notes.
+
 ## Quick Start
 
 Requires Rust 1.93 or newer.
