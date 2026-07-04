@@ -170,14 +170,16 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
         ));
     }
 
-    let row_count = observation_row_count(&bytes[data_start..], observation_len);
+    let observation_data = &bytes[data_start..];
+    validate_observation_tail(observation_data, observation_len)?;
+    let row_count = observation_row_count(observation_data, observation_len);
     validate_xpt_row_and_cell_limits(row_count, variable_count)?;
     let mut records = variables
         .iter()
         .map(|variable| (variable.name.clone(), Vec::with_capacity(row_count)))
         .collect::<IndexMap<_, _>>();
 
-    for row in observation_chunks(&bytes[data_start..], observation_len, row_count) {
+    for row in observation_chunks(observation_data, observation_len, row_count) {
         let mut offset = 0;
         for variable in &variables {
             let field = &row[offset..offset + variable.length];
@@ -302,6 +304,17 @@ fn observation_row_count(data: &[u8], observation_len: usize) -> usize {
     row_count
 }
 
+fn validate_observation_tail(data: &[u8], observation_len: usize) -> Result<()> {
+    let tail_start = data.len() / observation_len * observation_len;
+    let tail = &data[tail_start..];
+    if tail.iter().any(|byte| !matches!(*byte, 0 | b' ')) {
+        return Err(DataError::InvalidDatasetPackage(
+            "XPT observation data has a non-padding partial observation tail".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_xpt_row_and_cell_limits(row_count: usize, variable_count: usize) -> Result<()> {
     if row_count > XPT_MAX_ROWS {
         return Err(DataError::InvalidDatasetPackage(format!(
@@ -423,6 +436,19 @@ mod tests {
         data.push(b'X');
 
         assert_eq!(observation_row_count(&data, 2), 1);
+    }
+
+    #[test]
+    fn validate_observation_tail_allows_padding_only_partial_tail() {
+        validate_observation_tail(b"AE  \0 ", 2).expect("padding tail is valid");
+    }
+
+    #[test]
+    fn validate_observation_tail_rejects_non_padding_partial_tail() {
+        let error =
+            validate_observation_tail(b"AE  X", 2).expect_err("non-padding tail should fail");
+
+        expect_invalid_dataset_package(error, "partial observation tail");
     }
 
     #[test]
