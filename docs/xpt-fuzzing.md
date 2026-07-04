@@ -28,9 +28,10 @@ periodic robustness audit artifact rather than a release-blocking CI gate.
 The workflow uses the committed seed corpus under `fuzz/corpus/xpt_parser` and
 uploads minimized failure artifacts from `fuzz/artifacts` when fuzzing fails.
 The seed corpus intentionally stays small and reviewable: it includes malformed
-library/header bytes plus NAMESTR-header, observation-padding, and numeric
-payload entry points. Add minimized crash reproducers or new reviewed boundary
-seeds to this directory rather than committing the generated fuzz corpus.
+library/header bytes plus NAMESTR-header, observation-padding, character
+payload, numeric payload, and IBM-float-like entry points. Add minimized crash
+reproducers or new reviewed boundary seeds to this directory rather than
+committing the generated fuzz corpus.
 
 Use the deterministic `core-data` XPT tests for regression coverage of known
 boundaries such as NAMESTR length, IBM floating-point decoding, observation

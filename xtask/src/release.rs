@@ -199,7 +199,26 @@ fn verify_release_manifest(manifest_path: &Path, artifact_root: Option<&Path>) -
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf()
     });
+    let manifest_root = manifest_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
     let mut should_fail = false;
+
+    if let Some(expected) = &manifest.cargo_lock_sha256 {
+        let cargo_lock = manifest_root.join("Cargo.lock");
+        match sha256_file(&cargo_lock) {
+            Ok(actual) if actual == *expected => {}
+            Ok(actual) => {
+                eprintln!("Cargo.lock hash mismatch: expected {expected} actual {actual}");
+                should_fail = true;
+            }
+            Err(error) => {
+                eprintln!("Cargo.lock verification failed: {error:#}");
+                should_fail = true;
+            }
+        }
+    }
 
     for artifact in &manifest.artifacts {
         let path = root.join(&artifact.path);
@@ -454,6 +473,33 @@ mod tests {
         let manifest_path = dir.path().join("release-manifest.json");
         write_release_manifest(&manifest_path, &manifest).expect("write manifest");
         std::fs::write(&artifact, b"changed").expect("modify artifact");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_fails_when_cargo_lock_hash_changes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let cargo_lock = dir.path().join("Cargo.lock");
+        std::fs::write(&cargo_lock, b"lock-v1").expect("write lock");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: Some(sha256_file(&cargo_lock).expect("hash lock")),
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+        std::fs::write(&cargo_lock, b"lock-v2").expect("modify lock");
 
         let should_fail =
             verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
