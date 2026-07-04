@@ -1,0 +1,21 @@
+[package]
+name = "core-rust-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+core-data = { path = "../crates/core-data" }
+libfuzzer-sys = "0.4"
+tempfile = "3"
+
+[[bin]]
+name = "xpt_parser"
+path = "fuzz_targets/xpt_parser.rs"
+test = false
+doc = false
