@@ -35,6 +35,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
         "comparison_fail_count": 0,
         "comparison_pass_count": 4,
         "duplicate_probe_unique_keys": 2,
+        "failure_probe_extra_issue_fail_count": 1,
         "failure_probe_fail_count": 2,
         "failure_probe_failed_cases": [
             {
@@ -48,7 +49,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
                 "variables": "AEDTC|DOMAIN",
             },
             {
-                "actual_issue_count": 0,
+                "actual_issue_count": 2,
                 "case_id": "01",
                 "case_type": "negative",
                 "expected_issue_count": 1,
@@ -58,6 +59,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
                 "variables": "AESTDTC|DOMAIN",
             },
         ],
+        "failure_probe_missing_issue_fail_count": 1,
         "fuzzy_probe_confidence_above_threshold": True,
         "fuzzy_probe_match_type": "FUZZY",
         "generated_count": 2,

@@ -172,9 +172,38 @@ def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, objec
     return rows
 
 
+def _failure_direction_counts(failed_cases: list[dict[str, object]]) -> dict[str, int]:
+    missing_issue = 0
+    extra_issue = 0
+    for row in failed_cases:
+        actual = int(row["actual_issue_count"])
+        expected = int(row["expected_issue_count"])
+        if actual < expected:
+            missing_issue += 1
+        elif actual > expected:
+            extra_issue += 1
+    return {
+        "extra_issue": extra_issue,
+        "missing_issue": missing_issue,
+    }
+
+
 def _write_empty_report(output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
     payload = {"summary": {"error_count": 0}, "results": []}
+    (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
+def _write_extra_issue_report(output: Path, rule_id: str) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    errors = [
+        {"rule_id": rule_id, "dataset": "AE", "row": 1, "variables": ["AETERM"]},
+        {"rule_id": rule_id, "dataset": "AE", "row": 2, "variables": ["AETERM"]},
+    ]
+    payload = {
+        "summary": {"error_count": len(errors)},
+        "results": [{"rule_id": rule_id, "error_count": len(errors), "errors": errors}],
+    }
     (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
 
@@ -182,10 +211,13 @@ def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> No
     rule_dirs = sorted(path for path in generated_rules.iterdir() if path.is_dir())
     if not rule_dirs:
         raise AssertionError("expected at least one generated P21PORT rule")
-    for rule_dir in rule_dirs:
+    for index, rule_dir in enumerate(rule_dirs):
         rule_id = rule_dir.name
         _write_empty_report(actual_root / rule_id / "positive" / "01")
-        _write_empty_report(actual_root / rule_id / "negative" / "01")
+        if index == 0:
+            _write_empty_report(actual_root / rule_id / "negative" / "01")
+        else:
+            _write_extra_issue_report(actual_root / rule_id / "negative" / "01", rule_id)
 
 
 def _fuzzy_mapping_probe() -> dict[str, object]:
@@ -391,13 +423,17 @@ def run(work_dir: Path) -> dict[str, object]:
     )
 
     fuzzy_probe = _fuzzy_mapping_probe()
+    failure_probe_failed_cases = _failure_case_projection(failure_probe_summary)
+    failure_probe_directions = _failure_direction_counts(failure_probe_failed_cases)
     summary = {
         "build_readonly_mapping_rows": len(mapping_rows),
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
         "duplicate_probe_unique_keys": _duplicate_rule_id_probe(),
+        "failure_probe_extra_issue_fail_count": failure_probe_directions["extra_issue"],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
-        "failure_probe_failed_cases": _failure_case_projection(failure_probe_summary),
+        "failure_probe_failed_cases": failure_probe_failed_cases,
+        "failure_probe_missing_issue_fail_count": failure_probe_directions["missing_issue"],
         "fuzzy_probe_confidence_above_threshold": fuzzy_probe["confidence_above_threshold"],
         "fuzzy_probe_match_type": fuzzy_probe["match_type"],
         "generated_count": generation_summary["generated_count"],
