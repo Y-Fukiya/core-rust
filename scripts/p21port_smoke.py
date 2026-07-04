@@ -433,6 +433,7 @@ def run(work_dir: Path) -> dict[str, object]:
         "build_readonly_mapping_rows": len(mapping_rows),
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
+        "comparison_projection_rows": comparison_projection["rows"],
         "duplicate_probe_unique_keys": _duplicate_rule_id_probe(),
         "failure_probe_extra_issue_fail_count": failure_probe_directions["extra_issue"],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],

@@ -119,5 +119,9 @@ changes the headline metrics.
 - Pass every reviewed binary/archive through `--artifact` and, where practical,
   pair it with `--artifact-root` so its SHA-256 digest and portable relative
   path are recorded in the manifest.
+- For multi-platform or multi-format releases, pass every reviewed binary,
+  archive, and generated harness bundle as separate `--artifact` values. The
+  verifier checks each recorded artifact independently, so a single changed
+  target in a release matrix fails verification.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

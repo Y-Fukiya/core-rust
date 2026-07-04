@@ -685,6 +685,46 @@ mod tests {
     }
 
     #[test]
+    fn release_verify_checks_each_recorded_artifact_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let bin = root.join("bin").join("core-rs");
+        let archive = root.join("archives").join("core-rs.tar.gz");
+        std::fs::create_dir_all(bin.parent().expect("bin parent")).expect("mkdir bin parent");
+        std::fs::create_dir_all(archive.parent().expect("archive parent"))
+            .expect("mkdir archive parent");
+        std::fs::write(&bin, b"binary").expect("write binary");
+        std::fs::write(&archive, b"archive").expect("write archive");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![
+                release_artifact(&bin, Some(&root)).expect("binary artifact"),
+                release_artifact(&archive, Some(&root)).expect("archive artifact"),
+            ],
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify matching artifacts");
+        assert!(!should_fail);
+
+        std::fs::write(&archive, b"changed archive").expect("modify archive");
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify changed artifacts");
+
+        assert!(should_fail);
+    }
+
+    #[test]
     fn release_verify_fails_when_cargo_lock_hash_changes() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source_root = dir.path().join("source");
