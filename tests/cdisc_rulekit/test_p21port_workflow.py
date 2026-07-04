@@ -34,7 +34,9 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
         "build_readonly_mapping_rows": 2,
         "comparison_fail_count": 0,
         "comparison_pass_count": 2,
+        "failure_probe_fail_count": 1,
         "generated_count": 1,
+        "generated_skipped_count": 1,
         "run_core_pass_count": 2,
     }
 

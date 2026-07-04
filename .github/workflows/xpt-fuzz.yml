@@ -1,0 +1,28 @@
+name: XPT Fuzz
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 3 * * 1"
+
+jobs:
+  xpt-fuzz:
+    name: XPT parser short fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Run XPT parser fuzz target
+        run: |
+          cd fuzz
+          cargo fuzz run xpt_parser -- -max_total_time=60

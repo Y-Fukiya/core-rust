@@ -1,12 +1,100 @@
-use std::fs;
+use std::{collections::BTreeSet, fs};
 
 use core_engine::ExecutionStatus;
-use core_rule_model::load_rules_from_paths;
+use core_rule_model::{load_rules_from_paths, Sensitivity};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use super::*;
-use crate::tests::helpers::{write_dataset, write_rule};
+use crate::tests::helpers::{write_dataset, write_raw_rule, write_rule};
+
+#[test]
+fn run_validation_requires_paths_before_loading() {
+    let request = ValidateRequest {
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        rule_paths: Vec::new(),
+        dataset_paths: Vec::new(),
+        ..Default::default()
+    };
+
+    let error = run_validation(request).expect_err("missing rule paths");
+    assert!(matches!(error, ApiError::MissingRulePaths));
+}
+
+#[test]
+fn loaded_rules_keep_record_sensitivity() {
+    let dir = tempdir().expect("tempdir");
+    write_rule(dir.path(), "CORE-TEST-0001", "AE");
+    let rules = load_rules_from_paths(&[dir.path().to_path_buf()]).expect("load rules");
+
+    assert_eq!(rules[0].sensitivity, Some(Sensitivity::Record));
+}
+
+#[test]
+fn run_validation_skips_unsupported_rules_before_engine_execution() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+    let dataset_path = write_dataset(&data_dir);
+
+    write_raw_rule(
+        &rules_dir,
+        "CORE-OPERATIONS",
+        r#""Rule Type": "Record Data""#,
+        r#""Operations": [{ "name": "future_operation" }],"#,
+        r#""operator": "equal_to""#,
+    );
+    write_raw_rule(
+        &rules_dir,
+        "CORE-JOIN",
+        r#""Rule Type": "Record Data""#,
+        r#""Match Datasets": [{ "domain": "SUPPAE" }],"#,
+        r#""operator": "equal_to""#,
+    );
+    write_raw_rule(
+        &rules_dir,
+        "CORE-OPERATOR",
+        r#""Rule Type": "Record Data""#,
+        "",
+        r#""operator": "future_operator""#,
+    );
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir],
+        dataset_paths: vec![dataset_path],
+        include_rules: Vec::new(),
+        exclude_rules: Vec::new(),
+        output_dir: None,
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 3);
+    let reasons = outcome
+        .results
+        .iter()
+        .map(|result| result.skipped_reason.as_ref().expect("skipped reason"))
+        .map(|reason| serde_json::to_string(reason).expect("serialize reason"))
+        .map(|reason| reason.trim_matches('"').to_owned())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        reasons,
+        BTreeSet::from([
+            "dataset_join_not_supported".to_owned(),
+            "operations_not_supported".to_owned(),
+            "unsupported_operator".to_owned(),
+        ])
+    );
+    assert!(outcome
+        .results
+        .iter()
+        .all(|result| result.execution_status == ExecutionStatus::Skipped));
+}
 
 #[test]
 fn run_validation_records_engine_errors_as_skipped_results() {

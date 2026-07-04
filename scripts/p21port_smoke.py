@@ -28,6 +28,21 @@ def _run(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess
     )
 
 
+def _run_expect_failure(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        args,
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=SMOKE_STEP_TIMEOUT_SECONDS,
+    )
+    if completed.returncode == 0:
+        raise AssertionError(f"expected command to fail: {args!r}")
+    return completed
+
+
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
@@ -130,6 +145,21 @@ def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _write_empty_report(output: Path) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    payload = {"summary": {"error_count": 0}, "results": []}
+    (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
+def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> None:
+    rule_dirs = sorted(path for path in generated_rules.iterdir() if path.is_dir())
+    if len(rule_dirs) != 1:
+        raise AssertionError(f"expected exactly one generated P21PORT rule, found {len(rule_dirs)}")
+    rule_id = rule_dirs[0].name
+    _write_empty_report(actual_root / rule_id / "positive" / "01")
+    _write_empty_report(actual_root / rule_id / "negative" / "01")
+
+
 def run(work_dir: Path) -> dict[str, object]:
     work_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
@@ -137,6 +167,7 @@ def run(work_dir: Path) -> dict[str, object]:
     read_only = work_dir / "read_only"
     generated = work_dir / "generated"
     run_out = work_dir / "run"
+    failure_probe = work_dir / "failure_probe"
     reports = work_dir / "reports"
 
     _run(
@@ -238,11 +269,33 @@ def run(work_dir: Path) -> dict[str, object]:
             f"P21 comparison baseline mismatch: {comparison_projection!r} != {comparison_baseline!r}",
         )
 
+    _write_failure_probe_actuals(generated / "generated_rules", failure_probe / "core_runs")
+    _run_expect_failure(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "compare-results",
+            "--generated-rules",
+            str(generated / "generated_rules"),
+            "--actual-root",
+            str(failure_probe / "core_runs"),
+            "--out",
+            str(failure_probe / "reports"),
+        ],
+        env=env,
+    )
+    failure_probe_summary = json.loads(
+        (failure_probe / "reports" / "comparison_summary.json").read_text(encoding="utf-8"),
+    )
+
     summary = {
         "build_readonly_mapping_rows": len(mapping_rows),
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
+        "failure_probe_fail_count": failure_probe_summary["fail_count"],
         "generated_count": generation_summary["generated_count"],
+        "generated_skipped_count": generation_summary["skipped_count"],
         "run_core_pass_count": sum(1 for row in run_summary_rows if row["status"] == "PASS"),
     }
     reports.mkdir(parents=True, exist_ok=True)
