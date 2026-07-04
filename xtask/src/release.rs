@@ -26,24 +26,23 @@ struct ReleaseManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct GitProvenance {
+    available: bool,
     commit: Option<String>,
-    dirty: bool,
+    dirty: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReleaseManifestInput {
-    git_commit: String,
-    git_dirty: bool,
+    git_commit: Option<String>,
+    git_dirty: Option<bool>,
     rust_version: String,
     source_date_epoch: Option<String>,
 }
 
 pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
     let manifest = build_release_manifest(ReleaseManifestInput {
-        git_commit: git_output(["rev-parse", "HEAD"]).unwrap_or_default(),
-        git_dirty: !git_output(["status", "--porcelain"])
-            .unwrap_or_default()
-            .is_empty(),
+        git_commit: git_output(["rev-parse", "HEAD"]),
+        git_dirty: git_output(["status", "--porcelain"]).map(|status| !status.is_empty()),
         rust_version: command_output("rustc", ["--version"])
             .unwrap_or_else(|| "unknown".to_owned()),
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
@@ -53,6 +52,7 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
 }
 
 fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
+    let git_commit = input.git_commit.filter(|commit| !commit.is_empty());
     ReleaseManifest {
         schema_version: 1,
         generated_by: "xtask release-manifest".to_owned(),
@@ -61,7 +61,8 @@ fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
         rust_version: input.rust_version,
         source_date_epoch: input.source_date_epoch,
         git: GitProvenance {
-            commit: (!input.git_commit.is_empty()).then_some(input.git_commit),
+            available: git_commit.is_some() && input.git_dirty.is_some(),
+            commit: git_commit,
             dirty: input.git_dirty,
         },
         verification_commands: vec![
@@ -109,15 +110,16 @@ mod tests {
     #[test]
     fn release_manifest_records_git_version_and_verification_commands() {
         let manifest = build_release_manifest(ReleaseManifestInput {
-            git_commit: "abc123".to_owned(),
-            git_dirty: false,
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: Some("1783123200".to_owned()),
         });
 
         assert_eq!(manifest.schema_version, 1);
+        assert!(manifest.git.available);
         assert_eq!(manifest.git.commit.as_deref(), Some("abc123"));
-        assert!(!manifest.git.dirty);
+        assert_eq!(manifest.git.dirty, Some(false));
         assert_eq!(manifest.rust_version, "rustc 1.93.0");
         assert_eq!(manifest.source_date_epoch.as_deref(), Some("1783123200"));
         assert!(manifest
@@ -128,8 +130,8 @@ mod tests {
     #[test]
     fn release_manifest_includes_p21_workflow_smoke_commands() {
         let manifest = build_release_manifest(ReleaseManifestInput {
-            git_commit: "abc123".to_owned(),
-            git_dirty: false,
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
             rust_version: "rustc 1.93.0".to_owned(),
             source_date_epoch: None,
         });
@@ -145,12 +147,26 @@ mod tests {
     }
 
     #[test]
+    fn release_manifest_marks_git_provenance_unavailable_when_git_metadata_is_missing() {
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: None,
+            git_dirty: None,
+            rust_version: "rustc 1.93.0".to_owned(),
+            source_date_epoch: None,
+        });
+
+        assert!(!manifest.git.available);
+        assert_eq!(manifest.git.commit, None);
+        assert_eq!(manifest.git.dirty, None);
+    }
+
+    #[test]
     fn release_manifest_writer_creates_parent_directories() {
         let dir = tempfile::tempdir().expect("tempdir");
         let out = dir.path().join("nested").join("release-manifest.json");
         let manifest = build_release_manifest(ReleaseManifestInput {
-            git_commit: String::new(),
-            git_dirty: true,
+            git_commit: Some(String::new()),
+            git_dirty: Some(true),
             rust_version: "rustc test".to_owned(),
             source_date_epoch: None,
         });

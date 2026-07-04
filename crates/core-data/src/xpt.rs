@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn validate_observation_tail_allows_padding_only_partial_tail() {
-        validate_observation_tail(b"AE  \0 ", 2).expect("padding tail is valid");
+        validate_observation_tail(b"AE\0", 2).expect("padding tail is valid");
     }
 
     #[test]
@@ -555,11 +555,13 @@ mod tests {
         ) {
             let mut data = vec![b'A'; complete_rows * observation_len];
             data.extend_from_slice(&tail);
-            let tail_is_partial = tail.len() % observation_len != 0;
-            let tail_is_padding = tail.iter().all(|byte| matches!(*byte, 0 | b' '));
+            let partial_tail_start = data.len() / observation_len * observation_len;
+            let partial_tail = &data[partial_tail_start..];
+            let partial_tail_is_padding =
+                partial_tail.iter().all(|byte| matches!(*byte, 0 | b' '));
             let result = validate_observation_tail(&data, observation_len);
 
-            if tail_is_partial && !tail_is_padding {
+            if !partial_tail.is_empty() && !partial_tail_is_padding {
                 prop_assert!(result.is_err());
             } else {
                 prop_assert!(result.is_ok());
