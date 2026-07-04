@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,6 +11,7 @@ use thiserror::Error;
 
 mod csv_dataset;
 mod csv_records;
+mod dataset_joins;
 mod dataset_operations;
 mod dataset_package;
 mod dataset_paths;
@@ -19,6 +19,7 @@ mod dataset_transforms;
 mod json_table;
 mod open_rules_data_dir;
 mod open_rules_variables;
+mod row_key;
 mod usdm_abbreviations;
 mod usdm_collectors;
 mod usdm_content;
@@ -40,6 +41,10 @@ pub(crate) use csv_records::{
     csv_records_to_dict_rows, normalize_dataset_name, normalize_metadata_name, read_csv_dict_rows,
     read_csv_records, row_string, CsvRecords,
 };
+pub use dataset_joins::{
+    anti_join_dataset_on, inner_join_dataset_on, left_join_dataset, left_join_dataset_on,
+    semi_join_dataset_on,
+};
 pub use dataset_operations::{
     dataset_column_values, deduplicate_dataset_by_columns, derive_column_from_column,
     derive_column_from_values, derive_literal_column, drop_dataset_columns, filter_dataset_by_mask,
@@ -55,6 +60,7 @@ pub(crate) use json_table::records_to_frame;
 use json_table::{json_rows_dataset, series_from_json_values};
 pub use json_table::{metadata_row_dataset, metadata_rows_dataset};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
+pub(crate) use row_key::{row_key, RowKeyValue};
 use usdm_abbreviations::collect_usdm_abbreviation_rows;
 use usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
@@ -3458,273 +3464,6 @@ pub(crate) fn take_dataset_rows(dataset: &LoadedDataset, indices: &[u32]) -> Res
             source,
         })?;
     Ok(LoadedDataset::new(dataset.metadata.clone(), frame))
-}
-
-pub fn left_join_dataset(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    keys: &[String],
-    right_prefix: &str,
-) -> Result<LoadedDataset> {
-    left_join_dataset_on(left, right, keys, keys, right_prefix)
-}
-
-pub fn left_join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-    right_prefix: &str,
-) -> Result<LoadedDataset> {
-    join_dataset_on(left, right, left_keys, right_keys, right_prefix, true)
-}
-
-pub fn inner_join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-    right_prefix: &str,
-) -> Result<LoadedDataset> {
-    join_dataset_on(left, right, left_keys, right_keys, right_prefix, false)
-}
-
-fn join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-    right_prefix: &str,
-    include_unmatched_left: bool,
-) -> Result<LoadedDataset> {
-    let (left_keys, right_keys) = resolve_join_key_pair(left, right, left_keys, right_keys)?;
-
-    let mut index: HashMap<Vec<RowKeyValue>, Vec<usize>> = HashMap::new();
-    for row in 0..right.frame.height() {
-        index
-            .entry(row_key(&right.frame, &right_keys, row)?)
-            .or_default()
-            .push(row);
-    }
-
-    let mut left_rows = Vec::new();
-    let mut right_rows = Vec::new();
-    for left_row in 0..left.frame.height() {
-        let key = row_key(&left.frame, &left_keys, left_row)?;
-        if let Some(matches) = index.get(&key) {
-            for right_row in matches {
-                left_rows.push(left_row as u32);
-                right_rows.push(Some(*right_row));
-            }
-        } else if include_unmatched_left {
-            left_rows.push(left_row as u32);
-            right_rows.push(None);
-        }
-    }
-
-    let left_indices = UInt32Chunked::from_vec("row_index".into(), left_rows);
-    let mut frame = left
-        .frame
-        .take(&left_indices)
-        .map_err(|source| DataError::Polars {
-            path: left.metadata.full_path.clone(),
-            source,
-        })?;
-    let left_columns = left
-        .frame
-        .get_column_names()
-        .into_iter()
-        .map(|name| name.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    let mut joined_columns = Vec::new();
-    for right_column in right.frame.get_column_names() {
-        let right_column = right_column.as_str();
-        if !right_prefix.is_empty() && right_keys.iter().any(|key| key == right_column) {
-            continue;
-        }
-
-        let joined_name = format!("{right_prefix}{right_column}");
-        if left_columns.contains(&joined_name) {
-            continue;
-        }
-
-        let values = right_rows
-            .iter()
-            .map(|right_row| {
-                right_row.map_or(Ok(Value::Null), |row| {
-                    cell_to_json_value(&right.frame, right_column, row)
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        joined_columns.push(series_from_json_values(&joined_name, &values).into());
-    }
-
-    frame
-        .hstack_mut(&joined_columns)
-        .map_err(|source| DataError::Polars {
-            path: left.metadata.full_path.clone(),
-            source,
-        })?;
-
-    Ok(LoadedDataset::new(left.metadata.clone(), frame))
-}
-
-pub fn semi_join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-) -> Result<LoadedDataset> {
-    filter_join_matches(left, right, left_keys, right_keys, true)
-}
-
-pub fn anti_join_dataset_on(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-) -> Result<LoadedDataset> {
-    filter_join_matches(left, right, left_keys, right_keys, false)
-}
-
-fn filter_join_matches(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-    keep_matches: bool,
-) -> Result<LoadedDataset> {
-    let (left_keys, right_keys) = resolve_join_key_pair(left, right, left_keys, right_keys)?;
-    let mut index = HashSet::new();
-    for row in 0..right.frame.height() {
-        index.insert(row_key(&right.frame, &right_keys, row)?);
-    }
-
-    let indices = (0..left.frame.height())
-        .filter_map(|row| {
-            row_key(&left.frame, &left_keys, row)
-                .map(|key| (index.contains(&key) == keep_matches).then_some(row as u32))
-                .transpose()
-        })
-        .collect::<Result<Vec<_>>>()?;
-    take_dataset_rows(left, &indices)
-}
-
-fn resolve_join_key_pair(
-    left: &LoadedDataset,
-    right: &LoadedDataset,
-    left_keys: &[String],
-    right_keys: &[String],
-) -> Result<(Vec<String>, Vec<String>)> {
-    if left_keys.is_empty() || right_keys.is_empty() {
-        return Err(DataError::InvalidDatasetPackage(
-            "join requires at least one key".to_owned(),
-        ));
-    }
-    if left_keys.len() != right_keys.len() {
-        return Err(DataError::InvalidDatasetPackage(
-            "left and right join keys must have the same length".to_owned(),
-        ));
-    }
-
-    Ok((
-        resolve_join_keys(left, left_keys, "left")?,
-        resolve_join_keys(right, right_keys, "right")?,
-    ))
-}
-
-fn resolve_join_keys(dataset: &LoadedDataset, keys: &[String], side: &str) -> Result<Vec<String>> {
-    keys.iter()
-        .map(|key| {
-            actual_column_name(&dataset.frame, key).ok_or_else(|| {
-                DataError::InvalidDatasetPackage(format!("{side} join key not found: {key}"))
-            })
-        })
-        .collect()
-}
-
-fn actual_column_name(frame: &DataFrame, name: &str) -> Option<String> {
-    if frame.column(name).is_ok() {
-        return Some(name.to_owned());
-    }
-    frame
-        .get_column_names()
-        .into_iter()
-        .find(|column| column.as_str().eq_ignore_ascii_case(name))
-        .map(|column| column.as_str().to_owned())
-}
-
-pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
-    keys.iter()
-        .map(|key| cell_to_key(frame, key, row))
-        .collect()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum RowKeyValue {
-    Null,
-    Bool(bool),
-    Number(NumberKey),
-    String(String),
-}
-
-impl RowKeyValue {
-    fn from_any_value(value: AnyValue<'_>) -> Self {
-        if value.is_null() {
-            return Self::Null;
-        }
-        if let Some(value) = value.extract_bool() {
-            return Self::Bool(value);
-        }
-        if let Some(value) = value.extract_str() {
-            return Self::String(value.to_owned());
-        }
-        if let Some(value) = value.extract::<f64>() {
-            return Self::Number(NumberKey::new(value));
-        }
-        Self::String(value.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct NumberKey(u64);
-
-impl NumberKey {
-    fn new(value: f64) -> Self {
-        let value = if value == 0.0 { 0.0 } else { value };
-        Self(value.to_bits())
-    }
-
-    fn value(self) -> f64 {
-        f64::from_bits(self.0)
-    }
-}
-
-impl PartialOrd for NumberKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NumberKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.value().total_cmp(&other.value())
-    }
-}
-
-fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKeyValue> {
-    let column = frame
-        .column(column_name)
-        .map_err(|source| DataError::Polars {
-            path: PathBuf::from(column_name),
-            source,
-        })?;
-    let value = column.get(row).map_err(|source| DataError::Polars {
-        path: PathBuf::from(column_name),
-        source,
-    })?;
-    Ok(RowKeyValue::from_any_value(value))
 }
 
 fn cell_to_json_value(frame: &DataFrame, column_name: &str, row: usize) -> Result<Value> {
