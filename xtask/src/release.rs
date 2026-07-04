@@ -24,6 +24,22 @@ pub struct ReleaseVerifyArgs {
     pub manifest: PathBuf,
     #[arg(long, value_name = "DIR")]
     pub artifact_root: Option<PathBuf>,
+    #[arg(long, value_name = "TRIPLE")]
+    pub target_triple: Option<String>,
+    #[arg(long)]
+    pub require_clean_git: bool,
+    #[arg(long)]
+    pub require_ci_run_url: bool,
+    #[arg(long)]
+    pub require_source_date_epoch: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ReleaseVerifyPolicy {
+    target_triple: Option<String>,
+    require_clean_git: bool,
+    require_ci_run_url: bool,
+    require_source_date_epoch: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,7 +105,16 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
 }
 
 pub fn verify(args: ReleaseVerifyArgs) -> Result<bool> {
-    verify_release_manifest(&args.manifest, args.artifact_root.as_deref())
+    verify_release_manifest(
+        &args.manifest,
+        args.artifact_root.as_deref(),
+        ReleaseVerifyPolicy {
+            target_triple: args.target_triple,
+            require_clean_git: args.require_clean_git,
+            require_ci_run_url: args.require_ci_run_url,
+            require_source_date_epoch: args.require_source_date_epoch,
+        },
+    )
 }
 
 fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
@@ -188,7 +213,11 @@ fn write_release_manifest(path: &Path, manifest: &ReleaseManifest) -> Result<()>
         .with_context(|| format!("write {}", path.display()))
 }
 
-fn verify_release_manifest(manifest_path: &Path, artifact_root: Option<&Path>) -> Result<bool> {
+fn verify_release_manifest(
+    manifest_path: &Path,
+    artifact_root: Option<&Path>,
+    policy: ReleaseVerifyPolicy,
+) -> Result<bool> {
     let file = File::open(manifest_path)
         .with_context(|| format!("open release manifest {}", manifest_path.display()))?;
     let manifest: ReleaseManifest = serde_json::from_reader(file)
@@ -204,6 +233,38 @@ fn verify_release_manifest(manifest_path: &Path, artifact_root: Option<&Path>) -
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
     let mut should_fail = false;
+
+    if let Some(expected) = &policy.target_triple {
+        match &manifest.target_triple {
+            Some(actual) if actual == expected => {}
+            Some(actual) => {
+                eprintln!("target triple mismatch: expected {expected} actual {actual}");
+                should_fail = true;
+            }
+            None => {
+                eprintln!("target triple is required but missing from release manifest");
+                should_fail = true;
+            }
+        }
+    }
+    if policy.require_clean_git {
+        if !manifest.git.available {
+            eprintln!("clean git policy requires available git provenance");
+            should_fail = true;
+        }
+        if manifest.git.dirty != Some(false) {
+            eprintln!("clean git policy requires dirty=false");
+            should_fail = true;
+        }
+    }
+    if policy.require_ci_run_url && manifest.ci_run_url.is_none() {
+        eprintln!("CI run URL is required but missing from release manifest");
+        should_fail = true;
+    }
+    if policy.require_source_date_epoch && manifest.source_date_epoch.is_none() {
+        eprintln!("SOURCE_DATE_EPOCH is required but missing from release manifest");
+        should_fail = true;
+    }
 
     if let Some(expected) = &manifest.cargo_lock_sha256 {
         let cargo_lock = manifest_root.join("Cargo.lock");
@@ -448,7 +509,8 @@ mod tests {
         write_release_manifest(&manifest_path, &manifest).expect("write manifest");
 
         let should_fail =
-            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
 
         assert!(!should_fail);
     }
@@ -475,7 +537,8 @@ mod tests {
         std::fs::write(&artifact, b"changed").expect("modify artifact");
 
         let should_fail =
-            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
 
         assert!(should_fail);
     }
@@ -502,7 +565,72 @@ mod tests {
         std::fs::write(&cargo_lock, b"lock-v2").expect("modify lock");
 
         let should_fail =
-            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_fails_when_target_triple_mismatches_policy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: Some("1783123200".to_owned()),
+            cargo_lock_sha256: None,
+            target_triple: Some("aarch64-apple-darwin".to_owned()),
+            ci_run_url: Some("https://github.example/run/1".to_owned()),
+            artifacts: Vec::new(),
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail = verify_release_manifest(
+            &manifest_path,
+            Some(&root),
+            ReleaseVerifyPolicy {
+                target_triple: Some("x86_64-unknown-linux-gnu".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_enforces_ci_source_epoch_and_clean_git_policy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(true),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: Some("aarch64-apple-darwin".to_owned()),
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail = verify_release_manifest(
+            &manifest_path,
+            Some(&root),
+            ReleaseVerifyPolicy {
+                require_clean_git: true,
+                require_ci_run_url: true,
+                require_source_date_epoch: true,
+                ..Default::default()
+            },
+        )
+        .expect("verify manifest");
 
         assert!(should_fail);
     }

@@ -17,7 +17,11 @@ cargo run -p xtask -- release-manifest \
   --artifact target/release-provenance/<release-artifact>
 cargo run -p xtask -- release-verify \
   --manifest target/release-provenance/release-manifest.json \
-  --artifact-root target/release-provenance
+  --artifact-root target/release-provenance \
+  --target-triple <expected-target-triple> \
+  --require-clean-git \
+  --require-ci-run-url \
+  --require-source-date-epoch
 ```
 
 The manifest records:
@@ -37,7 +41,17 @@ When `--artifact-root` is supplied, artifact paths are recorded relative to that
 root so long-lived manifests do not leak local absolute paths. Artifacts outside
 the root are rejected.
 `release-verify` recomputes artifact SHA-256 values and returns a failing exit
-status when a recorded artifact is missing or has changed.
+status when a recorded artifact is missing or has changed. When the manifest
+contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` next
+to the manifest so dependency drift is caught before archive publication.
+Use the stricter policy flags for reviewed release bundles:
+
+- `--target-triple <triple>` requires the manifest's recorded Rust host/target
+  triple to match the reviewed build target.
+- `--require-clean-git` requires available git provenance and `dirty=false`.
+- `--require-ci-run-url` requires the manifest to record the GitHub Actions run
+  URL that produced or verified the artifact.
+- `--require-source-date-epoch` requires a recorded `SOURCE_DATE_EPOCH`.
 
 If `dirty` is `true`, do not publish the artifact as a reviewed release unless
 the uncommitted diff is intentionally included and separately archived.
