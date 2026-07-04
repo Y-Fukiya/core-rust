@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,6 +18,7 @@ mod dataset_transforms;
 mod json_table;
 mod open_rules_data_dir;
 mod open_rules_variables;
+mod row_key;
 mod usdm_abbreviations;
 mod usdm_collectors;
 mod usdm_content;
@@ -55,6 +55,7 @@ pub(crate) use json_table::records_to_frame;
 use json_table::{json_rows_dataset, series_from_json_values};
 pub use json_table::{metadata_row_dataset, metadata_rows_dataset};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
+pub(crate) use row_key::{row_key, RowKeyValue};
 use usdm_abbreviations::collect_usdm_abbreviation_rows;
 use usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
@@ -3653,78 +3654,6 @@ fn actual_column_name(frame: &DataFrame, name: &str) -> Option<String> {
         .into_iter()
         .find(|column| column.as_str().eq_ignore_ascii_case(name))
         .map(|column| column.as_str().to_owned())
-}
-
-pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<Vec<RowKeyValue>> {
-    keys.iter()
-        .map(|key| cell_to_key(frame, key, row))
-        .collect()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum RowKeyValue {
-    Null,
-    Bool(bool),
-    Number(NumberKey),
-    String(String),
-}
-
-impl RowKeyValue {
-    fn from_any_value(value: AnyValue<'_>) -> Self {
-        if value.is_null() {
-            return Self::Null;
-        }
-        if let Some(value) = value.extract_bool() {
-            return Self::Bool(value);
-        }
-        if let Some(value) = value.extract_str() {
-            return Self::String(value.to_owned());
-        }
-        if let Some(value) = value.extract::<f64>() {
-            return Self::Number(NumberKey::new(value));
-        }
-        Self::String(value.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct NumberKey(u64);
-
-impl NumberKey {
-    fn new(value: f64) -> Self {
-        let value = if value == 0.0 { 0.0 } else { value };
-        Self(value.to_bits())
-    }
-
-    fn value(self) -> f64 {
-        f64::from_bits(self.0)
-    }
-}
-
-impl PartialOrd for NumberKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NumberKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.value().total_cmp(&other.value())
-    }
-}
-
-fn cell_to_key(frame: &DataFrame, column_name: &str, row: usize) -> Result<RowKeyValue> {
-    let column = frame
-        .column(column_name)
-        .map_err(|source| DataError::Polars {
-            path: PathBuf::from(column_name),
-            source,
-        })?;
-    let value = column.get(row).map_err(|source| DataError::Polars {
-        path: PathBuf::from(column_name),
-        source,
-    })?;
-    Ok(RowKeyValue::from_any_value(value))
 }
 
 fn cell_to_json_value(frame: &DataFrame, column_name: &str, row: usize) -> Result<Value> {
