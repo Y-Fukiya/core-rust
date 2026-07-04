@@ -25,4 +25,12 @@ jobs:
       - name: Run XPT parser fuzz target
         run: |
           cd fuzz
-          cargo fuzz run xpt_parser -- -max_total_time=60
+          mkdir -p artifacts
+          cargo fuzz run xpt_parser corpus/xpt_parser -- -max_total_time=60 -artifact_prefix=artifacts/
+
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpt-fuzz-artifacts
+          path: fuzz/artifacts

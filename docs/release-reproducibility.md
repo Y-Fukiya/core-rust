@@ -23,6 +23,9 @@ The manifest records:
 - git commit and dirty-worktree status
 - whether git provenance was available when the manifest was written
 - optional artifact paths and SHA-256 digests for files passed with `--artifact`
+- `Cargo.lock` SHA-256 when available
+- Rust target triple when `rustc -vV` is available
+- GitHub Actions run URL when written inside GitHub Actions
 - optional `SOURCE_DATE_EPOCH`
 - verification commands expected for release review
 

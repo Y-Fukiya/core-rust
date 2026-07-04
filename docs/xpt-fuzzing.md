@@ -25,6 +25,8 @@ workspace test gate.
 The repository also includes a short manual/scheduled GitHub Actions workflow
 (`XPT Fuzz`) that runs the target with `-max_total_time=60`. Treat it as a
 periodic robustness audit artifact rather than a release-blocking CI gate.
+The workflow uses the committed seed corpus under `fuzz/corpus/xpt_parser` and
+uploads minimized failure artifacts from `fuzz/artifacts` when fuzzing fails.
 
 Use the deterministic `core-data` XPT tests for regression coverage of known
 boundaries such as NAMESTR length, IBM floating-point decoding, observation
