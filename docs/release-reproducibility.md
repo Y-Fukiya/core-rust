@@ -37,6 +37,10 @@ cargo test --workspace --locked
 PYTHONPATH=src python3 -m pytest -q
 ```
 
+For XPT parser robustness review, run the fuzz target manually as described in
+[`docs/xpt-fuzzing.md`](xpt-fuzzing.md). The fuzz target is intentionally an
+audit/robustness tool rather than a default release gate.
+
 For P21PORT conversion artifacts, also run a representative read-only workflow
 against reviewed local P21/Open Rules inputs:
 
