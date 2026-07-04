@@ -19,11 +19,14 @@ The manifest records:
 - manifest schema version
 - xtask package name and version
 - git commit and dirty-worktree status
+- whether git provenance was available when the manifest was written
 - optional `SOURCE_DATE_EPOCH`
 - verification commands expected for release review
 
 If `dirty` is `true`, do not publish the artifact as a reviewed release unless
 the uncommitted diff is intentionally included and separately archived.
+If git provenance is unavailable, do not treat the manifest as evidence of a
+clean source checkout.
 
 ## Verification Gate
 
