@@ -45,16 +45,15 @@ For XPT parser robustness review, run the fuzz target manually as described in
 audit/robustness tool rather than a default release gate.
 
 For P21PORT conversion artifacts, also run a representative read-only workflow
-against reviewed local P21/Open Rules inputs:
+against the committed fixture corpus:
 
 ```sh
-PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly --p21-rules <p21-rules.csv> --open-rules-repo <cdisc-open-rules> --out <p21-workflow-out>
-PYTHONPATH=src python3 -m cdisc_rulekit.cli validate-structure --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/reports
-PYTHONPATH=src python3 -m cdisc_rulekit.cli run-core --generated-rules <p21-workflow-out>/generated --out <p21-workflow-out>/core-runs --dry-run
-PYTHONPATH=src python3 -m cdisc_rulekit.cli compare-results --generated-rules <p21-workflow-out>/generated --actual-root <p21-workflow-out>/core-runs --out <p21-workflow-out>/reports
+PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>
 ```
 
-This P21PORT smoke check exercises the conversion workflow. It is not a
+This P21PORT smoke check exercises `build-readonly`, `generate`,
+`validate-structure`, real `run-core` orchestration through a reviewed fake
+engine, and `compare-results` against committed golden fixtures. It is not a
 Pinnacle 21 or official CDISC Validator equivalence check.
 
 For Open Rules compatibility artifacts, also archive the default scoreboard,

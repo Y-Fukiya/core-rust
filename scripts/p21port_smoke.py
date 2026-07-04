@@ -13,10 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = ROOT / "tests" / "cdisc_rulekit" / "fixtures"
 P21_FIXTURE_ROOT = FIXTURE_ROOT / "p21"
 P21PORT_FIXTURE_ROOT = FIXTURE_ROOT / "p21port"
+SMOKE_STEP_TIMEOUT_SECONDS = 60
 
 
 def _run(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+    return subprocess.run(
+        args,
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=SMOKE_STEP_TIMEOUT_SECONDS,
+    )
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
