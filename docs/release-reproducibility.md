@@ -15,6 +15,9 @@ cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
   --artifact target/release-provenance/<release-artifact>
+cargo run -p xtask -- release-verify \
+  --manifest target/release-provenance/release-manifest.json \
+  --artifact-root target/release-provenance
 ```
 
 The manifest records:
@@ -33,6 +36,8 @@ The manifest records:
 When `--artifact-root` is supplied, artifact paths are recorded relative to that
 root so long-lived manifests do not leak local absolute paths. Artifacts outside
 the root are rejected.
+`release-verify` recomputes artifact SHA-256 values and returns a failing exit
+status when a recorded artifact is missing or has changed.
 
 If `dirty` is `true`, do not publish the artifact as a reviewed release unless
 the uncommitted diff is intentionally included and separately archived.

@@ -9,7 +9,7 @@ def test_load_p21_rules_normalizes_fixture_rows(p21_rules_path, p21_domain_map_p
     rules, warnings = load_p21_rules(p21_rules_path, p21_domain_map_path)
 
     assert warnings == []
-    assert len(rules) == 3
+    assert len(rules) == 4
 
     first = next(rule for rule in rules if rule.p21_rule_id == "SD0001")
     assert first.source == "P21"

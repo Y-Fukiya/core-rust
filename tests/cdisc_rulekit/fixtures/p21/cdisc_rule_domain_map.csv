@@ -2,3 +2,4 @@ config_version,agency,config_name,standard_name,standard_version,rule_id,source_
 2204.0,FDA,SDTMIG,SDTM-IG,3.4,SD0001,sdtmig.xml,AE,EVENTS,true
 2204.0,FDA,SDTMIG,SDTM-IG,3.4,SD0001,sdtmig.xml,CM,INTERVENTIONS,false
 2204.0,FDA,SDTMIG,SDTM-IG,3.4,SD0002,sdtmig.xml,AE,EVENTS,true
+2204.0,FDA,SDTMIG,SDTM-IG,3.4,SD0003,sdtmig.xml,AE,EVENTS,true

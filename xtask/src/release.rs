@@ -18,6 +18,14 @@ pub struct ReleaseManifestArgs {
     pub artifact_root: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Parser)]
+pub struct ReleaseVerifyArgs {
+    #[arg(long, value_name = "FILE")]
+    pub manifest: PathBuf,
+    #[arg(long, value_name = "DIR")]
+    pub artifact_root: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct ReleaseManifest {
     schema_version: u8,
@@ -78,6 +86,10 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
     });
     write_release_manifest(&args.out, &manifest)?;
     Ok(false)
+}
+
+pub fn verify(args: ReleaseVerifyArgs) -> Result<bool> {
+    verify_release_manifest(&args.manifest, args.artifact_root.as_deref())
 }
 
 fn build_release_manifest(input: ReleaseManifestInput) -> ReleaseManifest {
@@ -174,6 +186,40 @@ fn write_release_manifest(path: &Path, manifest: &ReleaseManifest) -> Result<()>
     let file = File::create(path).with_context(|| format!("create {}", path.display()))?;
     serde_json::to_writer_pretty(file, manifest)
         .with_context(|| format!("write {}", path.display()))
+}
+
+fn verify_release_manifest(manifest_path: &Path, artifact_root: Option<&Path>) -> Result<bool> {
+    let file = File::open(manifest_path)
+        .with_context(|| format!("open release manifest {}", manifest_path.display()))?;
+    let manifest: ReleaseManifest = serde_json::from_reader(file)
+        .with_context(|| format!("parse release manifest {}", manifest_path.display()))?;
+    let root = artifact_root.map(Path::to_path_buf).unwrap_or_else(|| {
+        manifest_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    });
+    let mut should_fail = false;
+
+    for artifact in &manifest.artifacts {
+        let path = root.join(&artifact.path);
+        match sha256_file(&path) {
+            Ok(actual) if actual == artifact.sha256 => {}
+            Ok(actual) => {
+                eprintln!(
+                    "artifact hash mismatch: {} expected {} actual {}",
+                    artifact.path, artifact.sha256, actual
+                );
+                should_fail = true;
+            }
+            Err(error) => {
+                eprintln!("artifact verification failed: {}: {error:#}", artifact.path);
+                should_fail = true;
+            }
+        }
+    }
+
+    Ok(should_fail)
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> Option<String> {
@@ -360,5 +406,58 @@ mod tests {
         let error = release_artifact(&artifact, Some(&root)).expect_err("outside root should fail");
 
         assert!(format!("{error:#}").contains("is not under artifact root"));
+    }
+
+    #[test]
+    fn release_verify_accepts_matching_artifact_hashes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = root.join("bin").join("core-rs");
+        std::fs::create_dir_all(artifact.parent().expect("artifact parent")).expect("mkdir");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![release_artifact(&artifact, Some(&root)).expect("artifact")],
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+
+        assert!(!should_fail);
+    }
+
+    #[test]
+    fn release_verify_fails_when_artifact_hash_changes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = root.join("bin").join("core-rs");
+        std::fs::create_dir_all(artifact.parent().expect("artifact parent")).expect("mkdir");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![release_artifact(&artifact, Some(&root)).expect("artifact")],
+        });
+        let manifest_path = dir.path().join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+        std::fs::write(&artifact, b"changed").expect("modify artifact");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root)).expect("verify manifest");
+
+        assert!(should_fail);
     }
 }

@@ -62,9 +62,10 @@ def test_build_readonly_writes_catalog_mapping_and_reports(
         statuses = {row["p21_rule_id"]: row["conversion_status"] for row in csv.DictReader(handle)}
     assert statuses["SD0001"] == "NATIVE_CORE"
     assert statuses["SD0002"] == "AUTO_CONVERTIBLE"
+    assert statuses["SD0003"] == "AUTO_CONVERTIBLE"
 
     readiness = json.loads((out_dir / "reports" / "readiness_summary.json").read_text(encoding="utf-8"))
-    assert readiness["total_p21_rules"] == 2
+    assert readiness["total_p21_rules"] == 3
     assert readiness["generated_rules_created"] == 0
 
 
@@ -192,7 +193,7 @@ def test_pilot_preflight_reports_input_readiness(
     assert "pilot-preflight complete" in result.stdout
     report = json.loads((out_dir / "pilot_preflight.json").read_text(encoding="utf-8"))
     assert report["ok"] is True
-    assert report["p21_rule_count"] == 3
+    assert report["p21_rule_count"] == 4
     assert report["open_rules_published_rule_yml_count"] == 1
 
 

@@ -162,12 +162,13 @@ def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, objec
                 "case_id": row["case_id"],
                 "case_type": row["case_type"],
                 "expected_issue_count": int(row["expected_issue_count"]),
+                "generated_rule_id": row["generated_rule_id"],
                 "notes": row["notes"],
                 "status": row["status"],
                 "variables": row["variables"],
             },
         )
-    rows.sort(key=lambda row: (row["case_type"], row["case_id"], row["variables"]))
+    rows.sort(key=lambda row: (row["case_type"], row["case_id"], row["generated_rule_id"]))
     return rows
 
 
@@ -179,11 +180,12 @@ def _write_empty_report(output: Path) -> None:
 
 def _write_failure_probe_actuals(generated_rules: Path, actual_root: Path) -> None:
     rule_dirs = sorted(path for path in generated_rules.iterdir() if path.is_dir())
-    if len(rule_dirs) != 1:
-        raise AssertionError(f"expected exactly one generated P21PORT rule, found {len(rule_dirs)}")
-    rule_id = rule_dirs[0].name
-    _write_empty_report(actual_root / rule_id / "positive" / "01")
-    _write_empty_report(actual_root / rule_id / "negative" / "01")
+    if not rule_dirs:
+        raise AssertionError("expected at least one generated P21PORT rule")
+    for rule_dir in rule_dirs:
+        rule_id = rule_dir.name
+        _write_empty_report(actual_root / rule_id / "positive" / "01")
+        _write_empty_report(actual_root / rule_id / "negative" / "01")
 
 
 def _fuzzy_mapping_probe() -> str:

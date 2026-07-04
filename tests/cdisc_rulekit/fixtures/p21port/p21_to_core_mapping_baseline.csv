@@ -1,3 +1,4 @@
 p21_rule_id,core_rule_id,match_type,confidence,cdisc_rule_ids
 SD0001,CORE-000001,CG_ID,1.0,CG0001
 SD0002,,NONE,0.0,
+SD0003,,NONE,0.0,

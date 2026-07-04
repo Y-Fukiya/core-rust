@@ -21,6 +21,8 @@ enum Commands {
     OpenRules(OpenRulesCommand),
     /// Write a release provenance manifest.
     ReleaseManifest(release::ReleaseManifestArgs),
+    /// Verify release artifacts against a provenance manifest.
+    ReleaseVerify(release::ReleaseVerifyArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -59,6 +61,7 @@ fn main() -> Result<ExitCode> {
             OpenRulesSubcommand::ScoreDelta(args) => open_rules::score_delta(args)?,
         },
         Commands::ReleaseManifest(args) => release::run(args)?,
+        Commands::ReleaseVerify(args) => release::verify(args)?,
     };
 
     Ok(if should_fail {
