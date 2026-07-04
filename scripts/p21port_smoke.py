@@ -151,6 +151,26 @@ def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, object]]:
+    rows = []
+    for row in summary["rows"]:
+        if row["status"] != "FAIL":
+            continue
+        rows.append(
+            {
+                "actual_issue_count": int(row["actual_issue_count"]),
+                "case_id": row["case_id"],
+                "case_type": row["case_type"],
+                "expected_issue_count": int(row["expected_issue_count"]),
+                "notes": row["notes"],
+                "status": row["status"],
+                "variables": row["variables"],
+            },
+        )
+    rows.sort(key=lambda row: (row["case_type"], row["case_id"], row["variables"]))
+    return rows
+
+
 def _write_empty_report(output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
     payload = {"summary": {"error_count": 0}, "results": []}
@@ -338,6 +358,7 @@ def run(work_dir: Path) -> dict[str, object]:
         "comparison_fail_count": comparison_summary["fail_count"],
         "comparison_pass_count": comparison_summary["pass_count"],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
+        "failure_probe_failed_cases": _failure_case_projection(failure_probe_summary),
         "fuzzy_probe_match_type": _fuzzy_mapping_probe(),
         "generated_count": generation_summary["generated_count"],
         "generated_skipped_count": generation_summary["skipped_count"],

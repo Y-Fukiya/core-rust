@@ -107,6 +107,11 @@ Release artifacts should be accompanied by a provenance manifest generated with
 [`docs/release-reproducibility.md`](docs/release-reproducibility.md) for the
 release checklist and reproducibility notes.
 
+The default Python test configuration excludes subprocess-heavy integration
+tests. Run P21PORT workflow smoke coverage explicitly with
+`PYTHONPATH=src python3 -m pytest -q -m integration` or
+`PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke`.
+
 ## Quick Start
 
 Requires Rust 1.93 or newer.
