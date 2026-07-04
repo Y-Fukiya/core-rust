@@ -52,14 +52,14 @@ use core_engine::{
 };
 use core_report::{write_reports_with_options, ReportMetadata, ReportOptions};
 use core_rule_model::{
-    load_rules_from_paths, normalize_condition_value, Condition, ConditionGroup, ExecutableRule,
+    load_rules_from_paths, normalize_condition_value, ConditionGroup, ExecutableRule,
     OperationSpec, Operator, RuleType, Sensitivity, ValueExpr,
 };
 use serde_json::Value;
 
 #[cfg(test)]
 use cdisc_context::define_codelist_for_condition;
-use cdisc_context::{apply_cdisc_context_to_group, CdiscContext};
+use cdisc_context::CdiscContext;
 pub(crate) use condition_inspect::{
     contains_column_ref_comparator, contains_date_operator,
     contains_domain_placeholder_column_ref_comparator, contains_empty_operator,
@@ -127,10 +127,6 @@ use operation_fields::{
     rename_pair, string_field, string_list_field, string_map_field,
 };
 use operation_references::derive_dataset_filtered_variables_dataset;
-use report_variables::{
-    apply_metadata_report_variables, apply_operation_report_variables,
-    apply_requested_standard_operation_semantics,
-};
 #[cfg(test)]
 use result_overrides::is_supported_basic_operator;
 use result_overrides::{
@@ -141,7 +137,7 @@ use result_overrides::{
     should_ignore_evaluation_error, skipped_result_for_evaluation_error, unsupported_operation,
     unsupported_operator,
 };
-use rule_preparation::apply_entity_instance_type_literals;
+use rule_preparation::prepare_rule_for_execution;
 use scope_filter::{
     domain_scope_matches, filter_datasets_by_rule_scope, scope_matches, scope_values,
 };
@@ -152,9 +148,7 @@ use static_codelists::{
     static_codelist, static_codelist_matches_version, static_codelist_term_by_code,
     static_codelist_term_by_value, static_codelist_term_matches_version, valid_codelist_dates,
 };
-use usdm_hand_ports::{
-    apply_usdm_hand_port_semantics, has_usdm_hand_port_semantics, usdm_hand_port_execution_datasets,
-};
+use usdm_hand_ports::{has_usdm_hand_port_semantics, usdm_hand_port_execution_datasets};
 
 pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     if !request.include_rules.is_empty() && !request.exclude_rules.is_empty() {
@@ -2735,124 +2729,6 @@ fn expand_domain_placeholder_for_dataset(dataset: &LoadedDataset, name: &str) ->
         prefix.trim().to_ascii_uppercase(),
         suffix.to_ascii_uppercase()
     )
-}
-
-fn prepare_rule_for_execution(
-    rule: &ExecutableRule,
-    context: &CdiscContext,
-    standard: &Option<String>,
-) -> ExecutableRule {
-    let mut rule = prepare_rule_with_cdisc_context(rule, context);
-    apply_usdm_hand_port_semantics(&mut rule);
-    apply_open_rules_relationship_semantics(&mut rule);
-    apply_trial_summary_value_null_flavor_semantics(&mut rule);
-    apply_unscheduled_death_ds_flag_semantics(&mut rule);
-    apply_requested_standard_operation_semantics(&mut rule, standard);
-    apply_entity_instance_type_literals(&mut rule);
-    apply_metadata_report_variables(&mut rule);
-    apply_operation_report_variables(&mut rule);
-    apply_alphanumeric_fa_split_dataset_name_regex(&mut rule);
-    rule
-}
-
-fn apply_alphanumeric_fa_split_dataset_name_regex(rule: &mut ExecutableRule) {
-    if !engine_semantics::uses_alphanumeric_fa_split_dataset_name_regex(rule) {
-        return;
-    }
-
-    rewrite_dataset_name_matches_regex(&mut rule.conditions, "(?i)^[a-z]{2}[a-z0-9]{1,2}");
-}
-
-fn rewrite_dataset_name_matches_regex(group: &mut ConditionGroup, pattern: &str) {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            for group in groups {
-                rewrite_dataset_name_matches_regex(group, pattern);
-            }
-        }
-        ConditionGroup::Not(group) => rewrite_dataset_name_matches_regex(group, pattern),
-        ConditionGroup::Leaf(condition) => {
-            if condition
-                .target
-                .as_deref()
-                .is_some_and(|target| target.eq_ignore_ascii_case("dataset_name"))
-                && condition.operator == Operator::MatchesRegex
-            {
-                condition.comparator = ValueExpr::Literal(Value::String(pattern.to_owned()));
-            }
-        }
-    }
-}
-
-fn apply_unscheduled_death_ds_flag_semantics(rule: &mut ExecutableRule) {
-    if !engine_semantics::is_unscheduled_death_ds_flag_rule(rule) {
-        return;
-    }
-
-    rule.conditions = ConditionGroup::All(vec![
-        non_empty_condition("DDTESTCD"),
-        ConditionGroup::Leaf(Condition {
-            target: Some("DSUSCHFL".to_owned()),
-            operator: Operator::IsEmpty,
-            comparator: ValueExpr::Null,
-            options: Default::default(),
-        }),
-    ]);
-    rule.output_variables = vec!["DDTESTCD".to_owned(), "DSUSCHFL".to_owned()];
-}
-
-fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
-    if !engine_semantics::is_trial_summary_null_flavor_rule(rule) {
-        return;
-    }
-
-    rule.conditions = ConditionGroup::All(vec![
-        non_empty_condition("TSVAL"),
-        non_empty_condition("TSVALNF"),
-    ]);
-}
-
-fn apply_open_rules_relationship_semantics(rule: &mut ExecutableRule) {
-    if let Some(direction) = engine_semantics::open_rules_relationship_direction(rule) {
-        set_not_unique_relationship_direction(&mut rule.conditions, direction);
-    }
-}
-
-fn set_not_unique_relationship_direction(group: &mut ConditionGroup, direction: &str) {
-    match group {
-        ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
-            for group in groups {
-                set_not_unique_relationship_direction(group, direction);
-            }
-        }
-        ConditionGroup::Not(group) => set_not_unique_relationship_direction(group, direction),
-        ConditionGroup::Leaf(condition) => {
-            if condition.operator == Operator::IsNotUniqueRelationship {
-                condition
-                    .options
-                    .extra
-                    .insert("direction".to_owned(), Value::String(direction.to_owned()));
-            }
-        }
-    }
-}
-
-fn non_empty_condition(target: &str) -> ConditionGroup {
-    ConditionGroup::Leaf(Condition {
-        target: Some(target.to_owned()),
-        operator: Operator::IsNotEmpty,
-        comparator: ValueExpr::Null,
-        options: Default::default(),
-    })
-}
-
-fn prepare_rule_with_cdisc_context(
-    rule: &ExecutableRule,
-    context: &CdiscContext,
-) -> ExecutableRule {
-    let mut rule = rule.clone();
-    apply_cdisc_context_to_group(&mut rule.conditions, context);
-    rule
 }
 
 fn has_match_dataset_prefixed_column_reference(rule: &ExecutableRule) -> bool {
