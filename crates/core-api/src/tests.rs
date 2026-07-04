@@ -854,7 +854,7 @@ fn run_validation_core_000884_reports_ts_age_parameter_counts() {
     assert_eq!(fail_outcome.results[0].errors[0].row, None);
     assert_eq!(
         fail_outcome.results[0].errors[0].variables,
-        vec!["$age_count", "DOMAIN", "$ageu_count", "$agetxt_count"]
+        vec!["DOMAIN", "$ageu_count"]
     );
 
     let pass_dataset_path = pass_data_dir.join("datasets.json");

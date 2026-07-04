@@ -1086,6 +1086,191 @@ fn left_join_dataset_on_keeps_unprefixed_different_right_key_name() {
 }
 
 #[test]
+fn left_join_dataset_on_preserves_large_integer_key_identity() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+{
+  "filename": "left.json",
+  "domain": "LEFT",
+  "records": {
+    "ID": [9007199254740993],
+    "LEFT_VALUE": ["target"]
+  }
+},
+{
+  "filename": "right.json",
+  "domain": "RIGHT",
+  "records": {
+    "ID": [9007199254740992, 9007199254740993],
+    "FLAG": ["wrong", "right"]
+  }
+}
+  ]
+}"#,
+    )
+    .expect("write package");
+
+    let datasets = load_dataset_package_json(&path).expect("load package");
+    let keys = ["ID".to_owned()];
+    let joined = left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+        .expect("left join");
+    let flag = joined.frame().column("LOOKUP.FLAG").expect("joined flag");
+
+    assert_eq!(joined.summary().row_count, 1);
+    assert_eq!(flag.get(0).expect("row 1").extract_str(), Some("right"));
+}
+
+#[test]
+fn left_join_dataset_on_matches_integral_float_and_integer_keys() {
+    let left = LoadedDataset::new(
+        DatasetMetadata {
+            name: "LEFT".to_owned(),
+            domain: Some("LEFT".to_owned()),
+            label: None,
+            filename: "left".to_owned(),
+            full_path: PathBuf::from("left"),
+            source_format: DatasetSourceFormat::DatasetPackageJson,
+            variables: Vec::new(),
+        },
+        df![
+            "ID" => &[1_i64],
+            "LEFT_VALUE" => &["target"],
+        ]
+        .expect("left frame"),
+    );
+    let right = LoadedDataset::new(
+        DatasetMetadata {
+            name: "RIGHT".to_owned(),
+            domain: Some("RIGHT".to_owned()),
+            label: None,
+            filename: "right".to_owned(),
+            full_path: PathBuf::from("right"),
+            source_format: DatasetSourceFormat::DatasetPackageJson,
+            variables: Vec::new(),
+        },
+        df![
+            "ID" => &[1.0_f64],
+            "FLAG" => &["right"],
+        ]
+        .expect("right frame"),
+    );
+
+    let keys = ["ID".to_owned()];
+    let joined = left_join_dataset_on(&left, &right, &keys, &keys, "LOOKUP.").expect("left join");
+    let flag = joined.frame().column("LOOKUP.FLAG").expect("joined flag");
+
+    assert_eq!(joined.summary().row_count, 1);
+    assert_eq!(flag.get(0).expect("row 1").extract_str(), Some("right"));
+}
+
+#[test]
+fn left_join_dataset_on_does_not_match_large_integer_to_rounded_float() {
+    let left = LoadedDataset::new(
+        DatasetMetadata {
+            name: "LEFT".to_owned(),
+            domain: Some("LEFT".to_owned()),
+            label: None,
+            filename: "left".to_owned(),
+            full_path: PathBuf::from("left"),
+            source_format: DatasetSourceFormat::DatasetPackageJson,
+            variables: Vec::new(),
+        },
+        df![
+            "ID" => &[9_007_199_254_740_993_i64],
+            "LEFT_VALUE" => &["target"],
+        ]
+        .expect("left frame"),
+    );
+    let right = LoadedDataset::new(
+        DatasetMetadata {
+            name: "RIGHT".to_owned(),
+            domain: Some("RIGHT".to_owned()),
+            label: None,
+            filename: "right".to_owned(),
+            full_path: PathBuf::from("right"),
+            source_format: DatasetSourceFormat::DatasetPackageJson,
+            variables: Vec::new(),
+        },
+        df![
+            "ID" => &[9_007_199_254_740_992.0_f64],
+            "FLAG" => &["wrong"],
+        ]
+        .expect("right frame"),
+    );
+
+    let keys = ["ID".to_owned()];
+    let joined = left_join_dataset_on(&left, &right, &keys, &keys, "LOOKUP.").expect("left join");
+    let flag = joined.frame().column("LOOKUP.FLAG").expect("joined flag");
+
+    assert_eq!(joined.summary().row_count, 1);
+    assert!(flag.get(0).expect("row 1").is_null());
+}
+
+#[test]
+fn left_join_dataset_on_keeps_colliding_right_non_key_columns_with_fallback_name() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+{
+  "filename": "left.json",
+  "domain": "LEFT",
+  "records": {
+    "USUBJID": ["S1"],
+    "FLAG": ["left"]
+  }
+},
+{
+  "filename": "right.json",
+  "domain": "RIGHT",
+  "records": {
+    "USUBJID": ["S1"],
+    "FLAG": ["right"]
+  }
+}
+  ]
+}"#,
+    )
+    .expect("write package");
+
+    let datasets = load_dataset_package_json(&path).expect("load package");
+    let keys = ["USUBJID".to_owned()];
+    let joined =
+        left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "").expect("left join");
+
+    assert_eq!(
+        joined.summary().columns,
+        vec!["USUBJID", "FLAG", "FLAG_right"]
+    );
+    assert_eq!(
+        joined
+            .frame()
+            .column("FLAG")
+            .expect("left flag")
+            .get(0)
+            .expect("left row")
+            .extract_str(),
+        Some("left")
+    );
+    assert_eq!(
+        joined
+            .frame()
+            .column("FLAG_right")
+            .expect("right flag")
+            .get(0)
+            .expect("right row")
+            .extract_str(),
+        Some("right")
+    );
+}
+
+#[test]
 fn joins_fan_out_duplicate_right_keys_and_preserve_value_types() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");

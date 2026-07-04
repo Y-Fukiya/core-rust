@@ -99,10 +99,12 @@ def _write_fake_engine(path: Path) -> None:
                 "expected_path = rule_dir / 'expected_results.csv'",
                 "with expected_path.open(newline='', encoding='utf-8') as handle:",
                 "    expected_rows = [row for row in csv.DictReader(handle) if row['case_type'] == case_type and row['case_id'] == case_id]",
-                "issue_count = int(expected_rows[0]['expected_issue_count']) if expected_rows else 0",
                 "errors = []",
+                "issue_count = 0",
                 "for row in expected_rows:",
-                "    if int(row['expected_issue_count']) <= 0:",
+                "    count = int(row['expected_issue_count'])",
+                "    issue_count += count",
+                "    if count <= 0:",
                 "        continue",
                 "    errors.append({",
                 "        'rule_id': row['rule_id'],",
@@ -179,6 +181,7 @@ def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, objec
 def _failure_direction_counts(failed_cases: list[dict[str, object]]) -> dict[str, int]:
     missing_issue = 0
     extra_issue = 0
+    equal_count_mismatch = 0
     for row in failed_cases:
         actual = int(row["actual_issue_count"])
         expected = int(row["expected_issue_count"])
@@ -186,7 +189,10 @@ def _failure_direction_counts(failed_cases: list[dict[str, object]]) -> dict[str
             missing_issue += 1
         elif actual > expected:
             extra_issue += 1
+        else:
+            equal_count_mismatch += 1
     return {
+        "equal_count_mismatch": equal_count_mismatch,
         "extra_issue": extra_issue,
         "missing_issue": missing_issue,
     }
@@ -278,7 +284,12 @@ def _duplicate_rule_id_probe() -> int:
 def run(work_dir: Path) -> dict[str, object]:
     work_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "src")
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{ROOT / 'src'}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(ROOT / "src")
+    )
     read_only = work_dir / "read_only"
     generated = work_dir / "generated"
     unsupported_probe = work_dir / "unsupported_probe"
@@ -436,6 +447,9 @@ def run(work_dir: Path) -> dict[str, object]:
         "comparison_projection_rows": comparison_projection["rows"],
         "duplicate_probe_unique_keys": _duplicate_rule_id_probe(),
         "failure_probe_extra_issue_fail_count": failure_probe_directions["extra_issue"],
+        "failure_probe_equal_count_mismatch_fail_count": failure_probe_directions[
+            "equal_count_mismatch"
+        ],
         "failure_probe_fail_count": failure_probe_summary["fail_count"],
         "failure_probe_failed_cases": failure_probe_failed_cases,
         "failure_probe_missing_issue_fail_count": failure_probe_directions["missing_issue"],
