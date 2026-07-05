@@ -130,6 +130,10 @@ For Open Rules compatibility artifacts, also archive the default scoreboard,
 strict scoreboard, and default-vs-strict delta artifact from the upstream
 workflow. The delta is the first place to inspect how much compatibility scoring
 changes the headline metrics.
+Use the delta `summary.md` for review notes and preserve
+`scoreboard-delta.json` for the full case-level transition list. The JSON
+artifact is the durable evidence when reviewers need to audit every
+default-vs-strict bucket, normalization, or rule-level transition.
 
 ## Reproducibility Notes
 
