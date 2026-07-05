@@ -58,6 +58,8 @@ verified binary digest can be inspected after the job completes without
 publishing the binary itself.
 It also includes a lightweight multi-target release provenance smoke gate that
 creates and verifies multi-artifact manifests for more than one target triple.
+Those smoke manifests are uploaded separately as CI artifacts for audit of the
+manifest/verification plumbing.
 Use the stricter policy flags for reviewed release bundles:
 
 - `release-manifest --target-triple <triple>` records the reviewed build target

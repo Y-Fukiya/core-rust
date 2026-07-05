@@ -8,7 +8,7 @@ The XPT parser has deterministic boundary tests in `core-data` and a
 ```bash
 cargo install cargo-fuzz
 cd fuzz
-cargo fuzz run xpt_parser
+cargo +nightly fuzz run xpt_parser
 ```
 
 The target writes each fuzz input to a temporary `.xpt` file and calls
