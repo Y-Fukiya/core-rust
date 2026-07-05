@@ -34,6 +34,7 @@ mod usdm_population_columns;
 mod usdm_product;
 mod usdm_references;
 mod usdm_row_builders;
+mod usdm_text_templates;
 mod usdm_timeline;
 mod usdm_values;
 mod xpt;
