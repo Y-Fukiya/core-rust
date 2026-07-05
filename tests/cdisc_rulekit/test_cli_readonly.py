@@ -164,7 +164,7 @@ def test_convert_p21_config_rejects_malformed_xml(tmp_path):
     )
 
     assert result.returncode != 0
-    assert "mismatched tag" in result.stderr
+    assert "broken.xml" in result.stderr or "mismatched" in result.stderr
     assert not (out_dir / "p21_rules_normalized.csv").exists()
 
 

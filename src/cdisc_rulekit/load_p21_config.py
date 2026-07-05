@@ -201,6 +201,8 @@ def _canonical_rule(
 
 
 def _parse_config_xml(path: Path) -> ET.Element:
+    if not path.is_file():
+        raise ValueError(f"{path.name}: XML configuration input must be a regular file")
     if path.stat().st_size > MAX_CONFIG_BYTES:
         raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     payload = path.read_bytes()
