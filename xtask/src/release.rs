@@ -116,6 +116,9 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         .source_root
         .as_deref()
         .unwrap_or_else(|| Path::new("."));
+    if source_root_is_explicit && !source_root.is_dir() {
+        anyhow::bail!("source root is not a directory: {}", source_root.display());
+    }
     let cargo_lock = source_root.join("Cargo.lock");
     let cargo_lock_sha256 = if source_root_is_explicit {
         Some(sha256_file(&cargo_lock).with_context(|| format!("hash {}", cargo_lock.display()))?)
@@ -712,6 +715,29 @@ mod tests {
 
         assert!(
             error.to_string().contains("hash") && format!("{error:#}").contains("Cargo.lock"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn release_manifest_cli_rejects_file_source_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_root = dir.path().join("source-file");
+        let root = dir.path().join("bundle");
+        std::fs::write(&source_root, b"not a directory").expect("write source file");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+
+        let error = run(ReleaseManifestArgs {
+            out: root.join("release-manifest.json"),
+            artifact: Vec::new(),
+            artifact_root: Some(root),
+            source_root: Some(source_root),
+            target_triple: None,
+        })
+        .expect_err("file source root should fail");
+
+        assert!(
+            format!("{error:#}").contains("source root is not a directory"),
             "unexpected error: {error:#}"
         );
     }
