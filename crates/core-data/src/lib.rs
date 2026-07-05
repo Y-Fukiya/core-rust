@@ -27,6 +27,7 @@ mod usdm_data_dir;
 mod usdm_data_dir_datasets;
 mod usdm_design;
 mod usdm_geography;
+mod usdm_identifiers;
 mod usdm_json_schema;
 mod usdm_objects;
 mod usdm_population_columns;
