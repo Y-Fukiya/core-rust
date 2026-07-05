@@ -157,8 +157,16 @@ content is not modified unless you explicitly export into a target tree.
 Release artifacts should be accompanied by a provenance manifest:
 
 ```sh
-cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
-cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
+cargo build --release -p core-cli
+mkdir -p target/release-provenance/bin
+cp target/release/core-rs target/release-provenance/bin/core-rs
+cargo run -p xtask -- release-manifest \
+  --out target/release-provenance/release-manifest.json \
+  --artifact-root target/release-provenance \
+  --artifact target/release-provenance/bin/core-rs
+cargo run -p xtask -- release-verify \
+  --manifest target/release-provenance/release-manifest.json \
+  --artifact-root target/release-provenance
 ```
 
 For reviewed release bundles, use the stricter command in
