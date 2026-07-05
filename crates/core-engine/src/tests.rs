@@ -1107,6 +1107,50 @@ fn target_is_not_sorted_by_marks_all_rows_participating_in_inversions() {
 }
 
 #[test]
+fn target_is_not_sorted_by_expands_inversions_with_uncertain_sort_values() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [1, 3, null, 2],
+        "AESTDTC": ["2024", "2024-01-01", "2024-01-02", "2024-01-03"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true, false, true]
+    );
+}
+
+#[test]
 fn target_is_not_sorted_by_ignores_target_order_inside_equal_sort_keys() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");
@@ -1366,8 +1410,20 @@ fn target_sort_value_strategy() -> impl Strategy<Value = Option<ScalarValue>> {
     prop_oneof![Just(None), target_sort_scalar_strategy().prop_map(Some)]
 }
 
+fn target_sort_proptest_config() -> ProptestConfig {
+    let cases = std::env::var("CORE_ENGINE_TARGET_SORT_PROPTEST_CASES")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|cases| *cases > 0)
+        .unwrap_or(128);
+    ProptestConfig {
+        cases,
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(128))]
+    #![proptest_config(target_sort_proptest_config())]
 
     #[test]
     fn target_sort_optimized_matches_pairwise_reference(
