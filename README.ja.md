@@ -152,6 +152,10 @@ python -m cdisc_rulekit.cli pilot-preflight \
 
 release artifact には provenance manifest を添付してください。
 
+以下はローカル smoke 用の例です。review 済み release bundle では、この例の後に
+示すより厳格な policy flags を使ってください。`--source-root .` が review 対象の
+`Cargo.lock` を指すように、以下のコマンドはリポジトリ root から実行してください。
+
 ```sh
 cargo build --release -p core-cli
 mkdir -p target/release-provenance/bin
@@ -159,15 +163,22 @@ cp target/release/core-rs target/release-provenance/bin/core-rs
 cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
+  --source-root . \
   --artifact target/release-provenance/bin/core-rs
 cargo run -p xtask -- release-verify \
   --manifest target/release-provenance/release-manifest.json \
-  --artifact-root target/release-provenance
+  --artifact-root target/release-provenance \
+  --source-root . \
+  --require-artifact \
+  --require-cargo-lock
 ```
 
 review 済み release bundle では、[Release reproducibility](docs/release-reproducibility.md)
 にある厳格なコマンド例を使い、`--artifact`、`--artifact-root`、
-`--source-root`、verification policy flags を指定してください。
+`--source-root`、`--require-artifact`、`--require-cargo-lock`、verification
+policy flags を指定してください。local smoke は artifact の存在と hash を確認し、
+review 済み release verification ではさらに target triple、clean git provenance、
+CI run metadata、`SOURCE_DATE_EPOCH` も要求します。
 
 CI では host の `core-rs` バイナリを build し、SHA-256 を manifest に記録し、
 verify したうえで manifest を GitHub Actions artifact として保存します。

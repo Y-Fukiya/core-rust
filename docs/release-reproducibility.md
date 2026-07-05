@@ -14,6 +14,7 @@ release provenance manifest:
 cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
+  --source-root . \
   --target-triple <expected-target-triple> \
   --artifact target/release-provenance/<release-artifact>
 cargo run -p xtask -- release-verify \
@@ -21,6 +22,8 @@ cargo run -p xtask -- release-verify \
   --artifact-root target/release-provenance \
   --source-root . \
   --target-triple <expected-target-triple> \
+  --require-artifact \
+  --require-cargo-lock \
   --require-clean-git \
   --require-ci-run-url \
   --require-source-date-epoch
@@ -62,12 +65,18 @@ Those smoke manifests are uploaded separately as CI artifacts for audit of the
 manifest/verification plumbing.
 Use the stricter policy flags for reviewed release bundles:
 
+- `release-manifest --source-root <dir>` records `Cargo.lock` from that source
+  checkout instead of depending on the current working directory. When this
+  option is provided, manifest generation fails if `Cargo.lock` cannot be read.
 - `release-manifest --target-triple <triple>` records the reviewed build target
   explicitly; otherwise the host triple from `rustc -vV` is recorded.
 - `release-verify --target-triple <triple>` requires the manifest's recorded
   Rust target triple to match the reviewed build target.
 - `--source-root <dir>` points verification at the source checkout whose
   `Cargo.lock` should match the manifest.
+- `--require-artifact` requires at least one recorded artifact in the manifest.
+- `--require-cargo-lock` requires the manifest to include a `Cargo.lock` hash
+  and verifies it against `--source-root <dir>`.
 - `--require-clean-git` requires available git provenance and `dirty=false`.
 - `--require-ci-run-url` requires the manifest to record the GitHub Actions run
   URL that produced or verified the artifact.
@@ -126,7 +135,12 @@ changes the headline metrics.
 
 - Prefer `--locked` Cargo commands so dependency versions come from
   `Cargo.lock`.
+- Treat `cargo_lock_sha256` as required evidence for reviewed release bundles;
+  a manifest without it is not dependency-locked release evidence.
 - Set `SOURCE_DATE_EPOCH` when producing reproducible release bundles.
+  `release-verify` can require that the value was recorded, but it does not
+  prove bit-for-bit reproducibility; confirm that separately with rebuild and
+  hash comparison when that property matters.
 - Keep generated Open Rules scoreboards canonicalized before committing them as
   baselines.
 - Store release artifacts together with `release-manifest.json`, the exact git

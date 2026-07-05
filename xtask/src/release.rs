@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -16,6 +16,8 @@ pub struct ReleaseManifestArgs {
     pub artifact: Vec<PathBuf>,
     #[arg(long, value_name = "DIR")]
     pub artifact_root: Option<PathBuf>,
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
     #[arg(long, value_name = "TRIPLE")]
     pub target_triple: Option<String>,
 }
@@ -36,6 +38,10 @@ pub struct ReleaseVerifyArgs {
     pub require_ci_run_url: bool,
     #[arg(long)]
     pub require_source_date_epoch: bool,
+    #[arg(long)]
+    pub require_artifact: bool,
+    #[arg(long)]
+    pub require_cargo_lock: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -45,6 +51,8 @@ struct ReleaseVerifyPolicy {
     require_clean_git: bool,
     require_ci_run_url: bool,
     require_source_date_epoch: bool,
+    require_artifact: bool,
+    require_cargo_lock: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,6 +111,17 @@ struct ReleaseManifestInput {
 }
 
 pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
+    let source_root_is_explicit = args.source_root.is_some();
+    let source_root = args
+        .source_root
+        .as_deref()
+        .unwrap_or_else(|| Path::new("."));
+    let cargo_lock = source_root.join("Cargo.lock");
+    let cargo_lock_sha256 = if source_root_is_explicit {
+        Some(sha256_file(&cargo_lock).with_context(|| format!("hash {}", cargo_lock.display()))?)
+    } else {
+        sha256_file(&cargo_lock).ok()
+    };
     let artifacts = args
         .artifact
         .iter()
@@ -115,7 +134,7 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         rust_version: command_output("rustc", ["--version"])
             .unwrap_or_else(|| "unknown".to_owned()),
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
-        cargo_lock_sha256: sha256_file(Path::new("Cargo.lock")).ok(),
+        cargo_lock_sha256,
         target_triple: args.target_triple.or_else(rust_target_triple),
         ci_run_url: ci.as_ref().and_then(|metadata| metadata.run_url.clone()),
         artifacts,
@@ -140,6 +159,8 @@ pub fn verify(args: ReleaseVerifyArgs) -> Result<bool> {
             require_clean_git: args.require_clean_git,
             require_ci_run_url: args.require_ci_run_url,
             require_source_date_epoch: args.require_source_date_epoch,
+            require_artifact: args.require_artifact,
+            require_cargo_lock: args.require_cargo_lock,
         },
     )
 }
@@ -265,11 +286,30 @@ fn verify_release_manifest(
     if !root.is_dir() {
         anyhow::bail!("artifact root is not a directory: {}", root.display());
     }
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("canonicalize artifact root {}", root.display()))?;
     let source_root = policy
         .source_root
         .clone()
         .unwrap_or_else(|| PathBuf::from("."));
     let mut should_fail = false;
+
+    if manifest.schema_version != 1 {
+        eprintln!(
+            "unsupported release manifest schema_version: {}",
+            manifest.schema_version
+        );
+        should_fail = true;
+    }
+    if policy.require_artifact && manifest.artifacts.is_empty() {
+        eprintln!("at least one release artifact is required but missing from manifest");
+        should_fail = true;
+    }
+    if policy.require_cargo_lock && manifest.cargo_lock_sha256.is_none() {
+        eprintln!("Cargo.lock hash is required but missing from release manifest");
+        should_fail = true;
+    }
 
     if let Some(expected) = &policy.target_triple {
         match &manifest.target_triple {
@@ -319,7 +359,17 @@ fn verify_release_manifest(
     }
 
     for artifact in &manifest.artifacts {
-        let path = root.join(&artifact.path);
+        let path = match verified_manifest_artifact_path(&canonical_root, &artifact.path) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!(
+                    "artifact path verification failed: {}: {error:#}",
+                    artifact.path
+                );
+                should_fail = true;
+                continue;
+            }
+        };
         match sha256_file(&path) {
             Ok(actual) if actual == artifact.sha256 => {}
             Ok(actual) => {
@@ -337,6 +387,31 @@ fn verify_release_manifest(
     }
 
     Ok(should_fail)
+}
+
+fn verified_manifest_artifact_path(canonical_root: &Path, artifact_path: &str) -> Result<PathBuf> {
+    let relative = Path::new(artifact_path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        anyhow::bail!("artifact path must be relative and stay under artifact root");
+    }
+    let path = canonical_root.join(relative);
+    let canonical_path = path
+        .canonicalize()
+        .with_context(|| format!("canonicalize artifact {}", path.display()))?;
+    canonical_path
+        .strip_prefix(canonical_root)
+        .with_context(|| {
+            format!(
+                "artifact {} is not under artifact root {}",
+                artifact_path,
+                canonical_root.display()
+            )
+        })?;
+    Ok(canonical_path)
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> Option<String> {
@@ -571,6 +646,7 @@ mod tests {
             out: manifest_path.clone(),
             artifact: vec![artifact],
             artifact_root: Some(root.clone()),
+            source_root: None,
             target_triple: Some("x86_64-unknown-linux-gnu".to_owned()),
         })
         .expect("write manifest");
@@ -583,6 +659,61 @@ mod tests {
             Some("x86_64-unknown-linux-gnu")
         );
         assert_eq!(manifest.artifacts[0].path, "bin/core-rs");
+    }
+
+    #[test]
+    fn release_manifest_cli_uses_source_root_for_cargo_lock_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_root = dir.path().join("source");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&source_root).expect("mkdir source root");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        std::fs::write(source_root.join("Cargo.lock"), b"lock-v1").expect("write lock");
+        let manifest_path = root.join("release-manifest.json");
+
+        run(ReleaseManifestArgs {
+            out: manifest_path.clone(),
+            artifact: Vec::new(),
+            artifact_root: Some(root),
+            source_root: Some(source_root.clone()),
+            target_triple: None,
+        })
+        .expect("write manifest");
+
+        let file = File::open(&manifest_path).expect("open manifest");
+        let manifest: ReleaseManifest = serde_json::from_reader(file).expect("parse manifest");
+
+        assert_eq!(
+            manifest.cargo_lock_sha256.as_deref(),
+            Some(
+                sha256_file(&source_root.join("Cargo.lock"))
+                    .expect("hash lock")
+                    .as_str()
+            )
+        );
+    }
+
+    #[test]
+    fn release_manifest_cli_fails_when_explicit_source_root_lacks_cargo_lock() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_root = dir.path().join("source");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&source_root).expect("mkdir source root");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+
+        let error = run(ReleaseManifestArgs {
+            out: root.join("release-manifest.json"),
+            artifact: Vec::new(),
+            artifact_root: Some(root),
+            source_root: Some(source_root),
+            target_triple: None,
+        })
+        .expect_err("explicit source root without Cargo.lock should fail");
+
+        assert!(
+            error.to_string().contains("hash") && format!("{error:#}").contains("Cargo.lock"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]
@@ -683,6 +814,101 @@ mod tests {
                 .expect("verify manifest");
 
         assert!(!should_fail);
+    }
+
+    #[test]
+    fn release_verify_rejects_manifest_artifact_paths_outside_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let outside = dir.path().join("outside.bin");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        std::fs::write(&outside, b"hello").expect("write outside");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![ReleaseArtifact {
+                path: "../outside.bin".to_owned(),
+                sha256: sha256_file(&outside).expect("hash outside"),
+            }],
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_rejects_absolute_manifest_artifact_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = root.join("core-rs");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![ReleaseArtifact {
+                path: artifact.display().to_string(),
+                sha256: sha256_file(&artifact).expect("hash artifact"),
+            }],
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn release_verify_rejects_symlink_manifest_artifact_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let outside = dir.path().join("outside.bin");
+        let link = root.join("link-to-outside");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        std::fs::write(&outside, b"hello").expect("write outside");
+        symlink(&outside, &link).expect("create symlink");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: vec![ReleaseArtifact {
+                path: "link-to-outside".to_owned(),
+                sha256: sha256_file(&outside).expect("hash outside"),
+            }],
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
+
+        assert!(should_fail);
     }
 
     #[test]
@@ -847,6 +1073,94 @@ mod tests {
             Some(&root),
             ReleaseVerifyPolicy {
                 target_triple: Some("x86_64-unknown-linux-gnu".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_fails_unknown_schema_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let mut manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        manifest.schema_version = 2;
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail =
+            verify_release_manifest(&manifest_path, Some(&root), ReleaseVerifyPolicy::default())
+                .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_can_require_at_least_one_artifact() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail = verify_release_manifest(
+            &manifest_path,
+            Some(&root),
+            ReleaseVerifyPolicy {
+                require_artifact: true,
+                ..Default::default()
+            },
+        )
+        .expect("verify manifest");
+
+        assert!(should_fail);
+    }
+
+    #[test]
+    fn release_verify_can_require_cargo_lock_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let should_fail = verify_release_manifest(
+            &manifest_path,
+            Some(&root),
+            ReleaseVerifyPolicy {
+                require_cargo_lock: true,
                 ..Default::default()
             },
         )

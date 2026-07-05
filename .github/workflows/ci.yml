@@ -70,6 +70,7 @@ jobs:
           cargo run --locked -p xtask -- release-manifest \
             --out target/release-provenance/host/release-manifest.json \
             --artifact-root target/release-provenance/host \
+            --source-root . \
             --target-triple "${host_target}" \
             --artifact target/release-provenance/host/bin/core-rs
           cargo run --locked -p xtask -- release-verify \
@@ -77,6 +78,8 @@ jobs:
             --artifact-root target/release-provenance/host \
             --source-root . \
             --target-triple "${host_target}" \
+            --require-artifact \
+            --require-cargo-lock \
             --require-clean-git \
             --require-ci-run-url \
             --require-source-date-epoch
@@ -101,6 +104,7 @@ jobs:
             cargo run --locked -p xtask -- release-manifest \
               --out "${smoke_root}/release-manifest.json" \
               --artifact-root "${smoke_root}" \
+              --source-root . \
               --target-triple "${target}" \
               --artifact "${smoke_root}/core-rust-smoke.txt" \
               --artifact "${smoke_root}/core-rust-smoke.tar.gz"
@@ -109,6 +113,8 @@ jobs:
               --artifact-root "${smoke_root}" \
               --source-root . \
               --target-triple "${target}" \
+              --require-artifact \
+              --require-cargo-lock \
               --require-clean-git \
               --require-ci-run-url \
               --require-source-date-epoch
