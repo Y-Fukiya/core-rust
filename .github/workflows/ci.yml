@@ -64,20 +64,25 @@ jobs:
           SOURCE_DATE_EPOCH: "1783123200"
         run: |
           mkdir -p target/release-provenance
-          printf 'core-rust release provenance smoke\n' > target/release-provenance/core-rust-smoke.txt
-          printf 'core-rust release archive smoke\n' > target/release-provenance/core-rust-smoke.tar.gz
-          cargo run --locked -p xtask -- release-manifest \
-            --out target/release-provenance/release-manifest.json \
-            --artifact-root target/release-provenance \
-            --artifact target/release-provenance/core-rust-smoke.txt \
-            --artifact target/release-provenance/core-rust-smoke.tar.gz
-          cargo run --locked -p xtask -- release-verify \
-            --manifest target/release-provenance/release-manifest.json \
-            --artifact-root target/release-provenance \
-            --source-root . \
-            --require-clean-git \
-            --require-ci-run-url \
-            --require-source-date-epoch
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do
+            mkdir -p "target/release-provenance/${target}"
+            printf 'core-rust release provenance smoke %s\n' "${target}" > "target/release-provenance/${target}/core-rust-smoke.txt"
+            printf 'core-rust release archive smoke %s\n' "${target}" > "target/release-provenance/${target}/core-rust-smoke.tar.gz"
+            cargo run --locked -p xtask -- release-manifest \
+              --out "target/release-provenance/${target}/release-manifest.json" \
+              --artifact-root "target/release-provenance/${target}" \
+              --target-triple "${target}" \
+              --artifact "target/release-provenance/${target}/core-rust-smoke.txt" \
+              --artifact "target/release-provenance/${target}/core-rust-smoke.tar.gz"
+            cargo run --locked -p xtask -- release-verify \
+              --manifest "target/release-provenance/${target}/release-manifest.json" \
+              --artifact-root "target/release-provenance/${target}" \
+              --source-root . \
+              --target-triple "${target}" \
+              --require-clean-git \
+              --require-ci-run-url \
+              --require-source-date-epoch
+          done
 
       - name: Open Rules curated fixture oracle
         run: |

@@ -21,6 +21,7 @@ mod operation_references;
 mod operation_runtime;
 mod report_variables;
 mod result_normalization;
+mod result_normalization_relrec;
 mod result_overrides;
 mod rule_preparation;
 mod scope_filter;
@@ -113,8 +114,10 @@ use operation_runtime::{
 };
 use result_normalization::{
     core_000206_idvarval_rdomain_result, core_000677_pooldef_poolid_result,
-    core_000744_relrec_faobj_result, core_000757_intervention_relrec_faobj_result,
     core_000884_ts_age_parameter_count_result, dataset_cell_string, normalize_validation_result,
+};
+use result_normalization_relrec::{
+    core_000744_relrec_faobj_result, core_000757_intervention_relrec_faobj_result,
 };
 #[cfg(test)]
 use result_overrides::is_supported_basic_operator;

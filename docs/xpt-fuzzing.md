@@ -27,6 +27,8 @@ The repository also includes a short manual/scheduled GitHub Actions workflow
 periodic robustness audit artifact rather than a release-blocking CI gate.
 The workflow uses the committed seed corpus under `fuzz/corpus/xpt_parser` and
 uploads minimized failure artifacts from `fuzz/artifacts` when fuzzing fails.
+Before fuzzing, the workflow verifies that the reviewed seed corpus is present
+and that no seed has grown beyond the small-corpus size cap.
 The seed corpus intentionally stays small and reviewable: it includes malformed
 library/header bytes plus NAMESTR-header, observation-padding, character
 payload, numeric payload, IBM-float-like entry points, and a valid-ish transport
