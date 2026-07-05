@@ -151,6 +151,7 @@ artifact として扱います。
 ```sh
 PYTHONPATH=src python3 -m cdisc_rulekit.cli convert-p21-config \
   --input /path/to/local/p21-config.xml \
+  --source-label sdtm33 \
   --out target/p21-config-catalog
 
 PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
@@ -162,6 +163,8 @@ PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
 converter は `p21_rules_normalized.csv`、`p21_rules_normalized.jsonl`、
 `extraction_report.md` を出力します。configuration file の download は行わず、
 生成 catalog もライセンス上許される場合を除き commit / 共有しないでください。
+長期 catalog 比較で path に依存しない source identifier が必要な場合は
+`--source-label` を指定してください。
 
 ```sh
 python -m pip install -e ".[test]"

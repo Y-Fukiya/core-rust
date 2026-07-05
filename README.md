@@ -155,6 +155,7 @@ XML-to-catalog converter before `build-readonly`:
 ```sh
 PYTHONPATH=src python3 -m cdisc_rulekit.cli convert-p21-config \
   --input /path/to/local/p21-config.xml \
+  --source-label sdtm33 \
   --out target/p21-config-catalog
 
 PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
@@ -166,7 +167,8 @@ PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
 The converter writes `p21_rules_normalized.csv`,
 `p21_rules_normalized.jsonl`, and an `extraction_report.md`. It does not
 download configuration files, and the generated catalog should not be committed
-or shared unless your license permits it.
+or shared unless your license permits it. Use `--source-label` when you need a
+stable non-path source identifier for long-term catalog comparisons.
 
 ```sh
 python -m pip install -e ".[test]"

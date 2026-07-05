@@ -101,6 +101,8 @@ def test_convert_p21_config_writes_local_catalog_without_fetching(tmp_path):
             "convert-p21-config",
             "--input",
             str(config),
+            "--source-label",
+            "sdtm33",
             "--out",
             str(out_dir),
         ],
@@ -124,7 +126,7 @@ def test_convert_p21_config_writes_local_catalog_without_fetching(tmp_path):
         "test": 'AETERM != ""',
         "variable": "AETERM",
     }
-    assert rows[0]["source_path"] == "source_001:p21-config.xml"
+    assert rows[0]["source_path"] == "sdtm33"
     assert str(tmp_path) not in rows[0]["source_rule_key"]
     assert str(tmp_path) not in rows[0]["raw_record"]
     report = (out_dir / "extraction_report.md").read_text(encoding="utf-8")

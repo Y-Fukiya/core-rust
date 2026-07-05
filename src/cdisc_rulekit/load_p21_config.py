@@ -4,20 +4,35 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+try:
+    from defusedxml import ElementTree as DefusedET
+except ImportError:  # pragma: no cover - optional hardening dependency.
+    DefusedET = None
+
 from .io_utils import normalize_blank, split_semicolon_list
 from .load_p21 import extract_cg_ids
 from .models import CanonicalRule
 
 
+# Top-level configuration files may use <check> as the rule element name.
+# Nested <check> children under a rule are kept as raw child values instead.
 RULE_TAGS = {"rule", "validationrule", "validation_rule", "check"}
 MAX_CONFIG_BYTES = 20 * 1024 * 1024
 
 
-def load_p21_config_rules(paths: list[str | Path]) -> tuple[list[CanonicalRule], list[str]]:
+def load_p21_config_rules(
+    paths: list[str | Path],
+    source_labels: list[str] | None = None,
+) -> tuple[list[CanonicalRule], list[str]]:
+    if source_labels is not None and len(source_labels) != len(paths):
+        raise ValueError("--source-label count must match --input count")
     rules: list[CanonicalRule] = []
     warnings: list[str] = []
     for index, path in enumerate(paths, start=1):
-        source_label = f"source_{index:03d}:{Path(path).name}"
+        if source_labels is None:
+            source_label = f"source_{index:03d}:{Path(path).name}"
+        else:
+            source_label = _safe_source_label(source_labels[index - 1])
         loaded, loaded_warnings = _load_p21_config_path(Path(path), source_label)
         rules.extend(loaded)
         warnings.extend(loaded_warnings)
@@ -141,9 +156,29 @@ def _canonical_rule(
             p21_rule_type=_first(attrs, child_values, "type", "rule_type"),
             message=message,
             description=description,
-            domains=_split_values(_first(attrs, child_values, "domain", "domains")),
-            classes=_split_values(_first(attrs, child_values, "class", "classes", "domain_class", "domain_classes")),
-            variables=sorted({value.upper() for value in _split_values(_first(attrs, child_values, "variable", "variables", "var"))}),
+            domains=_split_values(_first(attrs, child_values, "domain", "domains", "domainlist", "domain_list")),
+            classes=_split_values(
+                _first(
+                    attrs,
+                    child_values,
+                    "class",
+                    "classes",
+                    "classlist",
+                    "class_list",
+                    "domain_class",
+                    "domain_classes",
+                    "domainclasslist",
+                    "domain_class_list",
+                ),
+            ),
+            variables=sorted(
+                {
+                    value.upper()
+                    for value in _split_values(
+                        _first(attrs, child_values, "variable", "variables", "variablelist", "variable_list", "var"),
+                    )
+                },
+            ),
             target=target.upper() if target else None,
             raw_condition=raw_condition,
             source_path=source_label,
@@ -159,7 +194,8 @@ def _parse_config_xml(path: Path) -> ET.Element:
     lowered = payload.lower()
     if b"<!doctype" in lowered or b"<!entity" in lowered:
         raise ValueError(f"{path.name}: DTD/entity declarations are not supported")
-    return ET.fromstring(payload)
+    parser = DefusedET if DefusedET is not None else ET
+    return parser.fromstring(payload)
 
 
 def _attributes(element: ET.Element) -> dict[str, str]:
@@ -171,6 +207,8 @@ def _direct_child_values(element: ET.Element) -> dict[str, str]:
     for child in list(element):
         key = _local_name(child.tag)
         if list(child):
+            # Keep nested helper elements (including <check> under <rule>) as
+            # raw child values instead of treating them as separate rules.
             nested = _nested_collection_value(child)
             if nested:
                 values[key] = nested
@@ -185,9 +223,17 @@ def _nested_collection_value(element: ET.Element) -> str | None:
     key = _local_name(element.tag)
     expected_children = {
         "domains": {"domain"},
+        "domainlist": {"domain", "item", "value"},
+        "domain_list": {"domain", "item", "value"},
         "classes": {"class", "domain_class"},
+        "classlist": {"class", "domain_class", "item", "value"},
+        "class_list": {"class", "domain_class", "item", "value"},
         "domain_classes": {"class", "domain_class"},
+        "domainclasslist": {"class", "domain_class", "item", "value"},
+        "domain_class_list": {"class", "domain_class", "item", "value"},
         "variables": {"variable", "var"},
+        "variablelist": {"variable", "var", "item", "value"},
+        "variable_list": {"variable", "var", "item", "value"},
     }.get(key)
     if not expected_children:
         return None
@@ -230,3 +276,12 @@ def _local_name(value: str) -> str:
 
 def _normalize_key(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def _safe_source_label(value: str) -> str:
+    label = normalize_blank(value)
+    if not label:
+        raise ValueError("--source-label values must not be blank")
+    if "/" in label or "\\" in label:
+        raise ValueError("--source-label values must be labels, not paths")
+    return label
