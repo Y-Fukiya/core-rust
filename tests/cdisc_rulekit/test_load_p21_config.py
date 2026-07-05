@@ -90,15 +90,19 @@ def test_load_p21_config_rejects_dtd_or_entity_declarations(tmp_path):
 
 
 def test_load_p21_config_rejects_non_file_inputs(tmp_path):
-    with pytest.raises(ValueError, match="XML configuration input must be a regular file"):
+    with pytest.raises(ValueError, match="XML configuration input must be a regular file") as excinfo:
         load_p21_config_rules([tmp_path])
+
+    assert str(tmp_path) in str(excinfo.value)
 
 
 def test_load_p21_config_rejects_missing_inputs(tmp_path):
     missing = tmp_path / "missing.xml"
 
-    with pytest.raises(ValueError, match="XML configuration file does not exist"):
+    with pytest.raises(ValueError, match="XML configuration file does not exist") as excinfo:
         load_p21_config_rules([missing])
+
+    assert str(missing) in str(excinfo.value)
 
 
 def test_load_p21_config_rejects_oversized_xml_before_reading(tmp_path, monkeypatch):

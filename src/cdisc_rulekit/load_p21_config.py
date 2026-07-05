@@ -73,7 +73,10 @@ def write_p21_config_extraction_report(
 
 
 def _load_p21_config_path(path: Path, source_label: str) -> tuple[list[CanonicalRule], list[str]]:
-    root = _parse_config_xml(path)
+    try:
+        root = _parse_config_xml(path)
+    except ET.ParseError as exc:
+        raise ValueError(f"{path}: malformed XML configuration: {exc}") from exc
     rules, warnings = _collect_rules(source_label, root, _attributes(root), {})
     if not rules and not warnings:
         warnings.append(f"{source_label}: no rule elements found")
@@ -202,19 +205,19 @@ def _canonical_rule(
 
 def _parse_config_xml(path: Path) -> ET.Element:
     if not path.exists():
-        raise ValueError(f"{path.name}: XML configuration file does not exist")
+        raise ValueError(f"{path}: XML configuration file does not exist")
     # Symlink-to-file inputs are accepted because this converter only processes
     # explicit local user-supplied XML paths; non-file inputs remain rejected.
     if not path.is_file():
-        raise ValueError(f"{path.name}: XML configuration input must be a regular file")
+        raise ValueError(f"{path}: XML configuration input must be a regular file")
     if path.stat().st_size > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     payload = path.read_bytes()
     if len(payload) > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     lowered = payload.lower()
     if b"<!doctype" in lowered or b"<!entity" in lowered:
-        raise ValueError(f"{path.name}: DTD/entity declarations are not supported")
+        raise ValueError(f"{path}: DTD/entity declarations are not supported")
     parser = DefusedET if DefusedET is not None else ET
     return parser.fromstring(payload)
 
