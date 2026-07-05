@@ -96,9 +96,10 @@ PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>
 This P21PORT smoke check exercises `build-readonly`, `generate`,
 `validate-structure`, real `run-core` orchestration through a reviewed fake
 engine, `compare-results` against committed golden fixtures, an expected
-comparison failure in both missing-issue and extra-issue directions, fuzzy
-mapping, duplicate P21 rule-id preservation, and unsupported generation probes.
-It is not a Pinnacle 21 or official CDISC Validator equivalence check.
+comparison failure for equal-count structural mismatch and extra-issue
+directions, fuzzy mapping, duplicate P21 rule-id preservation, and unsupported
+generation probes. It is not a Pinnacle 21 or official CDISC Validator
+equivalence check.
 
 The default pytest configuration excludes subprocess-heavy integration tests.
 Run the P21PORT smoke explicitly with either:
@@ -130,5 +131,8 @@ changes the headline metrics.
   for that target as separate `--artifact` values. The verifier checks each
   recorded artifact independently, so a single changed target in a release
   matrix fails verification.
+- Treat the CI multi-target release smoke as manifest/verification plumbing
+  coverage. It checks that target-triple policy and multiple artifact hashes are
+  represented and verified, but it does not replace actual cross-target builds.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

@@ -38,3 +38,8 @@ to this directory rather than committing the generated fuzz corpus.
 Use the deterministic `core-data` XPT tests for regression coverage of known
 boundaries such as NAMESTR length, IBM floating-point decoding, observation
 padding, invalid numeric payloads, and row/cell size caps.
+When `proptest` writes a minimized regression case under a
+`proptest-regressions/` directory, keep it only when it captures a reviewed
+parser boundary or a previously reproducible failure. Prefer a small, named
+seed under `fuzz/corpus/xpt_parser` for long-term fuzz coverage when the same
+case is useful outside the deterministic unit test suite.
