@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use serde_json::Value;
 
-use crate::named_usdm_object_name;
+use crate::usdm_common::named_usdm_object_name;
 use crate::usdm_values::{
     format_code, format_quantity_single, format_quantity_single_with_missing_unit,
     format_semicolon_list, format_string_list, json_string, string_array, value_exists,

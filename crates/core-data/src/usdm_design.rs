@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::Value;
 
-use crate::duplicate_strings;
+use crate::usdm_common::duplicate_strings;
 use crate::usdm_timeline::{
     format_timeline_names, format_usdm_object_order, ordered_usdm_objects_by_previous_next,
     timeline_usdm_object_ref_order,
