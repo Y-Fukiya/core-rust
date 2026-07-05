@@ -161,8 +161,11 @@ PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
 ```
 
 converter は `p21_rules_normalized.csv`、`p21_rules_normalized.jsonl`、
-`extraction_report.md` を出力します。configuration file の download は行わず、
-生成 catalog もライセンス上許される場合を除き commit / 共有しないでください。
+`extraction_report.md` を出力します。これは local review 用の best-effort extractor
+であり、Pinnacle 21 configuration schema の完全変換器ではありません。
+configuration file の download は行わず、生成 catalog もライセンス上許される場合を
+除き commit / 共有しないでください。P21PORT catalog として使う前に、生成された
+CSV/JSONL を review してください。
 長期 catalog 比較で path に依存しない source identifier が必要な場合は
 `--source-label` を指定してください。
 

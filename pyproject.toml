@@ -7,7 +7,7 @@ name = "cdisc-rulekit"
 version = "0.1.0"
 description = "Read-only P21 and CDISC Open Rules catalog, mapping, and classification toolkit"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6"]
+dependencies = ["PyYAML>=6", "defusedxml>=0.7"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

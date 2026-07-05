@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from .models import CanonicalRule
 # Nested <check> children under a rule are kept as raw child values instead.
 RULE_TAGS = {"rule", "validationrule", "validation_rule", "check"}
 MAX_CONFIG_BYTES = 20 * 1024 * 1024
+SAFE_SOURCE_LABEL_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 def load_p21_config_rules(
@@ -30,7 +32,7 @@ def load_p21_config_rules(
     warnings: list[str] = []
     for index, path in enumerate(paths, start=1):
         if source_labels is None:
-            source_label = f"source_{index:03d}:{Path(path).name}"
+            source_label = _default_source_label(index, Path(path))
         else:
             source_label = _safe_source_label(source_labels[index - 1])
         loaded, loaded_warnings = _load_p21_config_path(Path(path), source_label)
@@ -39,18 +41,26 @@ def load_p21_config_rules(
     return rules, warnings
 
 
-def write_p21_config_extraction_report(path: str | Path, rules: list[CanonicalRule], warnings: list[str]) -> None:
+def write_p21_config_extraction_report(
+    path: str | Path,
+    rules: list[CanonicalRule],
+    warnings: list[str],
+    input_count: int | None = None,
+) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
+    source_labels_with_rules = {rule.source_path for rule in rules if rule.source_path}
     lines = [
         "# P21 Config Extraction Report",
         "",
         "This report describes a local, user-supplied conversion artifact.",
         "The converter does not download, fetch, scrape, or bundle Pinnacle 21 configuration files.",
         "Only use source XML files and generated catalogs that you are licensed and permitted to process.",
+        "Extraction is best-effort; review the generated CSV/JSONL before using it as a P21PORT catalog.",
         "",
+        f"- Input files processed: `{input_count if input_count is not None else len(source_labels_with_rules)}`",
+        f"- Source labels with extracted rules: `{len(source_labels_with_rules)}`",
         f"- Extracted rules: `{len(rules)}`",
-        f"- Source files: `{len({rule.source_path for rule in rules if rule.source_path})}`",
         f"- Warnings: `{len(warnings)}`",
     ]
     if warnings:
@@ -188,6 +198,8 @@ def _canonical_rule(
 
 
 def _parse_config_xml(path: Path) -> ET.Element:
+    if path.stat().st_size > MAX_CONFIG_BYTES:
+        raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     payload = path.read_bytes()
     if len(payload) > MAX_CONFIG_BYTES:
         raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
@@ -199,7 +211,12 @@ def _parse_config_xml(path: Path) -> ET.Element:
 
 
 def _attributes(element: ET.Element) -> dict[str, str]:
-    return {_normalize_key(key): value for key, value in element.attrib.items() if normalize_blank(value)}
+    values: dict[str, str] = {}
+    for key, value in element.attrib.items():
+        normalized = normalize_blank(value)
+        if normalized:
+            values[_normalize_key(key)] = normalized
+    return values
 
 
 def _direct_child_values(element: ET.Element) -> dict[str, str]:
@@ -282,6 +299,13 @@ def _safe_source_label(value: str) -> str:
     label = normalize_blank(value)
     if not label:
         raise ValueError("--source-label values must not be blank")
-    if "/" in label or "\\" in label:
-        raise ValueError("--source-label values must be labels, not paths")
+    if not SAFE_SOURCE_LABEL_RE.fullmatch(label):
+        raise ValueError("--source-label values may contain only letters, numbers, dot, underscore, colon, or hyphen")
     return label
+
+
+def _default_source_label(index: int, path: Path) -> str:
+    filename = re.sub(r"[^A-Za-z0-9_.:-]+", "_", path.name).strip("_.:-")
+    if not filename:
+        filename = "input_xml"
+    return f"source_{index:03d}:{filename}"

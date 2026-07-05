@@ -165,10 +165,13 @@ PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
 ```
 
 The converter writes `p21_rules_normalized.csv`,
-`p21_rules_normalized.jsonl`, and an `extraction_report.md`. It does not
-download configuration files, and the generated catalog should not be committed
-or shared unless your license permits it. Use `--source-label` when you need a
-stable non-path source identifier for long-term catalog comparisons.
+`p21_rules_normalized.jsonl`, and an `extraction_report.md`. It is a
+best-effort extractor for local review, not a schema-complete Pinnacle 21
+configuration converter. It does not download configuration files, and the
+generated catalog should not be committed or shared unless your license permits
+it. Review the generated CSV/JSONL before using it as a P21PORT catalog. Use
+`--source-label` when you need a stable non-path source identifier for long-term
+catalog comparisons.
 
 ```sh
 python -m pip install -e ".[test]"

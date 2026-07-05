@@ -125,7 +125,7 @@ def cmd_ingest_p21(args: argparse.Namespace) -> int:
 def cmd_convert_p21_config(args: argparse.Namespace) -> int:
     rules, warnings = load_p21_config_rules(args.input, args.source_label)
     emit_p21_catalog(args.out, rules)
-    write_p21_config_extraction_report(args.out / "extraction_report.md", rules, warnings)
+    write_p21_config_extraction_report(args.out / "extraction_report.md", rules, warnings, input_count=len(args.input))
     for warning in warnings:
         print(f"warning: {warning}")
     print(f"convert-p21-config complete: {len(rules)} rule(s)")
@@ -379,7 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-label",
         default=None,
         nargs="+",
-        help="Optional stable labels for each input XML file; count must match --input.",
+        help="Optional stable non-path labels for each input XML file; count must match --input.",
     )
     convert_p21_config.add_argument("--out", type=Path, required=True)
     convert_p21_config.set_defaults(func=cmd_convert_p21_config)

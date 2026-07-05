@@ -132,6 +132,9 @@ def test_convert_p21_config_writes_local_catalog_without_fetching(tmp_path):
     report = (out_dir / "extraction_report.md").read_text(encoding="utf-8")
     assert "does not download" in report
     assert "user-supplied" in report
+    assert "best-effort" in report
+    assert "Input files processed: `1`" in report
+    assert "Source labels with extracted rules: `1`" in report
 
 
 def test_build_readonly_honors_standard_and_limit(
