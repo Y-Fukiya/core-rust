@@ -170,6 +170,11 @@ CSV/JSONL を review してください。
 `--source-label` を指定してください。release や継続比較の workflow では、
 default の入力順 label ではなく明示 label の利用を推奨します。
 
+XML parsing は install 済み環境では `defusedxml` を使います。optional dependency を
+入れる前の source-tree smoke では Python 標準 library parser へ fallback する場合が
+ありますが、その場合も parse 前に DTD/entity declaration を拒否し、malformed /
+unreadable XML は安定した `error: ...` 形式の CLI message として報告します。
+
 ```sh
 python -m pip install -e ".[test]"
 PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke

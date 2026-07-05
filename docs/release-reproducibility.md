@@ -159,6 +159,23 @@ Archive the default `scoreboard.json`, strict `scoreboard.json`,
 `scoreboard-delta.json`, and delta `summary.md` together for each reviewed
 upstream run.
 
+## Release/Fuzz Operations Evidence
+
+For each reviewed release checkpoint, preserve these artifacts together:
+
+- `release-manifest.json` produced by `xtask release-manifest`
+- `release-verify` command output or CI job URL showing verification success
+- host release provenance workflow artifact
+- multi-target release provenance smoke artifact when it ran
+- latest successful `XPT Fuzz` workflow run URL and any uploaded fuzz artifacts
+- P21PORT smoke output directory or CI job URL
+- Open Rules default scoreboard, strict scoreboard, delta JSON, and delta
+  summary artifacts
+
+This evidence is operational audit support for a technical preview. It is not a
+substitute for a governed release process, independent validation, or regulatory
+submission evidence.
+
 ## Reproducibility Notes
 
 - Prefer `--locked` Cargo commands so dependency versions come from

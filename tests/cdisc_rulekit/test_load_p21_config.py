@@ -1,5 +1,6 @@
 import pytest
 
+from cdisc_rulekit.errors import CliUsageError
 import cdisc_rulekit.load_p21_config as p21_config
 from cdisc_rulekit.load_p21_config import load_p21_config_rules
 
@@ -139,6 +140,22 @@ def test_load_p21_config_rejects_oversized_xml_before_reading(tmp_path, monkeypa
 
     with pytest.raises(ValueError, match="XML configuration exceeds 4 bytes"):
         load_p21_config_rules([config])
+
+
+def test_load_p21_config_reports_unreadable_xml_as_usage_error(tmp_path, monkeypatch):
+    config = tmp_path / "unreadable.xml"
+    config.write_text("<config />", encoding="utf-8")
+
+    def raise_permission_error(_path):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(p21_config.Path, "read_bytes", raise_permission_error)
+
+    with pytest.raises(CliUsageError, match="could not read XML configuration") as excinfo:
+        load_p21_config_rules([config])
+
+    assert str(config) in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, PermissionError)
 
 
 def test_load_p21_config_skips_rules_without_rule_ids(tmp_path):

@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from .errors import CliUsageError
 from .io_utils import ensure_dir, split_semicolon_list, write_csv
 from .map_rules import standard_key
 from .models import CanonicalRule
@@ -733,7 +734,7 @@ def generate_rules(
     include_fuzzy_candidates: bool = False,
 ) -> GenerationSummary:
     if limit is not None and limit < 0:
-        raise ValueError("limit must be zero or greater")
+        raise CliUsageError("limit must be zero or greater")
     selected = rules[:limit] if limit is not None else rules
     root = Path(out_dir)
     ensure_dir(root / "reports")
