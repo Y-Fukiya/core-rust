@@ -578,6 +578,7 @@ dependencies = [
  "core-rule-model",
  "polars",
  "pretty_assertions",
+ "proptest",
  "regex",
  "serde",
  "serde_json",

@@ -103,6 +103,14 @@ For XPT parser robustness review, run the fuzz target manually as described in
 [`docs/xpt-fuzzing.md`](xpt-fuzzing.md). The fuzz target is intentionally an
 audit/robustness tool rather than a default release gate.
 
+For a deeper `target_is_not_sorted_by` engine audit, increase the property-test
+case count outside the default CI budget:
+
+```sh
+CORE_ENGINE_TARGET_SORT_PROPTEST_CASES=2048 \
+  cargo test -p core-engine target_sort_optimized_matches_pairwise_reference --locked
+```
+
 For P21PORT conversion artifacts, also run a representative read-only workflow
 against the committed fixture corpus:
 
