@@ -38,6 +38,10 @@ fn load_xpt_dataset_builds_metadata_and_rows() {
     assert_eq!(dataset.metadata().domain.as_deref(), Some("AE"));
     assert_eq!(dataset.metadata().source_format, DatasetSourceFormat::Xpt);
     assert_eq!(dataset.metadata().variables.len(), 3);
+    assert_eq!(
+        dataset.metadata().variables[0].label.as_deref(),
+        Some("Study Identifier")
+    );
     assert_eq!(summary.row_count, 2);
     assert_eq!(summary.columns, vec!["STUDYID", "DOMAIN", "AESEQ"]);
     assert_eq!(
@@ -58,6 +62,77 @@ fn load_xpt_dataset_builds_metadata_and_rows() {
             .get(1)
             .expect("row 2"),
         AnyValue::Int64(2)
+    );
+}
+
+#[test]
+fn load_xpt_dataset_preserves_metadata_and_trims_character_values() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("dm.xpt");
+    write_test_xpt(
+        &path,
+        "DM",
+        &[
+            TestXptVariable::character("USUBJID", 12, "Unique Subject Identifier"),
+            TestXptVariable::character("RFSTDTC", 10, "Subject Reference Start Date"),
+            TestXptVariable::numeric("AGE", "Age"),
+        ],
+        &[vec![
+            TestXptValue::Text("01"),
+            TestXptValue::Text("2026-07"),
+            TestXptValue::Number(42.0),
+        ]],
+    );
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let metadata = dataset.metadata();
+
+    assert_eq!(metadata.name, "DM");
+    assert_eq!(metadata.domain.as_deref(), Some("DM"));
+    assert_eq!(
+        metadata
+            .variables
+            .iter()
+            .map(|variable| (
+                variable.name.as_str(),
+                variable.label.as_deref(),
+                variable.length
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("USUBJID", Some("Unique Subject Identifier"), Some(12)),
+            ("RFSTDTC", Some("Subject Reference Start Date"), Some(10)),
+            ("AGE", Some("Age"), Some(8)),
+        ]
+    );
+    assert_eq!(
+        dataset
+            .frame()
+            .column("USUBJID")
+            .expect("subject column")
+            .get(0)
+            .expect("row 1")
+            .extract_str(),
+        Some("01")
+    );
+    assert_eq!(
+        dataset
+            .frame()
+            .column("RFSTDTC")
+            .expect("date column")
+            .get(0)
+            .expect("row 1")
+            .extract_str(),
+        Some("2026-07")
+    );
+    assert_eq!(
+        dataset
+            .frame()
+            .column("AGE")
+            .expect("age column")
+            .get(0)
+            .expect("row 1"),
+        AnyValue::Int64(42)
     );
 }
 
