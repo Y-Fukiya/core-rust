@@ -403,6 +403,39 @@ fn load_xpt_dataset_treats_numeric_missing_payload_as_null() {
 }
 
 #[test]
+fn load_xpt_dataset_treats_dot_and_letter_missing_numeric_payloads_as_null() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("special-missing-numeric.xpt");
+    write_test_xpt(
+        &path,
+        "AE",
+        &[TestXptVariable::numeric("AEVAL", "Analysis Value")],
+        &[
+            vec![TestXptValue::Number(123.0)],
+            vec![TestXptValue::Number(456.0)],
+        ],
+    );
+    let mut bytes = fs::read(&path).expect("read xpt");
+    let obs_header = find_test_xpt_card(&bytes, "HEADER RECORD*******OBS").expect("obs header");
+    let row_start = obs_header + XPT_CARD_LEN;
+    bytes[row_start] = b'.';
+    for byte in &mut bytes[row_start + 1..row_start + 8] {
+        *byte = 0;
+    }
+    bytes[row_start + 8] = b'A';
+    for byte in &mut bytes[row_start + 9..row_start + 16] {
+        *byte = 0;
+    }
+    fs::write(&path, bytes).expect("write mutated xpt");
+
+    let dataset = load_xpt_dataset(&path).expect("load xpt");
+    let values = dataset.frame().column("AEVAL").expect("value column");
+
+    assert_eq!(values.get(0).expect("row 1"), AnyValue::Null);
+    assert_eq!(values.get(1).expect("row 2"), AnyValue::Null);
+}
+
+#[test]
 fn load_xpt_dataset_preserves_zero_numeric_values() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("ae.xpt");

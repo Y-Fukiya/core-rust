@@ -974,6 +974,17 @@ mod tests {
 
         assert_eq!(delta.changed_cases.len(), 25);
         assert_eq!(delta.example_changed_cases.len(), 20);
+
+        let markdown = markdown_delta(&delta);
+        assert!(
+            markdown.contains(
+                "The full changed-case list is available in `scoreboard-delta.json` as `changed_cases` (25 cases)."
+            ),
+            "{markdown}"
+        );
+        let json = serde_json::to_string(&delta).expect("serialize delta");
+        assert!(json.contains("\"changed_cases\""));
+        assert!(json.contains("CORE-000025"));
     }
 
     #[test]
