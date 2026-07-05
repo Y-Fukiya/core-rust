@@ -50,7 +50,10 @@ status when a recorded artifact is missing or has changed. When the manifest
 contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
 `--source-root` so dependency drift is caught before archive publication. If
 `--source-root` is omitted, the current working directory is used.
-The main CI workflow includes a lightweight release provenance smoke gate that
+The main CI workflow includes a host release artifact provenance gate that
+builds the `core-rs` release binary, records its SHA-256 in
+`release-manifest.json`, and verifies the manifest against the built artifact.
+It also includes a lightweight multi-target release provenance smoke gate that
 creates and verifies multi-artifact manifests for more than one target triple.
 Use the stricter policy flags for reviewed release bundles:
 
@@ -96,9 +99,10 @@ PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir <p21-workflow-out>
 This P21PORT smoke check exercises `build-readonly`, `generate`,
 `validate-structure`, real `run-core` orchestration through a reviewed fake
 engine, `compare-results` against committed golden fixtures, an expected
-comparison failure in both missing-issue and extra-issue directions, fuzzy
-mapping, duplicate P21 rule-id preservation, and unsupported generation probes.
-It is not a Pinnacle 21 or official CDISC Validator equivalence check.
+comparison failure for equal-count structural mismatch and extra-issue
+directions, fuzzy mapping, duplicate P21 rule-id preservation, and unsupported
+generation probes. It is not a Pinnacle 21 or official CDISC Validator
+equivalence check.
 
 The default pytest configuration excludes subprocess-heavy integration tests.
 Run the P21PORT smoke explicitly with either:
@@ -130,5 +134,9 @@ changes the headline metrics.
   for that target as separate `--artifact` values. The verifier checks each
   recorded artifact independently, so a single changed target in a release
   matrix fails verification.
+- Treat the CI host release artifact gate as the actual binary provenance check.
+  The separate multi-target release smoke is manifest/verification plumbing
+  coverage: it checks that target-triple policy and multiple artifact hashes are
+  represented and verified, but it does not replace actual cross-target builds.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

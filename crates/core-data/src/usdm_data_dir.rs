@@ -4,9 +4,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::csv_records::normalize_dataset_name;
 use crate::dataset_paths::extension;
-use crate::json_table::json_rows_dataset;
 use crate::usdm_abbreviations::collect_usdm_abbreviation_rows;
 use crate::usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
@@ -17,6 +15,9 @@ use crate::usdm_content::{
     collect_usdm_narrative_content_rows, collect_usdm_scheduled_instance_rows,
     collect_usdm_timeline_rows,
 };
+use crate::usdm_data_dir_datasets::{
+    push_usdm_dataset, push_usdm_dataset_even_when_empty, push_usdm_identifier_datasets,
+};
 use crate::usdm_design::{
     collect_usdm_design_list_duplicate_rows, collect_usdm_design_rows,
     collect_usdm_interventional_design_rows,
@@ -24,6 +25,7 @@ use crate::usdm_design::{
 use crate::usdm_geography::{
     collect_usdm_geographic_scope_rows, collect_usdm_governance_date_rows,
 };
+use crate::usdm_identifiers::collect_usdm_identifier_rows;
 use crate::usdm_json_schema::collect_usdm_json_schema_issue_rows;
 use crate::usdm_objects::{apply_usdm_object_duplicate_flags, collect_usdm_object_rows};
 use crate::usdm_population_columns::{insert_planned_sex_columns, insert_quantity_columns};
@@ -32,9 +34,10 @@ use crate::usdm_product::{
     collect_usdm_amendment_reason_rows, collect_usdm_product_organization_role_rows,
     collect_usdm_strength_rows,
 };
-use crate::usdm_references::{
-    collect_usdm_id_instance_types, collect_usdm_reference_keys, parameter_map_reference_invalid,
-    usdm_tag_references,
+use crate::usdm_study_structure::{collect_usdm_cohort_rows, collect_usdm_study_cell_rows};
+use crate::usdm_text_templates::{
+    collect_usdm_condition_rows, collect_usdm_parameter_map_rows,
+    collect_usdm_syntax_template_text_rows,
 };
 use crate::usdm_timeline::format_usdm_id_name;
 use crate::usdm_values::{
@@ -170,390 +173,315 @@ pub(crate) fn load_open_rules_json_data_dir(data_dir: &Path) -> Result<LoadDataR
     apply_usdm_object_duplicate_flags(&mut object_rows);
 
     let mut datasets = Vec::new();
-    if !population_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignPopulation",
-            "usdm-population.json",
-            &population_rows,
-        )?);
-    }
-    if !role_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyRole",
-            "usdm-study-role.json",
-            &role_rows,
-        )?);
-    }
-    if !role_blinding_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyRoleBlinding",
-            "usdm-study-role-blinding.json",
-            &role_blinding_rows,
-        )?);
-    }
-    if !design_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesign",
-            "usdm-study-design.json",
-            &design_rows,
-        )?);
-    }
-    if !interventional_design_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "InterventionalStudyDesign",
-            "usdm-interventional-study-design.json",
-            &interventional_design_rows,
-        )?);
-    }
-    if !design_characteristic_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignCharacteristicDuplicate",
-            "usdm-study-design-characteristic-duplicate.json",
-            &design_characteristic_rows,
-        )?);
-    }
-    if !design_sub_type_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignSubTypeDuplicate",
-            "usdm-study-design-sub-type-duplicate.json",
-            &design_sub_type_rows,
-        )?);
-    }
-    if !design_therapeutic_area_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignTherapeuticAreaDuplicate",
-            "usdm-study-design-therapeutic-area-duplicate.json",
-            &design_therapeutic_area_rows,
-        )?);
-    }
-    if !version_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyVersion",
-            "usdm-study-version.json",
-            &version_rows,
-        )?);
-    }
-    if !activity_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Activity",
-            "usdm-activity.json",
-            &activity_rows,
-        )?);
-    }
-    if !duration_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Duration",
-            "usdm-duration.json",
-            &duration_rows,
-        )?);
-    }
-    if !range_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Range",
-            "usdm-range.json",
-            &range_rows,
-        )?);
-    }
-    if !person_name_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "PersonName",
-            "usdm-person-name.json",
-            &person_name_rows,
-        )?);
-    }
-    if !address_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Address",
-            "usdm-address.json",
-            &address_rows,
-        )?);
-    }
-    if !administrable_product_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "AdministrableProduct",
-            "usdm-administrable-product.json",
-            &administrable_product_rows,
-        )?);
-    }
-    if !administration_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Administration",
-            "usdm-administration.json",
-            &administration_rows,
-        )?);
-    }
-    if !strength_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Strength",
-            "usdm-strength.json",
-            &strength_rows,
-        )?);
-    }
-    if !amendment_reason_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyAmendmentReason",
-            "usdm-study-amendment-reason.json",
-            &amendment_reason_rows,
-        )?);
-    }
-    if !product_organization_role_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ProductOrganizationRole",
-            "usdm-product-organization-role.json",
-            &product_organization_role_rows,
-        )?);
-    }
-    if !biomedical_concept_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "BiomedicalConcept",
-            "usdm-biomedical-concept.json",
-            &biomedical_concept_rows,
-        )?);
-    }
-    if !procedure_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Procedure",
-            "usdm-procedure.json",
-            &procedure_rows,
-        )?);
-    }
-    if !subject_enrollment_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "SubjectEnrollment",
-            "usdm-subject-enrollment.json",
-            &subject_enrollment_rows,
-        )?);
-    }
-    if !document_version_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDefinitionDocumentVersion",
-            "usdm-study-definition-document-version.json",
-            &document_version_rows,
-        )?);
-    }
-    if !substance_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Substance",
-            "usdm-substance.json",
-            &substance_rows,
-        )?);
-    }
-    if !eligibility_criterion_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "EligibilityCriterion",
-            "usdm-eligibility-criterion.json",
-            &eligibility_criterion_rows,
-        )?);
-    }
-    if !eligibility_criterion_item_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "EligibilityCriterionItem",
-            "usdm-eligibility-criterion-item.json",
-            &eligibility_criterion_item_rows,
-        )?);
-    }
-    if !biospecimen_retention_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "BiospecimenRetention",
-            "usdm-biospecimen-retention.json",
-            &biospecimen_retention_rows,
-        )?);
-    }
-    if !study_element_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyElement",
-            "usdm-study-element.json",
-            &study_element_rows,
-        )?);
-    }
-    if !study_arm_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyArm",
-            "usdm-study-arm.json",
-            &study_arm_rows,
-        )?);
-    }
-    if !cohort_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyCohort",
-            "usdm-study-cohort.json",
-            &cohort_rows,
-        )?);
-    }
-    if !study_cell_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyCell",
-            "usdm-study-cell.json",
-            &study_cell_rows,
-        )?);
-    }
-    if !condition_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Condition",
-            "usdm-condition.json",
-            &condition_rows,
-        )?);
-    }
-    if !parameter_map_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ParameterMap",
-            "usdm-parameter-map.json",
-            &parameter_map_rows,
-        )?);
-    }
-    if !syntax_template_text_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "SyntaxTemplateText",
-            "usdm-syntax-template-text.json",
-            &syntax_template_text_rows,
-        )?);
-    }
-    if !narrative_content_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "NarrativeContent",
-            "usdm-narrative-content.json",
-            &narrative_content_rows,
-        )?);
-    }
-    if !narrative_content_item_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "NarrativeContentItem",
-            "usdm-narrative-content-item.json",
-            &narrative_content_item_rows,
-        )?);
-    }
-    if !abbreviation_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Abbreviation",
-            "usdm-abbreviation.json",
-            &abbreviation_rows,
-        )?);
-    }
-    if !object_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "USDMObject",
-            "usdm-object.json",
-            &object_rows,
-        )?);
-    }
-    if !geographic_scope_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "GeographicScope",
-            "usdm-geographic-scope.json",
-            &geographic_scope_rows,
-        )?);
-    }
-    if !governance_date_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "GovernanceDate",
-            "usdm-governance-date.json",
-            &governance_date_rows,
-        )?);
-    }
-    if !document_content_reference_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "DocumentContentReference",
-            "usdm-document-content-reference.json",
-            &document_content_reference_rows,
-        )?);
-    }
-    if !timeline_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ScheduleTimeline",
-            "usdm-schedule-timeline.json",
-            &timeline_rows,
-        )?);
-    }
-    if !scheduled_instance_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ScheduledActivityInstance",
-            "usdm-scheduled-activity-instance.json",
-            &scheduled_instance_rows,
-        )?);
-    }
-    for entity in [
-        "StudyIdentifier",
-        "ReferenceIdentifier",
-        "AdministrableProductIdentifier",
-        "MedicalDeviceIdentifier",
-    ] {
-        let rows = identifier_rows
-            .iter()
-            .filter(|row| {
-                row.get("instanceType")
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| value == entity)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if !rows.is_empty() {
-            datasets.push(json_rows_dataset(
-                data_dir,
-                entity,
-                &format!(
-                    "usdm-{}.json",
-                    normalize_dataset_name(entity).to_ascii_lowercase()
-                ),
-                &rows,
-            )?);
-        }
-    }
-    datasets.push(json_rows_dataset(
+    push_usdm_dataset(
         data_dir,
+        &mut datasets,
+        "StudyDesignPopulation",
+        "usdm-population.json",
+        &population_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyRole",
+        "usdm-study-role.json",
+        &role_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyRoleBlinding",
+        "usdm-study-role-blinding.json",
+        &role_blinding_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesign",
+        "usdm-study-design.json",
+        &design_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "InterventionalStudyDesign",
+        "usdm-interventional-study-design.json",
+        &interventional_design_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignCharacteristicDuplicate",
+        "usdm-study-design-characteristic-duplicate.json",
+        &design_characteristic_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignSubTypeDuplicate",
+        "usdm-study-design-sub-type-duplicate.json",
+        &design_sub_type_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignTherapeuticAreaDuplicate",
+        "usdm-study-design-therapeutic-area-duplicate.json",
+        &design_therapeutic_area_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyVersion",
+        "usdm-study-version.json",
+        &version_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Activity",
+        "usdm-activity.json",
+        &activity_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Duration",
+        "usdm-duration.json",
+        &duration_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Range",
+        "usdm-range.json",
+        &range_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "PersonName",
+        "usdm-person-name.json",
+        &person_name_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Address",
+        "usdm-address.json",
+        &address_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "AdministrableProduct",
+        "usdm-administrable-product.json",
+        &administrable_product_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Administration",
+        "usdm-administration.json",
+        &administration_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Strength",
+        "usdm-strength.json",
+        &strength_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyAmendmentReason",
+        "usdm-study-amendment-reason.json",
+        &amendment_reason_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ProductOrganizationRole",
+        "usdm-product-organization-role.json",
+        &product_organization_role_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "BiomedicalConcept",
+        "usdm-biomedical-concept.json",
+        &biomedical_concept_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Procedure",
+        "usdm-procedure.json",
+        &procedure_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "SubjectEnrollment",
+        "usdm-subject-enrollment.json",
+        &subject_enrollment_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDefinitionDocumentVersion",
+        "usdm-study-definition-document-version.json",
+        &document_version_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Substance",
+        "usdm-substance.json",
+        &substance_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "EligibilityCriterion",
+        "usdm-eligibility-criterion.json",
+        &eligibility_criterion_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "EligibilityCriterionItem",
+        "usdm-eligibility-criterion-item.json",
+        &eligibility_criterion_item_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "BiospecimenRetention",
+        "usdm-biospecimen-retention.json",
+        &biospecimen_retention_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyElement",
+        "usdm-study-element.json",
+        &study_element_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyArm",
+        "usdm-study-arm.json",
+        &study_arm_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyCohort",
+        "usdm-study-cohort.json",
+        &cohort_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyCell",
+        "usdm-study-cell.json",
+        &study_cell_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Condition",
+        "usdm-condition.json",
+        &condition_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ParameterMap",
+        "usdm-parameter-map.json",
+        &parameter_map_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "SyntaxTemplateText",
+        "usdm-syntax-template-text.json",
+        &syntax_template_text_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "NarrativeContent",
+        "usdm-narrative-content.json",
+        &narrative_content_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "NarrativeContentItem",
+        "usdm-narrative-content-item.json",
+        &narrative_content_item_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Abbreviation",
+        "usdm-abbreviation.json",
+        &abbreviation_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "USDMObject",
+        "usdm-object.json",
+        &object_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "GeographicScope",
+        "usdm-geographic-scope.json",
+        &geographic_scope_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "GovernanceDate",
+        "usdm-governance-date.json",
+        &governance_date_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "DocumentContentReference",
+        "usdm-document-content-reference.json",
+        &document_content_reference_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ScheduleTimeline",
+        "usdm-schedule-timeline.json",
+        &timeline_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ScheduledActivityInstance",
+        "usdm-scheduled-activity-instance.json",
+        &scheduled_instance_rows,
+    )?;
+    push_usdm_identifier_datasets(data_dir, &mut datasets, &identifier_rows)?;
+    push_usdm_dataset_even_when_empty(
+        data_dir,
+        &mut datasets,
         "JSONSchemaIssue",
         "usdm-json-schema-issue.json",
         &json_schema_issue_rows,
-    )?);
-
-    if datasets.is_empty() {
-        return Ok(LoadDataResult {
-            datasets: Vec::new(),
-            warnings: Vec::new(),
-        });
-    }
+    )?;
 
     Ok(LoadDataResult {
         datasets,
@@ -1100,340 +1028,6 @@ fn collect_usdm_substance_reference_rows(
             }
         }
         _ => {}
-    }
-}
-
-fn collect_usdm_cohort_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let Some(versions) = value
-        .get("study")
-        .and_then(|study| study.get("versions"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-
-    for (version_index, version) in versions.iter().enumerate() {
-        let Some(study_designs) = version.get("studyDesigns").and_then(Value::as_array) else {
-            continue;
-        };
-        for (design_index, design) in study_designs.iter().enumerate() {
-            let Some(cohorts) = design
-                .get("population")
-                .and_then(|population| population.get("cohorts"))
-                .and_then(Value::as_array)
-            else {
-                continue;
-            };
-            for (cohort_index, cohort) in cohorts.iter().enumerate() {
-                rows.push(usdm_cohort_row(
-                    cohort,
-                    design,
-                    design.get("population").unwrap_or(&Value::Null),
-                    version_index,
-                    design_index,
-                    cohort_index,
-                ));
-            }
-        }
-    }
-}
-
-fn collect_usdm_study_cell_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let Some(versions) = value
-        .get("study")
-        .and_then(|study| study.get("versions"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-
-    for (version_index, version) in versions.iter().enumerate() {
-        let Some(study_designs) = version.get("studyDesigns").and_then(Value::as_array) else {
-            continue;
-        };
-        for (design_index, design) in study_designs.iter().enumerate() {
-            let arms = design
-                .get("arms")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let epochs = design
-                .get("epochs")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let Some(study_cells) = design.get("studyCells").and_then(Value::as_array) else {
-                continue;
-            };
-            let mut design_rows = study_cells
-                .iter()
-                .enumerate()
-                .map(|(cell_index, cell)| {
-                    usdm_study_cell_row(
-                        cell,
-                        design,
-                        &arms,
-                        &epochs,
-                        version_index,
-                        design_index,
-                        cell_index,
-                    )
-                })
-                .collect::<Vec<_>>();
-            apply_study_cell_duplicate_flags(&mut design_rows);
-            rows.extend(design_rows);
-        }
-    }
-}
-
-fn collect_usdm_condition_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let id_types = collect_usdm_id_instance_types(value);
-    collect_usdm_condition_rows_at(value, "", &id_types, rows);
-}
-
-fn collect_usdm_parameter_map_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let reference_keys = collect_usdm_reference_keys(value);
-    collect_usdm_parameter_map_rows_at(value, "", &reference_keys, rows);
-}
-
-fn collect_usdm_syntax_template_text_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let Some(versions) = value
-        .get("study")
-        .and_then(|study| study.get("versions"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-
-    for (version_index, version) in versions.iter().enumerate() {
-        let dictionaries = syntax_template_dictionaries(version);
-        collect_usdm_syntax_template_text_rows_at(
-            version,
-            &format!("/study/versions/{version_index}"),
-            &dictionaries,
-            rows,
-        );
-    }
-}
-
-fn collect_usdm_syntax_template_text_rows_at(
-    value: &Value,
-    path: &str,
-    dictionaries: &HashMap<String, SyntaxTemplateDictionary>,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            let local_dictionaries = merged_syntax_template_dictionaries(value, dictionaries);
-            if syntax_template_text_target_entity(object) {
-                if let Some(text) = object.get("text").and_then(Value::as_str) {
-                    for (parameter_reference, parameter_name) in usdm_tag_references(text) {
-                        rows.push(usdm_syntax_template_text_row(
-                            value,
-                            path,
-                            &parameter_reference,
-                            &parameter_name,
-                            &local_dictionaries,
-                        ));
-                    }
-                }
-            }
-            for (key, child) in object {
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_syntax_template_text_rows_at(
-                    child,
-                    &child_path,
-                    &local_dictionaries,
-                    rows,
-                );
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_syntax_template_text_rows_at(
-                    child,
-                    &format!("{path}/{index}"),
-                    dictionaries,
-                    rows,
-                );
-            }
-        }
-        _ => {}
-    }
-}
-
-fn merged_syntax_template_dictionaries(
-    value: &Value,
-    inherited: &HashMap<String, SyntaxTemplateDictionary>,
-) -> HashMap<String, SyntaxTemplateDictionary> {
-    let mut merged = inherited.clone();
-    merged.extend(syntax_template_dictionaries(value));
-    merged
-}
-
-fn collect_usdm_parameter_map_rows_at(
-    value: &Value,
-    path: &str,
-    reference_keys: &HashSet<(String, String, String)>,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            if let Some(dictionaries) = object.get("dictionaries").and_then(Value::as_array) {
-                for (dictionary_index, dictionary) in dictionaries.iter().enumerate() {
-                    let dictionary_path = format!("{path}/dictionaries/{dictionary_index}");
-                    let Some(parameter_maps) =
-                        dictionary.get("parameterMaps").and_then(Value::as_array)
-                    else {
-                        continue;
-                    };
-                    for (map_index, parameter_map) in parameter_maps.iter().enumerate() {
-                        rows.push(usdm_parameter_map_row(
-                            parameter_map,
-                            dictionary,
-                            &format!("{dictionary_path}/parameterMaps/{map_index}"),
-                            reference_keys,
-                        ));
-                    }
-                }
-            }
-            for (key, child) in object {
-                if key == "dictionaries" {
-                    continue;
-                }
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_parameter_map_rows_at(child, &child_path, reference_keys, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_parameter_map_rows_at(
-                    child,
-                    &format!("{path}/{index}"),
-                    reference_keys,
-                    rows,
-                );
-            }
-        }
-        _ => {}
-    }
-}
-
-fn collect_usdm_condition_rows_at(
-    value: &Value,
-    path: &str,
-    id_types: &HashMap<String, String>,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    match value {
-        Value::Object(object) => {
-            if let Some(conditions) = object.get("conditions").and_then(Value::as_array) {
-                for (index, condition) in conditions.iter().enumerate() {
-                    collect_usdm_condition_apply_rows(
-                        condition,
-                        &format!("{path}/conditions/{index}"),
-                        id_types,
-                        rows,
-                    );
-                }
-            }
-            for (key, child) in object {
-                if key == "conditions" {
-                    continue;
-                }
-                let child_path = if path.is_empty() {
-                    format!("/{key}")
-                } else {
-                    format!("{path}/{key}")
-                };
-                collect_usdm_condition_rows_at(child, &child_path, id_types, rows);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                collect_usdm_condition_rows_at(child, &format!("{path}/{index}"), id_types, rows);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn collect_usdm_condition_apply_rows(
-    condition: &Value,
-    path: &str,
-    id_types: &HashMap<String, String>,
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    let Some(applies_to_ids) = condition.get("appliesToIds").and_then(Value::as_array) else {
-        return;
-    };
-    for applies_to_id in applies_to_ids.iter().filter_map(value_string) {
-        rows.push(usdm_condition_row(
-            condition,
-            path,
-            &applies_to_id,
-            id_types
-                .get(&applies_to_id)
-                .map(String::as_str)
-                .unwrap_or("[Invalid id]"),
-        ));
-    }
-}
-
-fn collect_usdm_identifier_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {
-    let Some(versions) = value
-        .get("study")
-        .and_then(|study| study.get("versions"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-
-    for (version_index, version) in versions.iter().enumerate() {
-        let organizations = version
-            .get("organizations")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let mut version_rows = Vec::new();
-        collect_named_identifier_rows(
-            version.get("studyIdentifiers"),
-            "StudyIdentifier",
-            &format!("/study/versions/{version_index}/studyIdentifiers"),
-            &organizations,
-            &mut version_rows,
-        );
-        collect_named_identifier_rows(
-            version.get("referenceIdentifiers"),
-            "ReferenceIdentifier",
-            &format!("/study/versions/{version_index}/referenceIdentifiers"),
-            &organizations,
-            &mut version_rows,
-        );
-        collect_nested_identifiers(
-            version.get("administrableProducts"),
-            "AdministrableProductIdentifier",
-            &format!("/study/versions/{version_index}/administrableProducts"),
-            &organizations,
-            &mut version_rows,
-        );
-        collect_nested_identifiers(
-            version.get("medicalDevices"),
-            "MedicalDeviceIdentifier",
-            &format!("/study/versions/{version_index}/medicalDevices"),
-            &organizations,
-            &mut version_rows,
-        );
-        apply_identifier_duplicate_flags(&mut version_rows);
-        rows.extend(version_rows);
     }
 }
 
@@ -2552,262 +2146,6 @@ fn insert_study_design_context(row: &mut BTreeMap<String, Value>, design: &Value
     );
 }
 
-fn usdm_cohort_row(
-    cohort: &Value,
-    design: &Value,
-    population: &Value,
-    version_index: usize,
-    design_index: usize,
-    cohort_index: usize,
-) -> BTreeMap<String, Value> {
-    let indication_ids = collect_direct_ids(design.get("indications"));
-    let invalid_indications = string_array(cohort.get("indicationIds"))
-        .into_iter()
-        .filter(|id| !indication_ids.contains(id))
-        .collect::<Vec<_>>();
-    let mut row = BTreeMap::new();
-    row.insert(
-        "path".to_owned(),
-        Value::String(format!(
-            "/study/versions/{version_index}/studyDesigns/{design_index}/population/cohorts/{cohort_index}"
-        )),
-    );
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(cohort.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(cohort.get("id")));
-    row.insert("name".to_owned(), json_string(cohort.get("name")));
-    insert_study_design_context(&mut row, design);
-    row.insert(
-        "StudyDesign.indications.id".to_owned(),
-        Value::String(format_string_list(
-            &indication_ids.iter().cloned().collect::<Vec<_>>(),
-        )),
-    );
-    row.insert(
-        "StudyDesignPopulation.id".to_owned(),
-        json_string(population.get("id")),
-    );
-    row.insert(
-        "StudyDesignPopulation.name".to_owned(),
-        json_string(population.get("name")),
-    );
-    row.insert(
-        "Invalid indicationIds".to_owned(),
-        Value::String(format_string_list(&invalid_indications)),
-    );
-    row.insert(
-        "study_cohort_invalid_indication".to_owned(),
-        Value::Bool(!invalid_indications.is_empty()),
-    );
-    insert_planned_sex_columns(&mut row, cohort.get("plannedSex"));
-    row
-}
-
-fn usdm_study_cell_row(
-    cell: &Value,
-    design: &Value,
-    arms: &[Value],
-    epochs: &[Value],
-    version_index: usize,
-    design_index: usize,
-    cell_index: usize,
-) -> BTreeMap<String, Value> {
-    let arm_id = value_string(cell.get("armId").unwrap_or(&Value::Null)).unwrap_or_default();
-    let epoch_id = value_string(cell.get("epochId").unwrap_or(&Value::Null)).unwrap_or_default();
-    let mut row = BTreeMap::new();
-    row.insert(
-        "path".to_owned(),
-        Value::String(format!(
-            "/study/versions/{version_index}/studyDesigns/{design_index}/studyCells/{cell_index}"
-        )),
-    );
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(cell.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(cell.get("id")));
-    row.insert("armId".to_owned(), Value::String(arm_id.clone()));
-    row.insert("epochId".to_owned(), Value::String(epoch_id.clone()));
-    row.insert("StudyDesign.id".to_owned(), json_string(design.get("id")));
-    row.insert(
-        "StudyDesign.name".to_owned(),
-        json_string(design.get("name")),
-    );
-    row.insert(
-        "StudyArm.name".to_owned(),
-        named_usdm_object_name(arms, &arm_id)
-            .map(Value::String)
-            .unwrap_or(Value::Null),
-    );
-    row.insert(
-        "StudyEpoch.name".to_owned(),
-        named_usdm_object_name(epochs, &epoch_id)
-            .map(Value::String)
-            .unwrap_or(Value::Null),
-    );
-    row
-}
-
-fn apply_study_cell_duplicate_flags(rows: &mut [BTreeMap<String, Value>]) {
-    let mut counts: HashMap<(String, String, String), usize> = HashMap::new();
-    for row in rows.iter() {
-        let design_id = row
-            .get("StudyDesign.id")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let arm_id = row.get("armId").and_then(value_string).unwrap_or_default();
-        let epoch_id = row
-            .get("epochId")
-            .and_then(value_string)
-            .unwrap_or_default();
-        *counts.entry((design_id, arm_id, epoch_id)).or_insert(0) += 1;
-    }
-    for row in rows.iter_mut() {
-        let design_id = row
-            .get("StudyDesign.id")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let arm_id = row.get("armId").and_then(value_string).unwrap_or_default();
-        let epoch_id = row
-            .get("epochId")
-            .and_then(value_string)
-            .unwrap_or_default();
-        let duplicate = counts
-            .get(&(design_id, arm_id, epoch_id))
-            .is_some_and(|count| *count > 1);
-        row.insert(
-            "study_cell_arm_epoch_duplicate".to_owned(),
-            Value::Bool(duplicate),
-        );
-    }
-}
-
-fn usdm_condition_row(
-    condition: &Value,
-    path: &str,
-    applies_to_id: &str,
-    applies_to_instance_type: &str,
-) -> BTreeMap<String, Value> {
-    let allowed = matches!(
-        applies_to_instance_type,
-        "Procedure"
-            | "Activity"
-            | "BiomedicalConcept"
-            | "BiomedicalConceptCategory"
-            | "BiomedicalConceptSurrogate"
-    );
-    let mut row = BTreeMap::new();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(condition.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(condition.get("id")));
-    row.insert("name".to_owned(), json_string(condition.get("name")));
-    row.insert(
-        "appliesTo id".to_owned(),
-        Value::String(applies_to_id.to_owned()),
-    );
-    row.insert(
-        "appliesTo instanceType".to_owned(),
-        Value::String(applies_to_instance_type.to_owned()),
-    );
-    row.insert(
-        "condition_applies_to_invalid".to_owned(),
-        Value::Bool(!allowed),
-    );
-    row
-}
-
-fn usdm_parameter_map_row(
-    parameter_map: &Value,
-    dictionary: &Value,
-    path: &str,
-    reference_keys: &HashSet<(String, String, String)>,
-) -> BTreeMap<String, Value> {
-    let reference =
-        value_string(parameter_map.get("reference").unwrap_or(&Value::Null)).unwrap_or_default();
-    let invalid = parameter_map_reference_invalid(&reference, reference_keys);
-    let mut row = BTreeMap::new();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(parameter_map.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(parameter_map.get("id")));
-    row.insert("tag".to_owned(), json_string(parameter_map.get("tag")));
-    row.insert("reference".to_owned(), Value::String(reference));
-    row.insert(
-        "SyntaxTemplateDictionary.id".to_owned(),
-        json_string(dictionary.get("id")),
-    );
-    row.insert(
-        "SyntaxTemplateDictionary.name".to_owned(),
-        json_string(dictionary.get("name")),
-    );
-    row.insert(
-        "parameter_map_reference_invalid".to_owned(),
-        Value::Bool(invalid),
-    );
-    row
-}
-
-fn usdm_syntax_template_text_row(
-    object: &Value,
-    path: &str,
-    parameter_reference: &str,
-    parameter_name: &str,
-    dictionaries: &HashMap<String, SyntaxTemplateDictionary>,
-) -> BTreeMap<String, Value> {
-    let dictionary_id = object.get("dictionaryId").and_then(value_string);
-    let dictionary = dictionary_id
-        .as_ref()
-        .and_then(|id| dictionaries.get(id.as_str()));
-    let issue = match (dictionary_id.as_ref(), dictionary) {
-        (None, _) => "dictionaryId is missing",
-        (Some(_), None) => "dictionaryId is invalid",
-        (Some(_), Some(dictionary)) if !dictionary.tags.contains(parameter_name) => {
-            "Parameter not in dictionary"
-        }
-        _ => "",
-    };
-
-    let mut row = BTreeMap::new();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert(
-        "instanceType".to_owned(),
-        json_string(object.get("instanceType")),
-    );
-    row.insert("id".to_owned(), json_string(object.get("id")));
-    row.insert("name".to_owned(), json_string(object.get("name")));
-    row.insert(
-        "Parameter reference".to_owned(),
-        Value::String(parameter_reference.to_owned()),
-    );
-    row.insert(
-        "Parameter name".to_owned(),
-        Value::String(parameter_name.to_owned()),
-    );
-    row.insert(
-        "dictionaryId".to_owned(),
-        dictionary_id.map(Value::String).unwrap_or(Value::Null),
-    );
-    row.insert(
-        "SyntaxTemplateDictionary.name".to_owned(),
-        dictionary
-            .map(|dictionary| Value::String(dictionary.name.clone()))
-            .unwrap_or(Value::Null),
-    );
-    row.insert("Issue".to_owned(), Value::String(issue.to_owned()));
-    row.insert(
-        "syntax_template_tag_invalid".to_owned(),
-        Value::Bool(!issue.is_empty()),
-    );
-    row
-}
-
 pub(crate) fn duplicate_strings(values: &[String]) -> Vec<String> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for value in values {
@@ -2820,188 +2158,6 @@ pub(crate) fn duplicate_strings(values: &[String]) -> Vec<String> {
         .collect::<Vec<_>>();
     duplicates.sort();
     duplicates
-}
-
-#[derive(Debug, Clone)]
-struct SyntaxTemplateDictionary {
-    name: String,
-    tags: HashSet<String>,
-}
-
-fn syntax_template_dictionaries(version: &Value) -> HashMap<String, SyntaxTemplateDictionary> {
-    version
-        .get("dictionaries")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|dictionary| {
-            let id = dictionary.get("id").and_then(value_string)?;
-            let name = dictionary
-                .get("name")
-                .and_then(value_string)
-                .unwrap_or_default();
-            let tags = dictionary
-                .get("parameterMaps")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|parameter_map| parameter_map.get("tag").and_then(value_string))
-                .collect::<HashSet<_>>();
-            Some((id, SyntaxTemplateDictionary { name, tags }))
-        })
-        .collect()
-}
-
-fn syntax_template_text_target_entity(object: &serde_json::Map<String, Value>) -> bool {
-    object
-        .get("instanceType")
-        .and_then(Value::as_str)
-        .is_some_and(|instance_type| {
-            matches!(
-                instance_type,
-                "EligibilityCriterion"
-                    | "EligibilityCriterionItem"
-                    | "Characteristic"
-                    | "Condition"
-                    | "Objective"
-                    | "Endpoint"
-                    | "IntercurrentEvent"
-            )
-        })
-}
-
-fn collect_named_identifier_rows(
-    identifiers: Option<&Value>,
-    instance_type: &str,
-    base_path: &str,
-    organizations: &[Value],
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    let Some(identifiers) = identifiers.and_then(Value::as_array) else {
-        return;
-    };
-    for (index, identifier) in identifiers.iter().enumerate() {
-        rows.push(usdm_identifier_row(
-            identifier,
-            instance_type,
-            &format!("{base_path}/{index}"),
-            organizations,
-        ));
-    }
-}
-
-fn collect_nested_identifiers(
-    parents: Option<&Value>,
-    instance_type: &str,
-    base_path: &str,
-    organizations: &[Value],
-    rows: &mut Vec<BTreeMap<String, Value>>,
-) {
-    let Some(parents) = parents.and_then(Value::as_array) else {
-        return;
-    };
-    for (parent_index, parent) in parents.iter().enumerate() {
-        collect_named_identifier_rows(
-            parent.get("identifiers"),
-            instance_type,
-            &format!("{base_path}/{parent_index}/identifiers"),
-            organizations,
-            rows,
-        );
-    }
-}
-
-fn usdm_identifier_row(
-    identifier: &Value,
-    instance_type: &str,
-    path: &str,
-    organizations: &[Value],
-) -> BTreeMap<String, Value> {
-    let mut row = BTreeMap::new();
-    let scope_id =
-        value_string(identifier.get("scopeId").unwrap_or(&Value::Null)).unwrap_or_default();
-    row.insert("path".to_owned(), Value::String(path.to_owned()));
-    row.insert(
-        "instanceType".to_owned(),
-        Value::String(instance_type.to_owned()),
-    );
-    row.insert("id".to_owned(), json_string(identifier.get("id")));
-    row.insert("text".to_owned(), json_string(identifier.get("text")));
-    row.insert("scopeId".to_owned(), Value::String(scope_id.clone()));
-    row.insert(
-        "Organization.name".to_owned(),
-        organization_name(organizations, &scope_id)
-            .map(Value::String)
-            .unwrap_or(Value::Null),
-    );
-    row.insert(
-        "type.code".to_owned(),
-        json_string(identifier.get("type").and_then(|value| value.get("code"))),
-    );
-    row.insert(
-        "type.decode".to_owned(),
-        json_string(identifier.get("type").and_then(|value| value.get("decode"))),
-    );
-    row
-}
-
-fn apply_identifier_duplicate_flags(rows: &mut [BTreeMap<String, Value>]) {
-    let mut study_scope_counts: HashMap<String, usize> = HashMap::new();
-    let mut text_scope_counts: HashMap<(String, String, String), usize> = HashMap::new();
-    for row in rows.iter() {
-        let instance_type = row
-            .get("instanceType")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let scope_id = row
-            .get("scopeId")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let text = row.get("text").and_then(value_string).unwrap_or_default();
-        if instance_type == "StudyIdentifier" && !scope_id.is_empty() {
-            *study_scope_counts.entry(scope_id.clone()).or_insert(0) += 1;
-        }
-        if !text.is_empty() && !scope_id.is_empty() {
-            *text_scope_counts
-                .entry((instance_type, scope_id, text))
-                .or_insert(0) += 1;
-        }
-    }
-
-    for row in rows.iter_mut() {
-        let instance_type = row
-            .get("instanceType")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let scope_id = row
-            .get("scopeId")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let text = row.get("text").and_then(value_string).unwrap_or_default();
-        let study_duplicate = instance_type == "StudyIdentifier"
-            && study_scope_counts
-                .get(&scope_id)
-                .is_some_and(|count| *count > 1);
-        let text_scope_duplicate = text_scope_counts
-            .get(&(instance_type, scope_id, text))
-            .is_some_and(|count| *count > 1);
-        row.insert(
-            "study_identifier_scope_duplicate".to_owned(),
-            Value::Bool(study_duplicate),
-        );
-        row.insert(
-            "identifier_text_scope_duplicate".to_owned(),
-            Value::Bool(text_scope_duplicate),
-        );
-    }
-}
-
-fn organization_name(organizations: &[Value], id: &str) -> Option<String> {
-    named_usdm_object_name(organizations, id)
 }
 
 pub(crate) fn named_usdm_object_name(values: &[Value], id: &str) -> Option<String> {
