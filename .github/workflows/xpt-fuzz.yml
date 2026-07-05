@@ -46,7 +46,7 @@ jobs:
         run: |
           cd fuzz
           mkdir -p artifacts
-          cargo fuzz run xpt_parser corpus/xpt_parser -- -max_total_time=60 -artifact_prefix=artifacts/
+          cargo +nightly fuzz run xpt_parser corpus/xpt_parser -- -max_total_time=60 -artifact_prefix=artifacts/
 
       - name: Upload fuzz artifacts
         if: failure()

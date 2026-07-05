@@ -1,129 +1,50 @@
 # core-rust
 
-Rust implementation of a CDISC CORE-like validation engine.
+`core-rust` is a technical-preview validation engine for CDISC-style rules and
+study data. It provides a Rust CLI, report writers, and compatibility harnesses
+for supplemental validation, regression testing, and rule-conversion research.
 
-> Status: technical preview. This project is not an official CDISC product and is
-> not a drop-in replacement for the official CDISC Validator.
+> Status: technical preview. This project is independent and unofficial. It is
+> not the official CDISC Validator, not endorsed by CDISC, and not a sole
+> authority for regulatory submission decisions.
 
-`core-rust` is an experimental validation engine for working with CDISC-style
-rules and SDTM/ADaM-like study data. It is designed for compatibility testing,
-supplemental validation workflows, and exploring what a Rust implementation of a
-CORE rules engine can look like.
+## English
 
-## Where It Helps
+### Who This Is For
 
-- Experimenting with CDISC CORE-like rules in a small, fast Rust codebase.
-- Running supplemental validation against SDTM/ADaM-style fixture or study data.
-- Comparing Rust behavior with golden expected outputs.
-- Producing JSON, CSV, and log reports for traceable validation results.
-- Developing validation engine features such as rule normalization, dataset
-  operations, targeted hand-ported USDM/Open Rules checks, Define-XML metadata, controlled
-  terminology, and external dictionaries.
+Use `core-rust` when you need to:
 
-## What It Is Not
+- run supplemental checks over SDTM/ADaM-like datasets
+- test CDISC CORE-like rules in JSON or YAML
+- compare candidate behavior with reviewed golden outputs
+- inspect machine-readable JSON/CSV/log validation reports
+- research P21PORT and CDISC Open Rules conversion workflows
+- audit Open Rules compatibility with provenance-aware scoreboards
 
-- It is not the official CDISC Validator.
-- It is not endorsed by CDISC.
-- It is not yet a validated system for regulatory submission workflows.
-- It does not guarantee complete behavioral parity with CDISC official tooling
-  or the Python `cdisc-rules-engine`.
+Do not use it as a drop-in replacement for the official CDISC Validator.
+Submission-critical workflows should still be checked with the official
+validator and your governed validation process.
 
-Use it as a technical preview and supplemental validator, not as the sole
-authority for production submission decisions.
+### Install And Build
 
-## Current Capabilities
+Requirements:
 
-- CLI binary: `core-rs`.
-- Rule loading from JSON and YAML.
-- Record-level and dataset-level rule evaluation.
-- Rule include/exclude filters, including skipped results for missing requested
-  rules.
-- Standard and standard-version filtering.
-- Dataset inputs:
-  - CSV
-  - DatasetPackageJson-style JSON
-  - SAS XPT v5 subset
-- CDISC metadata inputs:
-  - Define-XML parsing for datasets, variables, codelists, value lists, where
-    clauses, methods, comments, and documents.
-  - Controlled terminology JSON.
-  - External dictionaries from JSON and CSV.
-- Operations and cross-dataset checks:
-  - filter
-  - derive
-  - aggregate/group statistics
-  - sort
-  - row number
-  - left/inner/semi/anti joins
-  - Match_Datasets-style checks
-- JSONata normalization for a small expression subset plus targeted
-  hand-ported USDM/Open Rules checks. These hand ports are tracked separately
-  in Open Rules provenance and should not be read as a general JSONata
-  evaluator.
-- Reports:
-  - `report.json`
-  - `report.csv`
-  - `validation.log`
-
-## Validation Coverage
-
-The repository includes golden fixtures and Open Rules oracle harnesses for:
-
-- integrated DatasetPackageJson + Define-XML + CT flows
-- SDTM/ADaM-like multi-domain packages
-- regulatory-style SDTM/ADaM fixtures
-- golden expected output comparisons
-- issue identity traceability with `usubjid` and sequence fields
-- CSV and log report structure
-- GitHub Actions CI running format, check, and workspace tests
-- CDISC Open Rules fixture and curated-upstream subset comparisons
-
-Open Rules coverage metrics are split by evidence type. `supported_accuracy`
-only measures cases still in the supported denominator after reviewed
-`deferred_oracle_gap_*`, missing-oracle, and unsupported cases have been
-excluded. It is a regression-gate invariant, not a claim that the full upstream
-corpus is completely implemented. Read it together with `coverage`,
-`native_engine_coverage`, `rule_id_hand_port_coverage`,
-`deferred_oracle_gap_skipped`, and `no_official_oracle`.
-
-Validation `report.json` includes per-result `execution_provenance` when the
-API can classify the rule path (`native_engine` or `rule_id_hand_port`). This is
-intended for auditability; CSV output keeps the stable issue-row schema.
-
-For audit runs, `xtask open-rules score --strict-scoring` disables oracle-gap
-reclassification and oracle-informed identity/output-context normalizations.
-That strict score is intentionally harsher and is the right lens for estimating
-how much the compatibility scorer, manifests, and normalization policy affect
-the headline gate metrics. The scheduled upstream observe workflow uploads both
-the default compatibility scoreboard and a non-gating strict-scoring scoreboard
-so the two reads can be compared.
-
-These fixtures make regressions visible, but they are not a substitute for broad
-parallel runs against the official CDISC Validator or the Python rules engine on
-large real-world study datasets.
-
-Release artifacts should be accompanied by a provenance manifest generated with
-`cargo run -p xtask -- release-manifest --out <path>`. See
-[`docs/release-reproducibility.md`](docs/release-reproducibility.md) for the
-release checklist and reproducibility notes.
-
-The default Python test configuration excludes subprocess-heavy integration
-tests. Run P21PORT workflow smoke coverage explicitly with
-`PYTHONPATH=src python3 -m pytest -q -m integration` or
-`PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke`.
-
-## Quick Start
-
-Requires Rust 1.93 or newer.
-
-Build and test:
+- Rust 1.93 or newer
+- Python 3.13 for the optional `cdisc_rulekit` utilities
 
 ```sh
-cargo check --workspace
-cargo test --workspace
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo build --release -p core-cli
 ```
 
-Run the CLI against the bundled regulatory-style fixture:
+The CLI binary is named `core-rs`.
+
+```sh
+cargo run -p core-cli -- validate --help
+```
+
+### Run A Validation
 
 ```sh
 cargo run -p core-cli -- validate \
@@ -136,7 +57,7 @@ cargo run -p core-cli -- validate \
   --output target/core-rust-report
 ```
 
-Expected outputs:
+Outputs:
 
 ```text
 target/core-rust-report/report.json
@@ -144,22 +65,78 @@ target/core-rust-report/report.csv
 target/core-rust-report/validation.log
 ```
 
-Show CLI help:
+`report.json` includes `execution_provenance` when the engine can classify the
+rule path as `native_engine` or `rule_id_hand_port`. CSV keeps a stable
+issue-row schema for downstream tools.
+
+### Supported Inputs
+
+Rules:
+
+- JSON
+- YAML
+
+Data:
+
+- CSV
+- DatasetPackageJson-style JSON
+- SAS XPT v5 subset
+
+Metadata:
+
+- Define-XML datasets, variables, codelists, value lists, where clauses,
+  methods, comments, and documents
+- controlled terminology JSON
+- external dictionaries from JSON or CSV
+
+### What The Engine Can Evaluate
+
+The current engine supports record-level and dataset-level checks, filters,
+derivations, aggregate/group statistics, sorting, row numbers, joins,
+Match_Datasets-style checks, codelist checks, Define-XML metadata checks, and a
+small normalized expression subset.
+
+USDM/Open Rules support includes targeted hand-ported checks. These are tracked
+separately in Open Rules provenance and should not be read as general JSONata
+support.
+
+### Open Rules Compatibility
+
+The repository includes a CDISC Open Rules oracle harness. Scoreboards separate:
+
+- supported matches and mismatches
+- deferred oracle/fixture gaps
+- no-official-oracle cases
+- skipped unsupported cases
+- native engine vs rule-id hand-port coverage
+- strict identity scoring vs compatibility normalization
+
+`supported_accuracy = 100%` means no mismatch inside the reviewed supported
+denominator. It does not mean the full upstream corpus is implemented or that
+the tool is regulatory-ready.
+
+For audit runs:
 
 ```sh
-cargo run -p core-cli -- validate --help
+cargo run -p xtask -- open-rules score --strict-scoring --help
+cargo run -p xtask -- open-rules score-delta --help
 ```
 
-## CDISC Rulekit Pilot
+The scheduled upstream workflow uploads default scoreboards, strict scoreboards,
+and default-vs-strict delta artifacts.
 
-The Python `cdisc_rulekit` package provides a Phase 1 read-only pipeline for
-normalizing P21 rule exports and CDISC Open Rules into catalogs, candidate
-mappings, conversion classifications, and reports. It does not generate or copy
-rules in this phase.
+### P21PORT Rulekit
 
-The Open Rules input may be either an extracted repository directory or a zip
-archive such as `cdisc-open-rules-main.zip`. Zip archives are extracted under
-`output/_work/` during read-only commands.
+The optional Python `cdisc_rulekit` package helps inspect P21 rule exports,
+classify conversion candidates, generate draft P21PORT rules, run candidate
+rules, and compare structural outputs.
+
+```sh
+python -m pip install -e ".[test]"
+PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke
+```
+
+Typical read-only pilot:
 
 ```sh
 python -m cdisc_rulekit.cli pilot-preflight \
@@ -169,205 +146,184 @@ python -m cdisc_rulekit.cli pilot-preflight \
   --out output/reports \
   --standard SDTM-IG \
   --limit 20
-
-python -m cdisc_rulekit.cli build-readonly \
-  --p21-rules input/p21/cdisc_rule_definitions_latest_2204.csv \
-  --p21-domain-map input/p21/cdisc_rule_domain_map.csv \
-  --open-rules-repo input/cdisc-open-rules-main.zip \
-  --out output \
-  --standard SDTM-IG \
-  --limit 20
 ```
 
-Phase 1 reports include:
+P21PORT outputs are draft/review artifacts. Existing Open Rules `Published/`
+content is not modified unless you explicitly export into a target tree.
 
-- `classification_quality.md`
-- `macro_inventory.csv`
-- `macro_inventory_summary.md`
-- `fuzzy_mapping_review.csv`
-- `reason_examples.csv`
-- `version_agency_summary.csv`
-- `raw_rule_id_summary.csv`
-- `source_rule_tracking.csv`
+### Release And Audit Artifacts
 
-Phase 2 minimal generation uses the read-only outputs and conservatively creates
-Draft rules only for `AUTO_CONVERTIBLE` rows that are not fuzzy CORE candidates.
-Generated rules are written under `generated_rules/`; existing Open Rules
-`Published/` content is not modified.
+Release artifacts should be accompanied by a provenance manifest:
 
 ```sh
-python -m cdisc_rulekit.cli generate \
-  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
-  --conversion-status output/catalog/conversion_status.csv \
-  --operator-inventory output/catalog/core_operator_inventory.csv \
-  --out output
-
-# Expanded draft generation. This keeps fuzzy CORE candidates as draft P21PORT
-# rules and records FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW in manifest.json.
-python -m cdisc_rulekit.cli generate \
-  --p21-catalog output/catalog/p21_rules_normalized.jsonl \
-  --conversion-status output/catalog/conversion_status.csv \
-  --operator-inventory output/catalog/core_operator_inventory.csv \
-  --out output-expanded \
-  --include-fuzzy-candidates
-
-python -m cdisc_rulekit.cli validate-structure \
-  --generated-rules output/generated_rules \
-  --out output/reports
-
-python -m cdisc_rulekit.cli run-core \
-  --generated-rules output/generated_rules \
-  --out output \
-  --dry-run
-
-python -m cdisc_rulekit.cli run-core \
-  --generated-rules output/generated_rules \
-  --out output
-
-# Official Python CORE source checkout. Use absolute paths when --engine-cwd is
-# set because CORE reads resources relative to its repository root.
-CORE_RUST_ROOT="$PWD"
-CORE_ENGINE="$CORE_RUST_ROOT/input/cdisc-rules-engine"
-python -m cdisc_rulekit.cli run-core \
-  --generated-rules "$CORE_RUST_ROOT/output/generated_rules" \
-  --out "$CORE_RUST_ROOT/output/core_cli_run" \
-  --engine-command "$CORE_ENGINE/.venv/bin/python $CORE_ENGINE/core.py validate -s SDTMIG -v 3.2 --output-format json -p disabled" \
-  --output-mode file-base \
-  --data-mode data-dir \
-  --engine-cwd "$CORE_ENGINE" \
-  --workers 6
-
-python -m cdisc_rulekit.cli compare-results \
-  --generated-rules output/generated_rules \
-  --actual-root output/core_runs \
-  --out output/reports
-
-python -m cdisc_rulekit.cli export-rules \
-  --generated-rules output/generated_rules \
-  --open-rules-repo input/cdisc-open-rules
-
-# Export only comparison-passed rules to a dedicated target subtree (recommended for PR-ready candidates)
-python -m cdisc_rulekit.cli export-rules \
-  --generated-rules output/generated_rules \
-  --open-rules-repo input/cdisc-open-rules \
-  --comparison-summary output/reports/comparison_summary.csv \
-  --only-passed \
-  --target-subdir Unpublished/NEW-RULE/FINAL-PASS
+cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
+cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
 ```
 
-`run-core --dry-run` writes the planned engine commands without executing them.
-By default, non-dry-run execution passes only dataset CSV files from each
-generated `positive/01/data` and `negative/01/data` directory to `core-cli`;
-Open Rules auxiliary files such as `.env`, `_datasets.csv`, and
-`_variables.csv` are not passed as datasets. For the official Python CORE CLI,
-use `--data-mode data-dir` so the full Open Rules test data directory is passed
-with `_datasets.csv` / `_variables.csv`, and `--output-mode file-base` so
-`report.json` / `report.csv` lands under the case output directory. `--workers`
-runs case-level CORE invocations in parallel; keep this moderate because the
-official CORE CLI also initializes its own validation machinery per process.
-`compare-results` compares structural fields such as rule id, dataset/domain,
-row, variables, USUBJID, and sequence values. It supports both the Rust harness
-`results/errors` JSON shape and official Python CORE `Issue_Details` JSON
-shape. Diagnostic message wording is not a primary comparison key. Actual
-skipped CORE cases are reported as `ACTUAL_SKIPPED`, separate from structural
-mismatches.
+The CI release provenance gate builds the host `core-rs` binary, records its
+SHA-256 in `release-manifest.json`, verifies the manifest, and uploads the
+manifest as a GitHub Actions artifact.
 
-`export-rules` copies generated draft rules into
-`Unpublished/NEW-RULE/<draft-rule-id>/` by default and writes
-`export_manifest.json` / `export_manifest.csv`. Existing target directories are
-not overwritten unless `--overwrite` is supplied.
+See:
 
-Historical SDTM-IG pilot result:
+- [Release reproducibility](docs/release-reproducibility.md)
+- [Open Rules oracle harness](docs/open-rules-oracle-harness.md)
+- [Open Rules upstream regression gate](docs/open-rules-upstream-regression-gate.md)
+- [XPT fuzzing](docs/xpt-fuzzing.md)
+- [Rust file split plan](docs/rust-file-split-plan.md)
 
-- Successful run directory: `output/sdtmig_phase2_rerun5`
-- Generated high-confidence draft rules: 17
-- CORE execution comparison: 34 passed, 0 failed
-- Remaining skipped rows are generation-scope coverage gaps, not supported CORE
-  mismatches. Keep them separate from wrong results when expanding generation.
+### Workspace Layout
 
-Older SDTM-IG full rerun reports under `output/` were produced before the
-Open Rules oracle scorer was tightened to exclude missing-official-oracle cases
-from supported accuracy and before `core-api` stopped oracle-based result
-synthesis. Treat those reports as historical debugging artifacts only. For
-current conformance claims, rerun the Open Rules harness and cite the generated
-`scoreboard.json` / `summary.md` from that run.
+- `apps/cli`: command-line interface
+- `crates/core-api`: validation orchestration API
+- `crates/core-rule-model`: rule parsing and normalization
+- `crates/core-data`: dataset loading and dataset operations
+- `crates/core-engine`: rule evaluation
+- `crates/core-cdisc-library`: Define-XML, CT, and dictionary parsing
+- `crates/core-report`: JSON, CSV, and log report writing
+- `src/cdisc_rulekit`: Python P21/Open Rules conversion utilities
+- `tests/fixtures`: golden and compatibility fixtures
 
-Latest expanded SDTM-IG draft export:
+## 日本語
 
-- Expanded run directory: `output/sdtmig_phase2_condition_target_v2`
-- Generated draft rules: 395
-- Structure validation: 395 rules checked, ok
-- Export target:
-  `output/_work/open_rules_zip/cdisc-open-rules-main/Unpublished/NEW-RULE/P21PORT-SDTMIG-CONDITION-TARGET`
-- Export result: 395 exported, 0 skipped
-- `Published/` was not modified. Fuzzy-derived rules remain draft/review items
-  through the `FUZZY_CORE_CANDIDATE_REQUIRES_REVIEW` manifest warning.
+`core-rust` は、CDISC 形式のルールと試験データを扱うための技術プレビュー版
+バリデーションエンジンです。Rust 製 CLI、JSON/CSV/log レポート、P21PORT
+変換支援、CDISC Open Rules 互換性検証ハーネスを含みます。
 
-Official Python CORE smoke:
+> ステータス: 技術プレビューです。このプロジェクトは独立した非公式実装であり、
+> 公式 CDISC Validator ではありません。規制提出判断の唯一の根拠としては使用しないでください。
 
-- CORE source checkout: `input/cdisc-rules-engine` at commit `b8202fe`
-- Installed into `input/cdisc-rules-engine/.venv` with Python 3.12
-- `core.py test-validate json`: passed when run from the CORE repository root
-- `run-core` against one generated rule with official CORE options: 2 passed,
-  0 failed
-- `compare-results` against that official CORE output: 2 passed, 0 failed
+### 想定用途
 
-Historical official Python CORE full run:
+次のような用途に向いています。
 
-The Python CORE run reports under `output/` are also historical. They are useful
-for reproducing the P21 conversion workflow, but they are not a substitute for
-the Rust Open Rules oracle scoreboard after the scorer hardening changes.
+- SDTM/ADaM 風データに対する補助的なチェック
+- JSON / YAML の CDISC CORE 風ルールの検証
+- golden expected output との構造比較
+- JSON / CSV / log 形式の結果確認
+- P21 ルール export から P21PORT draft rule への変換調査
+- CDISC Open Rules との互換性・差分・provenance の監査
 
-Minimal generated outputs include:
+公式 Validator の代替ではありません。提出・本番判断では、公式 Validator と
+組織内の検証プロセスで必ず確認してください。
 
-- `generated_rules/<draft-rule-id>/rule.yml`
-- `generated_rules/<draft-rule-id>/manifest.json`
-- `generated_rules/<draft-rule-id>/expected_results.csv`
-- `generated_rules/<draft-rule-id>/positive/01/data/*`
-- `generated_rules/<draft-rule-id>/negative/01/data/*`
-- `reports/generation_summary.csv`
-- `reports/generation_summary.json`
-- `reports/structure_validation.md`
-- `reports/core_run_plan.json`
-- `reports/core_run_plan.md`
-- `reports/core_run_execution_summary.csv`
-- `reports/core_run_execution_summary.json`
-- `reports/core_run_execution_summary.md`
-- `reports/comparison_summary.csv`
-- `reports/comparison_summary.json`
-- `reports/comparison_summary.md`
+### ビルドと実行
 
-## Workspace Layout
+必要なもの:
 
-- `apps/cli`: command-line interface.
-- `crates/core-api`: orchestration API for loading inputs, applying filters, and
-  running validation.
-- `crates/core-rule-model`: rule parsing and normalization.
-- `crates/core-data`: dataset loading and operations.
-- `crates/core-engine`: rule evaluation.
-- `crates/core-cdisc-library`: Define-XML, CT, and dictionary parsing.
-- `crates/core-report`: JSON, CSV, and log report writing.
-- `tests/fixtures`: golden and compatibility fixtures.
+- Rust 1.93 以上
+- Python 3.13 (`cdisc_rulekit` を使う場合)
 
-## Compatibility Position
+```sh
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo build --release -p core-cli
+```
 
-The goal is to make behavior reproducible against reviewed golden fixtures where
-practical, but the project intentionally publishes its current state as a
-technical preview. Compatibility should be treated as evidence-based rather than
-guaranteed:
+CLI バイナリ名は `core-rs` です。
 
-- If a behavior is covered by a golden fixture, regressions should be caught by
-  CI.
-- If a behavior is not covered by fixture comparison, treat it as experimental.
-- For production or submission-critical workflows, compare results with the
-  official validator and established validation processes.
+```sh
+cargo run -p core-cli -- validate --help
+```
 
-## License
+### バリデーション実行例
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+```sh
+cargo run -p core-cli -- validate \
+  --local-rules tests/fixtures/rules/regulatory \
+  --dataset-path tests/fixtures/datasets/regulatory/study_package.json \
+  --define-xml tests/fixtures/cdisc/regulatory_define.xml \
+  --ct tests/fixtures/cdisc/regulatory_ct.json \
+  --external-dictionary tests/fixtures/cdisc/regulatory_external_dictionary.csv \
+  --log-level info \
+  --output target/core-rust-report
+```
 
-## Acknowledgment
+出力:
 
-This repository uses CDISC, SDTM, ADaM, Define-XML, and related terminology to
-describe interoperability goals. Those names belong to their respective owners.
-This project is independent and unofficial.
+```text
+target/core-rust-report/report.json
+target/core-rust-report/report.csv
+target/core-rust-report/validation.log
+```
+
+`report.json` には、判定できる場合に `execution_provenance`
+(`native_engine` / `rule_id_hand_port`) が入ります。CSV は既存ツール連携のため、
+安定した issue-row schema を維持します。
+
+### 対応入力
+
+ルール:
+
+- JSON
+- YAML
+
+データ:
+
+- CSV
+- DatasetPackageJson 風 JSON
+- SAS XPT v5 subset
+
+メタデータ:
+
+- Define-XML
+- controlled terminology JSON
+- 外部辞書 JSON / CSV
+
+### Open Rules 互換性の読み方
+
+Open Rules harness は、単純な pass 件数ではなく、以下を分けて集計します。
+
+- supported match / mismatch
+- deferred oracle / fixture gap
+- official oracle が存在しない case
+- unsupported skip
+- native engine coverage
+- rule-id hand-port coverage
+- strict scoring と compatibility normalization の差分
+
+`supported_accuracy = 100%` は、review 済み supported denominator 内で mismatch が
+0 という意味です。全 upstream corpus を完全実装した、または規制用途で妥当、
+という意味ではありません。
+
+監査用には strict scoring と delta を確認してください。
+
+```sh
+cargo run -p xtask -- open-rules score --strict-scoring --help
+cargo run -p xtask -- open-rules score-delta --help
+```
+
+### P21PORT 支援
+
+Python の `cdisc_rulekit` は、P21 rule export の棚卸し、変換候補分類、
+draft rule 生成、実行、構造比較を支援します。
+
+```sh
+python -m pip install -e ".[test]"
+PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke
+```
+
+生成物は review 用 draft です。明示的に export しない限り、Open Rules の
+既存 `Published/` は変更されません。
+
+### リリースと監査証跡
+
+release artifact には provenance manifest を添付してください。
+
+```sh
+cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
+cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
+```
+
+CI では host の `core-rs` バイナリを build し、SHA-256 を manifest に記録し、
+verify したうえで manifest を GitHub Actions artifact として保存します。
+
+### ライセンス
+
+MIT License です。詳細は [LICENSE](LICENSE) を参照してください。
+
+### 謝辞
+
+このリポジトリでは相互運用性の説明のために CDISC、SDTM、ADaM、Define-XML
+などの用語を使用しています。これらの名称は各権利者に帰属します。本プロジェクトは
+独立した非公式実装です。

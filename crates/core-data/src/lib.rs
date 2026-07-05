@@ -22,6 +22,7 @@ mod open_rules_variables;
 mod row_key;
 mod usdm_abbreviations;
 mod usdm_collectors;
+mod usdm_common;
 mod usdm_content;
 mod usdm_data_dir;
 mod usdm_data_dir_datasets;
@@ -66,9 +67,8 @@ use json_table::series_from_json_values;
 pub use json_table::{metadata_row_dataset, metadata_rows_dataset};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
 pub(crate) use row_key::{row_key, RowKeyValue};
-pub(crate) use usdm_data_dir::{
-    duplicate_strings, load_open_rules_json_data_dir, named_usdm_object_name,
-};
+pub(crate) use usdm_common::{duplicate_strings, named_usdm_object_name};
+pub(crate) use usdm_data_dir::load_open_rules_json_data_dir;
 pub use xpt::load_xpt_dataset;
 #[cfg(test)]
 pub(crate) use xpt::{XptVariableType, XPT_CARD_LEN, XPT_MAX_FILE_BYTES, XPT_NAMESTR_LEN};

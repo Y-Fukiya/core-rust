@@ -113,6 +113,13 @@ jobs:
               --require-source-date-epoch
           done
 
+      - name: Upload release provenance smoke manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provenance-smoke-manifests
+          path: target/release-provenance/*/release-manifest.json
+          if-no-files-found: error
+
       - name: Open Rules curated fixture oracle
         run: |
           cargo run -p xtask -- open-rules run-score \
