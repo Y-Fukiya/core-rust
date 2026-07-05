@@ -148,9 +148,9 @@ pub(crate) fn series_from_json_values(name: &str, values: &[Value]) -> Series {
 
     if values
         .iter()
-        .all(|value| value.is_null() || value.as_f64().is_some())
+        .all(|value| value.is_null() || json_number_as_lossless_f64(value).is_some())
     {
-        let typed: Vec<Option<f64>> = values.iter().map(Value::as_f64).collect();
+        let typed: Vec<Option<f64>> = values.iter().map(json_number_as_lossless_f64).collect();
         return Series::new(name.into(), typed);
     }
 
@@ -163,4 +163,23 @@ pub(crate) fn series_from_json_values(name: &str, values: &[Value]) -> Series {
         })
         .collect();
     Series::new(name.into(), typed)
+}
+
+fn json_number_as_lossless_f64(value: &Value) -> Option<f64> {
+    const MAX_SAFE_F64_INTEGER: u64 = 9_007_199_254_740_991;
+
+    let number = value.as_number()?;
+    if let Some(value) = number.as_i64() {
+        if value.unsigned_abs() <= MAX_SAFE_F64_INTEGER {
+            return Some(value as f64);
+        }
+        return None;
+    }
+    if let Some(value) = number.as_u64() {
+        if value <= MAX_SAFE_F64_INTEGER {
+            return Some(value as f64);
+        }
+        return None;
+    }
+    number.as_f64().filter(|value| value.is_finite())
 }

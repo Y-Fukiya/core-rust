@@ -238,6 +238,53 @@ fn equality_respects_string_and_numeric_types() {
 }
 
 #[test]
+fn ordering_comparisons_parse_numeric_strings_without_changing_equality_semantics() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "AVAL_MAX": ["18446744073709551615", "10", ""]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition("AVAL_MAX", Operator::GreaterThan, literal(14)),
+            &dataset
+        )
+        .expect("numeric string greater-than"),
+        vec![true, false, false]
+    );
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AVAL_MAX",
+                Operator::EqualTo,
+                literal(18446744073709551615_u64)
+            ),
+            &dataset
+        )
+        .expect("equality remains type-sensitive"),
+        vec![false, false, false]
+    );
+}
+
+#[test]
 fn evaluates_case_insensitive_equality_and_list_comparators() {
     let dataset = test_dataset();
 

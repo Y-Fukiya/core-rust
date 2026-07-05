@@ -417,18 +417,21 @@ fn load_xpt_dataset_treats_dot_and_letter_missing_numeric_payloads_as_null() {
     );
     let mut bytes = fs::read(&path).expect("read xpt");
     let obs_header = find_test_xpt_card(&bytes, "HEADER RECORD*******OBS").expect("obs header");
+    let numeric_len = 8;
     let row_start = obs_header + XPT_CARD_LEN;
     bytes[row_start] = b'.';
-    for byte in &mut bytes[row_start + 1..row_start + 8] {
+    for byte in &mut bytes[row_start + 1..row_start + numeric_len] {
         *byte = 0;
     }
-    bytes[row_start + 8] = b'A';
-    for byte in &mut bytes[row_start + 9..row_start + 16] {
+    let second_row_start = row_start + numeric_len;
+    bytes[second_row_start] = b'A';
+    for byte in &mut bytes[second_row_start + 1..second_row_start + numeric_len] {
         *byte = 0;
     }
     fs::write(&path, bytes).expect("write mutated xpt");
 
     let dataset = load_xpt_dataset(&path).expect("load xpt");
+    assert_eq!(dataset.summary().row_count, 2);
     let values = dataset.frame().column("AEVAL").expect("value column");
 
     assert_eq!(values.get(0).expect("row 1"), AnyValue::Null);

@@ -74,6 +74,10 @@ pub(crate) use xpt::{XptVariableType, XPT_CARD_LEN, XPT_MAX_FILE_BYTES, XPT_NAME
 
 pub type Result<T> = std::result::Result<T, DataError>;
 
+pub(crate) const DATASET_MAX_FILE_BYTES: usize = 512 * 1024 * 1024;
+pub(crate) const DATASET_MAX_ROWS: usize = 5_000_000;
+pub(crate) const DATASET_MAX_CELLS: usize = 50_000_000;
+
 #[derive(Debug, Error)]
 pub enum DataError {
     #[error("unsupported dataset file extension: {0}")]
@@ -179,6 +183,37 @@ impl LoadedDataset {
     pub fn frame(&self) -> &DataFrame {
         &self.frame
     }
+}
+
+pub(crate) fn validate_dataset_file_size(path: &Path, format: &str) -> Result<()> {
+    let metadata = fs::metadata(path).map_err(|source| DataError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.len() > DATASET_MAX_FILE_BYTES as u64 {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "{format} file exceeds maximum supported size of {DATASET_MAX_FILE_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_frame_limits(frame: &DataFrame, format: &str) -> Result<()> {
+    let row_count = frame.height();
+    if row_count > DATASET_MAX_ROWS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "{format} row count exceeds maximum supported count of {DATASET_MAX_ROWS}"
+        )));
+    }
+    let cell_count = row_count
+        .checked_mul(frame.width())
+        .ok_or_else(|| DataError::InvalidDatasetPackage(format!("{format} cell count overflow")))?;
+    if cell_count > DATASET_MAX_CELLS {
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "{format} cell count exceeds maximum supported count of {DATASET_MAX_CELLS}"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

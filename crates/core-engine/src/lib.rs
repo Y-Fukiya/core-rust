@@ -1757,7 +1757,10 @@ fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> 
         return None;
     }
 
-    match (left.as_number(), right.as_number()) {
+    match (
+        left.as_type_insensitive_number(),
+        right.as_type_insensitive_number(),
+    ) {
         (Some(left), Some(right)) => left.partial_cmp(&right),
         _ => match (left.as_string(), right.as_string()) {
             (Some(left), Some(right)) => Some(left.cmp(right)),

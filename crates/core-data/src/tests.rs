@@ -44,6 +44,96 @@ fn load_csv_dataset_preserves_leading_zero_codes_as_strings() {
 }
 
 #[test]
+fn load_csv_dataset_rejects_oversized_file_before_reading() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("huge.csv");
+    let file = fs::File::create(&path).expect("create csv");
+    file.set_len(DATASET_MAX_FILE_BYTES as u64 + 1)
+        .expect("set sparse len");
+    drop(file);
+
+    let error = load_csv_dataset(&path).expect_err("oversized csv rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("CSV file exceeds maximum supported size"))
+    );
+}
+
+#[test]
+fn load_dataset_package_json_rejects_oversized_file_before_reading() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("huge.json");
+    let file = fs::File::create(&path).expect("create json");
+    file.set_len(DATASET_MAX_FILE_BYTES as u64 + 1)
+        .expect("set sparse len");
+    drop(file);
+
+    let error = load_dataset_package_json(&path).expect_err("oversized json rejected");
+
+    assert!(
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("DatasetPackage JSON file exceeds maximum supported size"))
+    );
+}
+
+#[test]
+fn load_dataset_package_json_preserves_large_unsigned_integer_as_string() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("package.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "domain": "DM",
+      "records": {
+        "SUBJID": [18446744073709551615]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write package json");
+
+    let datasets = load_dataset_package_json(&path).expect("load package json");
+    let subject = datasets[0]
+        .frame()
+        .column("SUBJID")
+        .expect("subject column");
+
+    assert_eq!(
+        subject.get(0).expect("row 1").extract_str(),
+        Some("18446744073709551615")
+    );
+}
+
+#[test]
+fn load_dataset_package_json_keeps_safe_integer_float_mixed_columns_numeric() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("package.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "domain": "LB",
+      "records": {
+        "AVAL": [1, 0.5, null]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write package json");
+
+    let datasets = load_dataset_package_json(&path).expect("load package json");
+    let value = datasets[0].frame().column("AVAL").expect("value column");
+
+    assert_eq!(value.get(0).expect("row 1").extract::<f64>(), Some(1.0));
+    assert_eq!(value.get(1).expect("row 2").extract::<f64>(), Some(0.5));
+    assert!(value.get(2).expect("row 3").is_null());
+}
+
+#[test]
 fn load_open_rules_data_dir_uses_variables_schema() {
     let dir = tempdir().expect("tempdir");
     fs::write(

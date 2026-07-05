@@ -1136,11 +1136,70 @@ fn resolve_jsonata_bindings(expression: &str) -> String {
         }
     }
 
-    let mut resolved = parts.last().copied().unwrap_or_default().to_owned();
-    for (name, value) in bindings {
-        resolved = resolved.replace(&format!("${name}"), &value);
+    replace_jsonata_binding_tokens(parts.last().copied().unwrap_or_default(), &bindings)
+}
+
+fn replace_jsonata_binding_tokens(expression: &str, bindings: &BTreeMap<String, String>) -> String {
+    let mut resolved = String::with_capacity(expression.len());
+    let mut chars = expression.char_indices().peekable();
+    let mut quote = None;
+    let mut escaped = false;
+
+    while let Some((byte_index, ch)) = chars.next() {
+        if let Some(quote_char) = quote {
+            resolved.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' | '`' => {
+                quote = Some(ch);
+                resolved.push(ch);
+            }
+            '$' => {
+                let name_start = byte_index + ch.len_utf8();
+                let name_end = expression[name_start..]
+                    .char_indices()
+                    .find_map(|(offset, ch)| {
+                        (!is_jsonata_binding_identifier_char(ch)).then_some(name_start + offset)
+                    })
+                    .unwrap_or(expression.len());
+                let name = &expression[name_start..name_end];
+                if !name.is_empty()
+                    && expression[name_end..]
+                        .chars()
+                        .next()
+                        .is_none_or(|ch| !is_jsonata_binding_identifier_char(ch))
+                {
+                    if let Some(value) = bindings.get(name) {
+                        resolved.push_str(value);
+                    } else {
+                        resolved.push(ch);
+                        resolved.push_str(name);
+                    }
+                    while chars.peek().is_some_and(|(index, _)| *index < name_end) {
+                        chars.next();
+                    }
+                } else {
+                    resolved.push(ch);
+                }
+            }
+            _ => resolved.push(ch),
+        }
     }
+
     resolved
+}
+
+fn is_jsonata_binding_identifier_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
 }
 
 fn split_top_level_statements(expression: &str) -> Vec<&str> {
@@ -2396,6 +2455,18 @@ Outcome:
         assert_eq!(contains.target.as_deref(), Some("DOMAIN"));
         assert_eq!(contains.operator, Operator::ContainsCaseInsensitive);
         assert_eq!(contains.comparator, ValueExpr::Literal(json!("ae")));
+    }
+
+    #[test]
+    fn jsonata_binding_resolution_is_token_aware() {
+        let expression = "($a := DOMAIN; $ae := AETERM; $a = 'DM' and $ae = \"$a\" and `$a` = $a)";
+
+        let resolved = resolve_jsonata_bindings(expression);
+
+        assert_eq!(
+            resolved,
+            "DOMAIN = 'DM' and AETERM = \"$a\" and `$a` = DOMAIN"
+        );
     }
 
     #[test]

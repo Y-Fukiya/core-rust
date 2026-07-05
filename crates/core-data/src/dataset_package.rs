@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use crate::json_table::records_to_frame;
 use crate::{
-    canonical_or_original, file_stem_str, DataError, DatasetMetadata, DatasetSourceFormat,
-    DatasetVariable, LoadedDataset, Result,
+    canonical_or_original, file_stem_str, validate_dataset_file_size, validate_frame_limits,
+    DataError, DatasetMetadata, DatasetSourceFormat, DatasetVariable, LoadedDataset, Result,
 };
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +30,7 @@ struct DatasetPackageDataset {
 
 pub fn load_dataset_package_json(path: impl AsRef<Path>) -> Result<Vec<LoadedDataset>> {
     let path = path.as_ref();
+    validate_dataset_file_size(path, "DatasetPackage JSON")?;
     let source = std::fs::read_to_string(path).map_err(|source| DataError::Io {
         path: path.to_path_buf(),
         source,
@@ -57,6 +58,7 @@ fn dataset_package_entry_to_loaded_dataset(
         path: package_path.to_path_buf(),
         source,
     })?;
+    validate_frame_limits(&frame, "DatasetPackage JSON")?;
 
     let filename = dataset.filename.clone().unwrap_or_else(|| {
         dataset

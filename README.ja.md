@@ -151,6 +151,24 @@ python -m cdisc_rulekit.cli pilot-preflight \
 生成物は review 用 draft です。明示的に export しない限り、Open Rules の
 既存 `Published/` は変更されません。
 
+## CLI の終了コード方針
+
+`core-rs validate` は、validation 実行と report 生成が完了した場合、report 内に
+failed / skipped rule result が含まれていても既定では exit `0` になります。これは、
+手元確認で report を読む前にコマンド自体が失敗扱いになるのを避けるためです。
+
+CI や release gate では、明示的な fail policy を使ってください。
+
+```sh
+core-rs validate ... --fail-on failed
+core-rs validate ... --fail-on failed,skipped
+core-rs validate ... --strict
+```
+
+`--strict` は failed と skipped の両方で失敗する設定と同等です。これらの mode の
+non-zero exit は、report は生成されたが、指定した validation result policy を満たさなかった
+ことを意味します。
+
 ## リリースと監査証跡
 
 release artifact には provenance manifest を添付してください。

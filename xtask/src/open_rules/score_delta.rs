@@ -34,8 +34,8 @@ struct ScoreboardDelta {
     bucket_transitions: Vec<TransitionSummary>,
     normalization_transitions: Vec<TransitionSummary>,
     top_affected_rules: Vec<RuleImpactSummary>,
-    changed_cases: Vec<ChangedCaseExample>,
-    example_changed_cases: Vec<ChangedCaseExample>,
+    changed_cases: Vec<ChangedCase>,
+    example_changed_cases: Vec<ChangedCase>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,7 +76,7 @@ struct RuleImpactSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct ChangedCaseExample {
+struct ChangedCase {
     scope: String,
     rule_id: String,
     case_kind: String,
@@ -467,7 +467,7 @@ fn changed_cases(
     default: &Scoreboard,
     strict: &Scoreboard,
     limit: Option<usize>,
-) -> Vec<ChangedCaseExample> {
+) -> Vec<ChangedCase> {
     let default_cases = cases_by_key(&default.cases);
     let strict_cases = cases_by_key(&strict.cases);
     let mut changed = default_cases
@@ -479,7 +479,7 @@ fn changed_cases(
             if !cases_differ_for_delta(default_case, strict_case) {
                 return None;
             }
-            Some(ChangedCaseExample {
+            Some(ChangedCase {
                 scope: default_case.scope.clone(),
                 rule_id: default_case.rule_id.clone(),
                 case_kind: default_case.case_kind.clone(),
@@ -791,7 +791,7 @@ fn push_rule_impact_table(lines: &mut Vec<String>, title: &str, rows: &[RuleImpa
     lines.push(String::new());
 }
 
-fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[ChangedCaseExample]) {
+fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[ChangedCase]) {
     if rows.is_empty() {
         return;
     }
@@ -982,9 +982,16 @@ mod tests {
             ),
             "{markdown}"
         );
-        let json = serde_json::to_string(&delta).expect("serialize delta");
-        assert!(json.contains("\"changed_cases\""));
-        assert!(json.contains("CORE-000025"));
+        let json = serde_json::to_value(&delta).expect("serialize delta");
+        let changed_cases = json["changed_cases"]
+            .as_array()
+            .expect("changed_cases array");
+        let example_changed_cases = json["example_changed_cases"]
+            .as_array()
+            .expect("example_changed_cases array");
+        assert_eq!(changed_cases.len(), 25);
+        assert_eq!(example_changed_cases.len(), 20);
+        assert_eq!(changed_cases[24]["rule_id"], "CORE-000025");
     }
 
     #[test]
