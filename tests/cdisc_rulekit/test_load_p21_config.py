@@ -89,16 +89,42 @@ def test_load_p21_config_rejects_dtd_or_entity_declarations(tmp_path):
         load_p21_config_rules([config])
 
 
+def test_load_p21_config_wraps_configured_xml_parser_exceptions(tmp_path, monkeypatch):
+    config = tmp_path / "blocked.xml"
+    config.write_text("<config />", encoding="utf-8")
+
+    class ParserBlocked(Exception):
+        pass
+
+    class BlockingParser:
+        @staticmethod
+        def fromstring(_payload):
+            raise ParserBlocked("blocked entity")
+
+    monkeypatch.setattr(p21_config, "DefusedET", BlockingParser)
+    monkeypatch.setattr(p21_config, "XML_PARSE_EXCEPTIONS", (ParserBlocked,))
+
+    with pytest.raises(ValueError, match="malformed XML configuration") as excinfo:
+        load_p21_config_rules([config])
+
+    assert str(config) in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, ParserBlocked)
+
+
 def test_load_p21_config_rejects_non_file_inputs(tmp_path):
-    with pytest.raises(ValueError, match="XML configuration input must be a regular file"):
+    with pytest.raises(ValueError, match="XML configuration input must be a regular file") as excinfo:
         load_p21_config_rules([tmp_path])
+
+    assert str(tmp_path) in str(excinfo.value)
 
 
 def test_load_p21_config_rejects_missing_inputs(tmp_path):
     missing = tmp_path / "missing.xml"
 
-    with pytest.raises(ValueError, match="XML configuration file does not exist"):
+    with pytest.raises(ValueError, match="XML configuration file does not exist") as excinfo:
         load_p21_config_rules([missing])
+
+    assert str(missing) in str(excinfo.value)
 
 
 def test_load_p21_config_rejects_oversized_xml_before_reading(tmp_path, monkeypatch):

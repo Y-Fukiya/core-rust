@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 try:
+    from defusedxml.common import DefusedXmlException
     from defusedxml import ElementTree as DefusedET
 except ImportError:  # pragma: no cover - optional hardening dependency.
     # pyproject.toml declares defusedxml for installed environments. The
     # fallback keeps source-tree smoke tests usable before dependencies are
     # installed; DTD/entity declarations are still rejected before parsing.
+    DefusedXmlException = None
     DefusedET = None
+
+XML_PARSE_EXCEPTIONS = (
+    (ET.ParseError, DefusedXmlException) if DefusedXmlException is not None else (ET.ParseError,)
+)
 
 from .io_utils import normalize_blank, split_semicolon_list
 from .load_p21 import extract_cg_ids
@@ -73,7 +79,10 @@ def write_p21_config_extraction_report(
 
 
 def _load_p21_config_path(path: Path, source_label: str) -> tuple[list[CanonicalRule], list[str]]:
-    root = _parse_config_xml(path)
+    try:
+        root = _parse_config_xml(path)
+    except XML_PARSE_EXCEPTIONS as exc:
+        raise ValueError(f"{path}: malformed XML configuration: {exc}") from exc
     rules, warnings = _collect_rules(source_label, root, _attributes(root), {})
     if not rules and not warnings:
         warnings.append(f"{source_label}: no rule elements found")
@@ -202,19 +211,19 @@ def _canonical_rule(
 
 def _parse_config_xml(path: Path) -> ET.Element:
     if not path.exists():
-        raise ValueError(f"{path.name}: XML configuration file does not exist")
+        raise ValueError(f"{path}: XML configuration file does not exist")
     # Symlink-to-file inputs are accepted because this converter only processes
     # explicit local user-supplied XML paths; non-file inputs remain rejected.
     if not path.is_file():
-        raise ValueError(f"{path.name}: XML configuration input must be a regular file")
+        raise ValueError(f"{path}: XML configuration input must be a regular file")
     if path.stat().st_size > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     payload = path.read_bytes()
     if len(payload) > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path.name}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     lowered = payload.lower()
     if b"<!doctype" in lowered or b"<!entity" in lowered:
-        raise ValueError(f"{path.name}: DTD/entity declarations are not supported")
+        raise ValueError(f"{path}: DTD/entity declarations are not supported")
     parser = DefusedET if DefusedET is not None else ET
     return parser.fromstring(payload)
 
