@@ -1,5 +1,6 @@
 import pytest
 
+import cdisc_rulekit.load_p21_config as p21_config
 from cdisc_rulekit.load_p21_config import load_p21_config_rules
 
 
@@ -34,8 +35,29 @@ def test_load_p21_config_rejects_path_like_source_labels(tmp_path):
     config = tmp_path / "config.xml"
     config.write_text('<config><rule id="SD0001" /></config>', encoding="utf-8")
 
-    with pytest.raises(ValueError, match="source-label values must be labels"):
+    with pytest.raises(ValueError, match="source-label values may contain only"):
         load_p21_config_rules([config], source_labels=["/tmp/config.xml"])
+
+
+def test_load_p21_config_rejects_source_label_separators(tmp_path):
+    config = tmp_path / "config.xml"
+    config.write_text('<config><rule id="SD0001" /></config>', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source-label values may contain only"):
+        load_p21_config_rules([config], source_labels=["bad|label"])
+
+    with pytest.raises(ValueError, match="source-label values may contain only"):
+        load_p21_config_rules([config], source_labels=["bad\nlabel"])
+
+
+def test_load_p21_config_sanitizes_default_source_label_filename(tmp_path):
+    config = tmp_path / "bad|name.xml"
+    config.write_text('<config><rule id="SD0001" /></config>', encoding="utf-8")
+
+    rules, warnings = load_p21_config_rules([config])
+
+    assert warnings == []
+    assert rules[0].source_path == "source_001:bad_name.xml"
 
 
 def test_load_p21_config_rejects_mismatched_source_label_count(tmp_path):
@@ -64,6 +86,20 @@ def test_load_p21_config_rejects_dtd_or_entity_declarations(tmp_path):
     )
 
     with pytest.raises(ValueError, match="DTD/entity declarations are not supported"):
+        load_p21_config_rules([config])
+
+
+def test_load_p21_config_rejects_oversized_xml_before_reading(tmp_path, monkeypatch):
+    config = tmp_path / "large.xml"
+    config.write_text("<config />", encoding="utf-8")
+    monkeypatch.setattr(p21_config, "MAX_CONFIG_BYTES", 4)
+    monkeypatch.setattr(
+        p21_config.Path,
+        "read_bytes",
+        lambda _path: pytest.fail("oversized XML should be rejected before read_bytes"),
+    )
+
+    with pytest.raises(ValueError, match="XML configuration exceeds 4 bytes"):
         load_p21_config_rules([config])
 
 
@@ -105,6 +141,22 @@ def test_load_p21_config_reads_nested_domain_class_and_variable_lists(tmp_path):
     assert rules[0].domains == ["AE", "CM"]
     assert rules[0].classes == ["EVENTS", "INTERVENTIONS"]
     assert rules[0].variables == ["AEDECOD", "AETERM"]
+
+
+def test_load_p21_config_trims_attribute_values(tmp_path):
+    config = tmp_path / "trim.xml"
+    config.write_text(
+        '<config agency=" FDA "><standard name=" SDTM-IG " version=" 3.3 "><rule id=" SD0001 " /></standard></config>',
+        encoding="utf-8",
+    )
+
+    rules, warnings = load_p21_config_rules([config])
+
+    assert warnings == []
+    assert rules[0].p21_rule_id == "SD0001"
+    assert rules[0].agency == "FDA"
+    assert rules[0].standard_name == "SDTM-IG"
+    assert rules[0].standard_version == "3.3"
 
 
 def test_load_p21_config_reads_list_wrapper_aliases(tmp_path):
