@@ -129,6 +129,8 @@ impl ScoreboardDelta {
         default: &Scoreboard,
         strict: &Scoreboard,
     ) -> Self {
+        let changed_cases = changed_cases(default, strict);
+        let example_changed_cases = changed_cases.iter().take(20).cloned().collect();
         Self {
             default_scoreboard,
             strict_scoreboard,
@@ -468,7 +470,7 @@ fn changed_cases(
 ) -> Vec<ChangedCaseExample> {
     let default_cases = cases_by_key(&default.cases);
     let strict_cases = cases_by_key(&strict.cases);
-    let mut examples = default_cases
+    let mut changed = default_cases
         .into_iter()
         .filter_map(|(key, default_case)| {
             let strict_case = strict_cases
@@ -488,7 +490,7 @@ fn changed_cases(
             })
         })
         .collect::<Vec<_>>();
-    examples.sort_by(|left, right| {
+    changed.sort_by(|left, right| {
         left.scope
             .cmp(&right.scope)
             .then_with(|| left.rule_id.cmp(&right.rule_id))
@@ -795,6 +797,9 @@ fn push_changed_case_examples(lines: &mut Vec<String>, title: &str, rows: &[Chan
     }
     lines.extend([
         format!("## {title}"),
+        String::new(),
+        "Showing the first changed cases in sorted order. The full changed-case list is available in `scoreboard-delta.json` as `changed_cases`."
+            .to_owned(),
         String::new(),
         "| Scope | Rule ID | Kind | Case | Transition | Default normalizations | Strict normalizations |"
             .to_owned(),

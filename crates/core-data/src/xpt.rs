@@ -392,6 +392,9 @@ fn trim_xpt_text(bytes: &[u8]) -> Option<String> {
         .iter()
         .position(|byte| !matches!(*byte, 0 | b' '))
         .unwrap_or(end);
+    // Malformed legacy transport files should stay loadable. Invalid character
+    // payloads decode to None and the caller maps them to a blank value, letting
+    // validation rules treat the cell as empty instead of failing the dataset load.
     std::str::from_utf8(&bytes[start..end])
         .ok()
         .map(str::to_owned)
@@ -422,7 +425,10 @@ mod tests {
 
     #[test]
     fn parse_xpt_namestr_rejects_non_namestr_lengths() {
-        for length in [0, 1, 79, XPT_NAMESTR_LEN - 1, XPT_NAMESTR_LEN + 1, 280] {
+        for length in 0..=300 {
+            if length == XPT_NAMESTR_LEN {
+                continue;
+            }
             let error = parse_xpt_namestr(&vec![0; length])
                 .expect_err("invalid NAMESTR byte length should fail");
             expect_invalid_dataset_package(error, "invalid length");
@@ -430,13 +436,15 @@ mod tests {
     }
 
     #[test]
-    fn observation_row_count_trims_padding_rows_and_ignores_partial_tail() {
-        let mut data = Vec::new();
-        data.extend_from_slice(b"AE");
-        data.extend_from_slice(b"  ");
-        data.push(b'X');
+    fn observation_row_count_trims_padding_rows_and_ignores_partial_tails() {
+        for tail_len in 0..4 {
+            let mut data = Vec::new();
+            data.extend_from_slice(b"ABCD");
+            data.extend_from_slice(b"    ");
+            data.extend(vec![b'X'; tail_len]);
 
-        assert_eq!(observation_row_count(&data, 2), 1);
+            assert_eq!(observation_row_count(&data, 4), 1);
+        }
     }
 
     #[test]
@@ -454,11 +462,19 @@ mod tests {
 
     #[test]
     fn decode_xpt_numeric_missing_marker_payloads_are_null() {
-        for marker in [b'.', b'_', b'A', b'M', b'Z'] {
+        let markers = std::iter::once(b'.')
+            .chain(std::iter::once(b'_'))
+            .chain(b'A'..=b'Z');
+        for marker in markers {
             let mut payload = [0_u8; 8];
             payload[0] = marker;
             assert_eq!(decode_xpt_numeric(&payload), Value::Null);
         }
+    }
+
+    #[test]
+    fn trim_xpt_text_invalid_utf8_payloads_decode_as_none() {
+        assert_eq!(trim_xpt_text(&[b' ', 0xff, 0xfe, b' ']), None);
     }
 
     #[test]
@@ -470,6 +486,33 @@ mod tests {
         assert_eq!(decode_xpt_numeric(&positive_one), Value::from(1));
         assert_eq!(decode_xpt_numeric(&negative_one), Value::from(-1));
         assert_eq!(decode_xpt_numeric(&positive_half), Value::from(0.5));
+    }
+
+    #[test]
+    fn ibm_float_to_f64_matches_sign_exponent_fraction_formula() {
+        for (sign_bit, sign) in [(0x00, 1.0), (0x80, -1.0)] {
+            for (exponent_byte, exponent) in [(0x40, 0), (0x41, 1), (0x42, 2)] {
+                for first_fraction_byte in [0x10_u8, 0x20, 0x80] {
+                    let bytes = [
+                        sign_bit | exponent_byte,
+                        first_fraction_byte,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ];
+                    let fraction = f64::from(first_fraction_byte) / 256.0;
+                    let expected = sign * fraction * 16_f64.powi(exponent);
+                    let actual = ibm_float_to_f64(&bytes);
+                    assert!(
+                        (actual - expected).abs() < 1e-12,
+                        "bytes={bytes:?} expected {expected}, got {actual}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
