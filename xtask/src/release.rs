@@ -211,7 +211,7 @@ fn release_artifact(path: &Path, artifact_root: Option<&Path>) -> Result<Release
 
 fn sha256_file(path: &Path) -> Result<String> {
     if !path.is_file() {
-        anyhow::bail!("artifact is not a file: {}", path.display());
+        anyhow::bail!("file is not a regular file: {}", path.display());
     }
 
     let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
@@ -296,6 +296,9 @@ fn verify_release_manifest(
         .source_root
         .clone()
         .unwrap_or_else(|| PathBuf::from("."));
+    if policy.source_root.is_some() && !source_root.is_dir() {
+        anyhow::bail!("source root is not a directory: {}", source_root.display());
+    }
     let mut should_fail = false;
 
     if manifest.schema_version != 1 {
@@ -717,6 +720,10 @@ mod tests {
             error.to_string().contains("hash") && format!("{error:#}").contains("Cargo.lock"),
             "unexpected error: {error:#}"
         );
+        assert!(
+            format!("{error:#}").contains("file is not a regular file"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]
@@ -1074,6 +1081,42 @@ mod tests {
         .expect("verify manifest");
 
         assert!(!should_fail);
+    }
+
+    #[test]
+    fn release_verify_rejects_file_source_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source_root = dir.path().join("source-file");
+        let root = dir.path().join("bundle");
+        std::fs::write(&source_root, b"not a directory").expect("write source file");
+        std::fs::create_dir_all(&root).expect("mkdir root");
+        let manifest = build_release_manifest(ReleaseManifestInput {
+            git_commit: Some("abc123".to_owned()),
+            git_dirty: Some(false),
+            rust_version: "rustc test".to_owned(),
+            source_date_epoch: None,
+            cargo_lock_sha256: None,
+            target_triple: None,
+            ci_run_url: None,
+            artifacts: Vec::new(),
+        });
+        let manifest_path = root.join("release-manifest.json");
+        write_release_manifest(&manifest_path, &manifest).expect("write manifest");
+
+        let error = verify_release_manifest(
+            &manifest_path,
+            Some(&root),
+            ReleaseVerifyPolicy {
+                source_root: Some(source_root),
+                ..Default::default()
+            },
+        )
+        .expect_err("file source root should fail");
+
+        assert!(
+            format!("{error:#}").contains("source root is not a directory"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]

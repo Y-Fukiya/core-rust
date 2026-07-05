@@ -81,6 +81,9 @@ target/core-rust-report/validation.log
 - DatasetPackageJson 風 JSON
 - SAS XPT v5 subset
 
+XPT 対応は境界を設けた v5 parser subset です。提出品質の XPORT
+transport 妥当性確認は、公式ツールで行ってください。
+
 メタデータ:
 
 - Define-XML

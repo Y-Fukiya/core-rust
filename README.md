@@ -83,6 +83,9 @@ Data:
 - DatasetPackageJson-style JSON
 - SAS XPT v5 subset
 
+XPT support is a bounded v5 parser subset. Use official tooling for
+submission-grade XPORT transport validation.
+
 Metadata:
 
 - Define-XML datasets, variables, codelists, value lists, where clauses,

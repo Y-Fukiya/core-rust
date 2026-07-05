@@ -129,7 +129,7 @@ impl ScoreboardDelta {
         default: &Scoreboard,
         strict: &Scoreboard,
     ) -> Self {
-        let changed_cases = changed_cases(default, strict);
+        let changed_cases = changed_cases(default, strict, None);
         let example_changed_cases = changed_cases.iter().take(20).cloned().collect();
         Self {
             default_scoreboard,
@@ -463,7 +463,11 @@ fn top_affected_rules(
     summaries
 }
 
-fn changed_cases(default: &Scoreboard, strict: &Scoreboard) -> Vec<ChangedCaseExample> {
+fn changed_cases(
+    default: &Scoreboard,
+    strict: &Scoreboard,
+    limit: Option<usize>,
+) -> Vec<ChangedCaseExample> {
     let default_cases = cases_by_key(&default.cases);
     let strict_cases = cases_by_key(&strict.cases);
     let mut changed = default_cases
@@ -493,6 +497,9 @@ fn changed_cases(default: &Scoreboard, strict: &Scoreboard) -> Vec<ChangedCaseEx
             .then_with(|| left.case_kind.cmp(&right.case_kind))
             .then_with(|| left.case_id.cmp(&right.case_id))
     });
+    if let Some(limit) = limit {
+        changed.truncate(limit);
+    }
     changed
 }
 
@@ -698,6 +705,13 @@ fn markdown_delta(delta: &ScoreboardDelta) -> String {
         "Example Changed Cases",
         &delta.example_changed_cases,
     );
+    if delta.changed_cases.len() > delta.example_changed_cases.len() {
+        lines.push(format!(
+            "The full changed-case list is available in `scoreboard-delta.json` as `changed_cases` ({} cases).",
+            delta.changed_cases.len()
+        ));
+        lines.push(String::new());
+    }
     lines.join("\n") + "\n"
 }
 
@@ -922,6 +936,44 @@ mod tests {
         assert!(json.contains("\"metric\": \"supported_mismatch\""));
         assert!(json.contains("\"changed_cases\""));
         assert!(json.contains("\"example_changed_cases\""));
+    }
+
+    #[test]
+    fn delta_json_keeps_full_changed_case_list_separate_from_examples() {
+        let default = scoreboard(
+            (1..=25)
+                .map(|index| {
+                    case(
+                        &format!("CORE-{index:06}"),
+                        ScoreBucket::SupportedMatch,
+                        ScoringPolicy::OracleGapNormalized,
+                        vec!["row_locator_identity_relaxed"],
+                    )
+                })
+                .collect(),
+        );
+        let strict = scoreboard(
+            (1..=25)
+                .map(|index| {
+                    case(
+                        &format!("CORE-{index:06}"),
+                        ScoreBucket::SupportedMismatch,
+                        ScoringPolicy::StrictIdentity,
+                        vec![],
+                    )
+                })
+                .collect(),
+        );
+
+        let delta = ScoreboardDelta::new(
+            "default.json".into(),
+            "strict.json".into(),
+            &default,
+            &strict,
+        );
+
+        assert_eq!(delta.changed_cases.len(), 25);
+        assert_eq!(delta.example_changed_cases.len(), 20);
     }
 
     #[test]
