@@ -201,6 +201,10 @@ def _canonical_rule(
 
 
 def _parse_config_xml(path: Path) -> ET.Element:
+    if not path.exists():
+        raise ValueError(f"{path.name}: XML configuration file does not exist")
+    # Symlink-to-file inputs are accepted because this converter only processes
+    # explicit local user-supplied XML paths; non-file inputs remain rejected.
     if not path.is_file():
         raise ValueError(f"{path.name}: XML configuration input must be a regular file")
     if path.stat().st_size > MAX_CONFIG_BYTES:
