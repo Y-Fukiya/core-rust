@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 try:
+    from defusedxml.common import DefusedXmlException
     from defusedxml import ElementTree as DefusedET
 except ImportError:  # pragma: no cover - optional hardening dependency.
     # pyproject.toml declares defusedxml for installed environments. The
     # fallback keeps source-tree smoke tests usable before dependencies are
     # installed; DTD/entity declarations are still rejected before parsing.
+    DefusedXmlException = None
     DefusedET = None
+
+XML_PARSE_EXCEPTIONS = (
+    (ET.ParseError, DefusedXmlException) if DefusedXmlException is not None else (ET.ParseError,)
+)
 
 from .io_utils import normalize_blank, split_semicolon_list
 from .load_p21 import extract_cg_ids
@@ -75,7 +81,7 @@ def write_p21_config_extraction_report(
 def _load_p21_config_path(path: Path, source_label: str) -> tuple[list[CanonicalRule], list[str]]:
     try:
         root = _parse_config_xml(path)
-    except ET.ParseError as exc:
+    except XML_PARSE_EXCEPTIONS as exc:
         raise ValueError(f"{path}: malformed XML configuration: {exc}") from exc
     rules, warnings = _collect_rules(source_label, root, _attributes(root), {})
     if not rules and not warnings:

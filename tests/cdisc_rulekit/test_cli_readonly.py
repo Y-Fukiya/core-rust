@@ -166,6 +166,8 @@ def test_convert_p21_config_rejects_malformed_xml(tmp_path):
     assert result.returncode != 0
     assert str(config) in result.stderr
     assert "malformed XML configuration" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stderr.startswith("error: ")
     assert not (out_dir / "p21_rules_normalized.csv").exists()
 
 
