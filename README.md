@@ -134,9 +134,39 @@ and default-vs-strict delta artifacts.
 
 ## P21PORT Rulekit
 
-The optional Python `cdisc_rulekit` package helps inspect P21 rule exports,
-classify conversion candidates, generate draft P21PORT rules, run candidate
-rules, and compare structural outputs.
+The optional Python `cdisc_rulekit` package helps inspect authorized,
+user-supplied P21-style rule catalog CSVs, classify conversion candidates,
+generate draft P21PORT rules, run candidate rules, and compare structural
+outputs.
+
+P21PORT does not fetch, scrape, or export proprietary Pinnacle 21 rule
+definitions. In particular, do not assume Pinnacle 21 Community can provide the
+rule definition CSVs used by `--p21-rules`; bring only rule catalogs you are
+licensed and permitted to use.
+
+If you use public Pinnacle 21 Community configuration sources such as
+`p21-community/configs`, review the applicable Pinnacle 21 license first.
+Generated catalogs or adapted rules should remain local/user-supplied artifacts
+unless your license permits sharing them.
+
+For local XML configuration files that you are permitted to process, use the
+XML-to-catalog converter before `build-readonly`:
+
+```sh
+PYTHONPATH=src python3 -m cdisc_rulekit.cli convert-p21-config \
+  --input /path/to/local/p21-config.xml \
+  --out target/p21-config-catalog
+
+PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
+  --p21-rules target/p21-config-catalog/p21_rules_normalized.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output/reports
+```
+
+The converter writes `p21_rules_normalized.csv`,
+`p21_rules_normalized.jsonl`, and an `extraction_report.md`. It does not
+download configuration files, and the generated catalog should not be committed
+or shared unless your license permits it.
 
 ```sh
 python -m pip install -e ".[test]"
@@ -155,8 +185,9 @@ python -m cdisc_rulekit.cli pilot-preflight \
   --limit 20
 ```
 
-P21PORT outputs are draft/review artifacts. Existing Open Rules `Published/`
-content is not modified unless you explicitly export into a target tree.
+P21PORT outputs are draft/review artifacts, not a Pinnacle 21 replacement.
+Existing Open Rules `Published/` content is not modified unless you explicitly
+export into a target tree.
 
 ## CLI Exit Policy
 

@@ -131,8 +131,37 @@ default-vs-strict delta artifact をアップロードします。
 
 ## P21PORT 支援
 
-Python の `cdisc_rulekit` は、P21 rule export の棚卸し、変換候補分類、
-draft rule 生成、実行、構造比較を支援します。
+Python の `cdisc_rulekit` は、利用者が正規に入手・利用許諾を持つ
+P21-style rule catalog CSV の棚卸し、変換候補分類、draft rule 生成、
+実行、構造比較を支援します。
+
+P21PORT は Pinnacle 21 の proprietary rule definition を取得、scrape、
+export する機能ではありません。特に、Pinnacle 21 Community から
+`--p21-rules` に渡せる rule definition CSV が出力できる前提にはしていません。
+利用許諾上問題なく使える rule catalog だけを持ち込んでください。
+
+`p21-community/configs` などの公開 Pinnacle 21 Community configuration source を
+使う場合も、事前に適用ライセンスを確認してください。生成した catalog や
+adapted rule は、ライセンス上共有が許される場合を除き、ローカル/利用者持ち込み
+artifact として扱います。
+
+利用許諾上処理できるローカル XML configuration file がある場合は、
+`build-readonly` の前に XML-to-catalog converter を使えます。
+
+```sh
+PYTHONPATH=src python3 -m cdisc_rulekit.cli convert-p21-config \
+  --input /path/to/local/p21-config.xml \
+  --out target/p21-config-catalog
+
+PYTHONPATH=src python3 -m cdisc_rulekit.cli build-readonly \
+  --p21-rules target/p21-config-catalog/p21_rules_normalized.csv \
+  --open-rules-repo input/cdisc-open-rules-main.zip \
+  --out output/reports
+```
+
+converter は `p21_rules_normalized.csv`、`p21_rules_normalized.jsonl`、
+`extraction_report.md` を出力します。configuration file の download は行わず、
+生成 catalog もライセンス上許される場合を除き commit / 共有しないでください。
 
 ```sh
 python -m pip install -e ".[test]"
@@ -151,8 +180,8 @@ python -m cdisc_rulekit.cli pilot-preflight \
   --limit 20
 ```
 
-生成物は review 用 draft です。明示的に export しない限り、Open Rules の
-既存 `Published/` は変更されません。
+生成物は review 用 draft であり、Pinnacle 21 の代替ではありません。
+明示的に export しない限り、Open Rules の既存 `Published/` は変更されません。
 
 ## CLI の終了コード方針
 

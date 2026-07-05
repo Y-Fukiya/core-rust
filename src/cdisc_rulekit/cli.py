@@ -20,6 +20,7 @@ from .export_rules import export_generated_rules
 from .generate_rules import generate_rules, operator_set_from_inventory_rows
 from .inputs import resolve_open_rules_input
 from .io_utils import read_jsonl
+from .load_p21_config import load_p21_config_rules, write_p21_config_extraction_report
 from .load_open_rules import load_open_rules
 from .load_p21 import load_p21_rules
 from .map_rules import map_p21_to_core, standard_key
@@ -118,6 +119,16 @@ def cmd_ingest_p21(args: argparse.Namespace) -> int:
     for warning in warnings:
         print(f"warning: {warning}")
     print(f"ingest-p21 complete: {len(rules)} rules")
+    return 0
+
+
+def cmd_convert_p21_config(args: argparse.Namespace) -> int:
+    rules, warnings = load_p21_config_rules(args.input)
+    emit_p21_catalog(args.out, rules)
+    write_p21_config_extraction_report(args.out / "extraction_report.md", rules, warnings)
+    for warning in warnings:
+        print(f"warning: {warning}")
+    print(f"convert-p21-config complete: {len(rules)} rule(s)")
     return 0
 
 
@@ -361,6 +372,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_p21.add_argument("--domain-map", type=Path, default=None)
     ingest_p21.add_argument("--out", type=Path, required=True)
     ingest_p21.set_defaults(func=cmd_ingest_p21)
+
+    convert_p21_config = subcommands.add_parser("convert-p21-config")
+    convert_p21_config.add_argument("--input", type=Path, required=True, nargs="+")
+    convert_p21_config.add_argument("--out", type=Path, required=True)
+    convert_p21_config.set_defaults(func=cmd_convert_p21_config)
 
     ingest_open = subcommands.add_parser("ingest-open-rules")
     ingest_open.add_argument("--repo", type=Path, required=True)

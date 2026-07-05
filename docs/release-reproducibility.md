@@ -126,6 +126,16 @@ directions, fuzzy mapping, duplicate P21 rule-id preservation, and unsupported
 generation probes. It is not a Pinnacle 21 or official CDISC Validator
 equivalence check.
 
+The fixture corpus is synthetic and non-proprietary. P21PORT does not retrieve
+Pinnacle 21 rule definitions; production pilots must provide authorized
+user-supplied rule catalog CSVs.
+
+If a pilot derives inputs from public Pinnacle 21 Community configuration
+repositories, keep the checkout and derived catalogs outside this repository
+unless the applicable Pinnacle 21 license permits sharing adapted material.
+The optional `convert-p21-config` command is a local XML-to-catalog helper for
+that workflow; it does not download source configuration files.
+
 The default pytest configuration excludes subprocess-heavy integration tests.
 Run the P21PORT smoke explicitly with either:
 
