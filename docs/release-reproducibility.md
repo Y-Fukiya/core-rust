@@ -14,6 +14,7 @@ release provenance manifest:
 cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
+  --target-triple <expected-target-triple> \
   --artifact target/release-provenance/<release-artifact>
 cargo run -p xtask -- release-verify \
   --manifest target/release-provenance/release-manifest.json \
@@ -33,7 +34,8 @@ The manifest records:
 - whether git provenance was available when the manifest was written
 - optional artifact paths and SHA-256 digests for files passed with `--artifact`
 - `Cargo.lock` SHA-256 when available
-- Rust target triple when `rustc -vV` is available
+- Rust target triple from `--target-triple`, or from `rustc -vV` when the
+  option is omitted
 - GitHub Actions run URL when written inside GitHub Actions
 - GitHub Actions run metadata when available: run id, run attempt, workflow,
   job, ref name/type, commit SHA, and actor
@@ -49,11 +51,13 @@ contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
 `--source-root` so dependency drift is caught before archive publication. If
 `--source-root` is omitted, the current working directory is used.
 The main CI workflow includes a lightweight release provenance smoke gate that
-creates a multi-artifact manifest and verifies it with the strict policy flags.
+creates and verifies multi-artifact manifests for more than one target triple.
 Use the stricter policy flags for reviewed release bundles:
 
-- `--target-triple <triple>` requires the manifest's recorded Rust host/target
-  triple to match the reviewed build target.
+- `release-manifest --target-triple <triple>` records the reviewed build target
+  explicitly; otherwise the host triple from `rustc -vV` is recorded.
+- `release-verify --target-triple <triple>` requires the manifest's recorded
+  Rust target triple to match the reviewed build target.
 - `--source-root <dir>` points verification at the source checkout whose
   `Cargo.lock` should match the manifest.
 - `--require-clean-git` requires available git provenance and `dirty=false`.
@@ -121,9 +125,10 @@ changes the headline metrics.
 - Pass every reviewed binary/archive through `--artifact` and, where practical,
   pair it with `--artifact-root` so its SHA-256 digest and portable relative
   path are recorded in the manifest.
-- For multi-platform or multi-format releases, pass every reviewed binary,
-  archive, and generated harness bundle as separate `--artifact` values. The
-  verifier checks each recorded artifact independently, so a single changed
-  target in a release matrix fails verification.
+- For multi-platform or multi-format releases, write one manifest per target
+  triple and pass every reviewed binary, archive, and generated harness bundle
+  for that target as separate `--artifact` values. The verifier checks each
+  recorded artifact independently, so a single changed target in a release
+  matrix fails verification.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

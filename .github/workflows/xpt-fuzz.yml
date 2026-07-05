@@ -22,6 +22,26 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
+      - name: Verify XPT fuzz seed corpus
+        run: |
+          required_seeds=(
+            character_dataset_seed
+            ibm_float_seed
+            library_header_seed
+            namestr_header_seed
+            numeric_payload_seed
+            observation_padding_seed
+            validish_transport_headers_seed
+          )
+          for seed in "${required_seeds[@]}"; do
+            test -s "fuzz/corpus/xpt_parser/${seed}"
+          done
+          oversized="$(find fuzz/corpus/xpt_parser -type f ! -name README.md -size +64k -print -quit)"
+          if [ -n "${oversized}" ]; then
+            echo "XPT fuzz seed is too large: ${oversized}"
+            exit 1
+          fi
+
       - name: Run XPT parser fuzz target
         run: |
           cd fuzz

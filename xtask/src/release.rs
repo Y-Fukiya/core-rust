@@ -16,6 +16,8 @@ pub struct ReleaseManifestArgs {
     pub artifact: Vec<PathBuf>,
     #[arg(long, value_name = "DIR")]
     pub artifact_root: Option<PathBuf>,
+    #[arg(long, value_name = "TRIPLE")]
+    pub target_triple: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -114,7 +116,7 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
             .unwrap_or_else(|| "unknown".to_owned()),
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
         cargo_lock_sha256: sha256_file(Path::new("Cargo.lock")).ok(),
-        target_triple: rust_target_triple(),
+        target_triple: args.target_triple.or_else(rust_target_triple),
         ci_run_url: ci.as_ref().and_then(|metadata| metadata.run_url.clone()),
         artifacts,
     });
@@ -554,6 +556,33 @@ mod tests {
             manifest.ci.as_ref().and_then(|ci| ci.run_url.as_deref()),
             Some("https://github.example/run/1")
         );
+    }
+
+    #[test]
+    fn release_manifest_cli_accepts_target_triple_override() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("bundle");
+        let artifact = root.join("bin").join("core-rs");
+        std::fs::create_dir_all(artifact.parent().expect("artifact parent")).expect("mkdir");
+        std::fs::write(&artifact, b"hello").expect("write artifact");
+        let manifest_path = root.join("release-manifest.json");
+
+        run(ReleaseManifestArgs {
+            out: manifest_path.clone(),
+            artifact: vec![artifact],
+            artifact_root: Some(root.clone()),
+            target_triple: Some("x86_64-unknown-linux-gnu".to_owned()),
+        })
+        .expect("write manifest");
+
+        let file = File::open(&manifest_path).expect("open manifest");
+        let manifest: ReleaseManifest = serde_json::from_reader(file).expect("parse manifest");
+
+        assert_eq!(
+            manifest.target_triple.as_deref(),
+            Some("x86_64-unknown-linux-gnu")
+        );
+        assert_eq!(manifest.artifacts[0].path, "bin/core-rs");
     }
 
     #[test]
