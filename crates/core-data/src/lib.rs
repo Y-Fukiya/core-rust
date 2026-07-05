@@ -24,6 +24,7 @@ mod usdm_abbreviations;
 mod usdm_collectors;
 mod usdm_content;
 mod usdm_data_dir;
+mod usdm_data_dir_datasets;
 mod usdm_design;
 mod usdm_geography;
 mod usdm_json_schema;

@@ -4,9 +4,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::csv_records::normalize_dataset_name;
 use crate::dataset_paths::extension;
-use crate::json_table::json_rows_dataset;
 use crate::usdm_abbreviations::collect_usdm_abbreviation_rows;
 use crate::usdm_collectors::{
     collect_usdm_address_rows, collect_usdm_duration_rows, collect_usdm_person_name_rows,
@@ -16,6 +14,9 @@ use crate::usdm_content::{
     collect_usdm_document_content_reference_rows, collect_usdm_narrative_content_item_rows,
     collect_usdm_narrative_content_rows, collect_usdm_scheduled_instance_rows,
     collect_usdm_timeline_rows,
+};
+use crate::usdm_data_dir_datasets::{
+    push_usdm_dataset, push_usdm_dataset_even_when_empty, push_usdm_identifier_datasets,
 };
 use crate::usdm_design::{
     collect_usdm_design_list_duplicate_rows, collect_usdm_design_rows,
@@ -170,390 +171,315 @@ pub(crate) fn load_open_rules_json_data_dir(data_dir: &Path) -> Result<LoadDataR
     apply_usdm_object_duplicate_flags(&mut object_rows);
 
     let mut datasets = Vec::new();
-    if !population_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignPopulation",
-            "usdm-population.json",
-            &population_rows,
-        )?);
-    }
-    if !role_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyRole",
-            "usdm-study-role.json",
-            &role_rows,
-        )?);
-    }
-    if !role_blinding_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyRoleBlinding",
-            "usdm-study-role-blinding.json",
-            &role_blinding_rows,
-        )?);
-    }
-    if !design_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesign",
-            "usdm-study-design.json",
-            &design_rows,
-        )?);
-    }
-    if !interventional_design_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "InterventionalStudyDesign",
-            "usdm-interventional-study-design.json",
-            &interventional_design_rows,
-        )?);
-    }
-    if !design_characteristic_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignCharacteristicDuplicate",
-            "usdm-study-design-characteristic-duplicate.json",
-            &design_characteristic_rows,
-        )?);
-    }
-    if !design_sub_type_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignSubTypeDuplicate",
-            "usdm-study-design-sub-type-duplicate.json",
-            &design_sub_type_rows,
-        )?);
-    }
-    if !design_therapeutic_area_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDesignTherapeuticAreaDuplicate",
-            "usdm-study-design-therapeutic-area-duplicate.json",
-            &design_therapeutic_area_rows,
-        )?);
-    }
-    if !version_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyVersion",
-            "usdm-study-version.json",
-            &version_rows,
-        )?);
-    }
-    if !activity_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Activity",
-            "usdm-activity.json",
-            &activity_rows,
-        )?);
-    }
-    if !duration_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Duration",
-            "usdm-duration.json",
-            &duration_rows,
-        )?);
-    }
-    if !range_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Range",
-            "usdm-range.json",
-            &range_rows,
-        )?);
-    }
-    if !person_name_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "PersonName",
-            "usdm-person-name.json",
-            &person_name_rows,
-        )?);
-    }
-    if !address_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Address",
-            "usdm-address.json",
-            &address_rows,
-        )?);
-    }
-    if !administrable_product_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "AdministrableProduct",
-            "usdm-administrable-product.json",
-            &administrable_product_rows,
-        )?);
-    }
-    if !administration_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Administration",
-            "usdm-administration.json",
-            &administration_rows,
-        )?);
-    }
-    if !strength_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Strength",
-            "usdm-strength.json",
-            &strength_rows,
-        )?);
-    }
-    if !amendment_reason_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyAmendmentReason",
-            "usdm-study-amendment-reason.json",
-            &amendment_reason_rows,
-        )?);
-    }
-    if !product_organization_role_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ProductOrganizationRole",
-            "usdm-product-organization-role.json",
-            &product_organization_role_rows,
-        )?);
-    }
-    if !biomedical_concept_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "BiomedicalConcept",
-            "usdm-biomedical-concept.json",
-            &biomedical_concept_rows,
-        )?);
-    }
-    if !procedure_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Procedure",
-            "usdm-procedure.json",
-            &procedure_rows,
-        )?);
-    }
-    if !subject_enrollment_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "SubjectEnrollment",
-            "usdm-subject-enrollment.json",
-            &subject_enrollment_rows,
-        )?);
-    }
-    if !document_version_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyDefinitionDocumentVersion",
-            "usdm-study-definition-document-version.json",
-            &document_version_rows,
-        )?);
-    }
-    if !substance_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Substance",
-            "usdm-substance.json",
-            &substance_rows,
-        )?);
-    }
-    if !eligibility_criterion_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "EligibilityCriterion",
-            "usdm-eligibility-criterion.json",
-            &eligibility_criterion_rows,
-        )?);
-    }
-    if !eligibility_criterion_item_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "EligibilityCriterionItem",
-            "usdm-eligibility-criterion-item.json",
-            &eligibility_criterion_item_rows,
-        )?);
-    }
-    if !biospecimen_retention_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "BiospecimenRetention",
-            "usdm-biospecimen-retention.json",
-            &biospecimen_retention_rows,
-        )?);
-    }
-    if !study_element_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyElement",
-            "usdm-study-element.json",
-            &study_element_rows,
-        )?);
-    }
-    if !study_arm_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyArm",
-            "usdm-study-arm.json",
-            &study_arm_rows,
-        )?);
-    }
-    if !cohort_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyCohort",
-            "usdm-study-cohort.json",
-            &cohort_rows,
-        )?);
-    }
-    if !study_cell_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "StudyCell",
-            "usdm-study-cell.json",
-            &study_cell_rows,
-        )?);
-    }
-    if !condition_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Condition",
-            "usdm-condition.json",
-            &condition_rows,
-        )?);
-    }
-    if !parameter_map_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ParameterMap",
-            "usdm-parameter-map.json",
-            &parameter_map_rows,
-        )?);
-    }
-    if !syntax_template_text_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "SyntaxTemplateText",
-            "usdm-syntax-template-text.json",
-            &syntax_template_text_rows,
-        )?);
-    }
-    if !narrative_content_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "NarrativeContent",
-            "usdm-narrative-content.json",
-            &narrative_content_rows,
-        )?);
-    }
-    if !narrative_content_item_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "NarrativeContentItem",
-            "usdm-narrative-content-item.json",
-            &narrative_content_item_rows,
-        )?);
-    }
-    if !abbreviation_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "Abbreviation",
-            "usdm-abbreviation.json",
-            &abbreviation_rows,
-        )?);
-    }
-    if !object_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "USDMObject",
-            "usdm-object.json",
-            &object_rows,
-        )?);
-    }
-    if !geographic_scope_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "GeographicScope",
-            "usdm-geographic-scope.json",
-            &geographic_scope_rows,
-        )?);
-    }
-    if !governance_date_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "GovernanceDate",
-            "usdm-governance-date.json",
-            &governance_date_rows,
-        )?);
-    }
-    if !document_content_reference_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "DocumentContentReference",
-            "usdm-document-content-reference.json",
-            &document_content_reference_rows,
-        )?);
-    }
-    if !timeline_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ScheduleTimeline",
-            "usdm-schedule-timeline.json",
-            &timeline_rows,
-        )?);
-    }
-    if !scheduled_instance_rows.is_empty() {
-        datasets.push(json_rows_dataset(
-            data_dir,
-            "ScheduledActivityInstance",
-            "usdm-scheduled-activity-instance.json",
-            &scheduled_instance_rows,
-        )?);
-    }
-    for entity in [
-        "StudyIdentifier",
-        "ReferenceIdentifier",
-        "AdministrableProductIdentifier",
-        "MedicalDeviceIdentifier",
-    ] {
-        let rows = identifier_rows
-            .iter()
-            .filter(|row| {
-                row.get("instanceType")
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| value == entity)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if !rows.is_empty() {
-            datasets.push(json_rows_dataset(
-                data_dir,
-                entity,
-                &format!(
-                    "usdm-{}.json",
-                    normalize_dataset_name(entity).to_ascii_lowercase()
-                ),
-                &rows,
-            )?);
-        }
-    }
-    datasets.push(json_rows_dataset(
+    push_usdm_dataset(
         data_dir,
+        &mut datasets,
+        "StudyDesignPopulation",
+        "usdm-population.json",
+        &population_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyRole",
+        "usdm-study-role.json",
+        &role_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyRoleBlinding",
+        "usdm-study-role-blinding.json",
+        &role_blinding_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesign",
+        "usdm-study-design.json",
+        &design_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "InterventionalStudyDesign",
+        "usdm-interventional-study-design.json",
+        &interventional_design_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignCharacteristicDuplicate",
+        "usdm-study-design-characteristic-duplicate.json",
+        &design_characteristic_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignSubTypeDuplicate",
+        "usdm-study-design-sub-type-duplicate.json",
+        &design_sub_type_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDesignTherapeuticAreaDuplicate",
+        "usdm-study-design-therapeutic-area-duplicate.json",
+        &design_therapeutic_area_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyVersion",
+        "usdm-study-version.json",
+        &version_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Activity",
+        "usdm-activity.json",
+        &activity_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Duration",
+        "usdm-duration.json",
+        &duration_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Range",
+        "usdm-range.json",
+        &range_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "PersonName",
+        "usdm-person-name.json",
+        &person_name_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Address",
+        "usdm-address.json",
+        &address_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "AdministrableProduct",
+        "usdm-administrable-product.json",
+        &administrable_product_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Administration",
+        "usdm-administration.json",
+        &administration_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Strength",
+        "usdm-strength.json",
+        &strength_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyAmendmentReason",
+        "usdm-study-amendment-reason.json",
+        &amendment_reason_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ProductOrganizationRole",
+        "usdm-product-organization-role.json",
+        &product_organization_role_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "BiomedicalConcept",
+        "usdm-biomedical-concept.json",
+        &biomedical_concept_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Procedure",
+        "usdm-procedure.json",
+        &procedure_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "SubjectEnrollment",
+        "usdm-subject-enrollment.json",
+        &subject_enrollment_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyDefinitionDocumentVersion",
+        "usdm-study-definition-document-version.json",
+        &document_version_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Substance",
+        "usdm-substance.json",
+        &substance_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "EligibilityCriterion",
+        "usdm-eligibility-criterion.json",
+        &eligibility_criterion_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "EligibilityCriterionItem",
+        "usdm-eligibility-criterion-item.json",
+        &eligibility_criterion_item_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "BiospecimenRetention",
+        "usdm-biospecimen-retention.json",
+        &biospecimen_retention_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyElement",
+        "usdm-study-element.json",
+        &study_element_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyArm",
+        "usdm-study-arm.json",
+        &study_arm_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyCohort",
+        "usdm-study-cohort.json",
+        &cohort_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "StudyCell",
+        "usdm-study-cell.json",
+        &study_cell_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Condition",
+        "usdm-condition.json",
+        &condition_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ParameterMap",
+        "usdm-parameter-map.json",
+        &parameter_map_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "SyntaxTemplateText",
+        "usdm-syntax-template-text.json",
+        &syntax_template_text_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "NarrativeContent",
+        "usdm-narrative-content.json",
+        &narrative_content_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "NarrativeContentItem",
+        "usdm-narrative-content-item.json",
+        &narrative_content_item_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "Abbreviation",
+        "usdm-abbreviation.json",
+        &abbreviation_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "USDMObject",
+        "usdm-object.json",
+        &object_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "GeographicScope",
+        "usdm-geographic-scope.json",
+        &geographic_scope_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "GovernanceDate",
+        "usdm-governance-date.json",
+        &governance_date_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "DocumentContentReference",
+        "usdm-document-content-reference.json",
+        &document_content_reference_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ScheduleTimeline",
+        "usdm-schedule-timeline.json",
+        &timeline_rows,
+    )?;
+    push_usdm_dataset(
+        data_dir,
+        &mut datasets,
+        "ScheduledActivityInstance",
+        "usdm-scheduled-activity-instance.json",
+        &scheduled_instance_rows,
+    )?;
+    push_usdm_identifier_datasets(data_dir, &mut datasets, &identifier_rows)?;
+    push_usdm_dataset_even_when_empty(
+        data_dir,
+        &mut datasets,
         "JSONSchemaIssue",
         "usdm-json-schema-issue.json",
         &json_schema_issue_rows,
-    )?);
-
-    if datasets.is_empty() {
-        return Ok(LoadDataResult {
-            datasets: Vec::new(),
-            warnings: Vec::new(),
-        });
-    }
+    )?;
 
     Ok(LoadDataResult {
         datasets,

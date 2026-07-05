@@ -50,7 +50,10 @@ status when a recorded artifact is missing or has changed. When the manifest
 contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
 `--source-root` so dependency drift is caught before archive publication. If
 `--source-root` is omitted, the current working directory is used.
-The main CI workflow includes a lightweight release provenance smoke gate that
+The main CI workflow includes a host release artifact provenance gate that
+builds the `core-rs` release binary, records its SHA-256 in
+`release-manifest.json`, and verifies the manifest against the built artifact.
+It also includes a lightweight multi-target release provenance smoke gate that
 creates and verifies multi-artifact manifests for more than one target triple.
 Use the stricter policy flags for reviewed release bundles:
 
@@ -131,8 +134,9 @@ changes the headline metrics.
   for that target as separate `--artifact` values. The verifier checks each
   recorded artifact independently, so a single changed target in a release
   matrix fails verification.
-- Treat the CI multi-target release smoke as manifest/verification plumbing
-  coverage. It checks that target-triple policy and multiple artifact hashes are
+- Treat the CI host release artifact gate as the actual binary provenance check.
+  The separate multi-target release smoke is manifest/verification plumbing
+  coverage: it checks that target-triple policy and multiple artifact hashes are
   represented and verified, but it does not replace actual cross-target builds.
 - Treat `supported_accuracy = 100%` as a regression-gate invariant over the
   supported denominator, not as a claim of full regulatory conformance.

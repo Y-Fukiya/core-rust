@@ -59,6 +59,28 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      - name: Release artifact provenance gate
+        env:
+          SOURCE_DATE_EPOCH: "1783123200"
+        run: |
+          cargo build --locked --release -p core-cli
+          mkdir -p target/release-provenance/host/bin
+          cp target/release/core-rs target/release-provenance/host/bin/core-rs
+          host_target="$(rustc -vV | sed -n 's/^host: //p')"
+          cargo run --locked -p xtask -- release-manifest \
+            --out target/release-provenance/host/release-manifest.json \
+            --artifact-root target/release-provenance/host \
+            --target-triple "${host_target}" \
+            --artifact target/release-provenance/host/bin/core-rs
+          cargo run --locked -p xtask -- release-verify \
+            --manifest target/release-provenance/host/release-manifest.json \
+            --artifact-root target/release-provenance/host \
+            --source-root . \
+            --target-triple "${host_target}" \
+            --require-clean-git \
+            --require-ci-run-url \
+            --require-source-date-epoch
+
       - name: Release provenance smoke
         env:
           SOURCE_DATE_EPOCH: "1783123200"
