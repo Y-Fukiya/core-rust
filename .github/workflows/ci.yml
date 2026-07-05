@@ -81,6 +81,13 @@ jobs:
             --require-ci-run-url \
             --require-source-date-epoch
 
+      - name: Upload host release provenance manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-release-provenance-manifest
+          path: target/release-provenance/host/release-manifest.json
+          if-no-files-found: error
+
       - name: Release provenance smoke
         env:
           SOURCE_DATE_EPOCH: "1783123200"

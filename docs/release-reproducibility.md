@@ -53,6 +53,9 @@ contains a `Cargo.lock` SHA-256, `release-verify` also checks `Cargo.lock` under
 The main CI workflow includes a host release artifact provenance gate that
 builds the `core-rs` release binary, records its SHA-256 in
 `release-manifest.json`, and verifies the manifest against the built artifact.
+CI uploads the host `release-manifest.json` as a workflow artifact so the
+verified binary digest can be inspected after the job completes without
+publishing the binary itself.
 It also includes a lightweight multi-target release provenance smoke gate that
 creates and verifies multi-artifact manifests for more than one target triple.
 Use the stricter policy flags for reviewed release bundles:
