@@ -5,6 +5,7 @@ use core_rule_model::{
     Condition, ConditionGroup, Operator, OperatorOptions, RuleType, Sensitivity, ValueExpr,
 };
 use pretty_assertions::assert_eq;
+use proptest::prelude::*;
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -1346,6 +1347,74 @@ fn target_sort_lane_split_keeps_null_rows_in_comparable_lanes() {
         &mut mask
     ));
     assert_eq!(mask, vec![true, false, true]);
+}
+
+fn target_sort_scalar_strategy() -> impl Strategy<Value = ScalarValue> {
+    prop_oneof![
+        Just(ScalarValue::Null),
+        Just(ScalarValue::Bool(false)),
+        Just(ScalarValue::Bool(true)),
+        (-3i32..=3).prop_map(|value| ScalarValue::Number(value as f64)),
+        prop::sample::select(vec!["-2", "0", "2", "10"])
+            .prop_map(|value| ScalarValue::String(value.to_owned())),
+        prop::sample::select(vec!["A", "B", "x"])
+            .prop_map(|value| ScalarValue::String(value.to_owned())),
+    ]
+}
+
+fn target_sort_value_strategy() -> impl Strategy<Value = Option<ScalarValue>> {
+    prop_oneof![Just(None), target_sort_scalar_strategy().prop_map(Some)]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn target_sort_optimized_matches_pairwise_reference(
+        rows in prop::collection::vec(
+            (
+                target_sort_scalar_strategy(),
+                prop::collection::vec(target_sort_value_strategy(), 2..=2),
+            ),
+            0..=8,
+        ),
+        sort_spec_count in 1usize..=2,
+        descending_flags in prop::array::uniform2(any::<bool>()),
+        nulls_first_flags in prop::array::uniform2(any::<bool>()),
+    ) {
+        let sort_specs = (0..sort_spec_count)
+            .map(|index| SortSpec {
+                column: format!("SORT{index}"),
+                descending: descending_flags[index],
+                nulls_first: nulls_first_flags[index],
+            })
+            .collect::<Vec<_>>();
+        let rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(row, (target, sort_values))| SortRow {
+                row,
+                target,
+                sort_values: sort_values.into_iter().take(sort_spec_count).collect(),
+            })
+            .collect::<Vec<_>>();
+        let mut optimized_mask = vec![false; rows.len()];
+        let optimized_has_inversion =
+            mark_target_sort_inversions(&rows, &sort_specs, &mut optimized_mask);
+
+        let mut sorted = rows.iter().collect::<Vec<_>>();
+        sorted.sort_by(|left, right| {
+            compare_sort_values(&left.sort_values, &right.sort_values, &sort_specs)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.row.cmp(&right.row))
+        });
+        let mut reference_mask = vec![false; rows.len()];
+        let reference_has_inversion =
+            mark_target_sort_inversions_pairwise(&sorted, &sort_specs, &mut reference_mask);
+
+        prop_assert_eq!(optimized_has_inversion, reference_has_inversion);
+        prop_assert_eq!(optimized_mask, reference_mask);
+    }
 }
 
 #[test]

@@ -1126,6 +1126,12 @@ fn mark_single_sort_lane_inversions(
     let Some(sort_spec) = sort_specs.first() else {
         return false;
     };
+    // A single sort column can have overlapping comparable domains:
+    // numeric values compare with numeric-like strings, numeric-like strings
+    // also compare lexically with non-numeric strings, and nulls compare with
+    // every lane through the null ordering policy. Split the optimized scan
+    // into those lanes to preserve pairwise semantics without forcing the
+    // whole group through O(n^2).
     let mut lanes: std::collections::BTreeMap<SortLane, Vec<&SortRow>> =
         std::collections::BTreeMap::new();
     let mut null_rows = Vec::new();
