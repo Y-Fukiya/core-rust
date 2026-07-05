@@ -129,7 +129,7 @@ impl ScoreboardDelta {
         default: &Scoreboard,
         strict: &Scoreboard,
     ) -> Self {
-        let changed_cases = changed_cases(default, strict);
+        let changed_cases = changed_cases(default, strict, None);
         let example_changed_cases = changed_cases.iter().take(20).cloned().collect();
         Self {
             default_scoreboard,
@@ -155,8 +155,8 @@ impl ScoreboardDelta {
             bucket_transitions: bucket_transitions(default, strict),
             normalization_transitions: normalization_transitions(default, strict),
             top_affected_rules: top_affected_rules(default, strict, 20),
-            changed_cases: changed_cases(default, strict, None),
-            example_changed_cases: changed_cases(default, strict, Some(20)),
+            changed_cases,
+            example_changed_cases,
         }
     }
 }
@@ -498,9 +498,9 @@ fn changed_cases(
             .then_with(|| left.case_id.cmp(&right.case_id))
     });
     if let Some(limit) = limit {
-        examples.truncate(limit);
+        changed.truncate(limit);
     }
-    examples
+    changed
 }
 
 fn cases_by_key(cases: &[ScoredCase]) -> BTreeMap<CaseKey, &ScoredCase> {
