@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::Value;
 
-use crate::named_usdm_object_name;
+use crate::usdm_common::named_usdm_object_name;
 use crate::usdm_values::{json_string, value_string};
 
 pub(crate) fn collect_usdm_identifier_rows(value: &Value, rows: &mut Vec<BTreeMap<String, Value>>) {

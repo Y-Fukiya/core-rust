@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::Value;
 
-use crate::named_usdm_object_name;
+use crate::usdm_common::named_usdm_object_name;
 use crate::usdm_population_columns::insert_planned_sex_columns;
 use crate::usdm_values::{format_string_list, json_string, value_string};
 

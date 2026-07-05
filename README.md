@@ -30,7 +30,8 @@ validator and your governed validation process.
 Requirements:
 
 - Rust 1.93 or newer
-- Python 3.13 for the optional `cdisc_rulekit` utilities
+- Python 3.11 or newer for the optional `cdisc_rulekit` utilities.
+  CI currently tests Python 3.13.
 
 ```sh
 cargo check --workspace --locked
@@ -160,6 +161,10 @@ cargo run -p xtask -- release-manifest --out target/release-provenance/release-m
 cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
 ```
 
+For reviewed release bundles, use the stricter command in
+[Release reproducibility](docs/release-reproducibility.md) with
+`--artifact`, `--artifact-root`, `--source-root`, and verification policy flags.
+
 The CI release provenance gate builds the host `core-rs` binary, records its
 SHA-256 in `release-manifest.json`, verifies the manifest, and uploads the
 manifest as a GitHub Actions artifact.
@@ -212,7 +217,8 @@ See:
 必要なもの:
 
 - Rust 1.93 以上
-- Python 3.13 (`cdisc_rulekit` を使う場合)
+- Python 3.11 以上 (`cdisc_rulekit` を使う場合)。CI では Python 3.13
+  を使用しています。
 
 ```sh
 cargo check --workspace --locked
@@ -314,6 +320,10 @@ release artifact には provenance manifest を添付してください。
 cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
 cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
 ```
+
+review 済み release bundle では、[Release reproducibility](docs/release-reproducibility.md)
+にある厳格なコマンド例を使い、`--artifact`、`--artifact-root`、
+`--source-root`、verification policy flags を指定してください。
 
 CI では host の `core-rs` バイナリを build し、SHA-256 を manifest に記録し、
 verify したうえで manifest を GitHub Actions artifact として保存します。
