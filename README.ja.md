@@ -153,8 +153,16 @@ python -m cdisc_rulekit.cli pilot-preflight \
 release artifact には provenance manifest を添付してください。
 
 ```sh
-cargo run -p xtask -- release-manifest --out target/release-provenance/release-manifest.json
-cargo run -p xtask -- release-verify --manifest target/release-provenance/release-manifest.json
+cargo build --release -p core-cli
+mkdir -p target/release-provenance/bin
+cp target/release/core-rs target/release-provenance/bin/core-rs
+cargo run -p xtask -- release-manifest \
+  --out target/release-provenance/release-manifest.json \
+  --artifact-root target/release-provenance \
+  --artifact target/release-provenance/bin/core-rs
+cargo run -p xtask -- release-verify \
+  --manifest target/release-provenance/release-manifest.json \
+  --artifact-root target/release-provenance
 ```
 
 review 済み release bundle では、[Release reproducibility](docs/release-reproducibility.md)
