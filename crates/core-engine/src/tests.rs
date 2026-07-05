@@ -1222,6 +1222,133 @@ fn target_sort_pairwise_fallback_ignores_uncomparable_sort_values() {
 }
 
 #[test]
+fn target_is_not_sorted_by_ignores_uncomparable_sort_values_for_numeric_targets() {
+    let rows = vec![
+        SortRow {
+            row: 0,
+            target: ScalarValue::Number(2.0),
+            sort_values: vec![Some(ScalarValue::Number(1.0))],
+        },
+        SortRow {
+            row: 1,
+            target: ScalarValue::Number(1.0),
+            sort_values: vec![Some(ScalarValue::String("A".to_owned()))],
+        },
+    ];
+    let mut mask = vec![false, false];
+
+    assert!(!mark_target_sort_inversions(
+        &rows,
+        &[SortSpec {
+            column: "SORT".to_owned(),
+            descending: false,
+            nulls_first: false,
+        }],
+        &mut mask
+    ));
+    assert_eq!(mask, vec![false, false]);
+}
+
+#[test]
+fn target_sort_lane_split_preserves_comparable_numeric_inversions() {
+    let rows = vec![
+        SortRow {
+            row: 0,
+            target: ScalarValue::Number(2.0),
+            sort_values: vec![Some(ScalarValue::Number(1.0))],
+        },
+        SortRow {
+            row: 1,
+            target: ScalarValue::Number(99.0),
+            sort_values: vec![Some(ScalarValue::String("A".to_owned()))],
+        },
+        SortRow {
+            row: 2,
+            target: ScalarValue::Number(1.0),
+            sort_values: vec![Some(ScalarValue::Number(2.0))],
+        },
+    ];
+    let mut mask = vec![false, false, false];
+
+    assert!(mark_target_sort_inversions(
+        &rows,
+        &[SortSpec {
+            column: "SORT".to_owned(),
+            descending: false,
+            nulls_first: false,
+        }],
+        &mut mask
+    ));
+    assert_eq!(mask, vec![true, false, true]);
+}
+
+#[test]
+fn target_sort_lane_split_keeps_numeric_string_bridge_comparisons() {
+    let rows = vec![
+        SortRow {
+            row: 0,
+            target: ScalarValue::Number(1.0),
+            sort_values: vec![Some(ScalarValue::Number(1.0))],
+        },
+        SortRow {
+            row: 1,
+            target: ScalarValue::Number(3.0),
+            sort_values: vec![Some(ScalarValue::String("2".to_owned()))],
+        },
+        SortRow {
+            row: 2,
+            target: ScalarValue::Number(2.0),
+            sort_values: vec![Some(ScalarValue::String("A".to_owned()))],
+        },
+    ];
+    let mut mask = vec![false, false, false];
+
+    assert!(mark_target_sort_inversions(
+        &rows,
+        &[SortSpec {
+            column: "SORT".to_owned(),
+            descending: false,
+            nulls_first: false,
+        }],
+        &mut mask
+    ));
+    assert_eq!(mask, vec![false, true, true]);
+}
+
+#[test]
+fn target_sort_lane_split_keeps_null_rows_in_comparable_lanes() {
+    let rows = vec![
+        SortRow {
+            row: 0,
+            target: ScalarValue::Number(2.0),
+            sort_values: vec![None],
+        },
+        SortRow {
+            row: 1,
+            target: ScalarValue::Number(99.0),
+            sort_values: vec![Some(ScalarValue::String("A".to_owned()))],
+        },
+        SortRow {
+            row: 2,
+            target: ScalarValue::Number(1.0),
+            sort_values: vec![Some(ScalarValue::Number(1.0))],
+        },
+    ];
+    let mut mask = vec![false, false, false];
+
+    assert!(mark_target_sort_inversions(
+        &rows,
+        &[SortSpec {
+            column: "SORT".to_owned(),
+            descending: false,
+            nulls_first: true,
+        }],
+        &mut mask
+    ));
+    assert_eq!(mask, vec![true, false, true]);
+}
+
+#[test]
 fn target_is_not_sorted_by_handles_descending_sort_order() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");

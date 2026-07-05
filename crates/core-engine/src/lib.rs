@@ -945,7 +945,10 @@ fn evaluate_target_is_not_sorted_by(
                 let Some(column) = optional_column(frame, &column_name)? else {
                     return Ok(None);
                 };
-                Ok(Some(ScalarValue::from_any_value(column.get(row)?)))
+                match ScalarValue::from_any_value(column.get(row)?) {
+                    ScalarValue::Null => Ok(None),
+                    value => Ok(Some(value)),
+                }
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -987,15 +990,36 @@ fn mark_target_sort_inversions(
             .then_with(|| left.row.cmp(&right.row))
     });
 
+    if target_sort_requires_pairwise_comparison(&sorted, sort_specs) {
+        return mark_target_sort_inversions_pairwise(&sorted, sort_specs, mask);
+    }
+
+    if sort_specs.len() == 1 {
+        if single_sort_spec_needs_lane_split(&sorted) {
+            return mark_single_sort_lane_inversions(&sorted, sort_specs, mask);
+        }
+    } else if target_sort_has_uncomparable_pair(&sorted, sort_specs) {
+        return mark_target_sort_inversions_pairwise(&sorted, sort_specs, mask);
+    }
+
+    mark_target_sort_inversions_ranked(&sorted, sort_specs, mask)
+}
+
+fn mark_target_sort_inversions_ranked(
+    sorted: &[&SortRow],
+    sort_specs: &[SortSpec],
+    mask: &mut [bool],
+) -> bool {
     let buckets = sorted
         .chunk_by(|left, right| {
             compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
                 == Some(Ordering::Equal)
         })
         .collect::<Vec<_>>();
-    if target_sort_requires_pairwise_comparison(&sorted) {
-        return mark_target_sort_inversions_pairwise(&sorted, sort_specs, mask);
-    }
+    mark_target_sort_inversions_for_buckets(&buckets, mask)
+}
+
+fn mark_target_sort_inversions_for_buckets(buckets: &[&[&SortRow]], mask: &mut [bool]) -> bool {
     let mut numeric = Vec::new();
     let mut string = Vec::new();
     for (bucket, rows) in buckets.iter().enumerate() {
@@ -1019,14 +1043,29 @@ fn mark_target_sort_inversions(
             }
         }
     }
-
     mark_numeric_target_sort_inversions(&numeric, mask)
         | mark_string_target_sort_inversions(&string, mask)
 }
 
-fn target_sort_requires_pairwise_comparison(rows: &[&SortRow]) -> bool {
+fn target_sort_requires_pairwise_comparison(rows: &[&SortRow], sort_specs: &[SortSpec]) -> bool {
+    if sort_specs.len() > 1 && target_sort_has_uncomparable_pair(rows, sort_specs) {
+        return true;
+    }
+
     // Preserve compare_scalars() semantics for string columns that mix numeric-like
     // and non-numeric values: "10" vs "B" falls back to string comparison.
+    target_sort_has_mixed_string_targets(rows)
+}
+
+fn target_sort_has_uncomparable_pair(rows: &[&SortRow], sort_specs: &[SortSpec]) -> bool {
+    rows.iter().enumerate().any(|(left_index, left)| {
+        rows[left_index + 1..].iter().any(|right| {
+            compare_sort_values(&left.sort_values, &right.sort_values, sort_specs).is_none()
+        })
+    })
+}
+
+fn target_sort_has_mixed_string_targets(rows: &[&SortRow]) -> bool {
     let has_numeric_like_string = rows.iter().any(|row| {
         matches!(&row.target, ScalarValue::String(_))
             && row.target.as_type_insensitive_number().is_some()
@@ -1036,6 +1075,111 @@ fn target_sort_requires_pairwise_comparison(rows: &[&SortRow]) -> bool {
             && row.target.as_type_insensitive_number().is_none()
     });
     has_numeric_like_string && has_non_numeric_string
+}
+
+fn single_sort_spec_needs_lane_split(rows: &[&SortRow]) -> bool {
+    let mut non_null_count = 0usize;
+    let mut other_count = 0usize;
+    let mut has_number = false;
+    let mut has_non_numeric_string = false;
+
+    for row in rows {
+        let Some(value) = row.sort_values.first().and_then(Option::as_ref) else {
+            continue;
+        };
+        non_null_count += 1;
+        match value {
+            ScalarValue::Number(value) if value.is_finite() => {
+                has_number = true;
+            }
+            ScalarValue::String(value) => {
+                if value.trim().parse::<f64>().ok().is_some_and(f64::is_finite) {
+                    // Numeric-like strings compare with numeric values and also
+                    // bridge into the string lane when paired with non-numeric
+                    // strings, so they do not make a lane split necessary by
+                    // themselves.
+                } else {
+                    has_non_numeric_string = true;
+                }
+            }
+            _ => {
+                other_count += 1;
+            }
+        }
+    }
+
+    (has_number && has_non_numeric_string) || (other_count > 0 && non_null_count > 1)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SortLane {
+    Numeric,
+    String,
+    Other(usize),
+}
+
+fn mark_single_sort_lane_inversions(
+    sorted: &[&SortRow],
+    sort_specs: &[SortSpec],
+    mask: &mut [bool],
+) -> bool {
+    let Some(sort_spec) = sort_specs.first() else {
+        return false;
+    };
+    let mut lanes: std::collections::BTreeMap<SortLane, Vec<&SortRow>> =
+        std::collections::BTreeMap::new();
+    let mut null_rows = Vec::new();
+
+    for row in sorted {
+        match row.sort_values.first().and_then(Option::as_ref) {
+            None => null_rows.push(*row),
+            Some(value) => {
+                let mut assigned = false;
+                if value.as_type_insensitive_number().is_some() {
+                    lanes.entry(SortLane::Numeric).or_default().push(*row);
+                    assigned = true;
+                }
+                if value.as_string().is_some() {
+                    lanes.entry(SortLane::String).or_default().push(*row);
+                    assigned = true;
+                }
+                if !assigned {
+                    // Values that compare to nulls but not to each other stay in
+                    // one-row lanes, which preserves pairwise semantics without
+                    // forcing the whole group through O(n^2).
+                    lanes
+                        .entry(SortLane::Other(row.row))
+                        .or_default()
+                        .push(*row);
+                }
+            }
+        }
+    }
+
+    if lanes.is_empty() {
+        return false;
+    }
+
+    let mut has_inversion = false;
+    for lane_rows in lanes.values_mut() {
+        lane_rows.extend(null_rows.iter().copied());
+        lane_rows.sort_by(|left, right| {
+            compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.row.cmp(&right.row))
+        });
+        if target_sort_has_mixed_string_targets(lane_rows) {
+            has_inversion |= mark_target_sort_inversions_pairwise(lane_rows, sort_specs, mask);
+        } else {
+            has_inversion |= mark_target_sort_inversions_ranked(
+                lane_rows,
+                std::slice::from_ref(sort_spec),
+                mask,
+            );
+        }
+    }
+
+    has_inversion
 }
 
 fn mark_target_sort_inversions_pairwise(
