@@ -157,7 +157,8 @@ content is not modified unless you explicitly export into a target tree.
 Release artifacts should be accompanied by a provenance manifest:
 
 The commands below are a local smoke example. For reviewed release bundles, use
-the stricter policy flags described after the example.
+the stricter policy flags described after the example. Run these commands from
+the repository root so `--source-root .` resolves the reviewed `Cargo.lock`.
 
 ```sh
 cargo build --release -p core-cli
@@ -166,15 +167,23 @@ cp target/release/core-rs target/release-provenance/bin/core-rs
 cargo run -p xtask -- release-manifest \
   --out target/release-provenance/release-manifest.json \
   --artifact-root target/release-provenance \
+  --source-root . \
   --artifact target/release-provenance/bin/core-rs
 cargo run -p xtask -- release-verify \
   --manifest target/release-provenance/release-manifest.json \
-  --artifact-root target/release-provenance
+  --artifact-root target/release-provenance \
+  --source-root . \
+  --require-artifact \
+  --require-cargo-lock
 ```
 
 For reviewed release bundles, use the stricter command in
 [Release reproducibility](docs/release-reproducibility.md) with
-`--artifact`, `--artifact-root`, `--source-root`, and verification policy flags.
+`--artifact`, `--artifact-root`, `--source-root`, `--require-artifact`,
+`--require-cargo-lock`, and other verification policy flags. Local smoke checks
+cover artifact existence and hashes; reviewed release verification should also
+require the expected target triple, clean git provenance, CI run metadata, and
+`SOURCE_DATE_EPOCH`.
 
 The CI release provenance gate builds the host `core-rs` binary, records its
 SHA-256 in `release-manifest.json`, verifies the manifest, and uploads the
