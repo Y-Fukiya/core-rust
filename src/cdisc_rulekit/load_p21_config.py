@@ -8,6 +8,9 @@ from typing import Any
 try:
     from defusedxml import ElementTree as DefusedET
 except ImportError:  # pragma: no cover - optional hardening dependency.
+    # pyproject.toml declares defusedxml for installed environments. The
+    # fallback keeps source-tree smoke tests usable before dependencies are
+    # installed; DTD/entity declarations are still rejected before parsing.
     DefusedET = None
 
 from .io_utils import normalize_blank, split_semicolon_list

@@ -137,6 +137,37 @@ def test_convert_p21_config_writes_local_catalog_without_fetching(tmp_path):
     assert "Source labels with extracted rules: `1`" in report
 
 
+def test_convert_p21_config_rejects_malformed_xml(tmp_path):
+    config = tmp_path / "broken.xml"
+    config.write_text("<config><rule id=\"SD0001\"></config>", encoding="utf-8")
+    out_dir = tmp_path / "catalog"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "convert-p21-config",
+            "--input",
+            str(config),
+            "--source-label",
+            "broken",
+            "--out",
+            str(out_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "mismatched tag" in result.stderr
+    assert not (out_dir / "p21_rules_normalized.csv").exists()
+
+
 def test_build_readonly_honors_standard_and_limit(
     tmp_path,
     p21_rules_path,

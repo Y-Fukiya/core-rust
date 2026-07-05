@@ -171,7 +171,8 @@ configuration converter. It does not download configuration files, and the
 generated catalog should not be committed or shared unless your license permits
 it. Review the generated CSV/JSONL before using it as a P21PORT catalog. Use
 `--source-label` when you need a stable non-path source identifier for long-term
-catalog comparisons.
+catalog comparisons; release or longitudinal comparison workflows should prefer
+explicit labels over the default input-order labels.
 
 ```sh
 python -m pip install -e ".[test]"

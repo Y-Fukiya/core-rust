@@ -167,7 +167,8 @@ configuration file の download は行わず、生成 catalog もライセンス
 除き commit / 共有しないでください。P21PORT catalog として使う前に、生成された
 CSV/JSONL を review してください。
 長期 catalog 比較で path に依存しない source identifier が必要な場合は
-`--source-label` を指定してください。
+`--source-label` を指定してください。release や継続比較の workflow では、
+default の入力順 label ではなく明示 label の利用を推奨します。
 
 ```sh
 python -m pip install -e ".[test]"
