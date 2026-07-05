@@ -1062,6 +1062,94 @@ fn evaluates_target_is_not_sorted_by_within_groups() {
 }
 
 #[test]
+fn target_is_not_sorted_by_marks_all_rows_participating_in_inversions() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [3, 2, 1],
+        "AESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true, true]
+    );
+}
+
+#[test]
+fn target_is_not_sorted_by_ignores_target_order_inside_equal_sort_keys() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [2, 1, 3],
+        "AESTDTC": ["2024-01-01", "2024-01-01", "2024-01-02"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![false, false, false]
+    );
+}
+
+#[test]
 fn evaluates_empty_within_except_last_row() {
     let dataset = end_date_dataset();
 
