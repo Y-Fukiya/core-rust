@@ -19,8 +19,9 @@ XML_PARSE_EXCEPTIONS = (
     (ET.ParseError, DefusedXmlException) if DefusedXmlException is not None else (ET.ParseError,)
 )
 XML_SECURITY_BACKEND_POLICY = (
-    "defusedxml when installed; stdlib ElementTree fallback with explicit "
-    "DTD/entity preflight for source-tree smoke tests"
+    "installed environments should use defusedxml; source-tree smoke fallback "
+    "is intentional before dependencies are installed; DTD/entity preflight "
+    "runs before parsing in either backend"
 )
 
 from .errors import CliUsageError

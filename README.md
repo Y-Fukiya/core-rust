@@ -178,7 +178,9 @@ XML parsing uses `defusedxml` in installed environments. Source-tree smoke
 tests may fall back to the Python standard-library parser before optional
 dependencies are installed, but the converter still rejects DTD/entity
 declarations before parsing and reports malformed or unreadable XML as stable
-`error: ...` CLI messages.
+`error: ...` CLI messages. The terminal error may include the full local input
+path to disambiguate same-named files; sanitize stderr before sharing logs
+externally.
 
 ```sh
 python -m pip install -e ".[test]"

@@ -174,6 +174,8 @@ XML parsing は install 済み環境では `defusedxml` を使います。option
 入れる前の source-tree smoke では Python 標準 library parser へ fallback する場合が
 ありますが、その場合も parse 前に DTD/entity declaration を拒否し、malformed /
 unreadable XML は安定した `error: ...` 形式の CLI message として報告します。
+同名ファイルの識別のため、terminal error には full local input path が含まれる場合が
+あります。外部へログを共有する前に stderr の local path を sanitize してください。
 
 ```sh
 python -m pip install -e ".[test]"

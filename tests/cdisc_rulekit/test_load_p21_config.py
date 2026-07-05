@@ -90,6 +90,12 @@ def test_load_p21_config_rejects_dtd_or_entity_declarations(tmp_path):
         load_p21_config_rules([config])
 
 
+def test_load_p21_config_documents_intentional_source_tree_xml_fallback():
+    assert "source-tree smoke fallback is intentional" in p21_config.XML_SECURITY_BACKEND_POLICY
+    assert "DTD/entity preflight" in p21_config.XML_SECURITY_BACKEND_POLICY
+    assert "installed environments should use defusedxml" in p21_config.XML_SECURITY_BACKEND_POLICY
+
+
 def test_load_p21_config_wraps_configured_xml_parser_exceptions(tmp_path, monkeypatch):
     config = tmp_path / "blocked.xml"
     config.write_text("<config />", encoding="utf-8")

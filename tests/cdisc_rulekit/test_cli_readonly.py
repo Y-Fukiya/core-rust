@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -203,6 +204,81 @@ def test_cli_main_formats_usage_errors_without_hiding_internal_value_errors(monk
     parser.next_args = BugArgs()
     with pytest.raises(ValueError, match="internal bug"):
         cli.main(["demo"])
+
+
+def test_generate_negative_limit_is_formatted_as_usage_error():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "generate",
+            "--p21-catalog",
+            "missing.csv",
+            "--conversion-status",
+            "missing-status.csv",
+            "--operator-inventory",
+            "missing-operators.csv",
+            "--out",
+            "generated",
+            "--limit",
+            "-1",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "error: limit must be zero or greater\n"
+    assert "Traceback" not in result.stderr
+
+
+def test_export_rules_invalid_target_subdir_is_formatted_as_usage_error(tmp_path):
+    generated = tmp_path / "generated"
+    (generated / "P21_SD0001").mkdir(parents=True)
+    repo = tmp_path / "open-rules"
+    repo.mkdir()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "export-rules",
+            "--generated-rules",
+            str(generated),
+            "--open-rules-repo",
+            str(repo),
+            "--target-subdir",
+            "../escape",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "error: target_subdir must be a relative path inside open_rules_repo\n"
+    assert "Traceback" not in result.stderr
+
+
+def test_readme_documents_cli_full_path_stderr_log_handling():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "reports malformed or unreadable XML as stable" in readme
+    assert "`error: ...` CLI messages" in readme
+    assert "The terminal error may include the full local input" in readme
+    assert "path to disambiguate same-named files" in readme
+    assert "sanitize stderr before sharing logs" in readme
+    assert "externally" in readme
 
 
 def test_build_readonly_honors_standard_and_limit(
