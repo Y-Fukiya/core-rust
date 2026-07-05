@@ -226,11 +226,12 @@ fn find_xpt_header(bytes: &[u8], header: &str) -> Option<usize> {
 }
 
 fn parse_xpt_header_count(card: &[u8]) -> Option<usize> {
-    ascii_card(card)
-        .split(|ch: char| !ch.is_ascii_digit())
-        .filter(|part| !part.is_empty())
-        .filter_map(|part| part.parse::<usize>().ok())
-        .find(|value| *value > 0)
+    let text = ascii_card(card);
+    let count_field = text.get(text.len().saturating_sub(30)..)?.trim();
+    if count_field.is_empty() || !count_field.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    count_field.parse::<usize>().ok().filter(|value| *value > 0)
 }
 
 fn parse_xpt_namestr(bytes: &[u8]) -> Result<XptVariable> {
@@ -433,6 +434,28 @@ mod tests {
                 .expect_err("invalid NAMESTR byte length should fail");
             expect_invalid_dataset_package(error, "invalid length");
         }
+    }
+
+    #[test]
+    fn parse_xpt_header_count_reads_fixed_trailing_count_field() {
+        let mut card = [b' '; XPT_CARD_LEN];
+        card[..48].copy_from_slice(b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!");
+        card[50..53].copy_from_slice(b"999");
+        card[XPT_CARD_LEN - 30..].copy_from_slice(b"000000000000000000000000000002");
+
+        assert_eq!(parse_xpt_header_count(&card), Some(2));
+    }
+
+    #[test]
+    fn parse_xpt_header_count_rejects_zero_or_malformed_count_field() {
+        let mut zero = [b' '; XPT_CARD_LEN];
+        zero[..48].copy_from_slice(b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!");
+        zero[XPT_CARD_LEN - 30..].copy_from_slice(b"000000000000000000000000000000");
+        assert_eq!(parse_xpt_header_count(&zero), None);
+
+        let mut malformed = zero;
+        malformed[XPT_CARD_LEN - 1] = b'X';
+        assert_eq!(parse_xpt_header_count(&malformed), None);
     }
 
     #[test]

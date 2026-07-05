@@ -134,6 +134,9 @@ Use the delta `summary.md` for review notes and preserve
 `scoreboard-delta.json` for the full case-level transition list. The JSON
 artifact is the durable evidence when reviewers need to audit every
 default-vs-strict bucket, normalization, or rule-level transition.
+Archive the default `scoreboard.json`, strict `scoreboard.json`,
+`scoreboard-delta.json`, and delta `summary.md` together for each reviewed
+upstream run.
 
 ## Reproducibility Notes
 

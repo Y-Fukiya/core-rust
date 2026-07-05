@@ -958,33 +958,10 @@ fn evaluate_target_is_not_sorted_by(
 
     let mut mask = vec![false; row_count];
     for rows in groups.values() {
-        let mut group_has_inversion = false;
         let group_has_uncertain_sort = rows
             .iter()
             .any(|row| row.sort_values.iter().any(is_uncertain_sort_value));
-
-        for left_index in 0..rows.len() {
-            for right_index in (left_index + 1)..rows.len() {
-                let left = &rows[left_index];
-                let right = &rows[right_index];
-                let Some(sort_ordering) =
-                    compare_sort_values(&left.sort_values, &right.sort_values, &sort_specs)
-                else {
-                    continue;
-                };
-                let Some(target_ordering) = compare_scalars(&left.target, &right.target) else {
-                    continue;
-                };
-                if sort_ordering != Ordering::Equal
-                    && target_ordering != Ordering::Equal
-                    && sort_ordering != target_ordering
-                {
-                    mask[left.row] = true;
-                    mask[right.row] = true;
-                    group_has_inversion = true;
-                }
-            }
-        }
+        let group_has_inversion = mark_target_sort_inversions(rows, &sort_specs, &mut mask);
 
         if group_has_inversion && group_has_uncertain_sort {
             for row in rows {
@@ -996,6 +973,257 @@ fn evaluate_target_is_not_sorted_by(
     }
 
     Ok(mask)
+}
+
+fn mark_target_sort_inversions(
+    rows: &[SortRow],
+    sort_specs: &[SortSpec],
+    mask: &mut [bool],
+) -> bool {
+    let mut sorted = rows.iter().collect::<Vec<_>>();
+    sorted.sort_by(|left, right| {
+        compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.row.cmp(&right.row))
+    });
+
+    let buckets = sorted
+        .chunk_by(|left, right| {
+            compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
+                == Some(Ordering::Equal)
+        })
+        .collect::<Vec<_>>();
+    if target_sort_requires_pairwise_comparison(&sorted) {
+        return mark_target_sort_inversions_pairwise(&sorted, sort_specs, mask);
+    }
+    let mut numeric = Vec::new();
+    let mut string = Vec::new();
+    for (bucket, rows) in buckets.iter().enumerate() {
+        for row in rows.iter().copied() {
+            match comparable_target_sort_value(&row.target) {
+                Some(ComparableTargetSortValue::Number(value)) => {
+                    numeric.push(TargetSortEntry {
+                        bucket,
+                        row: row.row,
+                        value,
+                    });
+                }
+                Some(ComparableTargetSortValue::String(value)) => {
+                    string.push(TargetSortEntry {
+                        bucket,
+                        row: row.row,
+                        value,
+                    });
+                }
+                None => {}
+            }
+        }
+    }
+
+    mark_numeric_target_sort_inversions(&numeric, mask)
+        | mark_string_target_sort_inversions(&string, mask)
+}
+
+fn target_sort_requires_pairwise_comparison(rows: &[&SortRow]) -> bool {
+    // Preserve compare_scalars() semantics for string columns that mix numeric-like
+    // and non-numeric values: "10" vs "B" falls back to string comparison.
+    let has_numeric_like_string = rows.iter().any(|row| {
+        matches!(&row.target, ScalarValue::String(_))
+            && row.target.as_type_insensitive_number().is_some()
+    });
+    let has_non_numeric_string = rows.iter().any(|row| {
+        matches!(&row.target, ScalarValue::String(_))
+            && row.target.as_type_insensitive_number().is_none()
+    });
+    has_numeric_like_string && has_non_numeric_string
+}
+
+fn mark_target_sort_inversions_pairwise(
+    sorted: &[&SortRow],
+    sort_specs: &[SortSpec],
+    mask: &mut [bool],
+) -> bool {
+    let mut has_inversion = false;
+    for (left_index, left) in sorted.iter().enumerate() {
+        for right in &sorted[left_index + 1..] {
+            let Some(sort_ordering) =
+                compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
+            else {
+                continue;
+            };
+            if sort_ordering == Ordering::Equal {
+                continue;
+            }
+            let Some(target_ordering) = compare_scalars(&left.target, &right.target) else {
+                continue;
+            };
+            if target_ordering != Ordering::Equal && sort_ordering != target_ordering {
+                mask[left.row] = true;
+                mask[right.row] = true;
+                has_inversion = true;
+            }
+        }
+    }
+    has_inversion
+}
+
+#[derive(Debug, Clone)]
+enum ComparableTargetSortValue {
+    Number(f64),
+    String(String),
+}
+
+#[derive(Debug)]
+struct TargetSortEntry<T> {
+    bucket: usize,
+    row: usize,
+    value: T,
+}
+
+fn comparable_target_sort_value(value: &ScalarValue) -> Option<ComparableTargetSortValue> {
+    if let Some(value) = value.as_type_insensitive_number() {
+        return Some(ComparableTargetSortValue::Number(normalize_zero(value)));
+    }
+    value
+        .as_string()
+        .map(|value| ComparableTargetSortValue::String(value.to_owned()))
+}
+
+fn normalize_zero(value: f64) -> f64 {
+    if value == 0.0 {
+        0.0
+    } else {
+        value
+    }
+}
+
+fn mark_numeric_target_sort_inversions(
+    entries: &[TargetSortEntry<f64>],
+    mask: &mut [bool],
+) -> bool {
+    let mut values = entries.iter().map(|entry| entry.value).collect::<Vec<_>>();
+    values.sort_by(f64::total_cmp);
+    values.dedup_by(|left, right| *left == *right);
+    mark_target_sort_inversions_by_rank(
+        entries,
+        mask,
+        |entry| {
+            values
+                .binary_search_by(|value| value.total_cmp(&entry.value))
+                .expect("target value rank exists")
+        },
+        values.len(),
+    )
+}
+
+fn mark_string_target_sort_inversions(
+    entries: &[TargetSortEntry<String>],
+    mask: &mut [bool],
+) -> bool {
+    let values = entries
+        .iter()
+        .map(|entry| entry.value.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let ranks = values
+        .into_iter()
+        .enumerate()
+        .map(|(rank, value)| (value, rank))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    mark_target_sort_inversions_by_rank(
+        entries,
+        mask,
+        |entry| *ranks.get(&entry.value).expect("target value rank exists"),
+        ranks.len(),
+    )
+}
+
+fn mark_target_sort_inversions_by_rank<T>(
+    entries: &[TargetSortEntry<T>],
+    mask: &mut [bool],
+    rank: impl Fn(&TargetSortEntry<T>) -> usize,
+    rank_count: usize,
+) -> bool {
+    if entries.len() < 2 || rank_count < 2 {
+        return false;
+    }
+
+    let mut has_inversion = false;
+    let mut seen = FenwickCounts::new(rank_count);
+    for bucket in entries.chunk_by(|left, right| left.bucket == right.bucket) {
+        for entry in bucket {
+            if seen.has_greater_than(rank(entry)) {
+                mask[entry.row] = true;
+                has_inversion = true;
+            }
+        }
+        for entry in bucket {
+            seen.add(rank(entry));
+        }
+    }
+
+    let mut seen = FenwickCounts::new(rank_count);
+    for bucket in entries
+        .chunk_by(|left, right| left.bucket == right.bucket)
+        .rev()
+    {
+        for entry in bucket {
+            if seen.has_less_than(rank(entry)) {
+                mask[entry.row] = true;
+                has_inversion = true;
+            }
+        }
+        for entry in bucket {
+            seen.add(rank(entry));
+        }
+    }
+
+    has_inversion
+}
+
+#[derive(Debug)]
+struct FenwickCounts {
+    counts: Vec<usize>,
+    total: usize,
+}
+
+impl FenwickCounts {
+    fn new(len: usize) -> Self {
+        Self {
+            counts: vec![0; len + 1],
+            total: 0,
+        }
+    }
+
+    fn add(&mut self, rank: usize) {
+        self.total += 1;
+        let mut index = rank + 1;
+        while index < self.counts.len() {
+            self.counts[index] += 1;
+            index += fenwick_lowbit(index);
+        }
+    }
+
+    fn has_less_than(&self, rank: usize) -> bool {
+        rank > 0 && self.prefix_sum(rank - 1) > 0
+    }
+
+    fn has_greater_than(&self, rank: usize) -> bool {
+        self.total > self.prefix_sum(rank)
+    }
+
+    fn prefix_sum(&self, rank: usize) -> usize {
+        let mut index = rank + 1;
+        let mut total = 0;
+        while index > 0 {
+            total += self.counts[index];
+            index &= index - 1;
+        }
+        total
+    }
+}
+
+fn fenwick_lowbit(index: usize) -> usize {
+    index & index.wrapping_neg()
 }
 
 fn evaluate_empty_within_except_last_row(
@@ -1757,7 +1985,10 @@ fn compare_scalars(left: &ScalarValue, right: &ScalarValue) -> Option<Ordering> 
         return None;
     }
 
-    match (left.as_number(), right.as_number()) {
+    match (
+        left.as_type_insensitive_number(),
+        right.as_type_insensitive_number(),
+    ) {
         (Some(left), Some(right)) => left.partial_cmp(&right),
         _ => match (left.as_string(), right.as_string()) {
             (Some(left), Some(right)) => Some(left.cmp(right)),

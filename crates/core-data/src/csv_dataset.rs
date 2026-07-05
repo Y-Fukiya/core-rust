@@ -7,12 +7,13 @@ use serde_json::Value;
 use crate::dataset_paths::{canonical_or_original, column_names, file_name, file_stem};
 use crate::json_table::series_from_json_values;
 use crate::{
-    cell_to_string, DataError, DatasetMetadata, DatasetSourceFormat, DatasetVariable,
-    LoadedDataset, Result,
+    cell_to_string, validate_dataset_file_size, validate_frame_limits, DataError, DatasetMetadata,
+    DatasetSourceFormat, DatasetVariable, LoadedDataset, Result,
 };
 
 pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
     let path = path.as_ref();
+    validate_dataset_file_size(path, "CSV")?;
     let raw_frame = CsvReadOptions::default()
         .with_infer_schema_length(Some(0))
         .try_into_reader_with_file_path(Some(path.to_path_buf()))
@@ -26,6 +27,7 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
             source,
         })?;
     let frame = normalize_csv_frame_types(raw_frame, path)?;
+    validate_frame_limits(&frame, "CSV")?;
 
     let filename = file_name(path)?;
     let name = file_stem(path)?.to_ascii_uppercase();

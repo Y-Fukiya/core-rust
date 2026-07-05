@@ -52,7 +52,10 @@ Use `summary.md` for the human review pass and
 `scoreboard-delta.json.changed_cases` as the durable case-level audit list. The
 markdown intentionally shows a bounded example table; the JSON keeps every
 changed case so future reviews can diff strict/default behavior without opening
-the two full scoreboards side by side.
+the two full scoreboards side by side. Archive the default `scoreboard.json`,
+strict `scoreboard.json`, `scoreboard-delta.json`, and delta `summary.md`
+together so the review note, full case-level transitions, and source
+scoreboards remain tied to the same pinned upstream run.
 
 The accepted v31 inventory has 55 `deferred_oracle_gap_skipped` cases: 51
 `official_oracle_fixture_gap` cases and 4 `standard_filter_oracle_gap` cases.

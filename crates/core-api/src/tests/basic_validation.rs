@@ -184,6 +184,35 @@ fn select_rules_includes_only_requested_ids_and_skips_missing_ids() {
 }
 
 #[test]
+fn select_rules_deduplicates_include_rules_preserving_first_match() {
+    let dir = tempdir().expect("tempdir");
+    write_rule(dir.path(), "CORE-TEST-0001", "AE");
+    write_rule(dir.path(), "CORE-TEST-0002", "CM");
+    let rules = load_rules_from_paths(&[dir.path().to_path_buf()]).expect("load rules");
+
+    let selection = select_rules(
+        &rules,
+        &[
+            "CORE-TEST-0002".to_owned(),
+            "CORE-TEST-0002".to_owned(),
+            "CORE-TEST-0001".to_owned(),
+        ],
+        &[],
+    )
+    .expect("select rules");
+
+    assert_eq!(
+        selection
+            .selected
+            .iter()
+            .map(|rule| rule.core_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["CORE-TEST-0002", "CORE-TEST-0001"]
+    );
+    assert!(selection.skipped.is_empty());
+}
+
+#[test]
 fn select_rules_excludes_requested_ids_and_skips_missing_exclusions() {
     let dir = tempdir().expect("tempdir");
     write_rule(dir.path(), "CORE-TEST-0001", "AE");

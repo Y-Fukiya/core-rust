@@ -83,6 +83,9 @@ Data:
 - DatasetPackageJson-style JSON
 - SAS XPT v5 subset
 
+DatasetPackageJson numbers larger than JavaScript's safe integer range may be
+loaded as strings to avoid silent precision loss.
+
 XPT support is a bounded v5 parser subset. Use official tooling for
 submission-grade XPORT transport validation.
 
@@ -154,6 +157,24 @@ python -m cdisc_rulekit.cli pilot-preflight \
 
 P21PORT outputs are draft/review artifacts. Existing Open Rules `Published/`
 content is not modified unless you explicitly export into a target tree.
+
+## CLI Exit Policy
+
+`core-rs validate` writes reports and exits `0` when validation execution
+completes, even if the report contains failed or skipped rule results. This
+default keeps ad hoc review runs from failing before the report can be inspected.
+
+For CI or release gates, use one of the explicit fail policies:
+
+```sh
+core-rs validate ... --fail-on failed
+core-rs validate ... --fail-on failed,skipped
+core-rs validate ... --strict
+```
+
+`--strict` is equivalent to failing on both failed and skipped results. A
+non-zero exit from these modes means the report was generated but the requested
+validation result policy was not satisfied.
 
 ## Release And Audit Artifacts
 

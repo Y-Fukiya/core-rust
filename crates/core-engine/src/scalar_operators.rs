@@ -189,13 +189,6 @@ impl ScalarValue {
         }
     }
 
-    pub(super) fn as_number(&self) -> Option<f64> {
-        match self {
-            Self::Number(value) => Some(*value),
-            _ => None,
-        }
-    }
-
     pub(super) fn as_type_insensitive_number(&self) -> Option<f64> {
         match self {
             Self::Number(value) if value.is_finite() => Some(*value),

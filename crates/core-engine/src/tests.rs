@@ -238,6 +238,53 @@ fn equality_respects_string_and_numeric_types() {
 }
 
 #[test]
+fn ordering_comparisons_parse_numeric_strings_without_changing_equality_semantics() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "adlb.xpt",
+      "domain": "ADLB",
+      "records": {
+        "AVAL_MAX": ["18446744073709551615", "10", ""]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition("AVAL_MAX", Operator::GreaterThan, literal(14)),
+            &dataset
+        )
+        .expect("numeric string greater-than"),
+        vec![true, false, false]
+    );
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AVAL_MAX",
+                Operator::EqualTo,
+                literal(18446744073709551615_u64)
+            ),
+            &dataset
+        )
+        .expect("equality remains type-sensitive"),
+        vec![false, false, false]
+    );
+}
+
+#[test]
 fn evaluates_case_insensitive_equality_and_list_comparators() {
     let dataset = test_dataset();
 
@@ -1011,6 +1058,254 @@ fn evaluates_target_is_not_sorted_by_within_groups() {
         )
         .expect("target is not sorted by"),
         vec![false, true, true, false, false]
+    );
+}
+
+#[test]
+fn target_is_not_sorted_by_marks_all_rows_participating_in_inversions() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [3, 2, 1],
+        "AESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true, true]
+    );
+}
+
+#[test]
+fn target_is_not_sorted_by_ignores_target_order_inside_equal_sort_keys() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [2, 1, 3],
+        "AESTDTC": ["2024-01-01", "2024-01-01", "2024-01-02"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![false, false, false]
+    );
+}
+
+#[test]
+fn target_is_not_sorted_by_preserves_string_comparison_for_mixed_text_targets() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AETERM": ["B", "10", "C"],
+        "AESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AETERM",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true, false]
+    );
+}
+
+#[test]
+fn target_sort_pairwise_fallback_ignores_uncomparable_sort_values() {
+    let rows = vec![
+        SortRow {
+            row: 0,
+            target: ScalarValue::String("B".to_owned()),
+            sort_values: vec![Some(ScalarValue::Number(1.0))],
+        },
+        SortRow {
+            row: 1,
+            target: ScalarValue::String("10".to_owned()),
+            sort_values: vec![Some(ScalarValue::String("A".to_owned()))],
+        },
+    ];
+    let mut mask = vec![false, false];
+
+    assert!(!mark_target_sort_inversions(
+        &rows,
+        &[SortSpec {
+            column: "SORT".to_owned(),
+            descending: false,
+            nulls_first: false,
+        }],
+        &mut mask
+    ));
+    assert_eq!(mask, vec![false, false]);
+}
+
+#[test]
+fn target_is_not_sorted_by_handles_descending_sort_order() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [3, 2, 1],
+        "AESTDTC": ["2024-01-03", "2024-01-02", "2024-01-01"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "desc",
+                    "null_position": "last"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true, true]
+    );
+}
+
+#[test]
+fn target_is_not_sorted_by_honors_nulls_first_sort_order() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "AESEQ": [2, 1],
+        "AESTDTC": [null, "2024-01-01"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset package");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset package")
+        .into_iter()
+        .next()
+        .expect("dataset");
+
+    assert_eq!(
+        evaluate_condition(
+            &condition(
+                "AESEQ",
+                Operator::TargetIsNotSortedBy,
+                ValueExpr::List(vec![json!({
+                    "name": "AESTDTC",
+                    "sort_order": "asc",
+                    "null_position": "first"
+                })])
+            ),
+            &dataset
+        )
+        .expect("target is not sorted by"),
+        vec![true, true]
     );
 }
 

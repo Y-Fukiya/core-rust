@@ -420,8 +420,10 @@ pub fn select_rules(
             .cloned()
             .collect()
     } else {
+        let mut seen = BTreeSet::new();
         include_rules
             .iter()
+            .filter(|id| seen.insert(id.as_str()))
             .filter_map(|id| rules.iter().find(|rule| rule.core_id == *id).cloned())
             .collect()
     };
