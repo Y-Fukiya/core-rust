@@ -108,7 +108,7 @@ case count outside the default CI budget:
 
 ```sh
 CORE_ENGINE_TARGET_SORT_PROPTEST_CASES=2048 \
-  cargo test -p core-engine target_sort_optimized_matches_pairwise_reference --locked
+  cargo test --locked -p core-engine target_sort_optimized_matches_pairwise_reference
 ```
 
 For P21PORT conversion artifacts, also run a representative read-only workflow

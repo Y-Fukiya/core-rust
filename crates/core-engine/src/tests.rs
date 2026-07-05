@@ -1398,10 +1398,11 @@ fn target_sort_scalar_strategy() -> impl Strategy<Value = ScalarValue> {
         Just(ScalarValue::Null),
         Just(ScalarValue::Bool(false)),
         Just(ScalarValue::Bool(true)),
+        Just(ScalarValue::Number(-0.0)),
         (-3i32..=3).prop_map(|value| ScalarValue::Number(value as f64)),
-        prop::sample::select(vec!["-2", "0", "2", "10"])
+        prop::sample::select(vec!["-2", "0", "2", "10", "-0"])
             .prop_map(|value| ScalarValue::String(value.to_owned())),
-        prop::sample::select(vec!["A", "B", "x"])
+        prop::sample::select(vec!["", " ", "A", "B", "x"])
             .prop_map(|value| ScalarValue::String(value.to_owned())),
     ]
 }
