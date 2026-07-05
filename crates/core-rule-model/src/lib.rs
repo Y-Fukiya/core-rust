@@ -1199,7 +1199,7 @@ fn replace_jsonata_binding_tokens(expression: &str, bindings: &BTreeMap<String, 
 }
 
 fn is_jsonata_binding_identifier_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 fn split_top_level_statements(expression: &str) -> Vec<&str> {
@@ -2467,6 +2467,15 @@ Outcome:
             resolved,
             "DOMAIN = 'DM' and AETERM = \"$a\" and `$a` = DOMAIN"
         );
+    }
+
+    #[test]
+    fn jsonata_binding_resolution_replaces_binding_before_property_access() {
+        let expression = "($x := DOMAIN; $x.code = 'AE' and $xcode = 'not a binding')";
+
+        let resolved = resolve_jsonata_bindings(expression);
+
+        assert_eq!(resolved, "DOMAIN.code = 'AE' and $xcode = 'not a binding'");
     }
 
     #[test]

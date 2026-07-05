@@ -83,6 +83,9 @@ Data:
 - DatasetPackageJson-style JSON
 - SAS XPT v5 subset
 
+DatasetPackageJson numbers larger than JavaScript's safe integer range may be
+loaded as strings to avoid silent precision loss.
+
 XPT support is a bounded v5 parser subset. Use official tooling for
 submission-grade XPORT transport validation.
 

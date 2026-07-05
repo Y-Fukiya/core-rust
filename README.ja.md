@@ -81,6 +81,9 @@ target/core-rust-report/validation.log
 - DatasetPackageJson 風 JSON
 - SAS XPT v5 subset
 
+DatasetPackageJson の JavaScript safe integer range を超える数値は、暗黙の
+精度低下を避けるため文字列として読み込まれる場合があります。
+
 XPT 対応は境界を設けた v5 parser subset です。提出品質の XPORT
 transport 妥当性確認は、公式ツールで行ってください。
 

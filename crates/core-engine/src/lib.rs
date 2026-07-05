@@ -993,6 +993,9 @@ fn mark_target_sort_inversions(
                 == Some(Ordering::Equal)
         })
         .collect::<Vec<_>>();
+    if target_sort_requires_pairwise_comparison(&sorted) {
+        return mark_target_sort_inversions_pairwise(&sorted, sort_specs, mask);
+    }
     let mut numeric = Vec::new();
     let mut string = Vec::new();
     for (bucket, rows) in buckets.iter().enumerate() {
@@ -1019,6 +1022,49 @@ fn mark_target_sort_inversions(
 
     mark_numeric_target_sort_inversions(&numeric, mask)
         | mark_string_target_sort_inversions(&string, mask)
+}
+
+fn target_sort_requires_pairwise_comparison(rows: &[&SortRow]) -> bool {
+    // Preserve compare_scalars() semantics for string columns that mix numeric-like
+    // and non-numeric values: "10" vs "B" falls back to string comparison.
+    let has_numeric_like_string = rows.iter().any(|row| {
+        matches!(&row.target, ScalarValue::String(_))
+            && row.target.as_type_insensitive_number().is_some()
+    });
+    let has_non_numeric_string = rows.iter().any(|row| {
+        matches!(&row.target, ScalarValue::String(_))
+            && row.target.as_type_insensitive_number().is_none()
+    });
+    has_numeric_like_string && has_non_numeric_string
+}
+
+fn mark_target_sort_inversions_pairwise(
+    sorted: &[&SortRow],
+    sort_specs: &[SortSpec],
+    mask: &mut [bool],
+) -> bool {
+    let mut has_inversion = false;
+    for (left_index, left) in sorted.iter().enumerate() {
+        for right in &sorted[left_index + 1..] {
+            let Some(sort_ordering) =
+                compare_sort_values(&left.sort_values, &right.sort_values, sort_specs)
+            else {
+                continue;
+            };
+            if sort_ordering == Ordering::Equal {
+                continue;
+            }
+            let Some(target_ordering) = compare_scalars(&left.target, &right.target) else {
+                continue;
+            };
+            if target_ordering != Ordering::Equal && sort_ordering != target_ordering {
+                mask[left.row] = true;
+                mask[right.row] = true;
+                has_inversion = true;
+            }
+        }
+    }
+    has_inversion
 }
 
 #[derive(Debug, Clone)]
