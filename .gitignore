@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 .codegraph/
+# Local/generated planning artifacts; committed docs belong under docs/.
 docs/superpowers/
 *.fileprovider-placeholder
 *.fileprovider-conflict-placeholder

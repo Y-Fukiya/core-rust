@@ -156,6 +156,9 @@ content is not modified unless you explicitly export into a target tree.
 
 Release artifacts should be accompanied by a provenance manifest:
 
+The commands below are a local smoke example. For reviewed release bundles, use
+the stricter policy flags described after the example.
+
 ```sh
 cargo build --release -p core-cli
 mkdir -p target/release-provenance/bin

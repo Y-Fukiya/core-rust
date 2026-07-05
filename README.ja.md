@@ -152,6 +152,9 @@ python -m cdisc_rulekit.cli pilot-preflight \
 
 release artifact には provenance manifest を添付してください。
 
+以下はローカル smoke 用の例です。review 済み release bundle では、この例の後に
+示すより厳格な policy flags を使ってください。
+
 ```sh
 cargo build --release -p core-cli
 mkdir -p target/release-provenance/bin
