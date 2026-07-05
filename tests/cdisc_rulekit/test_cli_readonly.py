@@ -69,6 +69,71 @@ def test_build_readonly_writes_catalog_mapping_and_reports(
     assert readiness["generated_rules_created"] == 0
 
 
+def test_convert_p21_config_writes_local_catalog_without_fetching(tmp_path):
+    config = tmp_path / "p21-config.xml"
+    config.write_text(
+        """
+<config version="2204.0" agency="FDA" name="SDTM-IG">
+  <standard name="SDTM-IG" version="3.3">
+    <rule id="SD1234" category="Validation" severity="Error" type="Required">
+      <message>AE.AETERM must be populated. See CG1234.</message>
+      <description>Adverse event term is required.</description>
+      <domain>AE</domain>
+      <class>EVENTS</class>
+      <target>AETERM</target>
+      <variable>AETERM</variable>
+      <test>AETERM != ""</test>
+    </rule>
+  </standard>
+</config>
+""".strip(),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "catalog"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cdisc_rulekit.cli",
+            "convert-p21-config",
+            "--input",
+            str(config),
+            "--source-label",
+            "sdtm33",
+            "--out",
+            str(out_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "convert-p21-config complete: 1 rule(s)" in result.stdout
+    with (out_dir / "p21_rules_normalized.csv").open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["p21_rule_id"] == "SD1234"
+    assert rows[0]["standard_name"] == "SDTM-IG"
+    assert rows[0]["standard_version"] == "3.3"
+    assert rows[0]["domains"] == '["AE"]'
+    assert rows[0]["variables"] == '["AETERM"]'
+    assert json.loads(rows[0]["raw_condition"]) == {
+        "target": "AETERM",
+        "test": 'AETERM != ""',
+        "variable": "AETERM",
+    }
+    assert rows[0]["source_path"] == "sdtm33"
+    assert str(tmp_path) not in rows[0]["source_rule_key"]
+    assert str(tmp_path) not in rows[0]["raw_record"]
+    report = (out_dir / "extraction_report.md").read_text(encoding="utf-8")
+    assert "does not download" in report
+    assert "user-supplied" in report
+
+
 def test_build_readonly_honors_standard_and_limit(
     tmp_path,
     p21_rules_path,

@@ -108,7 +108,7 @@ case count outside the default CI budget:
 
 ```sh
 CORE_ENGINE_TARGET_SORT_PROPTEST_CASES=2048 \
-  cargo test -p core-engine target_sort_optimized_matches_pairwise_reference --locked
+  cargo test --locked -p core-engine target_sort_optimized_matches_pairwise_reference
 ```
 
 For P21PORT conversion artifacts, also run a representative read-only workflow
@@ -125,6 +125,18 @@ comparison failure for equal-count structural mismatch and extra-issue
 directions, fuzzy mapping, duplicate P21 rule-id preservation, and unsupported
 generation probes. It is not a Pinnacle 21 or official CDISC Validator
 equivalence check.
+
+The fixture corpus is synthetic and non-proprietary. P21PORT does not retrieve
+Pinnacle 21 rule definitions; production pilots must provide authorized
+user-supplied rule catalog CSVs.
+
+If a pilot derives inputs from public Pinnacle 21 Community configuration
+repositories, keep the checkout and derived catalogs outside this repository
+unless the applicable Pinnacle 21 license permits sharing adapted material.
+The optional `convert-p21-config` command is a local XML-to-catalog helper for
+that workflow; it does not download source configuration files. Use its
+`--source-label` option when release comparison artifacts need stable
+non-path source identifiers.
 
 The default pytest configuration excludes subprocess-heavy integration tests.
 Run the P21PORT smoke explicitly with either:
