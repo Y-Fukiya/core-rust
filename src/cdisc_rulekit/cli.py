@@ -16,6 +16,7 @@ from .core_runner import (
     write_core_run_execution_report,
     write_core_run_plan,
 )
+from .errors import CliUsageError
 from .emit import emit_conversion_status, emit_core_catalog, emit_mapping, emit_p21_catalog
 from .export_rules import export_generated_rules
 from .generate_rules import generate_rules, operator_set_from_inventory_rows
@@ -52,7 +53,7 @@ def _limit_rules(rules: list[CanonicalRule], limit: int | None) -> list[Canonica
     if limit is None:
         return rules
     if limit < 0:
-        raise ValueError("--limit must be zero or greater")
+        raise CliUsageError("--limit must be zero or greater")
     return rules[:limit]
 
 
@@ -204,7 +205,7 @@ def cmd_build_readonly(args: argparse.Namespace) -> int:
 
 def cmd_generate(args: argparse.Namespace) -> int:
     if args.limit is not None and args.limit < 0:
-        raise ValueError("limit must be zero or greater")
+        raise CliUsageError("limit must be zero or greater")
     rules = _rules_with_conversion_status(args.p21_catalog, args.conversion_status)
     operator_rows = _read_csv_rows(args.operator_inventory)
     allowed_operators = operator_set_from_inventory_rows(operator_rows)
@@ -479,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except ValueError as error:
+    except CliUsageError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 

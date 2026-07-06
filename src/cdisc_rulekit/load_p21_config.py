@@ -1,3 +1,11 @@
+"""Best-effort local Pinnacle 21 configuration XML extraction.
+
+Security backend policy:
+Installed environments should use defusedxml. The source-tree smoke fallback is
+intentional before dependencies are installed; DTD/entity preflight runs before
+parsing in either backend.
+"""
+
 from __future__ import annotations
 
 import re
@@ -18,7 +26,7 @@ except ImportError:  # pragma: no cover - optional hardening dependency.
 XML_PARSE_EXCEPTIONS = (
     (ET.ParseError, DefusedXmlException) if DefusedXmlException is not None else (ET.ParseError,)
 )
-
+from .errors import CliUsageError
 from .io_utils import normalize_blank, split_semicolon_list
 from .load_p21 import extract_cg_ids
 from .models import CanonicalRule
@@ -36,7 +44,7 @@ def load_p21_config_rules(
     source_labels: list[str] | None = None,
 ) -> tuple[list[CanonicalRule], list[str]]:
     if source_labels is not None and len(source_labels) != len(paths):
-        raise ValueError("--source-label count must match --input count")
+        raise CliUsageError("--source-label count must match --input count")
     rules: list[CanonicalRule] = []
     warnings: list[str] = []
     for index, path in enumerate(paths, start=1):
@@ -82,7 +90,7 @@ def _load_p21_config_path(path: Path, source_label: str) -> tuple[list[Canonical
     try:
         root = _parse_config_xml(path)
     except XML_PARSE_EXCEPTIONS as exc:
-        raise ValueError(f"{path}: malformed XML configuration: {exc}") from exc
+        raise CliUsageError(f"{path}: malformed XML configuration: {exc}") from exc
     rules, warnings = _collect_rules(source_label, root, _attributes(root), {})
     if not rules and not warnings:
         warnings.append(f"{source_label}: no rule elements found")
@@ -211,19 +219,22 @@ def _canonical_rule(
 
 def _parse_config_xml(path: Path) -> ET.Element:
     if not path.exists():
-        raise ValueError(f"{path}: XML configuration file does not exist")
+        raise CliUsageError(f"{path}: XML configuration file does not exist")
     # Symlink-to-file inputs are accepted because this converter only processes
     # explicit local user-supplied XML paths; non-file inputs remain rejected.
     if not path.is_file():
-        raise ValueError(f"{path}: XML configuration input must be a regular file")
+        raise CliUsageError(f"{path}: XML configuration input must be a regular file")
     if path.stat().st_size > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
-    payload = path.read_bytes()
+        raise CliUsageError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise CliUsageError(f"{path}: could not read XML configuration: {exc}") from exc
     if len(payload) > MAX_CONFIG_BYTES:
-        raise ValueError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
+        raise CliUsageError(f"{path}: XML configuration exceeds {MAX_CONFIG_BYTES} bytes")
     lowered = payload.lower()
     if b"<!doctype" in lowered or b"<!entity" in lowered:
-        raise ValueError(f"{path}: DTD/entity declarations are not supported")
+        raise CliUsageError(f"{path}: DTD/entity declarations are not supported")
     parser = DefusedET if DefusedET is not None else ET
     return parser.fromstring(payload)
 
@@ -316,9 +327,9 @@ def _normalize_key(value: str) -> str:
 def _safe_source_label(value: str) -> str:
     label = normalize_blank(value)
     if not label:
-        raise ValueError("--source-label values must not be blank")
+        raise CliUsageError("--source-label values must not be blank")
     if not SAFE_SOURCE_LABEL_RE.fullmatch(label):
-        raise ValueError("--source-label values may contain only letters, numbers, dot, underscore, colon, or hyphen")
+        raise CliUsageError("--source-label values may contain only letters, numbers, dot, underscore, colon, or hyphen")
     return label
 
 

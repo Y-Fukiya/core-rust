@@ -4,6 +4,12 @@ import os
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
+
+import pytest
+
+import cdisc_rulekit.cli as cli
+from cdisc_rulekit.errors import CliUsageError
 
 
 def test_build_readonly_writes_catalog_mapping_and_reports(
@@ -169,6 +175,46 @@ def test_convert_p21_config_rejects_malformed_xml(tmp_path):
     assert "Traceback" not in result.stderr
     assert result.stderr.startswith("error: ")
     assert not (out_dir / "p21_rules_normalized.csv").exists()
+
+
+def test_cli_main_formats_usage_errors_without_hiding_internal_value_errors(monkeypatch, capsys):
+    class UsageArgs:
+        @staticmethod
+        def func(_args):
+            raise CliUsageError("bad input")
+
+    class BugArgs:
+        @staticmethod
+        def func(_args):
+            raise ValueError("internal bug")
+
+    class Parser:
+        next_args = UsageArgs()
+
+        def parse_args(self, _argv):
+            return self.next_args
+
+    parser = Parser()
+    monkeypatch.setattr(cli, "build_parser", lambda: parser)
+
+    assert cli.main(["demo"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "error: bad input\n"
+
+    parser.next_args = BugArgs()
+    with pytest.raises(ValueError, match="internal bug"):
+        cli.main(["demo"])
+
+
+def test_readme_documents_cli_full_path_stderr_log_handling():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    for expected in [
+        "full local input",
+        "sanitize stderr",
+        "sharing logs",
+    ]:
+        assert expected in readme
 
 
 def test_build_readonly_honors_standard_and_limit(

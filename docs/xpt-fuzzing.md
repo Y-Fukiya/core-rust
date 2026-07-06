@@ -43,3 +43,15 @@ When `proptest` writes a minimized regression case under a
 parser boundary or a previously reproducible failure. Prefer a small, named
 seed under `fuzz/corpus/xpt_parser` for long-term fuzz coverage when the same
 case is useful outside the deterministic unit test suite.
+
+## Operational Evidence
+
+For a reviewed release or audit checkpoint, archive the latest successful
+manual or scheduled `XPT Fuzz` workflow run URL, the commit SHA, and the
+uploaded fuzz artifact bundle when one exists. If fuzzing finds a crash or
+timeout, keep the minimized reproducer in the workflow artifact first; after
+review, add the smallest useful seed to `fuzz/corpus/xpt_parser` with a short
+commit message describing the parser boundary it covers.
+
+Do not treat the absence of a new crash as semantic XPT conformance evidence.
+It is robustness evidence for malformed byte-stream handling only.

@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .errors import CliUsageError
 from .io_utils import ensure_dir, write_csv
 
 DEFAULT_ENGINE_COMMAND = "cargo run -p core-cli -- validate"
@@ -119,7 +120,7 @@ def _render_engine_command(engine_command: str, data_dir: Path) -> list[str]:
     placeholders = set(_PLACEHOLDER_PATTERN.findall(engine_command))
     missing = sorted(placeholder for placeholder in placeholders if placeholder not in values)
     if missing:
-        raise ValueError(f"Unsupported engine-command placeholder: {missing[0]}")
+        raise CliUsageError(f"Unsupported engine-command placeholder: {missing[0]}")
     sentinel_prefix = "__CDISC_RULEKIT_PLACEHOLDER_"
     rendered = engine_command
     for placeholder in placeholders:
@@ -140,9 +141,9 @@ def _command(
     data_mode: str = "dataset-paths",
 ) -> list[str]:
     if output_mode not in {"directory", "file-base"}:
-        raise ValueError(f"Unsupported output mode: {output_mode}")
+        raise CliUsageError(f"Unsupported output mode: {output_mode}")
     if data_mode not in {"dataset-paths", "data-dir"}:
-        raise ValueError(f"Unsupported data mode: {data_mode}")
+        raise CliUsageError(f"Unsupported data mode: {data_mode}")
     output_argument = output_dir / "report" if output_mode == "file-base" else output_dir
     command = [
         *_render_engine_command(engine_command, data_dir),

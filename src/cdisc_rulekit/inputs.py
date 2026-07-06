@@ -5,6 +5,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from .errors import CliUsageError
+
 
 def looks_like_open_rules_repo(path: str | Path) -> bool:
     root = Path(path)
@@ -27,11 +29,11 @@ def locate_open_rules_repo(path: str | Path) -> Path:
 def _assert_safe_zip_member(member_name: str, target: Path) -> None:
     member_path = Path(member_name)
     if member_path.is_absolute() or ".." in member_path.parts:
-        raise ValueError(f"unsafe zip member path: {member_name}")
+        raise CliUsageError(f"unsafe zip member path: {member_name}")
     destination = (target / member_path).resolve()
     target_root = target.resolve()
     if os.path.commonpath([str(target_root), str(destination)]) != str(target_root):
-        raise ValueError(f"unsafe zip member path: {member_name}")
+        raise CliUsageError(f"unsafe zip member path: {member_name}")
 
 
 def _is_cache_zip_member(member_name: str) -> bool:
