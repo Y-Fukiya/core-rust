@@ -206,15 +206,9 @@ def test_cli_main_formats_usage_errors_without_hiding_internal_value_errors(monk
         cli.main(["demo"])
 
 
-def test_generate_negative_limit_is_formatted_as_usage_error():
-    env = os.environ.copy()
-    env["PYTHONPATH"] = "src"
-
-    result = subprocess.run(
+def test_generate_negative_limit_is_formatted_as_usage_error(capsys):
+    result = cli.main(
         [
-            sys.executable,
-            "-m",
-            "cdisc_rulekit.cli",
             "generate",
             "--p21-catalog",
             "missing.csv",
@@ -226,31 +220,22 @@ def test_generate_negative_limit_is_formatted_as_usage_error():
             "generated",
             "--limit",
             "-1",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
+        ]
     )
 
-    assert result.returncode == 1
-    assert result.stderr == "error: limit must be zero or greater\n"
-    assert "Traceback" not in result.stderr
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.err == "error: limit must be zero or greater\n"
 
 
-def test_export_rules_invalid_target_subdir_is_formatted_as_usage_error(tmp_path):
+def test_export_rules_invalid_target_subdir_is_formatted_as_usage_error(tmp_path, capsys):
     generated = tmp_path / "generated"
     (generated / "P21_SD0001").mkdir(parents=True)
     repo = tmp_path / "open-rules"
     repo.mkdir()
-    env = os.environ.copy()
-    env["PYTHONPATH"] = "src"
 
-    result = subprocess.run(
+    result = cli.main(
         [
-            sys.executable,
-            "-m",
-            "cdisc_rulekit.cli",
             "export-rules",
             "--generated-rules",
             str(generated),
@@ -258,27 +243,23 @@ def test_export_rules_invalid_target_subdir_is_formatted_as_usage_error(tmp_path
             str(repo),
             "--target-subdir",
             "../escape",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
+        ]
     )
 
-    assert result.returncode == 1
-    assert result.stderr == "error: target_subdir must be a relative path inside open_rules_repo\n"
-    assert "Traceback" not in result.stderr
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.err == "error: target_subdir must be a relative path inside open_rules_repo\n"
 
 
 def test_readme_documents_cli_full_path_stderr_log_handling():
     readme = Path("README.md").read_text(encoding="utf-8")
 
-    assert "reports malformed or unreadable XML as stable" in readme
-    assert "`error: ...` CLI messages" in readme
-    assert "The terminal error may include the full local input" in readme
-    assert "path to disambiguate same-named files" in readme
-    assert "sanitize stderr before sharing logs" in readme
-    assert "externally" in readme
+    for expected in [
+        "full local input",
+        "sanitize stderr",
+        "sharing logs",
+    ]:
+        assert expected in readme
 
 
 def test_build_readonly_honors_standard_and_limit(

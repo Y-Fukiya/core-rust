@@ -1,3 +1,10 @@
+"""Best-effort local Pinnacle 21 configuration XML extraction.
+
+Installed environments should use defusedxml. The source-tree smoke fallback is
+intentional before dependencies are installed; DTD/entity preflight runs before
+parsing in either backend.
+"""
+
 from __future__ import annotations
 
 import re
@@ -18,12 +25,6 @@ except ImportError:  # pragma: no cover - optional hardening dependency.
 XML_PARSE_EXCEPTIONS = (
     (ET.ParseError, DefusedXmlException) if DefusedXmlException is not None else (ET.ParseError,)
 )
-XML_SECURITY_BACKEND_POLICY = (
-    "installed environments should use defusedxml; source-tree smoke fallback "
-    "is intentional before dependencies are installed; DTD/entity preflight "
-    "runs before parsing in either backend"
-)
-
 from .errors import CliUsageError
 from .io_utils import normalize_blank, split_semicolon_list
 from .load_p21 import extract_cg_ids
