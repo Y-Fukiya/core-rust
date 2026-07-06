@@ -1,5 +1,6 @@
 """Best-effort local Pinnacle 21 configuration XML extraction.
 
+Security backend policy:
 Installed environments should use defusedxml. The source-tree smoke fallback is
 intentional before dependencies are installed; DTD/entity preflight runs before
 parsing in either backend.
