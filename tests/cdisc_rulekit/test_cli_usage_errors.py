@@ -1,5 +1,8 @@
 import cdisc_rulekit.cli as cli
 
+# Representative direct cli.main() checks for user-correctable errors.
+# Subprocess coverage stays in the read-only integration tests.
+
 
 def test_generate_negative_limit_is_formatted_as_usage_error(capsys):
     result = cli.main(
