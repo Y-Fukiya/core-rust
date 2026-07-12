@@ -159,6 +159,17 @@ def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _assert_real_engine_summary(summary: dict[str, object], expected_pass_count: int) -> int:
+    fail_count = int(summary["fail_count"])
+    pass_count = int(summary["pass_count"])
+    if fail_count != 0 or pass_count != expected_pass_count:
+        raise AssertionError(
+            "P21 real-engine comparison baseline mismatch: "
+            f"pass={pass_count}, fail={fail_count}, expected_pass={expected_pass_count}",
+        )
+    return pass_count
+
+
 def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, object]]:
     rows = []
     for row in summary["rows"]:
@@ -468,7 +479,10 @@ def run(work_dir: Path, *, real_engine_command: str | None = None) -> dict[str, 
         real_summary = json.loads(
             (real_reports / "comparison_summary.json").read_text(encoding="utf-8"),
         )
-        real_engine_pass_count = int(real_summary["pass_count"])
+        real_engine_pass_count = _assert_real_engine_summary(
+            real_summary,
+            int(comparison_summary["pass_count"]),
+        )
 
     _write_failure_probe_actuals(generated / "generated_rules", failure_probe / "core_runs")
     _run_expect_failure(

@@ -204,6 +204,8 @@ def _compare_issue_index_group(
     expected_rows: list[dict[str, str]],
     actual_root: Path,
 ) -> dict[str, object]:
+    # issue_index rows are complete structural manifests, so this path always
+    # compares exact signatures. strict_structure only controls legacy rows.
     first = expected_rows[0]
     expected_count = int(first.get("expected_issue_count") or 0)
     actual_dir = actual_root / rule_id / case_type / case_id

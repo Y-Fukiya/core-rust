@@ -99,3 +99,13 @@ def test_p21port_smoke_subprocess_steps_have_timeout(monkeypatch):
     p21port_smoke._run(["python", "--version"], env={"PYTHONPATH": "src"})
 
     assert captured["timeout"] == p21port_smoke.SMOKE_STEP_TIMEOUT_SECONDS
+
+
+def test_real_engine_summary_requires_the_full_expected_pass_baseline():
+    assert p21port_smoke._assert_real_engine_summary({"pass_count": 4, "fail_count": 0}, 4) == 4
+
+    with pytest.raises(AssertionError, match="expected_pass=4"):
+        p21port_smoke._assert_real_engine_summary({"pass_count": 3, "fail_count": 0}, 4)
+
+    with pytest.raises(AssertionError, match="fail=1"):
+        p21port_smoke._assert_real_engine_summary({"pass_count": 4, "fail_count": 1}, 4)

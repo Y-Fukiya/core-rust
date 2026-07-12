@@ -1487,11 +1487,24 @@ fn join_variants_do_not_match_null_key_components() {
     let keys = ["USUBJID".to_owned()];
     let left = left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
         .expect("left join");
+    let inner = inner_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+        .expect("inner join");
     let semi = semi_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("semi join");
     let anti = anti_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("anti join");
     let flag = left.frame().column("LOOKUP.FLAG").expect("joined flag");
 
     assert_eq!(left.summary().row_count, 2);
+    assert_eq!(inner.summary().row_count, 1);
+    assert_eq!(
+        inner
+            .frame()
+            .column("USUBJID")
+            .expect("subject")
+            .get(0)
+            .expect("inner row")
+            .extract_str(),
+        Some("S1")
+    );
     assert!(flag.get(0).expect("null key row").is_null());
     assert_eq!(flag.get(1).expect("matched row").extract_str(), Some("Y"));
     assert_eq!(semi.summary().row_count, 1);

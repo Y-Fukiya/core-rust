@@ -710,9 +710,10 @@ def test_generate_rules_supports_unique_group_by_checks(tmp_path):
     assert {row["STUDYID"] for row in negative_rows} == {"CDISC-P21PORT"}
 
     with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
-        negative_expected = next(row for row in csv.DictReader(handle) if row["case_type"] == "negative")
-    assert negative_expected["expected_issue_count"] == "2"
-    assert negative_expected["variables"] == "USUBJID|DOMAIN"
+        negative_expected = [row for row in csv.DictReader(handle) if row["case_type"] == "negative"]
+    assert {row["expected_issue_count"] for row in negative_expected} == {"2"}
+    assert {row["variables"] for row in negative_expected} == {"USUBJID|DOMAIN"}
+    assert [row["usubjid"] for row in negative_expected] == ["P21PORT-001", "P21PORT-001"]
 
     validation = validate_generated_rules(tmp_path / "generated_rules")
     assert validation.ok
@@ -760,6 +761,10 @@ def test_generate_rules_uses_domain_for_unique_without_group_by(tmp_path):
     assert [row["TSPARMCD"] for row in positive_rows] == ["ADDON", "P21PORT-002"]
     assert [row["DOMAIN"] for row in negative_rows] == ["TS", "TS"]
     assert [row["TSPARMCD"] for row in negative_rows] == ["ADDON", "ADDON"]
+
+    with (generated_dir / "expected_results.csv").open(newline="", encoding="utf-8") as handle:
+        negative_expected = [row for row in csv.DictReader(handle) if row["case_type"] == "negative"]
+    assert [row["usubjid"] for row in negative_expected] == ["P21PORT-001", "P21PORT-002"]
 
 
 def test_generate_rules_supports_same_record_column_equality(tmp_path):

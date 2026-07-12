@@ -617,6 +617,13 @@ def _expected_negative_issue_count(rule: CanonicalRule) -> int:
     return 1
 
 
+def _expected_negative_usubjid(rule: CanonicalRule, domain: str, variable: str, issue_index: int) -> str:
+    if (rule.p21_rule_type or "").upper() != "UNIQUE":
+        return "P21PORT-001"
+    rows = _unique_case_rows(rule, domain, variable, "negative")
+    return rows[issue_index - 1]["USUBJID"]
+
+
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
     negative_variables = _expected_negative_variables(rule, variable)
     negative_count = _expected_negative_issue_count(rule)
@@ -644,7 +651,7 @@ def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, d
             "dataset": domain,
             "row": index,
             "variables": negative_variables,
-            "usubjid": "P21PORT-001",
+            "usubjid": _expected_negative_usubjid(rule, domain, variable, index),
             "seq": "",
         }
         for index in range(1, negative_count + 1)
