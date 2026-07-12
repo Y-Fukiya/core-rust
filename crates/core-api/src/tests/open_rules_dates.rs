@@ -860,6 +860,20 @@ fn run_validation_executes_core_000095_se_dataset_marker_when_seupdes_absent() {
     )
     .expect("write dataset");
 
+    let default_outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rules_dir.clone()],
+        dataset_paths: vec![dataset_path.clone()],
+        ..Default::default()
+    })
+    .expect("run default validation");
+
+    assert_eq!(default_outcome.results.len(), 1);
+    assert_eq!(
+        default_outcome.results[0].execution_status,
+        ExecutionStatus::Passed
+    );
+    assert_eq!(default_outcome.results[0].error_count, 0);
+
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],

@@ -145,6 +145,11 @@ Run the P21PORT smoke explicitly with either:
 ```sh
 PYTHONPATH=src python3 -m pytest -q -m integration
 PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke
+
+# Gate generated fixtures against the real Rust engine as well as the workflow fake.
+PYTHONPATH=src python3 scripts/p21port_smoke.py \
+  --work-dir target/p21port-real-smoke \
+  --real-engine-command 'target/debug/core-rs validate'
 ```
 
 For Open Rules compatibility artifacts, also archive the default scoreboard,

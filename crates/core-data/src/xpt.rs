@@ -185,9 +185,7 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
             let field = &row[offset..offset + variable.length];
             let value = match variable.variable_type {
                 XptVariableType::Numeric => decode_xpt_numeric(field),
-                XptVariableType::Character => {
-                    Value::String(trim_xpt_text(field).unwrap_or_default())
-                }
+                XptVariableType::Character => Value::String(decode_xpt_character(field)),
             };
             records
                 .get_mut(&variable.name)
@@ -293,6 +291,9 @@ fn parse_xpt_dataset_name(bytes: &[u8]) -> Option<String> {
 }
 
 fn observation_row_count(data: &[u8], observation_len: usize) -> usize {
+    // XPT v5 has no observation count. A trailing all-blank character-only
+    // observation is byte-for-byte indistinguishable from card padding, so the
+    // loader follows the conventional padding interpretation and trims it.
     let mut row_count = data.len() / observation_len;
     while row_count > 0 {
         let start = (row_count - 1) * observation_len;
@@ -351,8 +352,7 @@ fn decode_xpt_numeric(bytes: &[u8]) -> Value {
     if !value.is_finite() {
         return Value::Null;
     }
-    if (value.fract().abs() < f64::EPSILON) && value >= i64::MIN as f64 && value <= i64::MAX as f64
-    {
+    if value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
         Value::Number(serde_json::Number::from(value as i64))
     } else {
         serde_json::Number::from_f64(value)
@@ -384,6 +384,15 @@ fn read_xpt_u16(bytes: &[u8]) -> u16 {
 }
 
 fn trim_xpt_text(bytes: &[u8]) -> Option<String> {
+    let bytes = trim_xpt_bytes(bytes);
+    std::str::from_utf8(bytes).ok().map(str::to_owned)
+}
+
+fn decode_xpt_character(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(trim_xpt_bytes(bytes)).into_owned()
+}
+
+fn trim_xpt_bytes(bytes: &[u8]) -> &[u8] {
     let end = bytes
         .iter()
         .rposition(|byte| !matches!(*byte, 0 | b' '))
@@ -393,12 +402,7 @@ fn trim_xpt_text(bytes: &[u8]) -> Option<String> {
         .iter()
         .position(|byte| !matches!(*byte, 0 | b' '))
         .unwrap_or(end);
-    // Malformed legacy transport files should stay loadable. Invalid character
-    // payloads decode to None and the caller maps them to a blank value, letting
-    // validation rules treat the cell as empty instead of failing the dataset load.
-    std::str::from_utf8(&bytes[start..end])
-        .ok()
-        .map(str::to_owned)
+    &bytes[start..end]
 }
 
 fn ascii_card(card: &[u8]) -> String {
@@ -498,6 +502,21 @@ mod tests {
     #[test]
     fn trim_xpt_text_invalid_utf8_payloads_decode_as_none() {
         assert_eq!(trim_xpt_text(&[b' ', 0xff, 0xfe, b' ']), None);
+    }
+
+    #[test]
+    fn decode_xpt_character_preserves_invalid_utf8_as_replacement_text() {
+        assert_eq!(decode_xpt_character(&[b' ', 0xff, 0xfe, b' ']), "��");
+    }
+
+    #[test]
+    fn decode_xpt_numeric_does_not_coerce_tiny_nonzero_values_to_zero() {
+        let tiny = [0x01, 0x10, 0, 0, 0, 0, 0, 0];
+        let decoded = decode_xpt_numeric(&tiny);
+        let value = decoded.as_f64().expect("tiny IBM float remains numeric");
+
+        assert!(value.is_finite());
+        assert_ne!(value, 0.0);
     }
 
     #[test]

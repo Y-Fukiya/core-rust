@@ -149,7 +149,12 @@ def _actual_issues(actual_dir: Path) -> tuple[list[dict[str, object]] | None, st
     return None, f"missing report.json/report.csv in {actual_dir}", 0
 
 
-def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> bool:
+def _matches_expected(
+    issue: dict[str, object],
+    expected: dict[str, str],
+    *,
+    strict_structure: bool = False,
+) -> bool:
     if expected.get("rule_id") and issue.get("rule_id") != expected["rule_id"]:
         return False
     if expected.get("dataset") and issue.get("dataset") != expected["dataset"]:
@@ -158,8 +163,11 @@ def _matches_expected(issue: dict[str, object], expected: dict[str, str]) -> boo
         return False
     expected_variables = _variables(expected.get("variables"))
     actual_variables = _variables(issue.get("variables"))
-    if expected_variables and not set(expected_variables).issubset(set(actual_variables)):
-        return False
+    if expected_variables:
+        if strict_structure and expected_variables != actual_variables:
+            return False
+        if not strict_structure and not set(expected_variables).issubset(set(actual_variables)):
+            return False
     if expected.get("usubjid") and issue.get("usubjid") != expected["usubjid"]:
         return False
     if expected.get("seq") and str(issue.get("seq") or "") != expected["seq"]:
@@ -248,7 +256,13 @@ def _compare_issue_index_group(
     return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "structural issue fields did not match"}
 
 
-def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> dict[str, object]:
+def _compare_row(
+    rule_id: str,
+    expected: dict[str, str],
+    actual_root: Path,
+    *,
+    strict_structure: bool = False,
+) -> dict[str, object]:
     case_type = expected["case_type"]
     case_id = expected["case_id"]
     expected_count = int(expected.get("expected_issue_count") or 0)
@@ -287,7 +301,10 @@ def _compare_row(rule_id: str, expected: dict[str, str], actual_root: Path) -> d
         return {**base, "actual_issue_count": actual_count, "status": "FAIL", "notes": "issue count mismatch"}
     if expected_count == 0:
         return {**base, "actual_issue_count": actual_count, "status": "PASS", "notes": ""}
-    if any(_matches_expected(issue, expected) for issue in issues):
+    if any(
+        _matches_expected(issue, expected, strict_structure=strict_structure)
+        for issue in issues
+    ):
         if expected_count > 1:
             return {
                 **base,
@@ -395,6 +412,8 @@ def comparison_gate_ok(result: ComparisonResult, *, allow_actual_skipped: bool =
 def compare_generated_results(
     generated_rules_dir: str | Path,
     actual_root: str | Path,
+    *,
+    strict_structure: bool = False,
 ) -> ComparisonResult:
     generated_root = Path(generated_rules_dir)
     actual_root_path = Path(actual_root)
@@ -449,7 +468,14 @@ def compare_generated_results(
                 rows.append(_compare_issue_index_group(rule_dir.name, case_type, case_id, group, actual_root_path))
             continue
         for expected in expected_rows:
-            rows.append(_compare_row(rule_dir.name, expected, actual_root_path))
+            rows.append(
+                _compare_row(
+                    rule_dir.name,
+                    expected,
+                    actual_root_path,
+                    strict_structure=strict_structure,
+                ),
+            )
     return ComparisonResult(rows=rows)
 
 

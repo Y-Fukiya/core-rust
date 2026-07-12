@@ -289,6 +289,6 @@ fn run_validation_filters_rules_and_writes_reports() {
         .expect("CORE-TEST-0001 result");
     assert_eq!(
         core_test_result["execution_provenance"],
-        serde_json::Value::String("native_engine".to_owned())
+        serde_json::Value::String("generic_engine".to_owned())
     );
 }

@@ -1455,6 +1455,57 @@ fn join_variants_filter_rows_by_match_presence() {
 }
 
 #[test]
+fn join_variants_do_not_match_null_key_components() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ae.xpt",
+      "domain": "AE",
+      "records": {
+        "USUBJID": [null, "S1"],
+        "AESEQ": [1, 2]
+      }
+    },
+    {
+      "filename": "lookup.json",
+      "domain": "LOOKUP",
+      "records": {
+        "USUBJID": [null, "S1"],
+        "FLAG": ["NULL_MATCH", "Y"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write package");
+
+    let datasets = load_dataset_package_json(&path).expect("load package");
+    let keys = ["USUBJID".to_owned()];
+    let left = left_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys, "LOOKUP.")
+        .expect("left join");
+    let semi = semi_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("semi join");
+    let anti = anti_join_dataset_on(&datasets[0], &datasets[1], &keys, &keys).expect("anti join");
+    let flag = left.frame().column("LOOKUP.FLAG").expect("joined flag");
+
+    assert_eq!(left.summary().row_count, 2);
+    assert!(flag.get(0).expect("null key row").is_null());
+    assert_eq!(flag.get(1).expect("matched row").extract_str(), Some("Y"));
+    assert_eq!(semi.summary().row_count, 1);
+    assert_eq!(anti.summary().row_count, 1);
+    assert!(anti
+        .frame()
+        .column("USUBJID")
+        .expect("subject")
+        .get(0)
+        .expect("anti row")
+        .is_null());
+}
+
+#[test]
 fn join_keys_respect_value_types() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");

@@ -214,7 +214,7 @@ fn load_xpt_dataset_rejects_truncated_namestr_records() {
 }
 
 #[test]
-fn load_xpt_dataset_treats_invalid_utf8_character_values_as_empty() {
+fn load_xpt_dataset_marks_invalid_utf8_character_values_with_replacement_text() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("invalid-text.xpt");
     write_test_xpt(
@@ -237,7 +237,7 @@ fn load_xpt_dataset_treats_invalid_utf8_character_values_as_empty() {
     let dataset = load_xpt_dataset(&path).expect("load xpt");
     let domain = dataset.frame().column("DOMAIN").expect("domain column");
 
-    assert_eq!(domain.get(0).expect("row 1").extract_str(), Some(""));
+    assert_eq!(domain.get(0).expect("row 1").extract_str(), Some("��"));
 }
 
 #[test]

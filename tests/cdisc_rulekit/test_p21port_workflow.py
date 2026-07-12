@@ -73,6 +73,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
         "fuzzy_probe_match_type": "FUZZY",
         "generated_count": 2,
         "generated_skipped_count": 1,
+        "real_engine_pass_count": 0,
         "run_core_pass_count": 4,
         "unsupported_probe_generated_count": 0,
         "unsupported_probe_skipped_count": 3,
