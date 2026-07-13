@@ -774,6 +774,14 @@ CORE-000095,rule_id_hand_port,core-api,open-rules-oracle-harness\n",
             "CORE-000454",
             "official_oracle_fixture_gap"
         ));
+        assert!(rule_id_has_oracle_gap_category(
+            "CORE-000884",
+            "official_oracle_fixture_gap"
+        ));
+        assert!(!rule_id_has_oracle_gap_category(
+            "CORE-000884",
+            "defer_positive_zero_probe"
+        ));
         assert!(!rule_id_has_oracle_gap_category(
             "CORE-000773",
             "date_operator"

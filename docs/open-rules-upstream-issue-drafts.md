@@ -13,6 +13,12 @@ Filed issues:
 - Draft 3: [cdisc-org/cdisc-open-rules#68](https://github.com/cdisc-org/cdisc-open-rules/issues/68)
 - Draft 4: [cdisc-org/cdisc-open-rules#69](https://github.com/cdisc-org/cdisc-open-rules/issues/69)
 
+The bodies below preserve the evidence that was filed. A 2026-07-14 rerun
+superseded two Draft 1 observations: `CORE-000698 positive/01` and
+`CORE-000704 positive/01` now match. The four negative PDVAL cases remain in
+the reviewed fixture-gap backlog; current counts and fingerprints are recorded
+in `open-rules-official-fixture-gap-candidates.md`.
+
 ## Draft 1: PDVALMIN/PDVALMAX Paired Fixture Oracle Review
 
 Title:
