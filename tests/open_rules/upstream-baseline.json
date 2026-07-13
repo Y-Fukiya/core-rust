@@ -8,16 +8,16 @@
   },
   "summary": {
     "total_cases": 2296,
-    "supported_match": 2059,
-    "official_oracle_match": 2059,
+    "supported_match": 2060,
+    "official_oracle_match": 2060,
     "synthetic_oracle_match": 0,
     "unverified_synthetic_oracle_match": 0,
     "supported_mismatch": 0,
     "deferred_oracle_gap_mismatch": 0,
-    "deferred_oracle_gap_skipped": 55,
+    "deferred_oracle_gap_skipped": 54,
     "deferred_oracle_gap_breakdown": {
       "candidate_skipped": 0,
-      "official_fixture_gap": 51,
+      "official_fixture_gap": 50,
       "standard_filter_oracle_gap": 4,
       "oracle_identity_gap": 0,
       "unverified_semantics_gap": 0
@@ -27,11 +27,11 @@
     "no_official_oracle": 182,
     "harness_error": 0,
     "supported_accuracy": 1.0,
-    "coverage": 0.8967770034843205,
-    "native_engine_supported_match": 1724,
+    "coverage": 0.8972125435540069,
+    "native_engine_supported_match": 1725,
     "native_engine_supported_mismatch": 0,
     "native_engine_supported_accuracy": 1.0,
-    "native_engine_coverage": 0.7508710801393729,
+    "native_engine_coverage": 0.7513066202090593,
     "rule_id_hand_port_supported_match": 335,
     "rule_id_hand_port_supported_mismatch": 0,
     "rule_id_hand_port_supported_accuracy": 1.0,
@@ -43,17 +43,17 @@
     "by_execution_provenance_detail": [
       {
         "detail": "generic_engine",
-        "supported_match": 1388,
+        "supported_match": 1390,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.6045296167247387
+        "coverage": 0.6054006968641115
       },
       {
         "detail": "rule_specific_engine_semantics",
-        "supported_match": 314,
+        "supported_match": 313,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.1367595818815331
+        "coverage": 0.13632404181184668
       },
       {
         "detail": "compatibility_policy",
@@ -73,10 +73,10 @@
     "by_scoring_policy": [
       {
         "policy": "strict_identity",
-        "supported_match": 2010,
+        "supported_match": 2011,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.8754355400696864
+        "coverage": 0.8758710801393729
       },
       {
         "policy": "oracle_gap_normalized",
@@ -110,16 +110,16 @@
       "name": "Published",
       "summary": {
         "total_cases": 2296,
-        "supported_match": 2059,
-        "official_oracle_match": 2059,
+        "supported_match": 2060,
+        "official_oracle_match": 2060,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "deferred_oracle_gap_mismatch": 0,
-        "deferred_oracle_gap_skipped": 55,
+        "deferred_oracle_gap_skipped": 54,
         "deferred_oracle_gap_breakdown": {
           "candidate_skipped": 0,
-          "official_fixture_gap": 51,
+          "official_fixture_gap": 50,
           "standard_filter_oracle_gap": 4,
           "oracle_identity_gap": 0,
           "unverified_semantics_gap": 0
@@ -129,11 +129,11 @@
         "no_official_oracle": 182,
         "harness_error": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.8967770034843205,
-        "native_engine_supported_match": 1724,
+        "coverage": 0.8972125435540069,
+        "native_engine_supported_match": 1725,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7508710801393729,
+        "native_engine_coverage": 0.7513066202090593,
         "rule_id_hand_port_supported_match": 335,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
@@ -145,17 +145,17 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 1388,
+            "supported_match": 1390,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.6045296167247387
+            "coverage": 0.6054006968641115
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 314,
+            "supported_match": 313,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.1367595818815331
+            "coverage": 0.13632404181184668
           },
           {
             "detail": "compatibility_policy",
@@ -175,10 +175,10 @@
         "by_scoring_policy": [
           {
             "policy": "strict_identity",
-            "supported_match": 2010,
+            "supported_match": 2011,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.8754355400696864
+            "coverage": 0.8758710801393729
           },
           {
             "policy": "oracle_gap_normalized",
@@ -206,16 +206,16 @@
       "name": "negative",
       "summary": {
         "total_cases": 1139,
-        "supported_match": 1011,
-        "official_oracle_match": 1011,
+        "supported_match": 1010,
+        "official_oracle_match": 1010,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "deferred_oracle_gap_mismatch": 0,
-        "deferred_oracle_gap_skipped": 42,
+        "deferred_oracle_gap_skipped": 43,
         "deferred_oracle_gap_breakdown": {
           "candidate_skipped": 0,
-          "official_fixture_gap": 40,
+          "official_fixture_gap": 41,
           "standard_filter_oracle_gap": 2,
           "oracle_identity_gap": 0,
           "unverified_semantics_gap": 0
@@ -225,11 +225,11 @@
         "no_official_oracle": 86,
         "harness_error": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.887620719929763,
-        "native_engine_supported_match": 840,
+        "coverage": 0.8867427568042142,
+        "native_engine_supported_match": 839,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7374890254609306,
+        "native_engine_coverage": 0.7366110623353819,
         "rule_id_hand_port_supported_match": 171,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
@@ -248,10 +248,10 @@
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 153,
+            "supported_match": 152,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.13432835820895522
+            "coverage": 0.1334503950834065
           },
           {
             "detail": "compatibility_policy",
@@ -271,10 +271,10 @@
         "by_scoring_policy": [
           {
             "policy": "strict_identity",
-            "supported_match": 962,
+            "supported_match": 961,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.8446005267778753
+            "coverage": 0.8437225636523266
           },
           {
             "policy": "oracle_gap_normalized",
@@ -300,16 +300,16 @@
       "name": "positive",
       "summary": {
         "total_cases": 1157,
-        "supported_match": 1048,
-        "official_oracle_match": 1048,
+        "supported_match": 1050,
+        "official_oracle_match": 1050,
         "synthetic_oracle_match": 0,
         "unverified_synthetic_oracle_match": 0,
         "supported_mismatch": 0,
         "deferred_oracle_gap_mismatch": 0,
-        "deferred_oracle_gap_skipped": 13,
+        "deferred_oracle_gap_skipped": 11,
         "deferred_oracle_gap_breakdown": {
           "candidate_skipped": 0,
-          "official_fixture_gap": 11,
+          "official_fixture_gap": 9,
           "standard_filter_oracle_gap": 2,
           "oracle_identity_gap": 0,
           "unverified_semantics_gap": 0
@@ -319,11 +319,11 @@
         "no_official_oracle": 96,
         "harness_error": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.905790838375108,
-        "native_engine_supported_match": 884,
+        "coverage": 0.9075194468452895,
+        "native_engine_supported_match": 886,
         "native_engine_supported_mismatch": 0,
         "native_engine_supported_accuracy": 1.0,
-        "native_engine_coverage": 0.7640449438202247,
+        "native_engine_coverage": 0.7657735522904062,
         "rule_id_hand_port_supported_match": 164,
         "rule_id_hand_port_supported_mismatch": 0,
         "rule_id_hand_port_supported_accuracy": 1.0,
@@ -335,10 +335,10 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 711,
+            "supported_match": 713,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.6145203111495247
+            "coverage": 0.6162489196197062
           },
           {
             "detail": "rule_specific_engine_semantics",
@@ -365,10 +365,10 @@
         "by_scoring_policy": [
           {
             "policy": "strict_identity",
-            "supported_match": 1048,
+            "supported_match": 1050,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.905790838375108
+            "coverage": 0.9075194468452895
           }
         ],
         "scoring_normalization_counts": [
@@ -26538,10 +26538,10 @@
         "output_context_variable_aligned"
       ],
       "official_issue_count": 36,
-      "candidate_issue_count": 24,
-      "missing_count": 12,
+      "candidate_issue_count": 27,
+      "missing_count": 9,
       "extra_count": 0,
-      "issue_fingerprint_hash": "2d5714b09294d070"
+      "issue_fingerprint_hash": "3d70b91e19f2622c"
     },
     {
       "scope": "Published",
@@ -26573,13 +26573,13 @@
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
-      "bucket": "deferred_oracle_gap_skipped",
-      "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
+      "bucket": "supported_match",
+      "reason": null,
       "official_issue_count": 0,
-      "candidate_issue_count": 4,
+      "candidate_issue_count": 0,
       "missing_count": 0,
-      "extra_count": 4,
-      "issue_fingerprint_hash": "ecb12e8d0d2f66e4"
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -26826,10 +26826,10 @@
         "output_context_variable_aligned"
       ],
       "official_issue_count": 36,
-      "candidate_issue_count": 24,
-      "missing_count": 12,
+      "candidate_issue_count": 27,
+      "missing_count": 9,
       "extra_count": 0,
-      "issue_fingerprint_hash": "4580e16d2c187249"
+      "issue_fingerprint_hash": "0d2cedbbe9efff98"
     },
     {
       "scope": "Published",
@@ -26861,13 +26861,13 @@
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
-      "bucket": "deferred_oracle_gap_skipped",
-      "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
+      "bucket": "supported_match",
+      "reason": null,
       "official_issue_count": 0,
-      "candidate_issue_count": 4,
+      "candidate_issue_count": 0,
       "missing_count": 0,
-      "extra_count": 4,
-      "issue_fingerprint_hash": "1b77302593f00a70"
+      "extra_count": 0,
+      "issue_fingerprint_hash": "cbf29ce484222325"
     },
     {
       "scope": "Published",
@@ -27299,7 +27299,7 @@
       "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
       "bucket": "no_official_oracle",
-      "reason": "missing official results.csv; candidate empty; excluded from supported accuracy",
+      "reason": "missing official results.csv; candidate has issues; excluded from supported accuracy",
       "official_issue_count": null,
       "candidate_issue_count": null,
       "missing_count": 0,
@@ -27673,7 +27673,7 @@
       "case_kind": "positive",
       "case_id": "01",
       "case_dir": "Published/CORE-000749/positive/01",
-      "official_results_csv": "Published/CORE-000749/positive/01/Results/results.csv",
+      "official_results_csv": "Published/CORE-000749/positive/01/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000749/positive/01/report.csv",
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "generic_engine",
@@ -33552,13 +33552,13 @@
       "execution_provenance": "native_engine",
       "execution_provenance_detail": "rule_specific_engine_semantics",
       "scoring_policy": "strict_identity",
-      "bucket": "supported_match",
-      "reason": null,
+      "bucket": "deferred_oracle_gap_skipped",
+      "reason": "official oracle fixture gap; excluded from supported accuracy until upstream oracle/data are reconciled",
       "official_issue_count": 4,
-      "candidate_issue_count": 4,
-      "missing_count": 0,
+      "candidate_issue_count": 2,
+      "missing_count": 2,
       "extra_count": 0,
-      "issue_fingerprint_hash": "cbf29ce484222325"
+      "issue_fingerprint_hash": "8082b4545e6c42fb"
     },
     {
       "scope": "Published",

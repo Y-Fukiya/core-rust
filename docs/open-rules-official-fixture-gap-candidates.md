@@ -1,6 +1,7 @@
 # Open Rules Official Fixture Gap Candidates
 
-Snapshot: `target/open-rules-scoreboard-upstream-v31/scoreboard.json`
+Snapshot: `tests/open_rules/upstream-baseline.json`, regenerated from the
+pinned full-upstream corpus on 2026-07-14.
 
 These cases are currently classified as `official_oracle_fixture_gap` and are
 excluded from supported accuracy. They should not be converted into native
@@ -12,8 +13,8 @@ oracle, or rule-text drift.
 
 | Metric | Count |
 |---|---:|
-| Candidate cases | 51 |
-| Distinct rules | 41 |
+| Candidate cases | 50 |
+| Distinct rules | 42 |
 | Supported gate impact | 0 |
 | Recommended treatment | Upstream issue/PR evidence backlog |
 
@@ -70,18 +71,17 @@ oracle, or rule-text drift.
 | `CORE-000648` | positive/01 | 0 | 2 | 0 | 2 | `d53b860e90366acf` | `positive-fixture`; positive fixture still produces candidate AGE/AGETXT issues. |
 | `CORE-000652` | negative/01 | 2 | 0 | n/a | n/a | n/a | `candidate-skip`; external-distinct probe found STDY02-101 while official flags STDY02-99, which is present in DM/EX. |
 | `CORE-000652` | positive/01 | 0 | 0 | n/a | n/a | n/a | `candidate-skip`; paired positive case stays excluded with the reviewed containment oracle gap. |
-| `CORE-000698` | negative/01 | 36 | 24 | 12 | 0 | `2d5714b09294d070` | `cardinality`; official uses PDVALMAX rows for PDVALMIN rule. |
+| `CORE-000698` | negative/01 | 36 | 27 | 9 | 0 | `3d70b91e19f2622c` | `cardinality`; official uses PDVALMAX rows for PDVALMIN rule. |
 | `CORE-000698` | negative/02 | 12 | 20 | 12 | 20 | `2c236ef4c8de4acf` | `identity`; official uses PDVALMAX rows for PDVALMIN rule. |
-| `CORE-000698` | positive/01 | 0 | 4 | 0 | 4 | `ecb12e8d0d2f66e4` | `positive-fixture`; PDVALMIN positive fixture has candidate issues. |
-| `CORE-000704` | negative/01 | 36 | 24 | 12 | 0 | `4580e16d2c187249` | `cardinality`; official uses PDVALMIN rows for PDVALMAX rule. |
+| `CORE-000704` | negative/01 | 36 | 27 | 9 | 0 | `0d2cedbbe9efff98` | `cardinality`; official uses PDVALMIN rows for PDVALMAX rule. |
 | `CORE-000704` | negative/02 | 20 | 12 | 20 | 12 | `c76bfbc834a1849b` | `identity`; official uses PDVALMIN rows for PDVALMAX rule. |
-| `CORE-000704` | positive/01 | 0 | 4 | 0 | 4 | `1b77302593f00a70` | `positive-fixture`; PDVALMAX positive fixture has candidate issues. |
 | `CORE-000718` | negative/01 | 0 | 8 | 0 | 8 | `f7d0ada74ab8c091` | `official-empty`; official/candidate disagree on --STDTC greater-than --ENDTC fixture values. |
 | `CORE-000718` | positive/01 | 12 | 0 | 12 | 0 | `30738389cb726821` | `positive-fixture`; official/candidate disagree on --STDTC greater-than --ENDTC fixture values. |
 | `CORE-000750` | negative/01 | 72 | 72 | 48 | 48 | `4725eee7bfa35d9c` | `identity`; official duplicates split LBDS rows under LBAE dataset. |
 | `CORE-000770` | negative/01 | 15 | 12 | 3 | 0 | `1bba1023ab41c7f8` | `cardinality`; official includes TX Record 8 although fixture has seven TX rows. |
 | `CORE-000814` | negative/01 | 24 | 48 | 0 | 24 | `d30e1f8b06b9e131` | `cardinality`; official omits StudyVersion_2 governance date rows present in fixture data. |
 | `CORE-000865` | negative/01 | 4 | 2 | 2 | 0 | `69eed671581f6f08` | `cardinality`; official includes an empty PP issue row. |
+| `CORE-000884` | negative/01 | 4 | 2 | 2 | 0 | `8082b4545e6c42fb` | `identity`; official includes `$age_count` and `$agetxt_count`, but the rule declares only `DOMAIN` and `$ageu_count` as output variables. |
 | `CORE-000960` | negative/01 | 80 | 75 | 5 | 0 | `49226f3865943b03` | `cardinality`; XHTML flattening differs around malformed image data URI fixture. |
 
 ## Proposed Upstream Issue Bundles
@@ -92,14 +92,14 @@ compatibility hacks to force these cases into `supported_match`.
 
 | Bundle | Representative rules | Why bundled | Suggested upstream request |
 |---|---|---|---|
-| Positive fixtures with issues | `CORE-000014`, `CORE-000143`, `CORE-000172`, `CORE-000438`, `CORE-000546`, `CORE-000648`, `CORE-000698`, `CORE-000704`, `CORE-000718` | Positive fixtures should generally be clean examples, but these cases contain official or candidate issues. | Confirm whether the positive fixtures should be corrected, or whether the official `results.csv` should intentionally contain issues with explanatory metadata. |
+| Positive fixtures with issues | `CORE-000014`, `CORE-000143`, `CORE-000172`, `CORE-000438`, `CORE-000546`, `CORE-000648`, `CORE-000718` | Positive fixtures should generally be clean examples, but these cases contain official or candidate issues. | Confirm whether the positive fixtures should be corrected, or whether the official `results.csv` should intentionally contain issues with explanatory metadata. |
 | Official empty but candidate non-empty | `CORE-000080`, `CORE-000081`, `CORE-000108`, `CORE-000172`, `CORE-000252`, `CORE-000262`, `CORE-000454`, `CORE-000718` | Official `results.csv` is empty while the fixture/rule produces structural candidate issues. | Confirm rule applicability and update either fixture data or expected `results.csv`. |
 | Official issue absent in candidate | `CORE-000224`, `CORE-000289`, `CORE-000554`, `CORE-000570` | Official rows refer to values or variables that candidate execution cannot find in the fixture/rule semantics. | Verify that official expected rows refer to actual fixture records and rule output variables. |
 | Empty/non_empty and placeholder scope | `CORE-000117`, `CORE-000225`, `CORE-000262`, `CORE-000267`, `CORE-000438`, `CORE-000529`, `CORE-000554`, `CORE-000570`, `CORE-000648`, `CORE-000865` | Many discrepancies involve nullish values, placeholder variables, or condition/output-context variables. | Clarify expected nullish semantics and whether context variables should appear in expected output rows. |
 | Domain placeholder column-ref comparators | `CORE-000195`, `CORE-000197`, `CORE-000198`, `CORE-000542` | Official cardinality differs around domain-placeholder variable references and comparator output. | Confirm whether official rows should include all fixture rows satisfying the placeholder-expanded condition. |
 | Not-unique and relationship scope | `CORE-000184`, `CORE-000268`, `CORE-000750` | The rules involve relationship/group identity where official and candidate row identities or counts differ. | Clarify grouping keys, split-domain identity, and expected duplicate row emission. |
-| PDVAL min/max paired rules | `CORE-000698`, `CORE-000704` | The paired rules appear to use the opposite PDVAL bound in official results and include positive fixture issues. | Review PDVALMIN/PDVALMAX fixture rows and expected results together to avoid fixing only one side of the pair. |
-| Operation and join families | `CORE-000454`, `CORE-000770`, `CORE-000814`, `CORE-000960` | These discrepancies depend on operation-derived values, USDM joins, or XHTML flattening. | Confirm operation inputs, join cardinality, and flattened structural keys before treating candidate differences as engine bugs. |
+| PDVAL min/max paired rules | `CORE-000698`, `CORE-000704` | The paired negative rules appear to use the opposite PDVAL bound in official results; their positive fixtures now match. | Review PDVALMIN/PDVALMAX negative fixture rows and expected results together to avoid fixing only one side of the pair. |
+| Operation and join families | `CORE-000454`, `CORE-000770`, `CORE-000814`, `CORE-000884`, `CORE-000960` | These discrepancies depend on operation-derived values, output context, USDM joins, or XHTML flattening. | Confirm operation inputs, declared output variables, join cardinality, and flattened structural keys before treating candidate differences as engine bugs. |
 | Candidate skipped pending oracle reconciliation | `CORE-000356`, `CORE-000652` | Candidate execution is intentionally skipped, and targeted review showed the official oracle does not match the literal rule semantics. | Reconcile official expected rows first; after upstream alignment, decide whether native semantics should be implemented. |
 
 ## Filing Order

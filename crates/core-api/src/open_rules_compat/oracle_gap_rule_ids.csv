@@ -328,7 +328,7 @@ CORE-000868,defer_positive_zero_probe,positive zero probe semantics still quaran
 CORE-000871,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000877,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000879,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
-CORE-000884,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
+CORE-000884,official_oracle_fixture_gap,official results include $age_count and $agetxt_count although the rule declares only DOMAIN and $ageu_count as output variables,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000897,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000904,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
 CORE-000905,defer_positive_zero_probe,positive zero probe semantics still quarantined,core-api,open-rules-scoreboard,open-rules-oracle-harness
