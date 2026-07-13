@@ -73,6 +73,7 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
         "fuzzy_probe_match_type": "FUZZY",
         "generated_count": 2,
         "generated_skipped_count": 1,
+        "real_engine_pass_count": 0,
         "run_core_pass_count": 4,
         "unsupported_probe_generated_count": 0,
         "unsupported_probe_skipped_count": 3,
@@ -98,3 +99,13 @@ def test_p21port_smoke_subprocess_steps_have_timeout(monkeypatch):
     p21port_smoke._run(["python", "--version"], env={"PYTHONPATH": "src"})
 
     assert captured["timeout"] == p21port_smoke.SMOKE_STEP_TIMEOUT_SECONDS
+
+
+def test_real_engine_summary_requires_the_full_expected_pass_baseline():
+    assert p21port_smoke._assert_real_engine_summary({"pass_count": 4, "fail_count": 0}, 4) == 4
+
+    with pytest.raises(AssertionError, match="expected_pass=4"):
+        p21port_smoke._assert_real_engine_summary({"pass_count": 3, "fail_count": 0}, 4)
+
+    with pytest.raises(AssertionError, match="fail=1"):
+        p21port_smoke._assert_real_engine_summary({"pass_count": 4, "fail_count": 1}, 4)

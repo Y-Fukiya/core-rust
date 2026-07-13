@@ -1,6 +1,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use super::{row_key, take_dataset_rows, DataError, LoadedDataset, Result, RowKeyValue};
+use super::{
+    row_key, row_key_contains_null, take_dataset_rows, DataError, LoadedDataset, Result,
+    RowKeyValue,
+};
 use polars::prelude::*;
 
 pub fn left_join_dataset(
@@ -44,22 +47,26 @@ fn join_dataset_on(
 
     let mut index: HashMap<Vec<RowKeyValue>, Vec<usize>> = HashMap::new();
     for row in 0..right.frame.height() {
-        index
-            .entry(row_key(&right.frame, &right_keys, row)?)
-            .or_default()
-            .push(row);
+        let key = row_key(&right.frame, &right_keys, row)?;
+        if !row_key_contains_null(&key) {
+            index.entry(key).or_default().push(row);
+        }
     }
 
     let mut left_rows = Vec::new();
     let mut right_rows = Vec::new();
     for left_row in 0..left.frame.height() {
         let key = row_key(&left.frame, &left_keys, left_row)?;
-        if let Some(matches) = index.get(&key) {
-            for right_row in matches {
-                left_rows.push(left_row as u32);
-                right_rows.push(Some(*right_row));
+        if !row_key_contains_null(&key) {
+            if let Some(matches) = index.get(&key) {
+                for right_row in matches {
+                    left_rows.push(left_row as u32);
+                    right_rows.push(Some(*right_row));
+                }
+                continue;
             }
-        } else if include_unmatched_left {
+        }
+        if include_unmatched_left {
             left_rows.push(left_row as u32);
             right_rows.push(None);
         }
@@ -178,13 +185,19 @@ fn filter_join_matches(
     let (left_keys, right_keys) = resolve_join_key_pair(left, right, left_keys, right_keys)?;
     let mut index = HashSet::new();
     for row in 0..right.frame.height() {
-        index.insert(row_key(&right.frame, &right_keys, row)?);
+        let key = row_key(&right.frame, &right_keys, row)?;
+        if !row_key_contains_null(&key) {
+            index.insert(key);
+        }
     }
 
     let indices = (0..left.frame.height())
         .filter_map(|row| {
             row_key(&left.frame, &left_keys, row)
-                .map(|key| (index.contains(&key) == keep_matches).then_some(row as u32))
+                .map(|key| {
+                    let matches = !row_key_contains_null(&key) && index.contains(&key);
+                    (matches == keep_matches).then_some(row as u32)
+                })
                 .transpose()
         })
         .collect::<Result<Vec<_>>>()?;

@@ -12,6 +12,10 @@ pub(crate) fn row_key(frame: &DataFrame, keys: &[String], row: usize) -> Result<
         .collect()
 }
 
+pub(crate) fn row_key_contains_null(key: &[RowKeyValue]) -> bool {
+    key.iter().any(|value| matches!(value, RowKeyValue::Null))
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum RowKeyValue {
     Null,

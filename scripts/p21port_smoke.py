@@ -111,6 +111,8 @@ def _write_fake_engine(path: Path) -> None:
                 "        'dataset': row['dataset'],",
                 "        'row': int(row['row']) if row['row'] else '',",
                 "        'variables': [part for part in row['variables'].split('|') if part],",
+                "        'usubjid': row.get('usubjid') or '',",
+                "        'seq': row.get('seq') or '',",
                 "    })",
                 "payload = {'summary': {'error_count': issue_count}, 'results': []}",
                 "if errors:",
@@ -155,6 +157,17 @@ def _comparison_projection(summary: dict[str, object]) -> dict[str, object]:
         "pass_count": summary["pass_count"],
         "rows": rows,
     }
+
+
+def _assert_real_engine_summary(summary: dict[str, object], expected_pass_count: int) -> int:
+    fail_count = int(summary["fail_count"])
+    pass_count = int(summary["pass_count"])
+    if fail_count != 0 or pass_count != expected_pass_count:
+        raise AssertionError(
+            "P21 real-engine comparison baseline mismatch: "
+            f"pass={pass_count}, fail={fail_count}, expected_pass={expected_pass_count}",
+        )
+    return pass_count
 
 
 def _failure_case_projection(summary: dict[str, object]) -> list[dict[str, object]]:
@@ -291,7 +304,7 @@ def _duplicate_rule_id_probe() -> int:
     return len({mapping.p21_rule_key for mapping in mappings})
 
 
-def run(work_dir: Path) -> dict[str, object]:
+def run(work_dir: Path, *, real_engine_command: str | None = None) -> dict[str, object]:
     work_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
@@ -416,6 +429,7 @@ def run(work_dir: Path) -> dict[str, object]:
             str(run_out / "core_runs"),
             "--out",
             str(reports),
+            "--strict-structure",
         ],
         env=env,
     )
@@ -425,6 +439,49 @@ def run(work_dir: Path) -> dict[str, object]:
     if comparison_projection != comparison_baseline:
         raise AssertionError(
             f"P21 comparison baseline mismatch: {comparison_projection!r} != {comparison_baseline!r}",
+        )
+
+    real_engine_pass_count = 0
+    if real_engine_command:
+        real_run_out = work_dir / "real_engine_run"
+        real_reports = work_dir / "real_engine_reports"
+        _run(
+            [
+                sys.executable,
+                "-m",
+                "cdisc_rulekit.cli",
+                "run-core",
+                "--generated-rules",
+                str(generated / "generated_rules"),
+                "--out",
+                str(real_run_out),
+                "--engine-command",
+                real_engine_command,
+            ],
+            env=env,
+        )
+        _run(
+            [
+                sys.executable,
+                "-m",
+                "cdisc_rulekit.cli",
+                "compare-results",
+                "--generated-rules",
+                str(generated / "generated_rules"),
+                "--actual-root",
+                str(real_run_out / "core_runs"),
+                "--out",
+                str(real_reports),
+                "--strict-structure",
+            ],
+            env=env,
+        )
+        real_summary = json.loads(
+            (real_reports / "comparison_summary.json").read_text(encoding="utf-8"),
+        )
+        real_engine_pass_count = _assert_real_engine_summary(
+            real_summary,
+            int(comparison_summary["pass_count"]),
         )
 
     _write_failure_probe_actuals(generated / "generated_rules", failure_probe / "core_runs")
@@ -440,6 +497,7 @@ def run(work_dir: Path) -> dict[str, object]:
             str(failure_probe / "core_runs"),
             "--out",
             str(failure_probe / "reports"),
+            "--strict-structure",
         ],
         env=env,
     )
@@ -468,6 +526,7 @@ def run(work_dir: Path) -> dict[str, object]:
         "generated_count": generation_summary["generated_count"],
         "generated_skipped_count": generation_summary["skipped_count"],
         "run_core_pass_count": sum(1 for row in run_summary_rows if row["status"] == "PASS"),
+        "real_engine_pass_count": real_engine_pass_count,
         "unsupported_probe_generated_count": unsupported_generation_summary["generated_count"],
         "unsupported_probe_skipped_count": unsupported_generation_summary["skipped_count"],
     }
@@ -482,8 +541,12 @@ def run(work_dir: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the lightweight P21PORT smoke workflow.")
     parser.add_argument("--work-dir", type=Path, required=True)
+    parser.add_argument(
+        "--real-engine-command",
+        help="also execute and strictly compare generated cases with this engine command",
+    )
     args = parser.parse_args()
-    run(args.work_dir)
+    run(args.work_dir, real_engine_command=args.real_engine_command)
     print("p21port smoke complete: ok")
     return 0
 

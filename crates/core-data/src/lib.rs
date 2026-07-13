@@ -66,7 +66,7 @@ pub(crate) use json_table::records_to_frame;
 use json_table::series_from_json_values;
 pub use json_table::{metadata_row_dataset, metadata_rows_dataset};
 pub use open_rules_data_dir::{load_open_rules_data_dir, load_open_rules_data_dir_with_warnings};
-pub(crate) use row_key::{row_key, RowKeyValue};
+pub(crate) use row_key::{row_key, row_key_contains_null, RowKeyValue};
 pub(crate) use usdm_data_dir::load_open_rules_json_data_dir;
 pub use xpt::load_xpt_dataset;
 #[cfg(test)]

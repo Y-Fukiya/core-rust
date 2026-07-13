@@ -67,7 +67,8 @@ target/core-rust-report/validation.log
 ```
 
 `report.json` includes `execution_provenance` when the engine can classify the
-rule path as `native_engine` or `rule_id_hand_port`. CSV keeps a stable
+rule path as `generic_engine`, `rule_specific_engine_semantics`,
+`compatibility_policy`, or `rule_id_hand_port`. CSV keeps a stable
 issue-row schema for downstream tools.
 
 ## Supported Inputs
@@ -185,6 +186,10 @@ externally.
 ```sh
 python -m pip install -e ".[test]"
 PYTHONPATH=src python3 scripts/p21port_smoke.py --work-dir target/p21port-smoke
+# After building core-rs, also validate generated fixtures with the real engine:
+PYTHONPATH=src python3 scripts/p21port_smoke.py \
+  --work-dir target/p21port-real-smoke \
+  --real-engine-command 'target/debug/core-rs validate'
 ```
 
 Typical read-only pilot:

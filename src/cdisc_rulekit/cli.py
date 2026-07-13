@@ -259,7 +259,11 @@ def cmd_run_core(args: argparse.Namespace) -> int:
 
 
 def cmd_compare_results(args: argparse.Namespace) -> int:
-    result = compare_generated_results(args.generated_rules, args.actual_root)
+    result = compare_generated_results(
+        args.generated_rules,
+        args.actual_root,
+        strict_structure=args.strict_structure,
+    )
     write_comparison_report(args.out, result, allow_actual_skipped=args.allow_actual_skipped)
     counts = classification_counts(result)
     ok = comparison_gate_ok(result, allow_actual_skipped=args.allow_actual_skipped)
@@ -451,6 +455,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--actual-root", type=Path, required=True)
     compare.add_argument("--out", type=Path, required=True)
     compare.add_argument("--allow-actual-skipped", action="store_true")
+    compare.add_argument(
+        "--strict-structure",
+        action="store_true",
+        help="require exact variable sets for legacy single-issue expectations",
+    )
     compare.set_defaults(func=cmd_compare_results)
 
     export = subcommands.add_parser("export-rules")

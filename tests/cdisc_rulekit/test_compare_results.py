@@ -347,9 +347,17 @@ def test_compare_generated_results_allows_expected_variables_subset_for_official
     )
 
     result = compare_generated_results(generated_root, tmp_path / "core_runs")
+    strict_result = compare_generated_results(
+        generated_root,
+        tmp_path / "core_runs",
+        strict_structure=True,
+    )
 
     assert result.ok
     assert result.rows[0]["status"] == "PASS"
+    assert not strict_result.ok
+    assert strict_result.rows[0]["status"] == "FAIL"
+    assert strict_result.rows[0]["notes"] == "structural issue fields did not match"
 
 
 def test_compare_generated_results_reports_actual_skipped_separately_from_failure(tmp_path):

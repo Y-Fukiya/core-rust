@@ -59,6 +59,17 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      - name: Install Python package for real-engine P21PORT smoke
+        run: python3 -m pip install -e .
+
+      - name: Build core-rs (debug) for real-engine P21PORT smoke
+        run: cargo build --locked -p core-cli
+
+      - name: P21PORT real-engine smoke workflow
+        run: >-
+          PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/p21port_smoke.py
+          --work-dir target/p21port-real-smoke
+          --real-engine-command 'target/debug/core-rs validate'
       - name: Release artifact provenance gate
         env:
           SOURCE_DATE_EPOCH: "1783123200"

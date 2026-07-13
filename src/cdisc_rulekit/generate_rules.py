@@ -378,16 +378,34 @@ def _positive_negative_values(rule: CanonicalRule, variable: str) -> tuple[str, 
         return (terms[0] if terms else "Y"), "__INVALID__"
     if rule_type == "REGEX":
         pattern = _regex_pattern(rule) or ""
-        if "P(?:" in pattern or "P(?=" in pattern or "P\\d" in pattern or "P[0-9]" in pattern:
-            return "P1D", "ABC"
-        if r"\d" in pattern or "[0-9]" in pattern:
-            return "1", "ABC"
-        return "VALID", "invalid value"
+        return _regex_fixture_values(pattern)
     if rule_type == "FIND":
         return "Y", ""
     if _is_numeric_variable(variable):
         return "1", ""
     return "Y", ""
+
+
+def _regex_fixture_values(pattern: str) -> tuple[str, str]:
+    positive_candidates = [
+        "2024-01-01",
+        "2024-01",
+        "P1D",
+        "1",
+        "Y",
+        "VALID",
+    ]
+    negative_candidates = ["ABC", "invalid value", "__INVALID__", ""]
+    try:
+        positive = next(
+            candidate for candidate in positive_candidates if re.fullmatch(pattern, candidate)
+        )
+        negative = next(
+            candidate for candidate in negative_candidates if re.fullmatch(pattern, candidate) is None
+        )
+    except (re.error, StopIteration):
+        return "VALID", "invalid value"
+    return positive, negative
 
 
 def _is_numeric_variable(variable: str) -> bool:
@@ -599,6 +617,13 @@ def _expected_negative_issue_count(rule: CanonicalRule) -> int:
     return 1
 
 
+def _expected_negative_usubjid(rule: CanonicalRule, domain: str, variable: str, issue_index: int) -> str:
+    if (rule.p21_rule_type or "").upper() != "UNIQUE":
+        return "P21PORT-001"
+    rows = _unique_case_rows(rule, domain, variable, "negative")
+    return rows[issue_index - 1]["USUBJID"]
+
+
 def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, domain: str, variable: str) -> None:
     negative_variables = _expected_negative_variables(rule, variable)
     negative_count = _expected_negative_issue_count(rule)
@@ -612,6 +637,8 @@ def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, d
             "dataset": domain,
             "row": "",
             "variables": "",
+            "usubjid": "",
+            "seq": "",
         }
     ]
     rows.extend(
@@ -624,13 +651,26 @@ def _write_expected_results(rule_dir: Path, rule_id: str, rule: CanonicalRule, d
             "dataset": domain,
             "row": index,
             "variables": negative_variables,
+            "usubjid": _expected_negative_usubjid(rule, domain, variable, index),
+            "seq": "",
         }
         for index in range(1, negative_count + 1)
     )
     write_csv(
         rule_dir / "expected_results.csv",
         rows,
-        ["case_type", "case_id", "issue_index", "expected_issue_count", "rule_id", "dataset", "row", "variables"],
+        [
+            "case_type",
+            "case_id",
+            "issue_index",
+            "expected_issue_count",
+            "rule_id",
+            "dataset",
+            "row",
+            "variables",
+            "usubjid",
+            "seq",
+        ],
     )
 
 
