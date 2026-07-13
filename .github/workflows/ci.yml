@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
 
 jobs:
   python:
@@ -13,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Python
         uses: actions/setup-python@v5
@@ -37,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.93.1
@@ -96,7 +95,7 @@ jobs:
             --require-source-date-epoch
 
       - name: Upload host release provenance manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: host-release-provenance-manifest
           path: target/release-provenance/host/release-manifest.json
@@ -132,7 +131,7 @@ jobs:
           done
 
       - name: Upload release provenance smoke manifests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-provenance-smoke-manifests
           path: target/release-provenance/smoke/*/release-manifest.json
