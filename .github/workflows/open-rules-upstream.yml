@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout core-rust
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.93.1
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload upstream scoreboard
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: open-rules-upstream-scoreboard
           path: |
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout core-rust
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check full upstream baseline availability
         id: baseline
@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload upstream regression scoreboard
         if: always() && steps.baseline.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: open-rules-upstream-regression-scoreboard
           path: |
