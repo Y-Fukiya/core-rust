@@ -5,7 +5,7 @@ hotspots have been reduced substantially; the remaining candidates are:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-rule-model/src/lib.rs` | 2599 | Extract another normalization or parsing family only when that behavior changes. |
+| `crates/core-rule-model/src/lib.rs` | 2501 | Keep file loading in `rule_loading.rs`; extract another normalization family only when that behavior changes. |
 | `crates/core-engine/src/tests.rs` | 2541 | Move future operator regressions into family-specific test modules. |
 | `crates/core-api/src/lib.rs` | 2255 | Keep new helper families in focused sibling modules rather than adding back to `lib.rs`. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Split another USDM fixture family when this file next grows. |
@@ -144,6 +144,8 @@ hotspots have been reduced substantially; the remaining candidates are:
   Rules data-dir regression tests moved out of `lib.rs`.
 - `core-data/src/open_rules_data_dir.rs`: Open Rules `_datasets.csv`,
   `_variables.csv`, embedded metadata, and CSV data-dir loading.
+- `core-rule-model/src/rule_loading.rs`: JSON/YAML rule-file parsing,
+  directory traversal, extension filtering, and unsupported-file warnings.
 - `core-data/src/json_table.rs`: JSON record-to-DataFrame conversion plus
   USDM/Open Rules JSON row dataset wrapping.
 - `core-data/src/usdm_values.rs`: shared USDM JSON scalar, list, code, and
@@ -183,8 +185,9 @@ hotspots have been reduced substantially; the remaining candidates are:
 
 Future low-risk slices are:
 
-- extract a normalization/parser family from `core-rule-model/src/lib.rs`, or
-  move an operator test family out of `core-engine/src/tests.rs`
+- move an operator test family out of `core-engine/src/tests.rs`, or extract a
+  cohesive normalization family from `core-rule-model/src/lib.rs` when that
+  behavior next changes
 - prefer code that already has focused tests and does not require behavior
   changes
 - keep public behavior unchanged
