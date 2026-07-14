@@ -1,9 +1,7 @@
 use std::fs;
 
 use core_data::load_dataset_package_json;
-use core_rule_model::{
-    Condition, ConditionGroup, Operator, OperatorOptions, RuleType, Sensitivity, ValueExpr,
-};
+use core_rule_model::{ConditionGroup, Operator, RuleType, Sensitivity, ValueExpr};
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use serde_json::json;
@@ -11,6 +9,7 @@ use tempfile::tempdir;
 
 use super::*;
 mod common;
+mod errors;
 
 use common::{
     condition, condition_with_options, end_date_dataset, enumerated_dataset, literal,
@@ -2226,73 +2225,6 @@ fn type_insensitive_column_ref_equality_compares_numeric_strings_as_numbers() {
     assert_eq!(
         evaluate_condition(&condition, &dataset).expect("type insensitive comparison"),
         vec![false, false, false]
-    );
-}
-
-#[test]
-fn unsupported_operator_returns_error() {
-    let dataset = test_dataset();
-    let error = evaluate_condition(
-        &condition(
-            "DOMAIN",
-            Operator::Unsupported("future_operator".to_owned()),
-            literal("AE"),
-        ),
-        &dataset,
-    )
-    .expect_err("unsupported operator");
-
-    assert!(matches!(error, EngineError::UnsupportedOperator(_)));
-}
-
-#[test]
-fn invalid_regex_returns_error() {
-    let dataset = test_dataset();
-    let error = evaluate_condition(
-        &condition("TERM", Operator::MatchesRegex, literal("[")),
-        &dataset,
-    )
-    .expect_err("invalid regex");
-
-    assert!(matches!(error, EngineError::Regex(_)));
-}
-
-#[test]
-fn missing_target_returns_error() {
-    let dataset = test_dataset();
-    let error = evaluate_condition(
-        &Condition {
-            target: None,
-            operator: Operator::EqualTo,
-            comparator: literal("AE"),
-            options: OperatorOptions::default(),
-        },
-        &dataset,
-    )
-    .expect_err("missing target");
-
-    assert!(matches!(error, EngineError::MissingTarget));
-}
-
-#[test]
-fn extracts_target_variables_from_nested_conditions() {
-    let group = ConditionGroup::All(vec![
-        ConditionGroup::Leaf(condition("AESEQ", Operator::EqualTo, literal(1))),
-        ConditionGroup::Leaf(condition(
-            "AESEQ",
-            Operator::EqualTo,
-            ValueExpr::ColumnRef("AESEQ_COPY".to_owned()),
-        )),
-        ConditionGroup::Not(Box::new(ConditionGroup::Leaf(condition(
-            "DOMAIN",
-            Operator::EqualTo,
-            literal("AE"),
-        )))),
-    ]);
-
-    assert_eq!(
-        extract_target_variables(&group),
-        vec!["AESEQ", "AESEQ_COPY", "DOMAIN"]
     );
 }
 

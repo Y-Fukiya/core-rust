@@ -6,7 +6,7 @@ hotspots have been reduced substantially; the remaining candidates are:
 | File | Current lines | First split target |
 |---|---:|---|
 | `crates/core-rule-model/src/lib.rs` | 2501 | Keep file loading in `rule_loading.rs`; extract another normalization family only when that behavior changes. |
-| `crates/core-engine/src/tests.rs` | 2541 | Move future operator regressions into family-specific test modules. |
+| `crates/core-engine/src/tests.rs` | 2475 | Move future operator regressions into family-specific test modules. |
 | `crates/core-api/src/lib.rs` | 2255 | Keep new helper families in focused sibling modules rather than adding back to `lib.rs`. |
 | `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Split another USDM fixture family when this file next grows. |
 | `crates/core-api/src/tests.rs` | 1925 | Keep new fixture-style and rule-specific regressions in focused modules under `crates/core-api/src/tests/`. |
@@ -47,6 +47,8 @@ hotspots have been reduced substantially; the remaining candidates are:
 
 ## Completed Slices
 
+- `core-engine/src/tests/errors.rs`: unsupported-operator, invalid-regex,
+  missing-target, and nested target-variable extraction contract tests.
 - `core-api/src/open_rules_compat/classifier.rs`: oracle-gap classifier
   predicates and post-operator skip classification.
 - `core-api/src/condition_inspect.rs`: pure condition tree inspection helpers
