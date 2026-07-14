@@ -47,8 +47,10 @@ hotspots have been reduced substantially; the remaining candidates are:
 
 ## Completed Slices
 
-- `core-engine/src/tests/errors.rs`: unsupported-operator, invalid-regex,
-  missing-target, and nested target-variable extraction contract tests.
+- `core-engine/src/tests/errors.rs`: unsupported-operator, invalid-regex, and
+  missing-target error contract tests.
+- `core-engine/src/tests/target_variables.rs`: nested target-variable
+  extraction contract tests.
 - `core-api/src/open_rules_compat/classifier.rs`: oracle-gap classifier
   predicates and post-operator skip classification.
 - `core-api/src/condition_inspect.rs`: pure condition tree inspection helpers

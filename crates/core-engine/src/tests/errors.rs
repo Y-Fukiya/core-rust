@@ -1,4 +1,4 @@
-use core_rule_model::{Condition, ConditionGroup, Operator, OperatorOptions, ValueExpr};
+use core_rule_model::{Condition, Operator, OperatorOptions};
 
 use super::super::*;
 use super::common::{condition, literal, test_dataset};
@@ -46,26 +46,4 @@ fn missing_target_returns_error() {
     .expect_err("missing target");
 
     assert!(matches!(error, EngineError::MissingTarget));
-}
-
-#[test]
-fn extracts_target_variables_from_nested_conditions() {
-    let group = ConditionGroup::All(vec![
-        ConditionGroup::Leaf(condition("AESEQ", Operator::EqualTo, literal(1))),
-        ConditionGroup::Leaf(condition(
-            "AESEQ",
-            Operator::EqualTo,
-            ValueExpr::ColumnRef("AESEQ_COPY".to_owned()),
-        )),
-        ConditionGroup::Not(Box::new(ConditionGroup::Leaf(condition(
-            "DOMAIN",
-            Operator::EqualTo,
-            literal("AE"),
-        )))),
-    ]);
-
-    assert_eq!(
-        extract_target_variables(&group),
-        vec!["AESEQ", "AESEQ_COPY", "DOMAIN"]
-    );
 }

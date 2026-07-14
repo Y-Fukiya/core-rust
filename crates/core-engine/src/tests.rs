@@ -10,6 +10,7 @@ use tempfile::tempdir;
 use super::*;
 mod common;
 mod errors;
+mod target_variables;
 
 use common::{
     condition, condition_with_options, end_date_dataset, enumerated_dataset, literal,
