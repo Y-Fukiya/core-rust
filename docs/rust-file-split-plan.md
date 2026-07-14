@@ -1,17 +1,18 @@
 # Rust File Split Plan
 
-The Open Rules work has improved scoring fidelity, but several Rust files are
-still too large to review safely:
+The large-file split is now in maintenance mode. The former 5,000-10,000 line
+hotspots have been reduced substantially; the remaining candidates are:
 
 | File | Current lines | First split target |
 |---|---:|---|
-| `crates/core-api/src/lib.rs` | 5982 | Maintenance mode: keep new helper families in focused sibling modules rather than adding back to `lib.rs`. |
-| `crates/core-api/src/tests.rs` | 5797 | Maintenance mode: keep new fixture-style and rule-specific regression tests in focused modules under `crates/core-api/src/tests/`. |
-| `crates/core-data/src/lib.rs` | 4965 | Continue extracting USDM collector and row-builder helpers after the product/administration, design, content/timeline/scheduled-instance, geography/governance, abbreviation, object, JSON table, population-column, value helper, data-dir loader, transform, reference, and test splits. |
-| `crates/core-api/src/tests/open_rules_operations.rs` | 4513 | Split further only if operation families grow again; recent work moved the remaining operation pipeline, grouped distinct, record-count, and schema-normalized key tests here. |
-| `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Continue splitting USDM fixture families into focused sibling modules. |
-| `crates/core-engine/src/lib.rs` | 1778 | Continue extracting remaining operator helpers after the group-operator, date-operator, scalar-helper, and test splits. |
+| `crates/core-rule-model/src/lib.rs` | 2599 | Extract another normalization or parsing family only when that behavior changes. |
+| `crates/core-engine/src/tests.rs` | 2541 | Move future operator regressions into family-specific test modules. |
+| `crates/core-api/src/lib.rs` | 2255 | Keep new helper families in focused sibling modules rather than adding back to `lib.rs`. |
+| `crates/core-api/src/tests/open_rules_usdm.rs` | 2100 | Split another USDM fixture family when this file next grows. |
+| `crates/core-api/src/tests.rs` | 1925 | Keep new fixture-style and rule-specific regressions in focused modules under `crates/core-api/src/tests/`. |
+| `crates/core-engine/src/lib.rs` | 1702 | Extract remaining operator helpers only with focused behavioral coverage. |
 | `xtask/src/open_rules/score.rs` | 572 | Keep the score entrypoint thin; move any new score behavior into focused `score/` modules. |
+| `crates/core-data/src/lib.rs` | 414 | Split complete; keep loaders and transforms in existing focused modules. |
 
 ## Principles
 
@@ -25,21 +26,23 @@ still too large to review safely:
 
 ## Recommended Order
 
-1. `core-api/src/lib.rs`: keep extracting any new pure helper families into
+1. `core-rule-model/src/lib.rs`: move the next normalization or parsing family
+   only when it receives behavioral changes and focused tests.
+2. `core-engine/src/tests.rs`: place new regressions in operator-specific test
+   modules instead of growing the aggregate test file.
+3. `core-api/src/lib.rs`: keep extracting any new pure helper families into
    `open_rules_compat/` and sibling modules. The oracle-gap classifier,
    condition-inspection, CDISC context, static codelist, operation-field,
    metadata-support, operation-execution, operation-column, operation-dataset,
    metadata-execution, scope-filter, operation-reference, execution-provenance,
    domain-presence, split-domain unique-set, and result override helper slices
    have already moved out of `lib.rs`.
-2. `core-api/src/tests.rs`: keep moving any new Open Rules fixture-style tests
+4. `core-api/src/tests.rs`: keep moving any new Open Rules fixture-style tests
    into `tests/open_rules_*.rs` modules. Loader/row-scope, oracle-semantics,
    standard-filter, operation, and USDM slices have moved out already.
-3. `core-data/src/lib.rs`: continue with USDM JSON flattening or dataset
-   package helpers after the Open Rules CSV/data-dir loader split.
-4. `core-engine/src/lib.rs`: continue splitting scalar/date/operator helper
+5. `core-engine/src/lib.rs`: continue splitting scalar/date/operator helper
    families after group/relationship operator evaluators moved out.
-5. `xtask/src/open_rules/score.rs`: keep as a small orchestration module after
+6. `xtask/src/open_rules/score.rs`: keep as a small orchestration module after
    the summary/gate/provenance/policy/normalization/test splits.
 
 ## Completed Slices
@@ -178,11 +181,10 @@ still too large to review safely:
 
 ## Next Implementation Slice
 
-The next low-risk code slice is:
+Future low-risk slices are:
 
-- split the next pure USDM collector or row-builder family from
-  `core-data/src/lib.rs`, or extract another pure metadata/operation helper
-  family from `core-api/src/lib.rs`
+- extract a normalization/parser family from `core-rule-model/src/lib.rs`, or
+  move an operator test family out of `core-engine/src/tests.rs`
 - prefer code that already has focused tests and does not require behavior
   changes
 - keep public behavior unchanged

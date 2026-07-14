@@ -620,3 +620,71 @@ fn resolve_open_rules_dataset_path(data_dir: &Path, filename: &str) -> Result<Pa
     }
     Ok(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_rules_variable(
+        name: &str,
+        label: Option<&str>,
+        variable_type: Option<&str>,
+    ) -> OpenRulesVariable {
+        OpenRulesVariable {
+            dataset: "AE".to_owned(),
+            variable: DatasetVariable {
+                name: name.to_owned(),
+                label: label.map(str::to_owned),
+                variable_type: variable_type.map(str::to_owned),
+                length: None,
+                extra: BTreeMap::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn dataset_descriptor_accepts_manifest_aliases_and_normalizes_names() {
+        let row = BTreeMap::from([
+            ("File".to_owned(), " ae ".to_owned()),
+            ("Domain".to_owned(), " ae ".to_owned()),
+            ("Description".to_owned(), "Adverse Events".to_owned()),
+        ]);
+
+        let dataset = open_rules_dataset_descriptor(&row).expect("valid dataset descriptor");
+
+        assert_eq!(dataset.filename, "ae.csv");
+        assert_eq!(dataset.name, "AE");
+        assert_eq!(dataset.label.as_deref(), Some("Adverse Events"));
+    }
+
+    #[test]
+    fn label_column_map_rejects_ambiguous_labels() {
+        let variables = vec![
+            open_rules_variable("AETERM", Some("Reported Term"), Some("Char")),
+            open_rules_variable("AEDECOD", Some(" Reported   Term "), Some("Char")),
+            open_rules_variable("AESEV", Some("Severity"), Some("Char")),
+        ];
+
+        let labels = open_rules_label_column_map(&variables);
+
+        assert_eq!(labels.get("REPORTED TERM"), Some(&None));
+        assert_eq!(
+            labels.get("SEVERITY").and_then(Option::as_deref),
+            Some("AESEV")
+        );
+    }
+
+    #[test]
+    fn variable_kind_accepts_case_and_whitespace_but_rejects_unknown_types() {
+        let kind = |variable_type| {
+            let variable = open_rules_variable("VALUE", None, variable_type);
+            open_rules_variable_kind(&variable.variable)
+        };
+
+        assert_eq!(kind(Some(" BOOLEAN ")), OpenRulesVariableKind::Boolean);
+        assert_eq!(kind(Some("Double")), OpenRulesVariableKind::Numeric);
+        assert_eq!(kind(Some("STRING")), OpenRulesVariableKind::Character);
+        assert_eq!(kind(Some("date")), OpenRulesVariableKind::Unknown);
+        assert_eq!(kind(None), OpenRulesVariableKind::Unknown);
+    }
+}
