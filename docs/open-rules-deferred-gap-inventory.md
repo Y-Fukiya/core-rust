@@ -3,6 +3,12 @@
 Snapshot: `tests/open_rules/upstream-baseline.json`, regenerated from the
 pinned full-upstream corpus on 2026-07-14.
 
+The September 9 [upstream update audit](open-rules-upstream-update-20260909.md)
+records replies to issues #66-#69 and fresh full-corpus retests. The proposed
+pin has 24 deferred skips but also blocking mismatches and unsupported cases;
+it has **not** replaced this accepted 54-case inventory. Treat the classifications
+below as snapshot-specific evidence, not permanent upstream fault assignments.
+
 This inventory tracks the remaining `deferred_oracle_gap_skipped` cases after
 the default-engine upstream run reached:
 
