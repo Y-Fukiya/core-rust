@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod output_directory;
+
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +14,18 @@ pub type Result<T> = std::result::Result<T, ReportError>;
 
 #[derive(Debug, Error)]
 pub enum ReportError {
+    #[error(
+        "output directory already contains report {path}; use a new output directory for each run"
+    )]
+    ExistingReport { path: PathBuf },
+    #[error("report directory is reserved by {path}; use a new output directory")]
+    OutputReserved { path: PathBuf },
+    #[error("failed to inspect report path {path}: {source}")]
+    InspectReport {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to create report directory {path}: {source}")]
     CreateDir {
         path: PathBuf,
@@ -137,10 +151,7 @@ pub fn write_reports_with_options(
     options: &ReportOptions,
 ) -> Result<WrittenReports> {
     let output_dir = output_dir.as_ref();
-    fs::create_dir_all(output_dir).map_err(|source| ReportError::CreateDir {
-        path: output_dir.to_path_buf(),
-        source,
-    })?;
+    let _reservation = output_directory::ReportDirectoryGuard::reserve(output_dir)?;
 
     let json = if matches!(
         options.output_format,

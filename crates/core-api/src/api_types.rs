@@ -14,6 +14,10 @@ pub enum ApiError {
     MutuallyExclusiveRuleFilters,
     #[error("at least one rule path is required")]
     MissingRulePaths,
+    #[error("no executable rule files were loaded; supply JSON/YAML rule files or a directory containing them directly (subdirectories are not scanned)")]
+    NoRulesLoaded,
+    #[error("duplicate rule id {0}; supply each rule id only once")]
+    DuplicateRuleId(String),
     #[error("at least one dataset path is required")]
     MissingDatasetPaths,
     #[error("failed to load rules: {0}")]

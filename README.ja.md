@@ -216,9 +216,27 @@ core-rs validate ... --fail-on failed,skipped
 core-rs validate ... --strict
 ```
 
-`--strict` は failed と skipped の両方で失敗する設定と同等です。これらの mode の
-non-zero exit は、report は生成されたが、指定した validation result policy を満たさなかった
-ことを意味します。
+`--strict` は failed / skipped に加え、フィルターですべてのルールを除外した場合など、
+結果が0件のときも失敗します。`--fail-on` は指定した status のみを検査します。
+結果に対する終了コード判定の前に report を書きますが、入力・読み込み・出力のエラーでは
+report 生成前に失敗する場合があります。non-zero exit を「問題なし」と扱わないでください。
+
+### ルール入力と出力先の安全性
+
+- ルールファイルの読み込みが0件の場合は、`--strict` なしでもエラーになります。
+  `--local-rules` はディレクトリ直下の JSON/YAML のみを読み、サブディレクトリは探索しません。
+  upstream の階層化された `Published/` をそのまま指定しても全ルールは読み込まれません。
+  ファイルを明示するか、公式ケース群の検証には Open Rules harness を使ってください。
+- 読み込むルールIDは一意でなければなりません。同一定義の二重指定や、ディレクトリと
+  ファイルの重複指定もエラーです。競合時は両方の入力パスを示し、`--rules` /
+  `--exclude-rules` で絞り込む前に停止します。入力順で優先順位は決まりません。
+  `--rules` の選択リスト内で同じIDを繰り返した場合は、従来どおり1回だけ選択します。
+- Open Rules の candidate 実行、P21PORT の実エンジン実行も含め、実行ごとに新しい出力先を
+  指定してください。既存の `report.json` / `report.csv` / `validation.log` がある場合は、
+  今回出力しない形式であっても書き込みを拒否します。既存レポートや無関係なファイルは
+  bundle writer が削除・上書きしません。一時的な `.core-rs-report.lock` で同時書き込みも
+  防ぎます。異常終了で lock が残った場合は新しい出力先を使い、書き込み失敗時の途中ファイルを
+  完了した検証結果として扱わないでください。
 
 ## リリースと監査証跡
 

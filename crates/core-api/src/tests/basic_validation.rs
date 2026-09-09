@@ -245,6 +245,22 @@ fn select_rules_rejects_include_and_exclude_together() {
 }
 
 #[test]
+fn select_rules_rejects_duplicate_in_memory_ids_before_filtering() {
+    let dir = tempdir().expect("tempdir");
+    write_rule(dir.path(), "CORE-TEST-0001", "AE");
+    let rules = load_rules_from_paths(&[dir.path().to_path_buf()]).expect("load rules");
+    let duplicates = vec![rules[0].clone(), rules[0].clone()];
+    for (include, exclude) in [
+        (vec![], vec![]),
+        (vec!["CORE-TEST-0001".to_owned()], vec![]),
+        (vec![], vec!["CORE-TEST-0001".to_owned()]),
+    ] {
+        let error = select_rules(&duplicates, &include, &exclude).expect_err("duplicate id");
+        assert!(error.to_string().contains("duplicate rule id"));
+    }
+}
+
+#[test]
 fn run_validation_filters_rules_and_writes_reports() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

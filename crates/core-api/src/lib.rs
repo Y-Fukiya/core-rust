@@ -154,6 +154,9 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
 
     let rules = load_rules_from_paths(&request.rule_paths)?;
+    if rules.is_empty() {
+        return Err(ApiError::NoRulesLoaded);
+    }
     let open_rules_compat = request.open_rules_oracle_compat;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
     apply_standard_filter(
@@ -412,7 +415,12 @@ pub fn select_rules(
         return Err(ApiError::MutuallyExclusiveRuleFilters);
     }
 
-    let available_ids: BTreeSet<&str> = rules.iter().map(|rule| rule.core_id.as_str()).collect();
+    let mut available_ids = BTreeSet::new();
+    for rule in rules {
+        if !available_ids.insert(rule.core_id.as_str()) {
+            return Err(ApiError::DuplicateRuleId(rule.core_id.clone()));
+        }
+    }
     let selected = if include_rules.is_empty() {
         rules
             .iter()

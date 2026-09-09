@@ -26,6 +26,12 @@ pub type Result<T> = std::result::Result<T, RuleModelError>;
 pub enum RuleModelError {
     #[error("unsupported rule file extension: {0}")]
     UnsupportedExtension(String),
+    #[error("duplicate rule id {rule_id} in {first_path} and {second_path}; supply each rule id only once")]
+    DuplicateRuleId {
+        rule_id: String,
+        first_path: PathBuf,
+        second_path: PathBuf,
+    },
     #[error("failed to read file {path}: {source}")]
     Io {
         path: PathBuf,

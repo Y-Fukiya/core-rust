@@ -222,9 +222,29 @@ core-rs validate ... --fail-on failed,skipped
 core-rs validate ... --strict
 ```
 
-`--strict` is equivalent to failing on both failed and skipped results. A
-non-zero exit from these modes means the report was generated but the requested
-validation result policy was not satisfied.
+`--strict` fails on failed or skipped results, and also when no validation
+results were produced (for example, when filters exclude every rule). The
+`--fail-on` options check only the named statuses. Reports are written before
+the result policy is checked; input/loading/output errors can fail earlier
+without producing reports. A non-zero exit is never evidence of a clean check.
+
+### Rule Inputs And Output Safety
+
+- Loading zero rule files is an error, including without `--strict`.
+  `--local-rules` directories are scanned for immediate JSON/YAML files only;
+  a nested upstream `Published/` directory is not a recursively loaded pack.
+  Supply the rule files explicitly or use the Open Rules harness for its corpus.
+- Every loaded rule ID must be unique, even for identical definitions or
+  overlapping directory/file inputs. Conflicts report both source paths before
+  `--rules` / `--exclude-rules` filtering; input order never resolves a conflict.
+  Repeating an ID in the `--rules` selection list still selects that rule once.
+- Use a new output directory for every run, including Open Rules candidate
+  runs and P21PORT actual-engine runs. Existing `report.json`, `report.csv`, or
+  `validation.log` blocks writing, even if that format is disabled this time.
+  Old reports and unrelated files are not deleted or overwritten by the bundle
+  writer. A temporary `.core-rs-report.lock` prevents concurrent bundle writes;
+  if a process crash leaves it behind, use a new directory. Do not treat partial
+  output from a failed write as a completed run.
 
 ## Release And Audit Artifacts
 

@@ -68,6 +68,7 @@ struct ValidateArgs {
     #[arg(long, value_enum, value_delimiter = ',', value_name = "failed|skipped")]
     fail_on: Vec<FailOnStatus>,
 
+    /// Fail on failed/skipped results or when no validation results were produced.
     #[arg(long)]
     strict: bool,
 }
@@ -158,6 +159,9 @@ fn enforce_exit_policy(
     strict: bool,
     fail_on: &[FailOnStatus],
 ) -> Result<()> {
+    if strict && results.is_empty() {
+        bail!("validation failed strict exit policy: no validation results; check rule selection and applicability");
+    }
     let fail_on_failed = strict || fail_on.contains(&FailOnStatus::Failed);
     let fail_on_skipped = strict || fail_on.contains(&FailOnStatus::Skipped);
     if !fail_on_failed && !fail_on_skipped {
