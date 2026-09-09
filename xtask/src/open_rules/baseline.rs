@@ -9,6 +9,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
+mod input;
+
 use crate::open_rules::score::{
     execution_provenance_detail_for_case, issue_fingerprint_hash,
     scoring_policy_for_normalizations, ExecutionProvenance, ExecutionProvenanceDetail, ScoreBucket,
@@ -88,6 +90,8 @@ pub struct BaselineDifference {
 pub fn run(args: BaselineArgs) -> Result<bool> {
     let baseline = read_scoreboard(&args.baseline)?;
     let current = read_scoreboard(&args.scoreboard)?;
+    input::validate_scoreboard("baseline", &baseline)?;
+    input::validate_scoreboard("current", &current)?;
     let report = compare_scoreboards(&baseline, &current);
     println!(
         "open-rules baseline: {} regression(s), {} improvement(s), {} review-required",
@@ -156,6 +160,7 @@ pub fn run(args: BaselineArgs) -> Result<bool> {
 
 pub fn canonicalize(args: CanonicalizeBaselineArgs) -> Result<bool> {
     let scoreboard = read_scoreboard(&args.scoreboard)?;
+    input::reject_duplicate_case_keys("input", &scoreboard)?;
     let canonicalized = canonicalize_scoreboard_for_baseline(scoreboard);
     let mut file =
         File::create(&args.out).with_context(|| format!("create {}", args.out.display()))?;
@@ -268,7 +273,8 @@ fn components_to_path(components: &[Component<'_>]) -> PathBuf {
         })
 }
 
-pub fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> BaselineReport {
+// The CLI validates input integrity before comparing accepted policy changes.
+fn compare_scoreboards(baseline: &Scoreboard, current: &Scoreboard) -> BaselineReport {
     let baseline_cases = baseline
         .cases
         .iter()

@@ -132,8 +132,9 @@ pub fn run(args: ReleaseManifestArgs) -> Result<bool> {
         .collect::<Result<Vec<_>>>()?;
     let ci = github_actions_ci_provenance();
     let mut manifest = build_release_manifest(ReleaseManifestInput {
-        git_commit: git_output(["rev-parse", "HEAD"]),
-        git_dirty: git_output(["status", "--porcelain"]).map(|status| !status.is_empty()),
+        git_commit: git_output(source_root, ["rev-parse", "HEAD"]),
+        git_dirty: git_output(source_root, ["status", "--porcelain"])
+            .map(|status| !status.is_empty()),
         rust_version: command_output("rustc", ["--version"])
             .unwrap_or_else(|| "unknown".to_owned()),
         source_date_epoch: std::env::var("SOURCE_DATE_EPOCH").ok(),
@@ -420,8 +421,16 @@ fn verified_manifest_artifact_path(canonical_root: &Path, artifact_path: &str) -
     Ok(canonical_path)
 }
 
-fn git_output<const N: usize>(args: [&str; N]) -> Option<String> {
-    command_output("git", args)
+fn git_output<const N: usize>(source_root: &Path, args: [&str; N]) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(source_root)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn command_output<const N: usize>(program: &str, args: [&str; N]) -> Option<String> {
@@ -724,6 +733,77 @@ mod tests {
             format!("{error:#}").contains("file is not a regular file"),
             "unexpected error: {error:#}"
         );
+    }
+
+    #[test]
+    fn release_manifest_git_provenance_comes_from_source_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("source");
+        std::fs::create_dir(&source).expect("source directory");
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .current_dir(&source)
+                .args(args)
+                .output()
+                .expect("git");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout)
+                .expect("git output")
+                .trim()
+                .to_owned()
+        };
+        let out = dir.path().join("manifest.json");
+        let write_manifest = || {
+            run(ReleaseManifestArgs {
+                out: out.clone(),
+                artifact: Vec::new(),
+                artifact_root: None,
+                source_root: Some(source.clone()),
+                target_triple: None,
+            })
+            .expect("manifest");
+            serde_json::from_reader::<_, ReleaseManifest>(File::open(&out).unwrap()).unwrap()
+        };
+        std::fs::write(source.join("Cargo.lock"), b"lock-v1").expect("lock");
+        let unavailable = write_manifest();
+        assert!(!unavailable.git.available);
+        assert_eq!(unavailable.git.commit, None);
+        assert_eq!(unavailable.git.dirty, None);
+
+        git(&["init", "-q"]);
+        git(&["add", "Cargo.lock"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "test source",
+        ]);
+        let expected_commit = git(&["rev-parse", "HEAD"]);
+        for dirty in [false, true] {
+            if dirty {
+                std::fs::write(source.join("Cargo.lock"), b"lock-v2").expect("dirty lock");
+            }
+            let manifest = write_manifest();
+            assert!(manifest.git.available);
+            assert_eq!(
+                manifest.git.commit.as_deref(),
+                Some(expected_commit.as_str())
+            );
+            assert_eq!(manifest.git.dirty, Some(dirty));
+            assert_eq!(
+                manifest.cargo_lock_sha256,
+                Some(sha256_file(&source.join("Cargo.lock")).unwrap())
+            );
+        }
     }
 
     #[test]

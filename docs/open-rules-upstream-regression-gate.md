@@ -6,9 +6,16 @@ The weekly upstream workflow has two lanes:
   fails only when a scoreboard is not generated or when the default-vs-strict
   delta validation finds that the two scoreboards do not describe the same
   pinned corpus.
-- `upstream-regression` runs only when
-  `tests/open_rules/upstream-baseline.json` exists. It compares the generated
-  full-corpus scoreboard against that accepted baseline.
+- `upstream-regression` requires `tests/open_rules/upstream-baseline.json`.
+  A missing baseline fails the job instead of skipping the gate. It compares
+  the generated full-corpus scoreboard against that accepted baseline.
+
+Before comparing policy changes, the baseline command rejects duplicate case
+keys and summaries inconsistent with their case lists in either input. Counts
+are exact; ratios allow only JSON floating-point round-trip noise. Older
+summaries must be explicitly regenerated and reviewed with `canonicalize-baseline`;
+the comparison command never repairs them implicitly. The canonicalizer also
+rejects duplicate keys rather than creating a baseline from ambiguous cases.
 
 The full upstream baseline should fail when:
 
