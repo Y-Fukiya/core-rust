@@ -3,6 +3,13 @@
 Snapshot: `tests/open_rules/upstream-baseline.json`, regenerated from the
 pinned full-upstream corpus on 2026-07-14.
 
+Status checked 2026-09-09: issues #66-#69 are closed with upstream correction
+responses. A full retest of the proposed September 2 upstream pin found both
+improvements and blocking differences, so the accepted pin remains unchanged.
+See [the update audit](open-rules-upstream-update-20260909.md) for case-level
+retests and the next implementation families. The counts below describe the
+accepted July snapshot, not the latest upstream.
+
 The remaining `deferred_oracle_gap_skipped = 54` cases are reviewed oracle or
 fixture follow-ups, not core-rust correctness failures. Keep them outside the
 supported accuracy gate until upstream evidence changes.
@@ -53,9 +60,11 @@ The first filing wave has been submitted to `cdisc-org/cdisc-open-rules`:
 | Positive fixtures with issues | [cdisc-org/cdisc-open-rules#68](https://github.com/cdisc-org/cdisc-open-rules/issues/68) |
 | Standard applicability mismatch | [cdisc-org/cdisc-open-rules#69](https://github.com/cdisc-org/cdisc-open-rules/issues/69) |
 
-Keep the remaining 37 `official_oracle_fixture_gap` cases local/report-only
-until upstream responds to this first wave or a reviewer asks for more granular
-follow-ups.
+The first-wave responses have arrived. Keep the accepted snapshot unchanged
+while reconciling the remaining cases against the updated rules and fixtures;
+do not reuse historical fixture-gap labels as proof against the new upstream.
+Prepare new follow-ups only with the structural evidence described in the
+update audit.
 
 ## Evidence To Attach
 

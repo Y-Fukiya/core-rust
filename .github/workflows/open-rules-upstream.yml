@@ -92,7 +92,8 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "tests/open_rules/upstream-baseline.json is not present; skipping regression baseline."
+            echo "::error::tests/open_rules/upstream-baseline.json is required for the regression gate."
+            exit 1
           fi
 
       - name: Install Rust

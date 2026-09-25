@@ -32,6 +32,14 @@ def test_p21port_smoke_workflow_runs_build_generate_execute_and_compare(tmp_path
     )
 
     assert "p21port smoke complete: ok" in result.stdout
+    evidence = json.loads(
+        (tmp_path / "p21port/run/reports/core_run_evidence.json").read_text(encoding="utf-8")
+    )
+    assert evidence["state"] == "completed"
+    assert evidence["integrity_ok"] is True
+    assert evidence["comparison_status"] == "not_performed"
+    assert evidence["approval"] == {"status": "not_reviewed"}
+    assert len(evidence["execution"]["rows"]) == 4
     summary_path = tmp_path / "p21port" / "reports" / "p21port_smoke_summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     comparison_baseline = json.loads(

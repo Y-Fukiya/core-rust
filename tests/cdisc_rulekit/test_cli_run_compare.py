@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 
+from cdisc_rulekit.cli import main
+
 
 def _generated_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
     rule_dir = root / rule_id
@@ -31,6 +33,20 @@ def _generated_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
         encoding="utf-8",
     )
     return rule_dir
+
+
+def test_run_core_rejects_reused_output_before_overwriting_plan(tmp_path, capsys):
+    generated_root = tmp_path / "generated_rules"
+    _generated_rule(generated_root)
+    out = tmp_path / "run"
+    args = ["run-core", "--generated-rules", str(generated_root), "--out", str(out), "--dry-run"]
+    assert main(args) == 0
+    plan = out / "reports" / "core_run_plan.json"
+    before = plan.read_bytes()
+
+    assert main(args) == 1
+    assert "new output directory" in capsys.readouterr().err
+    assert plan.read_bytes() == before
 
 
 def test_run_core_dry_run_and_compare_results_cli(tmp_path):
@@ -210,3 +226,50 @@ def test_run_core_executes_engine_command_and_writes_execution_summary(tmp_path)
     assert "run-core execution complete: ok, 2 passed, 0 failed" in run.stdout
     assert (out_dir / "reports" / "core_run_execution_summary.csv").exists()
     assert (out_dir / "core_runs" / rule_id / "positive" / "01" / "report.json").exists()
+    evidence = json.loads((out_dir / "reports" / "core_run_evidence.json").read_text())
+    assert evidence["state"] == "completed"
+    assert evidence["approval"]["status"] == "not_reviewed"
+    assert len(evidence["execution"]["rows"]) == 2
+
+
+def test_run_core_with_relative_inputs_and_different_engine_cwd(tmp_path, monkeypatch):
+    _generated_rule(tmp_path / "rules")
+    engine_cwd = tmp_path / "engine"
+    engine_cwd.mkdir()
+    engine = engine_cwd / "engine.py"
+    engine.write_text(
+        "from pathlib import Path\nimport sys\n"
+        "assert Path.cwd().name == 'engine'\n"
+        "assert Path(sys.argv[sys.argv.index('--local-rules') + 1]).is_file()\n"
+        "out = Path(sys.argv[sys.argv.index('--output') + 1])\n"
+        "(out / 'report.json').write_text('{}')\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main([
+        "run-core", "--generated-rules", "rules", "--out", "run",
+        "--engine-cwd", str(engine_cwd), "--engine-command", f"{sys.executable} engine.py",
+    ]) == 0
+    record = json.loads((tmp_path / "run/reports/core_run_evidence.json").read_text())
+    assert record["settings"]["engine_cwd"] == str(engine_cwd)
+    assert record["integrity_ok"]
+
+
+def test_run_core_returns_failure_when_engine_changes_inputs(tmp_path, capsys):
+    _generated_rule(tmp_path / "rules")
+    engine = tmp_path / "mutating_engine.py"
+    engine.write_text(
+        "from pathlib import Path\nimport sys\n"
+        "data = Path(sys.argv[sys.argv.index('--dataset-path') + 1])\n"
+        "data.write_text('changed')\n"
+        "out = Path(sys.argv[sys.argv.index('--output') + 1])\n"
+        "(out / 'report.json').write_text('{}')\n"
+    )
+    assert main([
+        "run-core", "--generated-rules", str(tmp_path / "rules"), "--out", str(tmp_path / "run"),
+        "--engine-command", f"{sys.executable} {engine}",
+    ]) == 1
+    assert "evidence failed" in capsys.readouterr().err
+    record = json.loads((tmp_path / "run/reports/core_run_evidence.json").read_text())
+    assert record["state"] == "failed"
+    assert record["execution"]["ok"] is True
+    assert record["integrity_ok"] is False

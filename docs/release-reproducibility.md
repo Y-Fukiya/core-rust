@@ -65,9 +65,12 @@ Those smoke manifests are uploaded separately as CI artifacts for audit of the
 manifest/verification plumbing.
 Use the stricter policy flags for reviewed release bundles:
 
-- `release-manifest --source-root <dir>` records `Cargo.lock` from that source
+- `release-manifest --source-root <dir>` records `Cargo.lock` and Git commit/dirty
+  state from that source
   checkout instead of depending on the current working directory. When this
   option is provided, manifest generation fails if `Cargo.lock` cannot be read.
+  A source directory without Git metadata records unavailable Git provenance;
+  it never borrows the invoking directory's commit or clean status.
 - `release-manifest --target-triple <triple>` records the reviewed build target
   explicitly; otherwise the host triple from `rustc -vV` is recorded.
 - `release-verify --target-triple <triple>` requires the manifest's recorded

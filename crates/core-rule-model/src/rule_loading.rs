@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -55,11 +56,12 @@ pub fn load_rules_from_paths(paths: &[PathBuf]) -> Result<Vec<ExecutableRule>> {
 pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRulesResult> {
     let mut rules = Vec::new();
     let mut warnings = Vec::new();
+    let mut sources = BTreeMap::new();
 
     for path in paths {
         if path.is_file() {
             if is_supported_rule_file(path) {
-                rules.push(load_rule_file(path)?);
+                rules.push(load_unique_rule(path, &mut sources)?);
             } else {
                 warnings.push(unsupported_extension_warning(path));
             }
@@ -78,7 +80,7 @@ pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRule
             for entry in entries {
                 let path = entry.path();
                 if path.is_file() && is_supported_rule_file(&path) {
-                    rules.push(load_rule_file(path)?);
+                    rules.push(load_unique_rule(&path, &mut sources)?);
                 } else if path.is_file() {
                     warnings.push(unsupported_extension_warning(&path));
                 }
@@ -92,6 +94,22 @@ pub fn load_rules_from_paths_with_warnings(paths: &[PathBuf]) -> Result<LoadRule
     }
 
     Ok(LoadRulesResult { rules, warnings })
+}
+
+fn load_unique_rule(
+    path: &Path,
+    sources: &mut BTreeMap<String, PathBuf>,
+) -> Result<ExecutableRule> {
+    let rule = load_rule_file(path)?;
+    if let Some(first_path) = sources.get(&rule.core_id) {
+        return Err(RuleModelError::DuplicateRuleId {
+            rule_id: rule.core_id,
+            first_path: first_path.clone(),
+            second_path: path.to_path_buf(),
+        });
+    }
+    sources.insert(rule.core_id.clone(), path.to_path_buf());
+    Ok(rule)
 }
 
 fn extension(path: &Path) -> Option<String> {
