@@ -31,6 +31,15 @@ jobs:
       - name: P21PORT smoke workflow
         run: PYTHONDONTWRITEBYTECODE=1 python -B scripts/p21port_smoke.py --work-dir target/p21port-smoke
 
+      - name: Upload P21PORT workflow evidence (synthetic engine)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p21port-workflow-evidence
+          path: target/p21port-smoke/
+          include-hidden-files: true
+          if-no-files-found: warn
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
@@ -69,6 +78,16 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/p21port_smoke.py
           --work-dir target/p21port-real-smoke
           --real-engine-command 'target/debug/core-rs validate'
+
+      - name: Upload P21PORT real-engine evidence (synthetic fixtures)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p21port-real-engine-evidence
+          path: target/p21port-real-smoke/
+          include-hidden-files: true
+          if-no-files-found: warn
+
       - name: Release artifact provenance gate
         env:
           SOURCE_DATE_EPOCH: "1783123200"

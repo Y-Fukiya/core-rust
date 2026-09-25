@@ -208,6 +208,19 @@ P21PORT outputs are draft/review artifacts, not a Pinnacle 21 replacement.
 Existing Open Rules `Published/` content is not modified unless you explicitly
 export into a target tree.
 
+Each `run-core` invocation requires a **new** `--out` directory, including dry
+runs. Real executions save `reports/core_run_evidence.json`: input and
+expected-fixture SHA-256 hashes, the invoked executable hash, command/settings,
+execution results, and output hashes. Inputs are checked again after execution;
+detected changes or missing reports fail the run. Interrupted records remain
+`started`, not `completed`.
+
+This is execution evidence, **not** a result comparison or human approval.
+Interpreter/build commands identify the launcher only, not every dependency or
+the resulting validator binary. Prefer a pinned, release-verified binary for a
+reviewed pilot. See the [rule-validation pilot checklist](docs/rule-validation-pilot.md)
+for separate comparison, approval, and archival steps.
+
 ## CLI Exit Policy
 
 `core-rs validate` writes reports and exits `0` when validation execution

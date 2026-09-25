@@ -174,8 +174,8 @@ def build_core_run_plan(
     output_mode: str = "directory",
     data_mode: str = "dataset-paths",
 ) -> CoreRunPlan:
-    generated_root = Path(generated_rules_dir)
-    run_root_path = Path(run_root)
+    generated_root = Path(generated_rules_dir).resolve()
+    run_root_path = Path(run_root).resolve()
     items: list[CoreRunPlanItem] = []
     rule_dirs = sorted(path for path in generated_root.iterdir() if path.is_dir()) if generated_root.exists() else []
 

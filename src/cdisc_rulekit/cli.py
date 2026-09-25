@@ -12,7 +12,6 @@ from .core_runner import (
     DEFAULT_ENGINE_COMMAND,
     DEFAULT_TIMEOUT_SECONDS,
     build_core_run_plan,
-    execute_core_run_plan,
     write_core_run_execution_report,
     write_core_run_plan,
 )
@@ -29,6 +28,7 @@ from .map_rules import map_p21_to_core, standard_key
 from .models import CanonicalRule, RuleMapping
 from .operator_inventory import build_operator_inventory
 from .reports import write_conversion_summary, write_phase1_quality_reports, write_readiness_summary
+from .run_evidence import execute_recorded_core_run
 from .validate_generated import validate_generated_rules, write_structure_validation_report
 
 
@@ -229,33 +229,43 @@ def cmd_validate_structure(args: argparse.Namespace) -> int:
 
 
 def cmd_run_core(args: argparse.Namespace) -> int:
-    root = Path(args.out)
+    root = Path(args.out).absolute()
     plan = build_core_run_plan(
-        args.generated_rules,
+        Path(args.generated_rules).resolve(),
         run_root=root / "core_runs",
         engine_command=args.engine_command,
         dry_run=args.dry_run,
         output_mode=args.output_mode,
         data_mode=args.data_mode,
     )
-    write_core_run_plan(root / "reports", plan)
     if plan.case_count == 0:
         print("run-core failed: no generated cases found")
         return 1
+    try:
+        root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise CliUsageError(f"{root}: use a new output directory for each run, including dry runs") from error
+    except OSError as error:
+        raise CliUsageError(f"{root}: cannot create run output directory: {error}") from error
+    write_core_run_plan(root / "reports", plan)
     if args.dry_run:
         print(f"run-core dry-run complete: {plan.case_count} cases planned")
         return 0
 
-    result = execute_core_run_plan(
+    recorded = execute_recorded_core_run(
         plan,
+        root / "reports" / "core_run_evidence.json",
         engine_cwd=args.engine_cwd,
         workers=args.workers,
         timeout_seconds=args.timeout_seconds,
     )
+    result = recorded.execution
     write_core_run_execution_report(root / "reports", result)
-    status = "ok" if result.ok else "failed"
+    status = "ok" if recorded.ok else "failed"
     print(f"run-core execution complete: {status}, {result.pass_count} passed, {result.fail_count} failed")
-    return 0 if result.ok else 1
+    if not recorded.integrity_ok:
+        print("run-core evidence failed: inputs changed or input/output evidence is incomplete", file=sys.stderr)
+    return 0 if recorded.ok else 1
 
 
 def cmd_compare_results(args: argparse.Namespace) -> int:

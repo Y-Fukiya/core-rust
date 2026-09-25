@@ -202,6 +202,18 @@ python -m cdisc_rulekit.cli pilot-preflight \
 生成物は review 用 draft であり、Pinnacle 21 の代替ではありません。
 明示的に export しない限り、Open Rules の既存 `Published/` は変更されません。
 
+`run-core` は、dry-run も含め、毎回**新しい** `--out` ディレクトリを必要とします。
+実行時は `reports/core_run_evidence.json` に、入力・期待値ファイルと起動した実行ファイルの
+SHA-256、実行コマンド・設定、実行結果、出力のハッシュを保存します。
+実行後にも入力を確認し、変更やレポート未生成を検出した場合は失敗します。
+中断した記録は `started` のままで、完了扱いにはなりません。
+
+この記録は**実行の証跡**であり、期待値との一致や人による承認を意味しません。
+Python や Cargo 経由の場合、記録する実行ファイルは起動元だけで、全依存や生成後の
+エンジン本体は網羅しません。実用検証では、固定して release-verify で検証した
+バイナリの直接指定を推奨します。比較・承認・保存を分ける手順は
+[ルール検証パイロットのチェックリスト](docs/rule-validation-pilot.md)を参照してください。
+
 ## CLI の終了コード方針
 
 `core-rs validate` は、validation 実行と report 生成が完了した場合、report 内に
