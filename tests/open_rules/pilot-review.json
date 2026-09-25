@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "upstream_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
+  "review": {
+    "method": "Rule-text and fixture-data cross-check, not candidate-output-derived expectations",
+    "reviewer": "Codex",
+    "date": "2026-09-25",
+    "human_approval": "pending",
+    "limitations": "Official fixtures only; no real-study approval, P21 equivalence, or exhaustive boundary coverage. All positive/01 cases expect zero findings."
+  },
+  "rules": [
+    {
+      "rule_id": "CORE-000001",
+      "dataset": "IE",
+      "records": [
+        1,
+        2,
+        3
+      ],
+      "variables": [
+        "IECAT",
+        "IEORRES"
+      ],
+      "basis": "INCLUSION rows 1-3 have Y/Yes/Nope instead of literal N. Positive inclusion rows are N; the exclusion row is outside the precondition.",
+      "source_sha256": "cc9f1e72c161839e1cbd01033a845657cb9f0f7b5e8c18648863833e6aafe806"
+    },
+    {
+      "rule_id": "CORE-000004",
+      "dataset": "EC",
+      "records": [
+        7
+      ],
+      "variables": [
+        "ECDOSE",
+        "ECOCCUR"
+      ],
+      "basis": "Only row 7 has ECOCCUR=N with nonpositive numeric ECDOSE=0. N with 20 or null does not violate the written comparison; positive rows use Y/5 or N/null.",
+      "source_sha256": "13e9e30b66fc44e96ae162ea0dd1290b3da3471dd796b57f56fb616078a896ef"
+    },
+    {
+      "rule_id": "CORE-000006",
+      "dataset": "DM",
+      "records": [
+        1,
+        2,
+        4
+      ],
+      "variables": [
+        "DTHFL"
+      ],
+      "basis": "N/U/N are nonempty and not Y. Blank is excluded; positive values are Y or blank.",
+      "source_sha256": "a2884e85791cd98926b5a3dac0e9f4c9906b37c7d7e8a135349b566f8de291cb"
+    },
+    {
+      "rule_id": "CORE-000009",
+      "dataset": "SE",
+      "records": [
+        5
+      ],
+      "variables": [
+        "ELEMENT",
+        "ETCD"
+      ],
+      "basis": "Row 5 has ETCD=UNPLAN with a nonempty ELEMENT. Positive UNPLAN has an empty ELEMENT; other ETCD values are outside the precondition.",
+      "source_sha256": "a73a9cb7711e2c6428d7c69bce1379c7f52a4d0d2ad6b3ee91f43e14809564f9"
+    },
+    {
+      "rule_id": "CORE-000020",
+      "dataset": "SE",
+      "records": [
+        5
+      ],
+      "variables": [
+        "ETCD",
+        "TAETORD"
+      ],
+      "basis": "Negative UNPLAN row 5 has nonempty TAETORD. Positive UNPLAN has null TAETORD; ELEMENT is not this rule's target.",
+      "source_sha256": "654a09c659e20f191ce6c25fafc7b25875dcc04457db3ad34b6567667f655d2f"
+    },
+    {
+      "rule_id": "CORE-000033",
+      "dataset": "DS",
+      "records": [
+        3
+      ],
+      "variables": [
+        "DSDECOD",
+        "DSTERM"
+      ],
+      "basis": "Row 3 has DSTERM=COMPLETED but DSDECOD=ADVERSE EVENT. Positive uses COMPLETED for both; other DSTERM values are outside the precondition.",
+      "source_sha256": "13341330ab368370b55d2042f6d35590568258894a216388e4f4843454f6fd1d"
+    },
+    {
+      "rule_id": "CORE-000034",
+      "dataset": "DS",
+      "records": [
+        7,
+        21,
+        26
+      ],
+      "variables": [
+        "DSDECOD",
+        "DSSTDTC",
+        "DTHDTC"
+      ],
+      "basis": "DEATH rows joined to DM by USUBJID differ at row 7 (2022-02-20 versus 2021-02-18), 21 (2019-01-10 versus blank), 26 (2021-01-10 versus 2021-01). The operator is literal inequality, not partial-date ordering. Positive joined strings agree, including blank/blank.",
+      "source_sha256": "41785849e20e7ba5dee7a7820d85e9b895478fe999e91b3eb353b16a30d9194a"
+    },
+    {
+      "rule_id": "CORE-000036",
+      "dataset": "SV",
+      "records": [
+        1,
+        2
+      ],
+      "variables": [
+        "SVPRESP",
+        "VISIT"
+      ],
+      "basis": "Planned SCREENING 1/2 visits do not belong to negative TV's SCREEN 1/2 list. Positive TV uses SCREENING 1/2. Unplanned visits are excluded by SVPRESP=Y.",
+      "source_sha256": "c84ef6d0f95fe173c79d5178f1a0b52a09fe058924cdd3ef415fb8d777fb797d"
+    },
+    {
+      "rule_id": "CORE-000042",
+      "dataset": "TT",
+      "records": [
+        1
+      ],
+      "variables": [
+        "TT"
+      ],
+      "basis": "TT is listed in negative dataset metadata and absent in positive. Record 1 locates a dataset-presence finding, not every TT data record.",
+      "source_sha256": "bc66ff89886e1dea79e31261cab87e1bc5675327b6001c9042eb5c1551bdecf8"
+    },
+    {
+      "rule_id": "CORE-000043",
+      "dataset": "TP",
+      "records": [
+        1
+      ],
+      "variables": [
+        "TP"
+      ],
+      "basis": "TP is listed in negative dataset metadata and absent in positive. Record 1 locates a dataset-presence finding.",
+      "source_sha256": "e34298d3675411fcbcc67859f1783d2d734a8cfd344e59de590a437d41e11ddc"
+    },
+    {
+      "rule_id": "CORE-000045",
+      "dataset": "DM",
+      "records": [
+        1,
+        11
+      ],
+      "variables": [
+        "ARMCD",
+        "ARMNRS"
+      ],
+      "basis": "Rows 1 and 11 have both ARMCD and ARMNRS empty. Row 15 has SCREEN FAILURE as the reason and is valid. Positive fills ARMCD on rows 1 and 11.",
+      "source_sha256": "c8dc4da6731032d5be826a0b7a448e073b7bc2eb74097df1397531fe5d8a7d53"
+    },
+    {
+      "rule_id": "CORE-000086",
+      "dataset": "DV",
+      "records": [
+        1,
+        2
+      ],
+      "variables": [
+        "DVSTDTC",
+        "RFICDTC"
+      ],
+      "basis": "Both negative DV dates (2011-01-02, 2012-11-22) precede joined DM consent 2012-11-23. Positive dates are equal or later. These fixtures do not test partial-date boundaries.",
+      "source_sha256": "18f497aca3ae032425507c1f41fba769dfd22eae4a563a2816560f8db1c9883e"
+    }
+  ]
+}

@@ -24,6 +24,34 @@ Pinnacle 21 equivalence or approval for submission decisions.
 
 ## Execute In A New Directory
 
+### Reviewed Open Rules Fixture Pilot
+
+`tests/open_rules/pilot-review.json` freezes 12 rules / 24 official fixtures at
+the accepted upstream pin. Expectations (40 negative issue rows, zero positive
+issue rows) were cross-checked by Codex against rule text and fixture data, not
+copied from candidate reports. Each entry records its reasoning and a hash of
+the entire official rule directory, including hidden metadata and results.
+The set covers conditional requiredness, missing values, literal comparisons,
+domain presence, reference distinct, subject joins, and full-date ordering.
+It does not cover all operators, partial-date boundaries, or actual P21 data.
+
+CI checks the source hashes and exact official `(Dataset, Record, Variable)`
+multisets, runs these cases with `--strict-scoring`, and checks the exact case
+set, bucket, counts, and absence of scoring normalizations. The existing strict
+scorer performs structural candidate-to-oracle comparison; the Python checker
+does not replace that comparison. This is a regression gate for reviewed
+fixtures, **not independent human approval**. `human_approval: pending` remains
+explicit until a qualified reviewer records a separate approval.
+
+The `open-rules-pilot-evidence` CI artifact contains candidate reports, the
+strict scoreboard, and `fixture-review.json`. A source-only check records
+`candidate_check: not_performed`; a failed/interrupted run must not be treated
+as successful just because the artifact exists. Re-review any source hash
+change before updating the manifest; never regenerate expectations from engine
+output to make the gate pass.
+
+### P21PORT Draft Execution
+
 After preparing and reviewing the generated rule tree, run from the repository
 root with the appropriate pinned standard/version in the engine command:
 

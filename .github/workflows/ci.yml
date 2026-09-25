@@ -191,6 +191,32 @@ jobs:
             --scoreboard target/open-rules-scoreboard-curated-upstream/scoreboard.json \
             --baseline tests/open_rules/curated-upstream-baseline.json
 
+      - name: Open Rules reviewed pilot (strict scoring)
+        run: |
+          python3 scripts/open_rules_pilot_check.py \
+            --upstream-root ../cdisc-open-rules \
+            --subset-root ../cdisc-open-rules-pilot \
+            --out target/open-rules-pilot/fixture-review.json
+          cargo run --locked -p xtask -- open-rules run-score \
+            --open-rules-root ../cdisc-open-rules-pilot \
+            --core-rs-results-root target/open-rules-pilot/candidate \
+            --out target/open-rules-pilot/scoreboard \
+            --strict-scoring \
+            --min-coverage 1.0 \
+            --max-skipped-unsupported 0
+          python3 scripts/open_rules_pilot_check.py \
+            --upstream-root ../cdisc-open-rules-pilot \
+            --scoreboard target/open-rules-pilot/scoreboard/scoreboard.json \
+            --out target/open-rules-pilot/fixture-review.json
+
+      - name: Upload Open Rules pilot evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: open-rules-pilot-evidence
+          path: target/open-rules-pilot/
+          if-no-files-found: warn
+
       - name: Open Rules curated gap subset oracle
         run: |
           mkdir -p ../cdisc-open-rules-curated-gap/Published
