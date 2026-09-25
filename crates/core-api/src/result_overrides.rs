@@ -528,6 +528,7 @@ pub(crate) fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::StartsWith
             | Operator::PrefixEqualTo
             | Operator::PrefixNotEqualTo
+            | Operator::PrefixMatchesRegex
             | Operator::NotPrefixMatchesRegex
             | Operator::PrefixIsNotContainedBy
             | Operator::EndsWith

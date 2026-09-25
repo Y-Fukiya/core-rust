@@ -812,6 +812,21 @@ fn evaluate_condition_with_options(
                 ))
             })
         }
+        Operator::PrefixMatchesRegex => {
+            let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
+                EngineError::MissingComparator {
+                    operator: operator.as_name().to_owned(),
+                }
+            })?;
+            let pattern = string_comparator(operator, &condition.comparator)?;
+            let regex = Regex::new(&pattern)?;
+            evaluate_column(column, row_count, |value, _row| {
+                let Some(value) = ScalarValue::from_any_value(value).into_string() else {
+                    return Ok(false);
+                };
+                Ok(regex.is_match(&string_prefix(&value, prefix_len)))
+            })
+        }
         Operator::NotPrefixMatchesRegex => {
             let prefix_len = option_usize(&condition.options.extra, "prefix").ok_or_else(|| {
                 EngineError::MissingComparator {

@@ -2123,6 +2123,18 @@ Outcome:
     }
 
     #[test]
+    fn prefix_matches_regex_is_supported_and_roundtrips() {
+        let operator = Operator::from_name("prefix_matches_regex");
+        assert!(!matches!(operator, Operator::Unsupported(_)));
+        let serialized = serde_json::to_string(&operator).expect("serialize operator");
+        assert_eq!(serialized, r#""prefix_matches_regex""#);
+        assert_eq!(
+            serde_json::from_str::<Operator>(&serialized).unwrap(),
+            operator
+        );
+    }
+
+    #[test]
     fn open_rules_date_and_suffix_operator_names_normalize() {
         assert_eq!(Operator::from_name("ends_with"), Operator::EndsWith);
         assert_eq!(Operator::from_name("date_equal_to"), Operator::DateEqualTo);

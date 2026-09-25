@@ -10,6 +10,7 @@ use tempfile::tempdir;
 use super::*;
 mod common;
 mod errors;
+mod prefix_regex;
 mod target_variables;
 
 use common::{

@@ -160,6 +160,58 @@ fn preflight_accepts_is_not_unique_relationship_operator() {
 }
 
 #[test]
+fn run_validation_executes_prefix_regex_with_missing_column_branch() {
+    for has_apid in [false, true] {
+        let dir = tempdir().unwrap();
+        let rule_path = dir.path().join("rule.json");
+        fs::write(&rule_path, r#"{
+            "Core": {"Id": "PILOT-PREFIX", "Status": "Published"},
+            "Scope": {"Domains": {}, "Classes": {}},
+            "Rule Type": "Record Data", "Sensitivity": "Record",
+            "Check": {"all": [
+                {"name": "DOMAIN", "operator": "prefix_matches_regex", "prefix": 2, "value": "(AP|ap)"},
+                {"name": "APID", "operator": "not_exists"}
+            ]},
+            "Outcome": {"Message": "AP records require APID"}
+        }"#).unwrap();
+        let mut records = serde_json::json!({"DOMAIN": ["AP01", "AE"], "USUBJID": ["S1", "S2"]});
+        if has_apid {
+            records["APID"] = serde_json::json!(["A1", "A2"]);
+        }
+        let data_path = dir.path().join("data.json");
+        fs::write(
+            &data_path,
+            serde_json::to_vec(&serde_json::json!({"datasets": [{
+                "filename": "ap.json", "domain": "AP", "records": records
+            }]}))
+            .unwrap(),
+        )
+        .unwrap();
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule_path],
+            dataset_paths: vec![data_path],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.skipped_reason, None);
+        assert_eq!(
+            result.execution_status,
+            if has_apid {
+                ExecutionStatus::Passed
+            } else {
+                ExecutionStatus::Failed
+            }
+        );
+        assert_eq!(result.errors.len(), usize::from(!has_apid));
+        if !has_apid {
+            assert_eq!(result.errors[0].row, Some(1));
+        }
+    }
+}
+
+#[test]
 fn select_rules_includes_only_requested_ids_and_skips_missing_ids() {
     let dir = tempdir().expect("tempdir");
     write_rule(dir.path(), "CORE-TEST-0001", "AE");
