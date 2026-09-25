@@ -191,7 +191,7 @@ jobs:
             --scoreboard target/open-rules-scoreboard-curated-upstream/scoreboard.json \
             --baseline tests/open_rules/curated-upstream-baseline.json
 
-      - name: Open Rules reviewed pilot (strict scoring)
+      - name: Open Rules reviewed pilot (frozen expectations and strict audit)
         run: |
           python3 scripts/open_rules_pilot_check.py \
             --upstream-root ../cdisc-open-rules \
@@ -203,10 +203,11 @@ jobs:
             --out target/open-rules-pilot/scoreboard \
             --strict-scoring \
             --min-coverage 1.0 \
-            --max-skipped-unsupported 0
+            --max-skipped-unsupported 0 || test "$?" -eq 1
           python3 scripts/open_rules_pilot_check.py \
             --upstream-root ../cdisc-open-rules-pilot \
             --scoreboard target/open-rules-pilot/scoreboard/scoreboard.json \
+            --candidate-root target/open-rules-pilot/candidate \
             --out target/open-rules-pilot/fixture-review.json
 
       - name: Upload Open Rules pilot evidence

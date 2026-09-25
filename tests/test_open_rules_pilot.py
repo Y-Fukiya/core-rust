@@ -26,6 +26,7 @@ def review(tmp_path):
                 "review": {"human_approval": "pending"},
                 "rules": [{"rule_id": "CORE-000001", "dataset": "IE", "records": [1],
                            "variables": ["IEORRES"], "basis": "Synthetic unit fixture",
+                           "row_context": [{"usubjid": "S1", "seq": "1"}],
                            "source_sha256": pilot.source_hash(rule_dir)}]}
     return manifest, tmp_path
 
@@ -44,8 +45,47 @@ def test_fixture_check_does_not_claim_candidate_execution_or_approval(review):
     assert report["candidate_check"] == "not_performed"
     assert report["review"]["human_approval"] == "pending"
     pilot.check_scoreboard(report, candidate(report))
-    assert report["candidate_check"] == "passed"
+    assert report["candidate_check"] == "not_performed"
     assert report["review"]["human_approval"] == "pending"
+
+
+@pytest.mark.parametrize("mutation", [None, "subject", "seq", "variable", "row", "duplicate", "skip", "empty"])
+def test_candidate_full_identity_is_checked_separately_from_strict_audit(review, mutation):
+    manifest, root = review
+    for kind in ("negative", "positive"):
+        path = root / "candidate/Published/CORE-000001" / kind / "01/report.csv"
+        path.parent.mkdir(parents=True)
+        header = "rule_id,execution_status,dataset,domain,row,variables,usubjid,seq\n"
+        row = "CORE-000001,failed,IE,IE,1,IEORRES,S1,1\n"
+        if kind == "positive":
+            row = "CORE-000001,passed,IE,IE,,,,\n"
+        elif mutation == "subject":
+            row = row.replace("S1", "S2")
+        elif mutation == "seq":
+            row = row.replace("S1,1", "S1,2")
+        elif mutation == "variable":
+            row = row.replace("IEORRES", "IECAT")
+        elif mutation == "row":
+            row = row.replace("IE,IE,1", "IE,IE,2")
+        elif mutation == "duplicate":
+            row += row
+        elif mutation == "skip":
+            row = row.replace("failed", "skipped")
+        elif mutation == "empty":
+            row = ""
+        path.write_text(header + row)
+    report = pilot.check_sources(manifest, root)
+    strict = candidate(report)
+    strict["cases"][0]["bucket"] = "supported_mismatch"
+    pilot.check_scoreboard(report, strict)
+    assert report["strict_audit_buckets"] == {"supported_match": 1, "supported_mismatch": 1}
+    if mutation:
+        with pytest.raises(ValueError):
+            pilot.check_candidate_reports(manifest, report, root / "candidate")
+        assert report["candidate_check"] == "not_performed"
+    else:
+        pilot.check_candidate_reports(manifest, report, root / "candidate")
+        assert report["candidate_check"] == "passed"
 
 
 def test_changed_source_is_rejected_before_oracle_comparison(review):

@@ -47,6 +47,12 @@ def load_manifest(path: Path) -> dict:
                 or len(set(records)) != len(records)
                 or not variables or len(set(variables)) != len(variables)):
             raise ValueError(f"invalid expected records/variables: {rule_id}")
+        contexts = rule.get("row_context", [])
+        if len(contexts) != len(records) or any(
+                set(context) != {"usubjid", "seq"}
+                or any(not isinstance(value, str) for value in context.values())
+                for context in contexts):
+            raise ValueError(f"invalid expected row context: {rule_id}")
     return manifest
 
 
@@ -73,6 +79,37 @@ def check_sources(manifest: dict, upstream_root: Path) -> dict:
             "candidate_check": "not_performed", "cases": cases}
 
 
+def check_candidate_reports(manifest: dict, report: dict, root: Path) -> None:
+    for rule in manifest["rules"]:
+        for kind in ("negative", "positive"):
+            path = root / "Published" / rule["rule_id"] / kind / "01/report.csv"
+            expected = Counter(
+                (rule["rule_id"], rule["dataset"], rule["dataset"], str(record), variable,
+                 context["usubjid"], context["seq"])
+                for record, context in (zip(rule["records"], rule["row_context"]) if kind == "negative" else [])
+                for variable in rule["variables"]
+            )
+            actual = Counter()
+            with path.open(encoding="utf-8", newline="") as stream:
+                reader = csv.DictReader(stream)
+                required = {"rule_id", "execution_status", "dataset", "domain", "row", "variables", "usubjid", "seq"}
+                if not required.issubset(reader.fieldnames or []):
+                    raise ValueError(f"missing candidate columns: {path}")
+                rows = list(reader)
+            if not rows:
+                raise ValueError(f"candidate contains no execution results: {path}")
+            for row in rows:
+                if row["rule_id"] != rule["rule_id"] or row["execution_status"] not in {"passed", "failed"}:
+                    raise ValueError(f"unexpected candidate execution: {path}")
+                if row["execution_status"] == "failed":
+                    for variable in row["variables"].split("|"):
+                        actual[(row["rule_id"], row["dataset"], row["domain"], row["row"], variable,
+                                row["usubjid"], row["seq"])] += 1
+            if actual != expected:
+                raise ValueError(f"candidate differs from frozen full identity: {rule['rule_id']}/{kind}/01")
+    report["candidate_check"] = "passed"
+
+
 def check_scoreboard(report: dict, scoreboard: dict) -> None:
     expected = {(case["rule_id"], case["case_kind"], case["case_id"]): case for case in report["cases"]}
     seen = set()
@@ -82,15 +119,17 @@ def check_scoreboard(report: dict, scoreboard: dict) -> None:
             raise ValueError(f"unexpected or duplicate pilot case: {key}")
         seen.add(key)
         count = expected[key]["expected_issue_count"]
-        if (case["bucket"] != "supported_match" or case.get("scoring_normalizations")
+        if (case["bucket"] not in {"supported_match", "supported_mismatch"} or case.get("scoring_normalizations")
                 or case.get("scoring_policy") != "strict_identity"
-                or case.get("official_issue_count") != count or case.get("candidate_issue_count") != count
-                or case.get("missing_count", 0) or case.get("extra_count", 0)
-                or case.get("missing") or case.get("extra")):
+                or case.get("official_issue_count") != count or case.get("candidate_issue_count") != count):
             raise ValueError(f"pilot candidate differs from reviewed expectations: {key}")
+        if case["bucket"] == "supported_match" and (
+                case.get("missing_count", 0) or case.get("extra_count", 0)
+                or case.get("missing") or case.get("extra")):
+            raise ValueError(f"inconsistent match in strict scoreboard: {key}")
     if seen != expected.keys():
         raise ValueError("pilot scoreboard is incomplete")
-    report["candidate_check"] = "passed"
+    report["strict_audit_buckets"] = dict(sorted(Counter(case["bucket"] for case in scoreboard["cases"]).items()))
 
 
 def main() -> int:
@@ -99,12 +138,21 @@ def main() -> int:
     parser.add_argument("--upstream-root", type=Path, required=True)
     parser.add_argument("--subset-root", type=Path, help="Create a new subset directory after source checks")
     parser.add_argument("--scoreboard", type=Path)
+    parser.add_argument("--candidate-root", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    if bool(args.scoreboard) != bool(args.candidate_root):
+        parser.error("--scoreboard and --candidate-root must be supplied together")
     manifest = load_manifest(args.manifest)
     report = check_sources(manifest, args.upstream_root)
     if args.scoreboard:
-        check_scoreboard(report, json.loads(args.scoreboard.read_text(encoding="utf-8")))
+        scoreboard = json.loads(args.scoreboard.read_text(encoding="utf-8"))
+        check_scoreboard(report, scoreboard)
+        for case in scoreboard["cases"]:
+            relative = Path(case["scope"]) / case["rule_id"] / case["case_kind"] / case["case_id"] / "report.csv"
+            if Path(case["candidate_report_csv"]).resolve() != (args.candidate_root / relative).resolve():
+                raise ValueError("scoreboard candidate paths do not identify the checked reports")
+        check_candidate_reports(manifest, report, args.candidate_root)
     if args.subset_root:
         args.subset_root.mkdir(parents=True, exist_ok=False)
         for rule in manifest["rules"]:

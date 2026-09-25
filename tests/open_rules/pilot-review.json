@@ -11,6 +11,7 @@
   "rules": [
     {
       "rule_id": "CORE-000001",
+      "row_context": [{"usubjid":"CDISC015","seq":"1"},{"usubjid":"CDISC016","seq":"1"},{"usubjid":"CDISC017","seq":"1"}],
       "dataset": "IE",
       "records": [
         1,
@@ -26,6 +27,7 @@
     },
     {
       "rule_id": "CORE-000004",
+      "row_context": [{"usubjid":"CDISC009","seq":"122"}],
       "dataset": "EC",
       "records": [
         7
@@ -39,6 +41,7 @@
     },
     {
       "rule_id": "CORE-000006",
+      "row_context": [{"usubjid":"015246-099-0000-00000","seq":""},{"usubjid":"015246-099-0000-00001","seq":""},{"usubjid":"015246-099-0000-00003","seq":""}],
       "dataset": "DM",
       "records": [
         1,
@@ -53,6 +56,7 @@
     },
     {
       "rule_id": "CORE-000009",
+      "row_context": [{"usubjid":"456","seq":"3"}],
       "dataset": "SE",
       "records": [
         5
@@ -66,6 +70,7 @@
     },
     {
       "rule_id": "CORE-000020",
+      "row_context": [{"usubjid":"456","seq":"3"}],
       "dataset": "SE",
       "records": [
         5
@@ -79,6 +84,7 @@
     },
     {
       "rule_id": "CORE-000033",
+      "row_context": [{"usubjid":"015246-300-0004-00002","seq":""}],
       "dataset": "DS",
       "records": [
         3
@@ -92,6 +98,7 @@
     },
     {
       "rule_id": "CORE-000034",
+      "row_context": [{"usubjid":"015246-076-0003-00003","seq":"7"},{"usubjid":"015246-888-0008-08888","seq":"4"},{"usubjid":"015246-999-0003-09999","seq":"5"}],
       "dataset": "DS",
       "records": [
         7,
@@ -108,6 +115,7 @@
     },
     {
       "rule_id": "CORE-000036",
+      "row_context": [{"usubjid":"CDISC001","seq":""},{"usubjid":"CDISC001","seq":""}],
       "dataset": "SV",
       "records": [
         1,
@@ -122,6 +130,7 @@
     },
     {
       "rule_id": "CORE-000042",
+      "row_context": [{"usubjid":"","seq":""}],
       "dataset": "TT",
       "records": [
         1
@@ -134,6 +143,7 @@
     },
     {
       "rule_id": "CORE-000043",
+      "row_context": [{"usubjid":"","seq":""}],
       "dataset": "TP",
       "records": [
         1
@@ -146,6 +156,7 @@
     },
     {
       "rule_id": "CORE-000045",
+      "row_context": [{"usubjid":"CDISC001","seq":""},{"usubjid":"CDISC011","seq":""}],
       "dataset": "DM",
       "records": [
         1,
@@ -160,6 +171,7 @@
     },
     {
       "rule_id": "CORE-000086",
+      "row_context": [{"usubjid":"CDISC001","seq":"1"},{"usubjid":"CDISC001","seq":"2"}],
       "dataset": "DV",
       "records": [
         1,

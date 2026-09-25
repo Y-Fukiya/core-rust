@@ -36,12 +36,22 @@ domain presence, reference distinct, subject joins, and full-date ordering.
 It does not cover all operators, partial-date boundaries, or actual P21 data.
 
 CI checks the source hashes and exact official `(Dataset, Record, Variable)`
-multisets, runs these cases with `--strict-scoring`, and checks the exact case
-set, bucket, counts, and absence of scoring normalizations. The existing strict
-scorer performs structural candidate-to-oracle comparison; the Python checker
-does not replace that comparison. This is a regression gate for reviewed
-fixtures, **not independent human approval**. `human_approval: pending` remains
-explicit until a qualified reviewer records a separate approval.
+multisets. It separately compares candidate full identities (rule, dataset,
+domain, row, variable, USUBJID, sequence) against frozen expectations. The
+`row_context` values were read from the specified input records, not generated
+from candidate reports. Duplicate/missing findings and skipped execution fail.
+
+The strict scorer remains a separate, non-gating audit: this pilot has 14 strict
+matches and 10 strict mismatches because candidate findings contain subject and
+sequence context absent from the official CSV. A strict mismatch is **not**
+converted to a strict match; the full scoreboard is retained. The gate requires
+full frozen-identity agreement, the exact case set/counts, and no normalization,
+deferred, skipped, missing-oracle or harness-error cases. It permits the scorer's
+ordinary nonzero mismatch exit only when those independent checks pass.
+
+This is a regression gate for reviewed fixtures, **not independent human
+approval**. `human_approval: pending` remains explicit until a qualified reviewer
+records a separate approval.
 
 The `open-rules-pilot-evidence` CI artifact contains candidate reports, the
 strict scoreboard, and `fixture-review.json`. A source-only check records
