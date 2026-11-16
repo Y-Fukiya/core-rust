@@ -170,6 +170,7 @@ def test_all_cases_attempted_and_expected_probe_statuses_preserved(checkout, tmp
     monkeypatch.setattr(audit, "check_platform", lambda *args: None)
     calls = []
     def fake_execute(argv, cwd, env, prefix, timeout):
+        assert cwd == engine.resolve()
         stdout, stderr = prefix.with_suffix(".stdout.txt"), prefix.with_suffix(".stderr.txt")
         stdout.write_text("1.0.0\n" if argv[-1] == "version" else "synthetic run\n")
         stderr.write_text("")

@@ -32,6 +32,9 @@ The verified Linux archive stores `core/core` with mode `0644`. After verifying
 the archive digest, the workflow adds owner execute permission without changing
 the binary bytes. Public fixture `.env` snapshots are included in the official
 artifact; the runner rejects environment keys outside the comparison settings.
+The binary runs from its extracted `core` directory because report generation
+opens `resources/templates/report-template.xlsx` relative to the working
+directory. Outputs and fixture snapshots use separate absolute paths.
 
 This is a **diagnostic pair**, not the original packaged combination. The rules
 snapshot's engine gitlink is `42028faf090c59bfdfba974779f64be2448bf5bb`, which differs

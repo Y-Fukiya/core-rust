@@ -139,9 +139,9 @@ def check_platform(out: Path, rules: Path, engine: Path) -> None:
         if alternate.exists() and alternate.samefile(witness):
             raise ValueError(f"filesystem is not case-sensitive: {witness.parent}")
     # python-dotenv searches parent directories from the frozen executable's cwd.
-    for parent in (out, *out.parents):
+    for parent in {out, *out.parents, engine, *engine.parents}:
         if (parent / ".env").exists():
-            raise ValueError("output ancestry contains .env; choose an isolated output path")
+            raise ValueError("execution ancestry contains .env; choose isolated engine and output paths")
 
 
 def tracked_files(root: Path, relative: str) -> dict:
@@ -272,7 +272,7 @@ def run_case(root: Path, engine: Path, out: Path, case: dict, env: dict, timeout
                 "-of", "JSON", "-of", "CSV", "-o", str(destination / "report"), "-p", "disabled", "-l", "info"]
         for key, value in case.get("overrides", {}).items():
             argv.extend([ENV_FLAGS[key], value])
-        observation["process"] = execute(argv, out, env, destination / "engine", timeout)
+        observation["process"] = execute(argv, engine, env, destination / "engine", timeout)
         if observation["process"]["returncode"] != 0:
             observation["errors"].append("engine process failed or timed out")
         observation["outcome"] = "invalid_report"
@@ -323,7 +323,7 @@ def run_audit(profile_path: Path, rules_root: Path, engine_root: Path, out: Path
         env = isolated_environment(out)
         (out / "home").mkdir()
         (out / "tmp").mkdir()
-        summary["version_process"] = execute([str(engine_root / "core"), "version"], out, env,
+        summary["version_process"] = execute([str(engine_root / "core"), "version"], engine_root, env,
                                              out / "version", 60)
         version = Path(summary["version_process"]["stdout"]).read_text().strip()
         summary["engine_version"] = version
