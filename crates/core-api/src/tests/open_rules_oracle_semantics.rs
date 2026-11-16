@@ -576,7 +576,8 @@ fn run_validation_executes_dataset_presence_and_skips_known_gap_rules() {
         .find(|result| result.rule_id == "CORE-DATASET-PRESENCE")
         .expect("presence result");
     assert_eq!(presence.execution_status, ExecutionStatus::Failed);
-    assert_eq!(presence.error_count, 2);
+    assert_eq!(presence.error_count, 1);
+    assert_eq!(presence.errors[0].row, None);
 
     let gap = outcome
         .results

@@ -431,7 +431,7 @@ Outcome:
 }
 
 #[test]
-fn run_validation_keeps_record_scoped_dataset_presence_when_oracle_expects_rows() {
+fn run_validation_reports_core_000013_at_dataset_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -470,15 +470,11 @@ CDISC-TEST,AE,SUBJ2,2,\n",
     assert_eq!(outcome.results.len(), 1);
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 2);
-    assert_eq!(
-        result
-            .errors
-            .iter()
-            .map(|issue| issue.row)
-            .collect::<Vec<_>>(),
-        vec![Some(1), Some(2)]
-    );
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["AESTAT"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]

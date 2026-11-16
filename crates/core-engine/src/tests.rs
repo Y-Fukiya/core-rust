@@ -9,6 +9,7 @@ use tempfile::tempdir;
 
 use super::*;
 mod common;
+mod dataset_sensitivity;
 mod errors;
 mod prefix_regex;
 mod target_variables;
@@ -2279,7 +2280,7 @@ fn validate_rule_generates_dataset_level_issue() {
 }
 
 #[test]
-fn record_data_with_dataset_sensitivity_reports_matching_records() {
+fn record_data_with_dataset_sensitivity_reports_one_dataset_issue() {
     let dataset = test_dataset();
     let rule = rule(
         Some(Sensitivity::Dataset),
@@ -2290,18 +2291,11 @@ fn record_data_with_dataset_sensitivity_reports_matching_records() {
     let result = validate_rule(&rule, &dataset).expect("validate rule");
 
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 4);
-    assert_eq!(
-        result
-            .errors
-            .iter()
-            .map(|issue| issue.row)
-            .collect::<Vec<_>>(),
-        vec![Some(1), Some(2), Some(3), Some(4)]
-    );
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
     assert_eq!(result.errors[0].variables, vec!["DOMAIN"]);
-    assert_eq!(result.errors[0].usubjid.as_deref(), Some("SUBJ1"));
-    assert_eq!(result.errors[0].seq.as_deref(), Some("1"));
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]
@@ -2316,8 +2310,8 @@ fn record_data_with_dataset_sensitivity_treats_exists_as_column_presence() {
     let result = validate_rule(&rule, &dataset).expect("validate rule");
 
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 4);
-    assert_eq!(result.errors[3].row, Some(4));
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
 }
 
 #[test]
@@ -2373,7 +2367,7 @@ fn validation_issues_expand_domain_prefixed_placeholder_variables() {
     let result = validate_rule(&rule, &dataset).expect("validate rule");
 
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 4);
+    assert_eq!(result.error_count, 1);
     assert_eq!(result.errors[0].variables, vec!["AEMISSING", "AESEQ"]);
 }
 

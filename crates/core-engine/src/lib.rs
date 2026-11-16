@@ -160,12 +160,7 @@ pub fn validate_rule(
     {
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
         Sensitivity::Group => group_level_issues(rule, dataset, &mask, &variables, &message)?,
-        Sensitivity::Dataset
-            if matches!(
-                rule.rule_type,
-                RuleType::RecordData | RuleType::DomainPresence
-            ) =>
-        {
+        Sensitivity::Dataset if rule.rule_type == RuleType::DomainPresence => {
             record_level_issues(rule, dataset, &mask, &variables, &message)?
         }
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),

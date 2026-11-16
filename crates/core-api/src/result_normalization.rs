@@ -682,10 +682,7 @@ fn report_missing_column_zero_record_result(
     if result.execution_status != core_engine::ExecutionStatus::Failed
         || result.errors.is_empty()
         || !engine_semantics::uses_missing_column_zero_record_result(rule)
-        || !matches!(
-            rule.sensitivity,
-            Some(Sensitivity::Record) | Some(Sensitivity::Dataset)
-        )
+        || !matches!(rule.sensitivity, Some(Sensitivity::Record))
         || rule.rule_type != RuleType::RecordData
     {
         return;
