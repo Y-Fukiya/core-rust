@@ -19,7 +19,7 @@ import tempfile
 
 STATUSES = {"SUCCESS", "ISSUE REPORTED", "SKIPPED", "EXECUTION ERROR"}
 ENV_FLAGS = {"PRODUCT": "-s", "VERSION": "-v", "SUBSTANDARD": "-ss",
-             "USE_CASE": "-uc", "CT": "-ct", "DEFINE_XML": "-dx"}
+             "USE_CASE": "-uc", "CT": "-ct", "DEFINE_XML": "-dxp"}
 
 
 def write_json(path: Path, value: dict) -> None:

@@ -28,6 +28,11 @@ substandard, and use case come from each fixture unless a separately named
 diagnostic variant explicitly overrides them. No CT package is silently replaced
 with the latest available package.
 
+The verified Linux archive stores `core/core` with mode `0644`. After verifying
+the archive digest, the workflow adds owner execute permission without changing
+the binary bytes. Public fixture `.env` snapshots are included in the official
+artifact; the runner rejects environment keys outside the comparison settings.
+
 This is a **diagnostic pair**, not the original packaged combination. The rules
 snapshot's engine gitlink is `42028faf090c59bfdfba974779f64be2448bf5bb`, which differs
 from the v1.0.0 tag. Local YAML execution also differs from selecting rules in the

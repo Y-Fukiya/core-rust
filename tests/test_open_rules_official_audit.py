@@ -16,6 +16,10 @@ SPEC.loader.exec_module(audit)
 PROFILE = REPO / "tests/open_rules/diagnostic/cdisc-v1-candidate.json"
 
 
+def test_define_xml_override_uses_official_cli_flag():
+    assert audit.ENV_FLAGS["DEFINE_XML"] == "-dxp"
+
+
 def report(status="SUCCESS", rule_id="CORE-000013"):
     return {"Rules_Report": [{"core_id": rule_id, "status": status}],
             "Conformance_Details": {"Standard": "SDTMIG"},
