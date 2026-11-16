@@ -76,7 +76,7 @@ jobs:
       - name: P21PORT real-engine smoke workflow
         run: >-
           PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/p21port_smoke.py
-          --work-dir target/p21port-real-smoke
+          --work-dir "${RUNNER_TEMP}/p21port-real-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           --real-engine-command 'target/debug/core-rs validate'
 
       - name: Upload P21PORT real-engine evidence (synthetic fixtures)
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: p21port-real-engine-evidence
-          path: target/p21port-real-smoke/
+          path: ${{ runner.temp }}/p21port-real-smoke-${{ github.run_id }}-${{ github.run_attempt }}/
           include-hidden-files: true
           if-no-files-found: warn
 
