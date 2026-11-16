@@ -106,6 +106,12 @@ Open Rules provenance で別管理されており、一般的な JSONata 対応�
 
 ## Open Rules 互換性の読み方
 
+公式 CORE v1.0 は、SDTM/FDA 用の Verisian PostgreSQL engine / core-contributor と、
+TIG/USDM/SEND 用の CDISC engine / cdisc-open-rules に分かれています。
+core-rust の採用済み baseline は、これらのリリースパッケージへ未更新です。
+参照版、パーサーで確認した不足、今後必要な実行検証は
+[CORE v1.0 対応状況の監査記録](docs/core-v1-readiness.md)を参照してください。
+
 Open Rules harness は、単純な pass 件数ではなく、以下を分けて集計します。
 
 - supported match / mismatch

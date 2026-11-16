@@ -8,6 +8,10 @@ from cdisc_rulekit.compare_results import (
 )
 
 
+def _passed_report(rule_id):
+    return {"results": [{"rule_id": rule_id, "execution_status": "passed", "error_count": 0, "errors": []}]}
+
+
 def _expected_rule(root, rule_id="P21PORT-SDTMIG-SD1210-ABCDEF01"):
     rule_dir = root / rule_id
     rule_dir.mkdir(parents=True)
@@ -35,7 +39,7 @@ def test_compare_generated_results_matches_structural_fields_and_ignores_message
     positive.mkdir(parents=True)
     negative.mkdir(parents=True)
     (positive / "report.json").write_text(
-        json.dumps({"summary": {"error_count": 0}, "results": []}),
+        json.dumps(_passed_report(rule_id)),
         encoding="utf-8",
     )
     (negative / "report.json").write_text(
@@ -378,7 +382,7 @@ def test_compare_generated_results_reports_actual_skipped_separately_from_failur
     )
     positive_dir = tmp_path / "core_runs" / rule_id / "positive" / "01"
     positive_dir.mkdir(parents=True)
-    (positive_dir / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (positive_dir / "report.json").write_text(json.dumps(_passed_report(rule_id)), encoding="utf-8")
 
     result = compare_generated_results(generated_root, tmp_path / "core_runs")
 
@@ -414,7 +418,7 @@ def test_compare_generated_results_fails_mixed_skipped_and_issues_even_when_skip
     )
     positive_dir = tmp_path / "core_runs" / rule_id / "positive" / "01"
     positive_dir.mkdir(parents=True)
-    (positive_dir / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (positive_dir / "report.json").write_text(json.dumps(_passed_report(rule_id)), encoding="utf-8")
 
     result = compare_generated_results(generated_root, tmp_path / "core_runs")
 
@@ -441,7 +445,7 @@ def test_compare_generated_results_reports_empty_expected_results_per_rule(tmp_p
     _expected_rule(generated_root, "P21PORT-SDTMIG-PASS")
     actual_dir = tmp_path / "core_runs" / "P21PORT-SDTMIG-PASS" / "positive" / "01"
     actual_dir.mkdir(parents=True)
-    (actual_dir / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (actual_dir / "report.json").write_text(json.dumps(_passed_report("P21PORT-SDTMIG-PASS")), encoding="utf-8")
     negative_dir = tmp_path / "core_runs" / "P21PORT-SDTMIG-PASS" / "negative" / "01"
     negative_dir.mkdir(parents=True)
     (negative_dir / "report.json").write_text(
