@@ -2,11 +2,18 @@ name: Open Rules Upstream
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Accepted regression or pinned candidate diagnostic (no adoption)
+        type: choice
+        options: [accepted, cdisc-v1-candidate]
+        default: accepted
   schedule:
     - cron: "0 18 * * 0"
 
 jobs:
   upstream-observe:
+    if: github.event_name != 'workflow_dispatch' || inputs.profile != 'cdisc-v1-candidate'
     name: Full Upstream Oracle Observe
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +85,146 @@ jobs:
             target/open-rules-scoreboard-upstream-delta
             target/open-rules-core-rs-upstream/run-summary.json
 
+  candidate-linux:
+    name: Candidate Linux diagnostic (not adoption)
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'cdisc-v1-candidate'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Use fresh diagnostic output
+        run: echo "CANDIDATE_AUDIT_OUT=$RUNNER_TEMP/candidate-audit-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'PyYAML==6.0.3'
+      - name: Checkout candidate and record comparison conditions
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, platform, subprocess
+          profile_path = pathlib.Path('tests/open_rules/diagnostic/cdisc-v1-candidate.json')
+          profile = json.loads(profile_path.read_text())
+          rules = pathlib.Path('../cdisc-open-rules').resolve()
+          subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', profile['rules']['repo'], str(rules)], check=True)
+          subprocess.run(['git', '-C', str(rules), 'checkout', '--detach', profile['rules']['sha']], check=True)
+          out = pathlib.Path(os.environ['CANDIDATE_AUDIT_OUT'])
+          out.mkdir(parents=True, exist_ok=False)
+          probe = out / 'caseProbe'
+          probe.write_text('case-sensitive')
+          assert not (out / 'CASEPROBE').exists(), 'case-sensitive filesystem required'
+          probe.unlink()
+          collision = [rules / 'Published/CORE-000749/positive/01' / suffix for suffix in ['Results/results.csv', 'results/results.csv']]
+          hashes = {str(p.relative_to(rules)): hashlib.sha256(p.read_bytes()).hexdigest() for p in collision}
+          assert len(set(hashes.values())) == 1, 'CORE-000749 oracle paths differ'
+          protected = ['tests/open_rules/upstream.lock', 'tests/open_rules/upstream-baseline.json', 'tests/open_rules/curated-upstream-baseline.json', 'tests/open_rules/curated-gap-baseline.json']
+          evidence = {
+              'profile': profile, 'profile_sha256': hashlib.sha256(profile_path.read_bytes()).hexdigest(),
+              'core_rust_sha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'rules_sha': subprocess.check_output(['git', '-C', str(rules), 'rev-parse', 'HEAD'], text=True).strip(),
+              'platform': platform.platform(), 'case_sensitive': True, 'collision_file_sha256': hashes,
+              'runner_image': os.environ.get('ImageVersion'), 'rustc': subprocess.check_output(['rustc', '-Vv'], text=True),
+              'ci_run_url': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'protected_sha256': {p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in protected},
+              'candidate_settings': 'unchanged xtask run-score, fixture .env standard/version, OpenRulesDataDir metadata; no official cache injected',
+          }
+          assert evidence['rules_sha'] == profile['rules']['sha']
+          (out / 'conditions.json').write_text(json.dumps(evidence, indent=2) + '\n')
+          PY
+      - name: Run candidate default and strict scoring
+        run: |
+          set +e
+          cargo run --locked -p xtask -- open-rules run-score --scope Published \
+            --open-rules-root ../cdisc-open-rules --core-rs-results-root "$CANDIDATE_AUDIT_OUT/results" \
+            --out "$CANDIDATE_AUDIT_OUT/default" > "$CANDIDATE_AUDIT_OUT/default.log" 2>&1
+          default_status=$?
+          cargo run --locked -p xtask -- open-rules score --scope Published \
+            --open-rules-root ../cdisc-open-rules --core-rs-results-root "$CANDIDATE_AUDIT_OUT/results" \
+            --out "$CANDIDATE_AUDIT_OUT/strict" --strict-scoring > "$CANDIDATE_AUDIT_OUT/strict.log" 2>&1
+          strict_status=$?
+          set -e
+          printf '{"default_exit":%s,"strict_exit":%s}\n' "$default_status" "$strict_status" > "$CANDIDATE_AUDIT_OUT/process-status.json"
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          out = pathlib.Path(os.environ['CANDIDATE_AUDIT_OUT'])
+          process_status = json.loads((out / 'process-status.json').read_text())
+          summary = json.loads((out / 'results/run-summary.json').read_text())
+          assert summary['failed'] == 0, summary
+          assert summary['total_cases'] == summary['succeeded'] == 2298, summary
+          for mode in ['default', 'strict']:
+              board = json.loads((out / mode / 'scoreboard.json').read_text())
+              assert board['summary']['total_cases'] == 2298
+              assert board['summary']['harness_error'] == 0
+              assert process_status[f'{mode}_exit'] == int(board['gate']['should_fail']), f'{mode} process/gate disagreement'
+          conditions = json.loads((out / 'conditions.json').read_text())
+          for p, sha in conditions['protected_sha256'].items():
+              assert hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == sha, p
+          PY
+          cargo run --locked -p xtask -- open-rules score-delta \
+            --default-scoreboard "$CANDIDATE_AUDIT_OUT/default/scoreboard.json" \
+            --strict-scoreboard "$CANDIDATE_AUDIT_OUT/strict/scoreboard.json" --out "$CANDIDATE_AUDIT_OUT/delta"
+      - name: Classify mismatches without changing scores
+        run: |
+          python scripts/open_rules_candidate_triage.py \
+            --default-scoreboard "$CANDIDATE_AUDIT_OUT/default/scoreboard.json" \
+            --strict-scoreboard "$CANDIDATE_AUDIT_OUT/strict/scoreboard.json" \
+            --rules-root ../cdisc-open-rules --out "$CANDIDATE_AUDIT_OUT/triage"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: open-rules-candidate-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.CANDIDATE_AUDIT_OUT }}
+          if-no-files-found: error
+
+  candidate-official:
+    name: Official v1 representative diagnostic (not conformance)
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'cdisc-v1-candidate'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned rules and verify official release archive
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib, shutil, subprocess, urllib.request
+          p = json.loads(pathlib.Path('tests/open_rules/diagnostic/cdisc-v1-candidate.json').read_text())
+          subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', p['rules']['repo'], '../cdisc-open-rules'], check=True)
+          subprocess.run(['git', '-C', '../cdisc-open-rules', 'checkout', '--detach', p['rules']['sha']], check=True)
+          archive = pathlib.Path('../core-v1-linux.tar.gz')
+          with urllib.request.urlopen(p['engine']['asset_url'], timeout=120) as source, archive.open('wb') as dest:
+              shutil.copyfileobj(source, dest)
+          with archive.open('rb') as source:
+              assert hashlib.file_digest(source, 'sha256').hexdigest() == p['engine']['asset_sha256'], 'release hash mismatch'
+          pathlib.Path('../core-v1-linux').mkdir()
+          subprocess.run(['tar', '-xzf', str(archive), '-C', '../core-v1-linux'], check=True)
+          # The verified v1.0.0 archive stores core/core with mode 0644.
+          binary = pathlib.Path('../core-v1-linux/core/core')
+          binary.chmod(binary.stat().st_mode | 0o100)
+          PY
+      - name: Execute and inspect official representative reports
+        run: |
+          python scripts/open_rules_official_audit.py \
+            --profile tests/open_rules/diagnostic/cdisc-v1-candidate.json \
+            --rules-root ../cdisc-open-rules --engine-root ../core-v1-linux/core \
+            --out target/candidate-official-audit
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: open-rules-candidate-official-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/candidate-official-audit
+          include-hidden-files: true
+          if-no-files-found: error
+
   upstream-regression:
+    if: github.event_name != 'workflow_dispatch' || inputs.profile != 'cdisc-v1-candidate'
     name: Full Upstream Regression Baseline
     runs-on: ubuntu-latest
     steps:

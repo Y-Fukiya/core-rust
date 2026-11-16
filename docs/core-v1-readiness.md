@@ -191,6 +191,12 @@ cargo run -p xtask --locked -- open-rules score-delta \
 
 ## Remaining adoption gates
 
+The [candidate audit](open-rules-candidate-audit.md) now records a fixed CDISC
+diagnostic profile, successful Linux reproduction, official representative
+execution, and an exhaustive 109-case mismatch inventory. It does not promote
+the candidate. The fresh official CORE-000699 result differs from the stored
+fixture, so reference-version alignment still needs review before adoption.
+
 1. Pin the reference engine, rule package, CT/metadata cache and standard/version
    together. Keep CDISC and Verisian evidence separate.
 2. Add a contributor package adapter with explicit rule-to-case association,
