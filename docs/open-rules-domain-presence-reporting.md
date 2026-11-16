@@ -139,7 +139,36 @@ dataset identity. The accepted full regression gate is **not green**.
 
 The local evidence directory also contains `candidate-scoreboard.json`,
 `candidate-strict-scoreboard.json`, `accepted-scoreboard.json`, and workspace
-check logs. No GitHub CI run for this uncommitted change is claimed.
+check logs. These local checks preceded the GitHub CI run described below.
+
+## PR pilot contract correction
+
+The first CI run after commit `9952a1c` passed Rust fmt, check, clippy, tests,
+and the real-engine P21PORT smoke. The
+[reviewed pilot failed](https://github.com/Y-Fukiya/core-rust/actions/runs/43972515738)
+at `CORE-000042/negative/01`. Its candidate comparison reused the historical
+TT/TP, record-1 identity from the accepted snapshot's stored oracle.
+
+On 2026-11-17, four fresh official v1.0 macOS executions used the accepted
+`7f7fae49376b3d023563ebb6c36a3b392d6e649f` inputs for CORE-000042 and CORE-000043,
+negative/01 and positive/01. The executable and cache hashes are the same as
+those recorded above. Source hashes matched the frozen pilot manifest before
+and after execution. No standard/version override was used.
+The negative reports contain STUDY, an empty Record, and TT or TP respectively.
+Both positive reports are SKIPPED with zero findings. Local process logs,
+input hashes, and raw official reports are in
+`target/core155-accepted-domain-presence/`.
+
+The pilot now records separate candidate identities and their independent
+official diagnostic evidence. Source expectations, source hashes, issue counts,
+the accepted pin, and scorer policy remain unchanged. The checker still rejects
+wrong datasets, locators, variables, missing or duplicate findings, and skipped
+candidate execution. This changes the reviewed candidate expectation, not the
+stored upstream oracle. The strict pilot audit remains 12 matches and 12
+mismatches, including these two historical identity differences.
+
+The candidate evidence is a reporting-contract diagnostic, not a replacement
+oracle or human approval. Positive execution-status parity remains unresolved.
 
 ## CORE-000560 follow-up
 

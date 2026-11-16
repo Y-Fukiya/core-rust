@@ -8,6 +8,45 @@
     "human_approval": "pending",
     "limitations": "Official fixtures only; no real-study approval, P21 equivalence, or exhaustive boundary coverage. All positive/01 cases expect zero findings."
   },
+  "candidate_evidence": {
+    "official-core-v1-domain-presence": {
+      "basis": "Official CORE v1.0 macOS reproduced CORE-000042/43 on accepted 7f7fae4 inputs. Each negative reports one STUDY issue with blank record, USUBJID and SEQ, and variable TT or TP; no physical domain locator is reported. Each positive is SKIPPED with zero issues. Candidate execution must still be passed/failed, never skipped. Frozen stored-oracle identities and strict audit mismatches remain unchanged.",
+      "reference": "docs/open-rules-domain-presence-reporting.md",
+      "provenance": {
+        "rules_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
+        "engine_version": "1.0.0",
+        "engine_binary_sha256": "fd0fc1b20122b6adbbab0ba6b0e6c4c959415943b9982d0f4c6571b0fcfea16c",
+        "engine_source_sha": "f3282a0d870bbdf57e326e9992cceea3ed0d9af5",
+        "cache_tree_sha256": "9b0d65304dced1746f32d5b3f5a7225519925746a9405db3ef3fd10a6b748c8d",
+        "reports": [
+          {
+            "rule_id": "CORE-000042",
+            "kind": "negative",
+            "csv_sha256": "0c18ee9edbce14b269b302868dc74fade3caa59c34db344746f7aee7ff343c47",
+            "json_sha256": "2a0d40765c0d94ee52a1a3cfc0b478deede16aa682044fe46270ce9595a9774e"
+          },
+          {
+            "rule_id": "CORE-000042",
+            "kind": "positive",
+            "csv_sha256": "4f89677b93dfd70c752819749b5fe40f11dad05f54e8d1aaddc3000bff9cd28f",
+            "json_sha256": "393ea5ed036aeb273a5aaf13624eb9d54f8819535afeee6c38fbd0ce22138f9c"
+          },
+          {
+            "rule_id": "CORE-000043",
+            "kind": "negative",
+            "csv_sha256": "a859f97b417d0c8afb9dd1b0c23a00ef53d79b8b9a6047ede52b931174a53d6e",
+            "json_sha256": "3ff00087df749286bd9098b7b948c7caa2db6b296323aded7d17e14617d2d45b"
+          },
+          {
+            "rule_id": "CORE-000043",
+            "kind": "positive",
+            "csv_sha256": "4f89677b93dfd70c752819749b5fe40f11dad05f54e8d1aaddc3000bff9cd28f",
+            "json_sha256": "ccc4b000317081f4903a0b9ce755121e4af4f8bdeb54651430909865d821e9ce"
+          }
+        ]
+      }
+    }
+  },
   "rules": [
     {
       "rule_id": "CORE-000001",
@@ -130,6 +169,11 @@
     },
     {
       "rule_id": "CORE-000042",
+      "candidate_expectations": {
+        "evidence": "official-core-v1-domain-presence",
+        "negative": [{"rule_id":"CORE-000042","dataset":"STUDY","domain":"","row":"","variable":"TT","usubjid":"","seq":""}],
+        "positive": []
+      },
       "row_context": [{"usubjid":"","seq":""}],
       "dataset": "TT",
       "records": [
@@ -143,6 +187,11 @@
     },
     {
       "rule_id": "CORE-000043",
+      "candidate_expectations": {
+        "evidence": "official-core-v1-domain-presence",
+        "negative": [{"rule_id":"CORE-000043","dataset":"STUDY","domain":"","row":"","variable":"TP","usubjid":"","seq":""}],
+        "positive": []
+      },
       "row_context": [{"usubjid":"","seq":""}],
       "dataset": "TP",
       "records": [

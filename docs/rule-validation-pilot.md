@@ -41,9 +41,18 @@ domain, row, variable, USUBJID, sequence) against frozen expectations. The
 `row_context` values were read from the specified input records, not generated
 from candidate reports. Duplicate/missing findings and skipped execution fail.
 
-The strict scorer remains a separate, non-gating audit: this pilot has 14 strict
-matches and 10 strict mismatches because candidate findings contain subject and
-sequence context absent from the official CSV. A strict mismatch is **not**
+CORE-000042 and CORE-000043 have separate `candidate_expectations` for the
+study-level reporting contract. Fresh official CORE v1.0 runs on the accepted
+inputs confirm STUDY with no record locator. The manifest's `candidate_evidence`
+records that diagnostic provenance. The old TT/TP, record-1 source expectations
+and source hashes remain unchanged. Candidate identities are compared exactly;
+no fields in candidate output are rewritten or ignored. See the
+[Domain Presence investigation](open-rules-domain-presence-reporting.md).
+
+The strict scorer remains a separate, non-gating audit. This pilot has 12 strict
+matches and 12 strict mismatches. Ten differences concern subject and sequence
+context absent from the official CSV. Two concern the historical Domain Presence
+identity. A strict mismatch is **not**
 converted to a strict match; the full scoreboard is retained. The gate requires
 full frozen-identity agreement, the exact case set/counts, and no normalization,
 deferred, skipped, missing-oracle or harness-error cases. It permits the scorer's
@@ -52,6 +61,11 @@ ordinary nonzero mismatch exit only when those independent checks pass.
 This is a regression gate for reviewed fixtures, **not independent human
 approval**. `human_approval: pending` remains explicit until a qualified reviewer
 records a separate approval.
+
+For the two Domain Presence positives, official v1.0 reports SKIPPED and the
+candidate reports Passed with zero findings. The pilot checks the reviewed
+candidate contract, not official execution-status parity. That applicability
+difference and full upstream adoption remain open.
 
 The `open-rules-pilot-evidence` CI artifact contains candidate reports, the
 strict scoreboard, and `fixture-review.json`. A source-only check records
