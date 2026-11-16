@@ -48,6 +48,10 @@ def test_candidate_diagnostic_does_not_replace_accepted_schedule() -> None:
     assert profile["default"] == "accepted"
     assert profile["options"] == ["accepted", "cdisc-v1-candidate"]
     assert trigger["schedule"]
+    output = workflow["jobs"]["candidate-linux"]["env"]["CANDIDATE_AUDIT_OUT"]
+    assert output.startswith("${{ runner.temp }}/")
+    assert "${{ github.run_id }}" in output
+    assert "${{ github.run_attempt }}" in output
     for name in ("upstream-observe", "upstream-regression"):
         assert workflow["jobs"][name]["if"] == (
             "github.event_name != 'workflow_dispatch' || inputs.profile != 'cdisc-v1-candidate'"
@@ -86,6 +90,7 @@ def test_candidate_diagnostic_validates_process_exit(tmp_path, status, gate_fail
             "gate": {"should_fail": gate_failed},
         }))
     result = subprocess.run(
-        [sys.executable, "-c", validation], cwd=tmp_path, capture_output=True, text=True
+        [sys.executable, "-c", validation], cwd=tmp_path, capture_output=True, text=True,
+        env={**os.environ, "CANDIDATE_AUDIT_OUT": str(out)},
     )
     assert (result.returncode == 0) is passes, result.stderr

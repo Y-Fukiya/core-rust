@@ -92,6 +92,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      CANDIDATE_AUDIT_OUT: ${{ runner.temp }}/candidate-audit-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.93.1
@@ -109,7 +111,7 @@ jobs:
           rules = pathlib.Path('../cdisc-open-rules').resolve()
           subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', profile['rules']['repo'], str(rules)], check=True)
           subprocess.run(['git', '-C', str(rules), 'checkout', '--detach', profile['rules']['sha']], check=True)
-          out = pathlib.Path('target/candidate-audit')
+          out = pathlib.Path(os.environ['CANDIDATE_AUDIT_OUT'])
           out.mkdir(parents=True, exist_ok=False)
           probe = out / 'caseProbe'
           probe.write_text('case-sensitive')
@@ -136,18 +138,18 @@ jobs:
         run: |
           set +e
           cargo run --locked -p xtask -- open-rules run-score --scope Published \
-            --open-rules-root ../cdisc-open-rules --core-rs-results-root target/candidate-audit/results \
-            --out target/candidate-audit/default > target/candidate-audit/default.log 2>&1
+            --open-rules-root ../cdisc-open-rules --core-rs-results-root "$CANDIDATE_AUDIT_OUT/results" \
+            --out "$CANDIDATE_AUDIT_OUT/default" > "$CANDIDATE_AUDIT_OUT/default.log" 2>&1
           default_status=$?
           cargo run --locked -p xtask -- open-rules score --scope Published \
-            --open-rules-root ../cdisc-open-rules --core-rs-results-root target/candidate-audit/results \
-            --out target/candidate-audit/strict --strict-scoring > target/candidate-audit/strict.log 2>&1
+            --open-rules-root ../cdisc-open-rules --core-rs-results-root "$CANDIDATE_AUDIT_OUT/results" \
+            --out "$CANDIDATE_AUDIT_OUT/strict" --strict-scoring > "$CANDIDATE_AUDIT_OUT/strict.log" 2>&1
           strict_status=$?
           set -e
-          printf '{"default_exit":%s,"strict_exit":%s}\n' "$default_status" "$strict_status" > target/candidate-audit/process-status.json
+          printf '{"default_exit":%s,"strict_exit":%s}\n' "$default_status" "$strict_status" > "$CANDIDATE_AUDIT_OUT/process-status.json"
           python - <<'PY'
-          import hashlib, json, pathlib
-          out = pathlib.Path('target/candidate-audit')
+          import hashlib, json, os, pathlib
+          out = pathlib.Path(os.environ['CANDIDATE_AUDIT_OUT'])
           process_status = json.loads((out / 'process-status.json').read_text())
           summary = json.loads((out / 'results/run-summary.json').read_text())
           assert summary['failed'] == 0, summary
@@ -162,19 +164,19 @@ jobs:
               assert hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == sha, p
           PY
           cargo run --locked -p xtask -- open-rules score-delta \
-            --default-scoreboard target/candidate-audit/default/scoreboard.json \
-            --strict-scoreboard target/candidate-audit/strict/scoreboard.json --out target/candidate-audit/delta
+            --default-scoreboard "$CANDIDATE_AUDIT_OUT/default/scoreboard.json" \
+            --strict-scoreboard "$CANDIDATE_AUDIT_OUT/strict/scoreboard.json" --out "$CANDIDATE_AUDIT_OUT/delta"
       - name: Classify mismatches without changing scores
         run: |
           python scripts/open_rules_candidate_triage.py \
-            --default-scoreboard target/candidate-audit/default/scoreboard.json \
-            --strict-scoreboard target/candidate-audit/strict/scoreboard.json \
-            --rules-root ../cdisc-open-rules --out target/candidate-audit/triage
+            --default-scoreboard "$CANDIDATE_AUDIT_OUT/default/scoreboard.json" \
+            --strict-scoreboard "$CANDIDATE_AUDIT_OUT/strict/scoreboard.json" \
+            --rules-root ../cdisc-open-rules --out "$CANDIDATE_AUDIT_OUT/triage"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: open-rules-candidate-linux-${{ github.run_id }}-${{ github.run_attempt }}
-          path: target/candidate-audit
+          path: ${{ env.CANDIDATE_AUDIT_OUT }}
           if-no-files-found: error
 
   candidate-official:
