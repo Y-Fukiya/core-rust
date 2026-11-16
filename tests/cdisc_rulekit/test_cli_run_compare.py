@@ -82,7 +82,7 @@ def test_run_core_dry_run_and_compare_results_cli(tmp_path):
     negative = out_dir / "core_runs" / rule_id / "negative" / "01"
     positive.mkdir(parents=True)
     negative.mkdir(parents=True)
-    (positive / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (positive / "report.json").write_text(json.dumps({"results": [{"rule_id": rule_id, "execution_status": "passed", "error_count": 0, "errors": []}]}), encoding="utf-8")
     (negative / "report.json").write_text(
         json.dumps(
             {
@@ -90,6 +90,7 @@ def test_run_core_dry_run_and_compare_results_cli(tmp_path):
                 "results": [
                     {
                         "rule_id": rule_id,
+                        "execution_status": "failed",
                         "error_count": 1,
                         "errors": [{"rule_id": rule_id, "dataset": "DM", "row": 1, "variables": ["RFICDTC"]}],
                     },
@@ -131,7 +132,7 @@ def test_compare_results_cli_can_allow_actual_skipped_as_coverage_gap(tmp_path):
     negative = actual_root / rule_id / "negative" / "01"
     positive.mkdir(parents=True)
     negative.mkdir(parents=True)
-    (positive / "report.json").write_text(json.dumps({"summary": {"error_count": 0}, "results": []}), encoding="utf-8")
+    (positive / "report.json").write_text(json.dumps({"results": [{"rule_id": rule_id, "execution_status": "passed", "error_count": 0, "errors": []}]}), encoding="utf-8")
     (negative / "report.json").write_text(
         json.dumps(
             {
@@ -192,7 +193,8 @@ def test_run_core_executes_engine_command_and_writes_execution_summary(tmp_path)
                 "dataset_paths = [args[index + 1] for index, arg in enumerate(args) if arg == '--dataset-path']",
                 "assert all(path.endswith('.csv') for path in dataset_paths)",
                 "assert not any(pathlib.Path(path).name.startswith('_') for path in dataset_paths)",
-                "payload = {'summary': {'error_count': 0}, 'results': []}",
+                "rule_id = pathlib.Path(args[args.index('--local-rules') + 1]).parent.name",
+                "payload = {'results': [{'rule_id': rule_id, 'execution_status': 'passed', 'error_count': 0, 'errors': []}]}",
                 "(output / 'report.json').write_text(json.dumps(payload), encoding='utf-8')",
                 "(output / 'report.csv').write_text('rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\\n', encoding='utf-8')",
                 "print('fake engine ok')",

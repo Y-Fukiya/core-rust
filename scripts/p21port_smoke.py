@@ -114,9 +114,7 @@ def _write_fake_engine(path: Path) -> None:
                 "        'usubjid': row.get('usubjid') or '',",
                 "        'seq': row.get('seq') or '',",
                 "    })",
-                "payload = {'summary': {'error_count': issue_count}, 'results': []}",
-                "if errors:",
-                "    payload['results'].append({'rule_id': errors[0]['rule_id'], 'error_count': issue_count, 'errors': errors})",
+                "payload = {'summary': {'error_count': issue_count}, 'results': [{'rule_id': expected_rows[0]['rule_id'], 'execution_status': 'failed' if errors else 'passed', 'error_count': issue_count, 'errors': errors}]}",
                 "output.mkdir(parents=True, exist_ok=True)",
                 "(output / 'report.json').write_text(json.dumps(payload, sort_keys=True), encoding='utf-8')",
                 "(output / 'report.csv').write_text('rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\\n', encoding='utf-8')",
@@ -213,7 +211,7 @@ def _failure_direction_counts(failed_cases: list[dict[str, object]]) -> dict[str
 
 def _write_empty_report(output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    payload = {"summary": {"error_count": 0}, "results": []}
+    payload = {"results": [{"rule_id": output.parents[1].name, "execution_status": "passed", "error_count": 0, "errors": []}]}
     (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
 
@@ -225,7 +223,7 @@ def _write_extra_issue_report(output: Path, rule_id: str) -> None:
     ]
     payload = {
         "summary": {"error_count": len(errors)},
-        "results": [{"rule_id": rule_id, "error_count": len(errors), "errors": errors}],
+        "results": [{"rule_id": rule_id, "execution_status": "failed", "error_count": len(errors), "errors": errors}],
     }
     (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
@@ -235,7 +233,7 @@ def _write_wrong_issue_report(output: Path, rule_id: str) -> None:
     errors = [{"rule_id": rule_id, "dataset": "CM", "row": 2, "variables": ["AETERM"]}]
     payload = {
         "summary": {"error_count": len(errors)},
-        "results": [{"rule_id": rule_id, "error_count": len(errors), "errors": errors}],
+        "results": [{"rule_id": rule_id, "execution_status": "failed", "error_count": len(errors), "errors": errors}],
     }
     (output / "report.json").write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 

@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .errors import CliUsageError
+from .inputs import require_legacy_open_rules_root
 from .io_utils import normalize_blank
 from .models import CanonicalRule
 
@@ -18,13 +20,16 @@ CG_RE = re.compile(r"\bCG\d{4,}\b")
 
 def discover_rule_yml(repo_path: str | Path, include_unpublished: bool = False) -> list[Path]:
     repo = Path(repo_path)
+    require_legacy_open_rules_root(repo)
     roots = [repo / "Published"]
     if include_unpublished:
         roots.append(repo / "Unpublished")
     paths: list[Path] = []
     for root in roots:
-        if root.exists():
-            paths.extend(root.rglob("rule.yml"))
+        if root.is_dir():
+            paths.extend(path for path in root.rglob("rule.yml") if path.is_file())
+    if not paths:
+        raise CliUsageError(f"no rule.yml files found in requested Open Rules scopes: {', '.join(str(root) for root in roots)}")
     return sorted(paths)
 
 
@@ -168,17 +173,19 @@ def load_open_rules(
     warnings: list[str] = []
 
     for path in discover_rule_yml(repo, include_unpublished=include_unpublished):
-        raw_text = path.read_text(encoding="utf-8")
         try:
-            loaded = parser.safe_load(raw_text) or {}
-        except Exception as error:  # noqa: BLE001 - warning should include parser details.
+            raw_text = path.read_text(encoding="utf-8")
+            loaded = parser.safe_load(raw_text)
+        except (OSError, UnicodeError, parser.YAMLError) as error:
             warnings.append(f"{path}: malformed YAML: {error}")
             continue
-        if not isinstance(loaded, dict):
-            warnings.append(f"{path}: YAML root is not a mapping")
+        if not isinstance(loaded, dict) or not loaded:
+            warnings.append(f"{path}: YAML root is not a nonempty mapping")
             continue
         rule = _rule_from_yaml(path, repo, loaded, raw_text)
         rules.append(rule)
         testdata_inventory.extend(inventory_testdata(path.parent, repo, rule.core_rule_id or path.parent.name))
 
+    if not rules:
+        raise CliUsageError("no usable Open Rules rules found; " + "; ".join(warnings))
     return rules, testdata_inventory, warnings

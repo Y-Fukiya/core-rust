@@ -110,6 +110,12 @@ support.
 
 ## Open Rules Compatibility
 
+Official CORE v1.0 separates SDTM/FDA rules (Verisian's PostgreSQL engine and
+core-contributor) from TIG/USDM/SEND (the CDISC engine and cdisc-open-rules).
+core-rust's accepted baseline has not been promoted to those release packages.
+See the [CORE v1.0 readiness audit](docs/core-v1-readiness.md) for the pinned
+sources, measured parser gaps and remaining execution checks.
+
 The repository includes a CDISC Open Rules oracle harness. Scoreboards separate:
 
 - supported matches and mismatches

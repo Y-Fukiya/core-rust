@@ -13,17 +13,38 @@ def looks_like_open_rules_repo(path: str | Path) -> bool:
     return (root / "Published").is_dir() or (root / "Unpublished").is_dir()
 
 
+def require_legacy_open_rules_root(root: Path) -> None:
+    if not root.is_dir():
+        raise CliUsageError(f"Open Rules input is not a directory: {root}")
+    if (root / "sdtm_rules").exists():
+        raise CliUsageError(
+            f"unsupported Open Rules format at {root}: sdtm_rules (CORE v1 contributor), "
+            "including mixed legacy/v1 roots, is not supported; expected Published/Unpublished rule.yml layout"
+        )
+    if not looks_like_open_rules_repo(root):
+        raise CliUsageError(f"unsupported Open Rules format at {root}: expected Published/Unpublished rule.yml layout")
+
+
 def locate_open_rules_repo(path: str | Path) -> Path:
     root = Path(path)
-    if looks_like_open_rules_repo(root):
+    if looks_like_open_rules_repo(root) or (root / "sdtm_rules").exists():
+        require_legacy_open_rules_root(root)
         return root
     if not root.is_dir():
-        return root
+        raise CliUsageError(f"Open Rules input is not a directory: {root}")
 
-    candidates = [child for child in sorted(root.iterdir()) if child.is_dir() and looks_like_open_rules_repo(child)]
-    if not candidates:
-        return root
-    return max(candidates, key=lambda candidate: len(list((candidate / "Published").rglob("rule.yml"))))
+    candidates = [
+        child for child in sorted(root.iterdir())
+        if child.is_dir() and (looks_like_open_rules_repo(child) or (child / "sdtm_rules").exists())
+    ]
+    if len(candidates) > 1:
+        raise CliUsageError(
+            "ambiguous Open Rules input; supply an exact package root: "
+            + ", ".join(str(candidate) for candidate in candidates)
+        )
+    selected = candidates[0] if candidates else root
+    require_legacy_open_rules_root(selected)
+    return selected
 
 
 def _assert_safe_zip_member(member_name: str, target: Path) -> None:
