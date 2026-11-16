@@ -4,7 +4,7 @@ use core_engine::ExecutionStatus;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
-use crate::{run_validation, ValidateRequest};
+use crate::{run_validation, DatasetLoader, ValidateRequest};
 
 #[test]
 fn run_validation_executes_core_000690_label_uniqueness_direction() {
@@ -523,6 +523,121 @@ fn run_validation_executes_study_domains_operation() {
         outcome.results[0].errors[0].variables,
         vec!["RDOMAIN".to_owned()]
     );
+}
+
+#[test]
+fn run_validation_core_000457_checks_supplemental_parent_presence() {
+    let cases = [
+        (
+            "named_headers",
+            Some("STUDYID,DOMAIN,USUBJID\nS1,EC,SUBJ1\n"),
+            ExecutionStatus::Passed,
+            0,
+        ),
+        (
+            "embedded_metadata_without_ec_schema",
+            Some(",,\nStudy Identifier,Domain Abbreviation,Unique Subject Identifier\nChar,Char,Char\n50,50,50\nS1,EC,SUBJ1\n"),
+            ExecutionStatus::Passed,
+            0,
+        ),
+        ("missing_parent", None, ExecutionStatus::Failed, 1),
+    ];
+
+    for (case, parent_csv, expected_status, expected_errors) in cases {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-000457.json"),
+            r#"{
+  "Core": { "Id": "CORE-000457", "Status": "Published" },
+  "Scope": {
+    "Classes": { "Include": ["RELATIONSHIP"] },
+    "Domains": { "Include": ["SUPP--"] }
+  },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Operations": [{ "id": "$study_domains", "operator": "study_domains" }],
+  "Check": {
+    "all": [{ "name": "RDOMAIN", "operator": "is_not_contained_by", "value": "$study_domains" }]
+  },
+  "Outcome": {
+    "Message": "RDOMAIN does not correspond to a dataset present in the study",
+    "Output Variables": ["RDOMAIN", "USUBJID"]
+  }
+}"#,
+        )
+        .expect("write rule");
+        let mut manifest =
+            "Filename,Label\ndm,Demographics\nsuppec,Supplemental Qualifiers for Exposure\n"
+                .to_owned();
+        if let Some(csv) = parent_csv {
+            manifest.push_str("ec,Exposure as Collected\n");
+            fs::write(data_dir.join("ec.csv"), csv).expect("write parent csv");
+        }
+        fs::write(data_dir.join("_datasets.csv"), manifest).expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+dm,STUDYID,Study Identifier,Char,50\n\
+dm,DOMAIN,Domain Abbreviation,Char,50\n\
+dm,USUBJID,Unique Subject Identifier,Char,50\n\
+suppec,STUDYID,Study Identifier,Char,50\n\
+suppec,RDOMAIN,Related Domain Abbreviation,Char,6\n\
+suppec,USUBJID,Unique Subject Identifier,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("dm.csv"),
+            "STUDYID,DOMAIN,USUBJID\nS1,DM,SUBJ1\n",
+        )
+        .expect("write dm csv");
+        fs::write(
+            data_dir.join("suppec.csv"),
+            "STUDYID,RDOMAIN,USUBJID\nS1,EC,SUBJ1\nS1,EC,SUBJ2\n",
+        )
+        .expect("write suppec csv");
+
+        let datasets = core_data::load_open_rules_data_dir(&data_dir).expect("load data");
+        let parent = datasets
+            .iter()
+            .find(|dataset| dataset.metadata.name == "EC");
+        assert_eq!(parent.is_some(), parent_csv.is_some(), "{case}");
+        if let Some(parent) = parent {
+            assert_eq!(parent.metadata.domain.as_deref(), Some("EC"), "{case}");
+            assert_eq!(parent.frame().height(), 1, "{case}");
+            assert_eq!(
+                core_data::dataset_column_values(parent, "DOMAIN").expect("parent domain"),
+                vec![serde_json::json!("EC")],
+                "{case}"
+            );
+        }
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1, "{case}");
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, expected_status, "{case}");
+        assert_eq!(result.error_count, expected_errors, "{case}");
+        assert_eq!(result.errors.len(), expected_errors, "{case}");
+        for issue in &result.errors {
+            assert_eq!(issue.rule_id, "CORE-000457", "{case}");
+            assert_eq!(issue.dataset, "SUPPEC", "{case}");
+            assert_eq!(issue.domain.as_deref(), Some("SUPPEC"), "{case}");
+            assert_eq!(issue.variables, vec!["RDOMAIN", "USUBJID"], "{case}");
+            assert_eq!(issue.row, None, "{case}");
+            assert_eq!(issue.usubjid, None, "{case}");
+            assert_eq!(issue.seq, None, "{case}");
+        }
+    }
 }
 
 #[test]

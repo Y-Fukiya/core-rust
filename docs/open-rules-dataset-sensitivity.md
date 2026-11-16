@@ -51,9 +51,13 @@ separate from this engine correction.
 
 CORE-000457 positive/01 is not an output-multiplicity problem. Its stored oracle
 has two variable rows for SUPPEC, while core-rust reports no findings. The fixture
-lists `ec` in `_datasets.csv`, and the reported `RDOMAIN` value is `EC`. The next
-investigation must check the study-domain reference set and fresh official
-execution before changing that predicate or classifying the fixture as wrong.
+lists `ec` in `_datasets.csv`, and the reported `RDOMAIN` value is `EC`. A fresh
+official v1.0.0 run confirmed that the malformed EC header and embedded metadata
+prevent official `study_domains` from recognizing EC. Restoring the DOMAIN
+header and removing those metadata rows makes official CORE report no findings.
+See the [fixture investigation](open-rules-core-000457-fixture-gap.md) for the
+controlled runs and upstream correction request. The pinned fixture, stored
+oracle, baselines, and original mismatch remain unchanged.
 
 ## Local verification results
 
