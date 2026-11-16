@@ -91,14 +91,46 @@ The unchanged accepted snapshot now has 13 supported mismatches and six deferred
 mismatches where it previously matched. Its affected rule IDs are CORE-000013,
 015, 030, 084, 096, 098, 118, 165, 166, 167, 171, 180, 186, and 261. These
 19 differences remain visible. The accepted regression gate is **not green**
-with this change, and its baselines and lock have not been updated.
+with this change, and its full upstream baseline and lock have not been updated.
 
 Workspace formatting, `cargo check --workspace --locked`,
 `cargo clippy --workspace --locked -- -D warnings`, and
 `cargo test --workspace --locked` passed locally. Failing-before regressions
 cover CORE-000013 multiplicity and CORE-000165's extra row-zero issue. The
 existing local golden fixture was corrected to expect no Dataset row locator;
-the Open Rules oracle baselines were not edited.
+the full upstream oracle baseline was not edited. The subsequent curated
+checkpoint review is recorded below.
+
+## CORE-000108 curated checkpoint review
+
+After the P21PORT smoke output was moved outside the Cargo cache,
+[CI run 43930387550](https://github.com/Y-Fukiya/core-rust/actions/runs/43930387550)
+reached the curated gap gate and reported one fingerprint regression for
+`Published/CORE-000108/negative/02`.
+
+The accepted rule declares `Rule Type: Record Data` and `Sensitivity: Dataset`.
+The Dataset reporting correction removes the old record locator from the DM
+finding. Before the correction, the CSV reported row 2, USUBJID `CDISC002`, and
+sequence 1. The corrected CSV leaves those record locators empty. The finding,
+dataset, and output variables `DTHFL` and `USUBJID` remain present.
+
+The scorer represents that finding as two structural variable keys. Their only
+changed field is `row`, from `2` to empty. Existing identity alignment already
+leaves USUBJID and sequence empty in both normalized outputs. No new scoring
+normalization is introduced. The candidate fingerprint changes from `28d6cf25ded95ca5` to
+`6529f95af3fb7ded`.
+
+Only that fingerprint in `curated-gap-baseline.json` is updated. The official
+issue count remains 0, the candidate and extra counts remain 2, and the bucket
+remains `deferred_oracle_gap_skipped`. This records the reviewed candidate output
+format; it does not resolve the empty official oracle or promote the case to a
+supported match. The full upstream baseline, accepted pin, upstream fixtures,
+and scoring policy remain unchanged.
+
+A fresh run of the 31-rule curated gap subset reproduced one regression before
+this checkpoint update and zero afterwards. The two improvements for
+CORE-000698 and CORE-000704 remain reported. This narrow checkpoint update does
+not accept the 19 full-corpus comparison differences described above.
 
 ## Diagnostic inventory follow-up
 
