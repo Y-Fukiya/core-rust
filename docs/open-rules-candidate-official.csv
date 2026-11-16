@@ -1,0 +1,23 @@
+label,rule_id,fixture,profile_kind,execution_status,fresh_csv_rows,stored_csv_rows,exact_csv_multiset_equal,candidate_default_bucket,candidate_scored_issue_count,report_json_sha256
+dataset-original-positive-01,CORE-000013,CORE-000013/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,058a0d6576badf760b0bccd1d91804a877e2684a0d26615e6600b1a3c499948b
+dataset-tig-positive-01,CORE-000013,CORE-000013/positive/01,standard_variant,SUCCESS,0,,,,,c55edb61c070d6d01429cff8816a107e6dad95abd755f5bdc7772693a2d1bfd4
+dataset-original-negative-01,CORE-000013,CORE-000013/negative/01,original_fixture,ISSUE REPORTED,1,1,true,supported_mismatch,13,95d2cbd7224cc869e18a481fbf63838228a801200759363b077a69614b3e6a94
+dataset-tig-negative-01,CORE-000013,CORE-000013/negative/01,standard_variant,ISSUE REPORTED,1,,,,,cac4bb05785cbba1cf5b708da0983bcf471aba6dd75d712bcf6f6bdcf2b3d3e4
+dataset-original-negative-02,CORE-000013,CORE-000013/negative/02,original_fixture,ISSUE REPORTED,1,1,true,supported_mismatch,13,38bd7eac6252687141d14d68fb20c7bbe722438807ed1313fa389fc183844caa
+dataset-tig-negative-02,CORE-000013,CORE-000013/negative/02,standard_variant,ISSUE REPORTED,1,,,,,d27cbc38373e5ae9b1bae7047c3fb211755dd106d176b6699bd1ce5174b83552
+group142-positive-01,CORE-000142,CORE-000142/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,3006350cfb4fa11efce604cbaaaa9f9cfda724e8ddf4e658ebc5bb40e025f608
+group142-negative-01,CORE-000142,CORE-000142/negative/01,original_fixture,ISSUE REPORTED,10,10,true,deferred_oracle_gap_mismatch,12,38f6333c75aa05e6fa6a1364e44862b28dae945c1e58d9f44f963d35f1d57f41
+group699-positive-01,CORE-000699,CORE-000699/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,5925f3818b0595f6d176a01adce405d10899d547f24fff5afa23896fa424f248
+group699-negative-01,CORE-000699,CORE-000699/negative/01,original_fixture,ISSUE REPORTED,98,399,false,deferred_oracle_gap_mismatch,231,06701778c8af6d1669f8eef68798fa7bb2ff1153a73090599bd2792bbbb9b4a2
+tig-record-positive-03,CORE-000016,CORE-000016/positive/03,original_fixture,SUCCESS,0,0,true,supported_match,0,04fab299168518297661f7574a651d81fdbddb68f8c4d81c904816d0805771c3
+tig-record-negative-01,CORE-000016,CORE-000016/negative/01,original_fixture,ISSUE REPORTED,68,68,true,supported_match,68,60ec1dbc031e1b088616dc6e4dfbd2096deef8f5cba857a3c655acaaddae3edb
+send-positive-01,CORE-000520,CORE-000520/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,5435d9955e35b8abcdb214df74a95a4e7e82e2ff0864e7deebdee0446f2a2501
+send-negative-01,CORE-000520,CORE-000520/negative/01,original_fixture,ISSUE REPORTED,2,2,true,supported_match,2,472f60d7509eb55fa53c5f8d09e4db29260081f08fc8f4db1a50299a46729993
+usdm-positive-01,CORE-000869,CORE-000869/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,0b670e7fecff5412359237b873d53c7a42996c5cc859742c1319b4b9c0b407b9
+usdm-negative-01,CORE-000869,CORE-000869/negative/01,original_fixture,ISSUE REPORTED,28,28,true,supported_match,28,19f6debf0903ba65ad8ba57b9f6e7f645ab30141f6b32eb29856a749166b2f1d
+tig-domain-positive-01,CORE-000590,CORE-000590/positive/01,original_fixture,SUCCESS,0,0,true,supported_match,0,1e3ebe5d3d102a1795247071f3e9d3b7ab1117ea838a00aed79a31ecd319bd71
+tig-domain-negative-01,CORE-000590,CORE-000590/negative/01,original_fixture,ISSUE REPORTED,1,1,true,supported_mismatch,1,96cc870b44878dff7f1afe812dc5f9558501b719db6c02230d335ad09a6d1660
+tig-metadata-positive-02,CORE-000376,CORE-000376/positive/02,original_fixture,SUCCESS,0,0,true,supported_match,0,26235b3ed547372e733d7ef3f298c5d23762decc5a77e10ca902e154181805c2
+tig-metadata-negative-02,CORE-000376,CORE-000376/negative/02,original_fixture,ISSUE REPORTED,6,6,true,supported_mismatch,48,478aeadf642465517fab59e8922209c0bd3b214c0d9adbff847cec341c531962
+probe-skipped-domain,CORE-000013,CORE-000591/positive/01,status_probe,SKIPPED,0,,,,,fae4843653f15f753eeeedd2504214210da74e2763898d0b699680a32d1cbcef
+probe-execution-error,CORE-000929,CORE-000013/positive/01,status_probe,EXECUTION ERROR,1,,,,,5bee3d497c0aff499bbee589bbdb558e4df2b5b0e07e7194497ce84ebdedd4fa

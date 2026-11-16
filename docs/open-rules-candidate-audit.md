@@ -107,3 +107,78 @@ python scripts/open_rules_candidate_triage.py \
 
 Adoption remains a separate change after the classified discrepancies are
 resolved or supported by reviewed upstream evidence.
+
+## Reproduced mismatch inventory
+
+The first successful [Linux candidate job](https://github.com/Y-Fukiya/core-rust/actions/runs/43898049724)
+executed all 2,298 cases. Its case keys, buckets, official/candidate issue counts,
+missing/extra counts, and issue fingerprints match the earlier macOS run with
+zero differences. This run's official-engine job failed preflight; its success
+must not be inferred from the candidate job.
+
+The [portable mismatch inventory](open-rules-candidate-mismatches.csv) contains
+109 cases across 82 rules. Families use the declared precedence in the classifier,
+so totals are disjoint. Other traits can overlap.
+
+| Primary family | Supported mismatch | Deferred mismatch | Total |
+| --- | ---: | ---: | ---: |
+| Dataset sensitivity | 26 | 5 | 31 |
+| Record comparator | 24 | 3 | 27 |
+| Date | 5 | 7 | 12 |
+| Domain presence | 9 | 0 | 9 |
+| Distinct operation | 3 | 4 | 7 |
+| Relationship | 6 | 1 | 7 |
+| Empty/existence | 6 | 0 | 6 |
+| Variable metadata | 3 | 1 | 4 |
+| Group sensitivity | 0 | 3 | 3 |
+| Other operation | 2 | 0 | 2 |
+| String | 0 | 1 | 1 |
+| Total | 84 | 25 | 109 |
+
+There are no unclassified cases within these 109 mismatches. This does not mean
+every family in the entire corpus is covered by the classifier. The 55 default
+unsupported skips, 52 deferred skips, 12 missing-oracle cases, and 838 default-match
+to strict-mismatch transitions remain separate populations.
+
+## Official rerun observations
+
+The final [diagnostic run 43900071480](https://github.com/Y-Fukiya/core-rust/actions/runs/43900071480)
+passed both candidate and official jobs. Its engine version was `1.0.0` and its
+cache map matched the fixed digest. The 22 invocations comprise 17 original
+fixture profiles, three explicitly named TIG variants, and two status probes.
+Nine reported SUCCESS, eleven ISSUE REPORTED, one expected SKIPPED, and one
+expected EXECUTION ERROR. The last two prove status handling, not conformance.
+
+Of the 17 original-profile runs, 16 CSV multisets exactly match the stored
+fixtures, including values and multiplicity. CORE-000699 negative/01 differs.
+Do not count the three TIG variants or two probes as confirmations of the
+original fixture oracle. Per-run observations are in the
+[official comparison inventory](open-rules-candidate-official.csv).
+
+| Case | Stored CSV rows | Fresh official CSV rows | core-rust scored issues | Follow-up |
+| --- | ---: | ---: | ---: | --- |
+| CORE-000013 negative/01 | 1 | 1 | 13 | Dataset reporting granularity |
+| CORE-000142 negative/01 | 10 | 10 | 12 | Group keys and reporting granularity |
+| CORE-000699 negative/01 | 399 | 98 | 231 | Reference-version discrepancy first |
+| CORE-000376 negative/02 | 6 | 6 | 48 | Metadata scope and output multiplicity |
+| CORE-000590 negative/01 | 1 | 1 | 1 | Structural identity, not count |
+| CORE-000016 negative/01 | 68 | 68 | 68 | Native TIG record-level control |
+
+CSV data rows and scored issue keys are different units. These observations
+prioritize investigation; they do not establish the cause of every family.
+CORE-000013 is a strong first candidate because the rule declares Dataset
+sensitivity and both fresh official runs and stored fixtures emit one dataset
+finding. The classifier does not silently collapse core-rust's 13 records.
+CORE-000699 must not be forced to 399 based only on the stored CSV: the selected
+official v1 engine itself emits 98 under the same fixture environment.
+
+The final run uses source commit `9b09429503d48956472e98f59212ec4877cf3b35`.
+Its artifacts are preserved locally under
+`target/core-v1-audit-20261117/run-43900071480/` and linked from the workflow.
+Artifact ZIP SHA-256 is checked when downloading. Earlier failed runs retain
+their failure status; no missing report was treated as a zero-finding result.
+
+Next, implement a bounded Dataset sensitivity regression separately from the
+audit tooling. Then investigate Group and metadata output scope. Resolve the
+CORE-000699 reference-version discrepancy before any baseline promotion.
+The accepted lock, baselines, scorer, and validation engine are unchanged.
