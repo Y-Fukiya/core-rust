@@ -48,10 +48,10 @@ def test_candidate_diagnostic_does_not_replace_accepted_schedule() -> None:
     assert profile["default"] == "accepted"
     assert profile["options"] == ["accepted", "cdisc-v1-candidate"]
     assert trigger["schedule"]
-    output = workflow["jobs"]["candidate-linux"]["env"]["CANDIDATE_AUDIT_OUT"]
-    assert output.startswith("${{ runner.temp }}/")
-    assert "${{ github.run_id }}" in output
-    assert "${{ github.run_attempt }}" in output
+    output = workflow["jobs"]["candidate-linux"]["steps"][0]["run"]
+    assert "$RUNNER_TEMP/" in output
+    assert "$GITHUB_RUN_ID" in output
+    assert "$GITHUB_RUN_ATTEMPT" in output
     for name in ("upstream-observe", "upstream-regression"):
         assert workflow["jobs"][name]["if"] == (
             "github.event_name != 'workflow_dispatch' || inputs.profile != 'cdisc-v1-candidate'"

@@ -92,9 +92,9 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-    env:
-      CANDIDATE_AUDIT_OUT: ${{ runner.temp }}/candidate-audit-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Use fresh diagnostic output
+        run: echo "CANDIDATE_AUDIT_OUT=$RUNNER_TEMP/candidate-audit-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.93.1
       - uses: Swatinem/rust-cache@v2
