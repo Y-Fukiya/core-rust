@@ -140,11 +140,14 @@ pub fn validate_rule(
     rule: &ExecutableRule,
     dataset: &LoadedDataset,
 ) -> Result<RuleValidationResult> {
-    let dataset_presence_exists = (matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
-        && matches!(
-            rule.rule_type,
-            RuleType::RecordData | RuleType::DomainPresence
-        ))
+    let study_domain_presence =
+        rule.sensitivity == Some(Sensitivity::Study) && rule.rule_type == RuleType::DomainPresence;
+    let dataset_presence_exists = study_domain_presence
+        || (matches!(rule.sensitivity.as_ref(), Some(Sensitivity::Dataset))
+            && matches!(
+                rule.rule_type,
+                RuleType::RecordData | RuleType::DomainPresence
+            ))
         || contains_relationship_operator(&rule.conditions)
         || contains_unique_set_operator(&rule.conditions);
     let mask =
@@ -161,6 +164,9 @@ pub fn validate_rule(
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
         Sensitivity::Group => group_level_issues(rule, dataset, &mask, &variables, &message)?,
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),
+        Sensitivity::Study if study_domain_presence => {
+            dataset_level_issues(rule, dataset, &mask, &variables, &message)
+        }
         sensitivity => {
             return Err(EngineError::UnsupportedSensitivity(
                 sensitivity.as_name().to_owned(),

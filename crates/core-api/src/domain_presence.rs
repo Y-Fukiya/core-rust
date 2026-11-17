@@ -2,7 +2,7 @@ use core_data::{
     derive_literal_column, filter_dataset_by_mask, metadata_row_dataset, LoadedDataset,
 };
 use core_engine::{RuleValidationResult, SkippedReason};
-use core_rule_model::ExecutableRule;
+use core_rule_model::{ExecutableRule, Sensitivity};
 use serde_json::Value;
 
 use crate::operation_fields::{operation_name, string_field};
@@ -33,7 +33,7 @@ pub(crate) fn domain_presence_execution_datasets(
         })?;
 
     let row_count = anchor.summary().row_count;
-    let mut dataset = if row_count == 0 {
+    let mut dataset = if row_count == 0 || rule.sensitivity == Some(Sensitivity::Study) {
         metadata_row_dataset(anchor, &Default::default())
     } else {
         filter_dataset_by_mask(

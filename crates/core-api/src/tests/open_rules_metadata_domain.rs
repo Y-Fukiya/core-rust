@@ -5,6 +5,65 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use crate::{run_validation, DatasetLoader, ValidateRequest};
+
+#[test]
+fn study_domain_presence_checks_only_loaded_domains() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("rule.yml");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999581, Status: Published}
+Rule Type: Domain Presence Check
+Sensitivity: Study
+Check: {name: DM, operator: not_exists}
+Outcome: {Message: Missing DM, Output Variables: [DM]}
+"#,
+    )
+    .expect("write rule");
+    let ae = serde_json::json!({"filename": "ae.csv", "domain": "AE",
+        "records": {"DM": ["not a DM dataset", "another row"], "AESEQ": [1, 2]}});
+    let dm = serde_json::json!({"filename": "dm.csv", "domain": "DM",
+        "records": {"USUBJID": ["01"]}});
+    for compat in [false, true] {
+        for has_dm in [false, true] {
+            let datasets = if has_dm {
+                vec![ae.clone(), dm.clone()]
+            } else {
+                vec![ae.clone()]
+            };
+            fs::write(&data, serde_json::json!({"datasets": datasets}).to_string())
+                .expect("write data");
+            let outcome = run_validation(ValidateRequest {
+                rule_paths: vec![rule.clone()],
+                dataset_paths: vec![data.clone()],
+                open_rules_oracle_compat: compat,
+                ..Default::default()
+            })
+            .expect("validate");
+            let [result] = outcome.results.as_slice() else {
+                panic!("expected exactly one study-level result");
+            };
+            assert_eq!(result.dataset, "STUDY");
+            assert_eq!(result.domain, None);
+            if has_dm {
+                assert_eq!(result.execution_status, ExecutionStatus::Passed);
+                assert!(result.errors.is_empty());
+            } else {
+                assert_eq!(result.execution_status, ExecutionStatus::Failed);
+                let [issue] = result.errors.as_slice() else {
+                    panic!("expected exactly one missing-domain finding");
+                };
+                assert_eq!(issue.variables, ["DM"]);
+                assert_eq!(
+                    (issue.row, &issue.usubjid, &issue.seq),
+                    (None, &None, &None)
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn run_validation_executes_domain_presence_rule_against_loaded_datasets() {
     let dir = tempdir().expect("tempdir");

@@ -552,10 +552,12 @@ fn skipped_unsupported_rule(
         ));
     }
 
-    if !matches!(
+    let supported_sensitivity = matches!(
         rule.sensitivity,
         Some(Sensitivity::Record | Sensitivity::Dataset | Sensitivity::Group)
-    ) {
+    ) || (rule.sensitivity == Some(Sensitivity::Study)
+        && rule.rule_type == RuleType::DomainPresence);
+    if !supported_sensitivity {
         return Some(RuleValidationResult::skipped_rule(
             rule.core_id.clone(),
             SkippedReason::UnsupportedRuleType,
