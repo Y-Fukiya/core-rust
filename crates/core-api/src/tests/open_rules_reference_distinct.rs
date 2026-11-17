@@ -258,7 +258,7 @@ fn assert_core_000609_findings(
 }
 
 #[test]
-fn run_validation_core_000660_passes_absent_to_reference_distinct_from_scoped_values() {
+fn run_validation_core_000660_skips_when_the_reference_dataset_is_missing() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -308,19 +308,27 @@ Outcome:
     fs::write(data_dir.join("em.csv"), "SPTOBID\nVAPE-Z01\n").expect("write em csv");
     fs::write(data_dir.join("tx.csv"), "TXPARMCD,TXVAL\nMETACTFL,Y\n").expect("write tx csv");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![data_dir.clone()],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 3);
-    assert!(outcome
-        .results
-        .iter()
-        .all(|result| result.execution_status == ExecutionStatus::Passed));
+        let [result] = outcome.results.as_slice() else {
+            panic!("expected one rule-level outcome, compat={compat}: {outcome:?}");
+        };
+        assert_eq!(result.execution_status, ExecutionStatus::Skipped);
+        assert_eq!(
+            result.skipped_reason,
+            Some(SkippedReason::OperationsNotSupported)
+        );
+        assert_eq!(result.error_count, 0);
+        assert!(result.errors.is_empty());
+    }
 }
 
 #[test]

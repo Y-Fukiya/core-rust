@@ -45,7 +45,6 @@ pub(crate) const CORE_000595: &str = "CORE-000595";
 pub(crate) const CORE_000597: &str = "CORE-000597";
 pub(crate) const CORE_000651: &str = "CORE-000651";
 pub(crate) const CORE_000654: &str = "CORE-000654";
-pub(crate) const CORE_000660: &str = "CORE-000660";
 pub(crate) const CORE_000670: &str = "CORE-000670";
 pub(crate) const CORE_000676: &str = "CORE-000676";
 pub(crate) const CORE_000678: &str = "CORE-000678";
@@ -383,7 +382,6 @@ pub(crate) fn is_absent_reference_distinct_source_pass_through_rule(
     source_name: &str,
 ) -> bool {
     (rule.core_id == CORE_000678 && source_name.eq_ignore_ascii_case("POOLDEF"))
-        || (rule.core_id == CORE_000660 && source_name.eq_ignore_ascii_case("TO"))
         || (rule.core_id == CORE_000676 && source_name.eq_ignore_ascii_case("TO"))
 }
 
