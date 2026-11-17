@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  candidate-relrec-ct:
+  review-published-mismatches:
     runs-on: ubuntu-22.04
     timeout-minutes: 22
     env:
@@ -21,66 +21,63 @@ jobs:
         with:
           repository: cdisc-org/cdisc-open-rules
           ref: 1881cb9a1f9a38b6cafc785eca5169b240981f66
-          path: target/skip-candidate
+          path: target/published
           persist-credentials: false
+      - name: Replay supported cases first, then deferred cases and the ADaMIG control
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
+          review=tests/open_rules/diagnostic/accepted-review
+          mkdir -p target/published-mismatch-evidence
+          git clone --shared --no-checkout target/published target/reviewed-trial
+          git -C target/reviewed-trial checkout --detach 1881cb9a1f9a38b6cafc785eca5169b240981f66
+          for patch in candidate-existing relrec-ct-oracles; do
+            gzip -dc "$review/$patch.patch.gz" > "target/$patch.patch"
+            git -C target/reviewed-trial apply --check "$PWD/target/$patch.patch"
+            git -C target/reviewed-trial apply "$PWD/target/$patch.patch"
+          done
+          gzip -dc "$review/relrec-ct-oracles.json.gz" > target/trial-oracles.json
+          curl --fail --location --retry 2 --max-time 120 "$(jq -er .engine.asset_url "$profile")" --output target/core.tar.gz
+          python3 scripts/review_published_mismatches.py replay --raw target/published --trial target/reviewed-trial \
+            --profile "$profile" --archive target/core.tar.gz --out target/published-mismatch-evidence \
+            --scratch target/fresh-reports --older-manifest "$review/candidate-existing.json" \
+            --trial-manifest target/trial-oracles.json
       - uses: dtolnay/rust-toolchain@1.93.1
       - name: Run Rust workspace regressions
         run: cargo test --workspace --locked
-      - name: Replay both RELREC cases and all three CT cases on pinned CORE
+      - name: Execute Rust independently on published and trial inputs
         shell: bash
         run: |
           set -euo pipefail
-          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
-          mkdir -p target
-          jq '.cases = [
-            {label:"relrec-negative-01", rule_id:"CORE-000901", fixture:"CORE-000901/negative/01", environment:{PRODUCT:"SDTMIG", VERSION:"3-4"}},
-            {label:"relrec-positive-01", rule_id:"CORE-000901", fixture:"CORE-000901/positive/01", environment:{PRODUCT:"SDTMIG", VERSION:"3-4"}},
-            {label:"ct-negative-01", rule_id:"CORE-000929", fixture:"CORE-000929/negative/01", environment:{PRODUCT:"SDTMIG", VERSION:"3-3", DEFINE_XML:"define_negative1.xml"}},
-            {label:"ct-negative-02", rule_id:"CORE-000929", fixture:"CORE-000929/negative/02", environment:{PRODUCT:"SDTMIG", VERSION:"3-4", DEFINE_XML:"define_negative2.xml"}},
-            {label:"ct-positive-01", rule_id:"CORE-000929", fixture:"CORE-000929/positive/01", environment:{PRODUCT:"SDTMIG", VERSION:"3-3", DEFINE_XML:"define_positive1.xml"}}
-          ]' "$profile" > target/relrec-ct-profile.json
-          curl --fail --location --retry 2 --max-time 120 "$(jq -er .engine.asset_url "$profile")" --output target/core.tar.gz
-          python3 scripts/open_rules_official_audit.py --profile target/relrec-ct-profile.json \
-            --rules-root target/skip-candidate --engine-archive target/core.tar.gz --out target/relrec-ct-evidence/official
-      - name: Validate trial projections and score the full candidate in both modes
-        shell: bash
-        run: |
-          set -euo pipefail
-          review=tests/open_rules/diagnostic/accepted-review
-          evidence=target/relrec-ct-evidence
-          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
-          git clone --shared --no-checkout target/skip-candidate target/skip-proposal
-          git -C target/skip-proposal checkout --detach 1881cb9a1f9a38b6cafc785eca5169b240981f66
-          for patch in candidate-existing relrec-ct-oracles; do
-            gzip -dc "$review/$patch.patch.gz" > "target/$patch.patch"
-            git -C target/skip-proposal apply --check "$PWD/target/$patch.patch"
-            git -C target/skip-proposal apply "$PWD/target/$patch.patch"
-          done
-          gzip -dc "$review/relrec-ct-oracles.json.gz" > "$evidence/relrec-ct-oracles.json"
-          options=(--raw target/skip-candidate --proposal target/skip-proposal --profile "$profile"
-                   --manifest "$evidence/relrec-ct-oracles.json" --previous "$review/candidate-existing.json"
-                   --official "$evidence/official")
-          python3 scripts/verify_relrec_ct_trial.py verify "${options[@]}"
           cargo build --locked -p xtask
-          score_status=0
-          target/debug/xtask open-rules run-score --open-rules-root target/skip-proposal \
-            --core-rs-results-root target/skip-rust --out "$evidence/default" || score_status=$?
-          printf '%s\n' "$score_status" > "$evidence/candidate-default-exit.txt"
-          test "$score_status" = 1
-          strict_status=0
-          target/debug/xtask open-rules score --strict-scoring --open-rules-root target/skip-proposal \
-            --core-rs-results-root target/skip-rust --out "$evidence/strict" || strict_status=$?
-          printf '%s\n' "$strict_status" > "$evidence/candidate-strict-exit.txt"
-          python3 scripts/verify_relrec_ct_trial.py verify "${options[@]}" \
-            --default "$evidence/default/scoreboard.json" --strict "$evidence/strict/scoreboard.json"
-          raw_status=0
-          target/debug/xtask open-rules score --open-rules-root target/skip-candidate \
-            --core-rs-results-root target/skip-rust --out "$evidence/published-oracles" || raw_status=$?
-          printf '%s\n' "$raw_status" > "$evidence/published-oracles-exit.txt"
-          test -s "$evidence/published-oracles/scoreboard.json"
+          xtask=target/debug/xtask
+          evidence=target/published-mismatch-evidence
+          for mode in raw trial; do
+            src=target/published
+            if [ "$mode" = trial ]; then src=target/reviewed-trial; fi
+            reports="target/rust-$mode"
+            status=0
+            "$xtask" open-rules run-score --open-rules-root "$src" --core-rs-results-root "$reports" \
+              --out "$evidence/$mode-default" || status=$?
+            printf '%s\n' "$status" > "$evidence/$mode-default-exit.txt"
+            cp "$reports/run-summary.json" "$evidence/$mode-run-summary.json"
+            if [ "$mode" = trial ]; then
+              status=0
+              "$xtask" open-rules score --strict-scoring --open-rules-root "$src" \
+                --core-rs-results-root "$reports" --out "$evidence/trial-strict" || status=$?
+              printf '%s\n' "$status" > "$evidence/trial-strict-exit.txt"
+            fi
+            status=0
+            "$xtask" open-rules score --strict-scoring --open-rules-root "target/fresh-reports/$mode" \
+              --core-rs-results-root "$reports" --out "$evidence/$mode-fresh" || status=$?
+            printf '%s\n' "$status" > "$evidence/$mode-fresh-exit.txt"
+          done
+          python3 scripts/review_published_mismatches.py report --out "$evidence"
+          git -C target/published diff --exit-code HEAD -- .
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: candidate-relrec-ct-evidence
-          path: target/relrec-ct-evidence
+          name: published-mismatch-evidence
+          path: target/published-mismatch-evidence
           if-no-files-found: error
