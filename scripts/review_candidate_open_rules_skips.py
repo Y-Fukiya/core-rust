@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("candidate", "profile", "archive", "plan", "out"):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--only", type=Path, help="manifest containing new_cases to replay")
     args = parser.parse_args()
     raw, out = args.candidate.resolve(), args.out.resolve()
     plan = load(args.plan)
@@ -22,6 +23,11 @@ def main():
         raise ValueError("expected the frozen 55 unsupported and 49 deferred cases")
     if len(set(cases)) != len(cases) or not all(FIXTURE.fullmatch(case) for case in cases):
         raise ValueError("duplicate or invalid case keys")
+    if args.only:
+        selected = load(args.only)["new_cases"]
+        if not selected or len(set(selected)) != len(selected) or set(selected) - set(cases):
+            raise ValueError("selected cases must be a nonempty subset of the frozen inventory")
+        plan = {phase: [case for case in group if case in selected] for phase, group in plan.items()}
     out.mkdir(parents=True)
     audit.check_platform(out, raw)
     profile = audit.load_profile(args.profile)
