@@ -939,7 +939,6 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
     let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
     let mut errors = Vec::new();
     for dataset in source_datasets {
-        let source_is_supp = core_000206_is_supp_dataset(dataset);
         let rdomains = dataset_column_values(dataset, "RDOMAIN").unwrap_or_default();
         let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
         let idvars = dataset_column_values(dataset, "IDVAR").unwrap_or_default();
@@ -956,13 +955,6 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
                 continue;
             }
             let usubjid = core_000206_cell(&usubjids, row);
-            if source_is_supp
-                && !core_000206_parent_has_idvarval_any_subject(
-                    datasets, &rdomain, &idvar, &idvarval,
-                )
-            {
-                continue;
-            }
             if core_000206_parent_has_idvarval(datasets, &rdomain, &usubjid, &idvar, &idvarval) {
                 continue;
             }
@@ -971,12 +963,7 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
                 dataset: dataset.metadata.name.clone(),
                 domain: dataset.metadata.domain.clone(),
                 row: Some(row + 1),
-                variables: vec![
-                    "RDOMAIN".to_owned(),
-                    "USUBJID".to_owned(),
-                    "IDVAR".to_owned(),
-                    "IDVARVAL".to_owned(),
-                ],
+                variables: rule.output_variables.clone(),
                 message: message.clone(),
                 usubjid: (!usubjid.is_empty()).then_some(usubjid),
                 seq: None,
@@ -1020,27 +1007,6 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
 fn core_000206_is_source_dataset(dataset: &LoadedDataset) -> bool {
     let name = dataset_metadata_name(dataset).to_ascii_uppercase();
     name == "CO" || name == "RELREC" || name.starts_with("SUPP")
-}
-
-fn core_000206_is_supp_dataset(dataset: &LoadedDataset) -> bool {
-    dataset_metadata_name(dataset)
-        .to_ascii_uppercase()
-        .starts_with("SUPP")
-}
-
-fn core_000206_parent_has_idvarval_any_subject(
-    datasets: &[LoadedDataset],
-    rdomain: &str,
-    idvar: &str,
-    idvarval: &str,
-) -> bool {
-    let Some(parent) = find_dataset(datasets, rdomain) else {
-        return false;
-    };
-    let Ok(parent_values) = dataset_column_values(parent, idvar) else {
-        return false;
-    };
-    (0..parent.summary().row_count).any(|row| core_000206_cell(&parent_values, row) == idvarval)
 }
 
 fn core_000206_parent_has_idvarval(
