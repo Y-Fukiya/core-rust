@@ -818,6 +818,27 @@ CORE-000361,failed,SV,SV,1,VISITNUM,bad,1,,SUBJ-01,\n",
 }
 
 #[test]
+fn row_only_oracle_keeps_existing_locator_gap_policy() {
+    let dir = tempdir().expect("tempdir");
+    let case = write_score_fixture(
+        dir.path(),
+        "CORE-000137",
+        "negative",
+        "01",
+        "rule_id,dataset,row,variables\nCORE-000137,EC,12,ECDOSE\n",
+        "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000137,failed,EC,EC,12,ECDOSE,bad,1,,,\n",
+    );
+    let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+    assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+    assert_eq!(
+        scored[0].scoring_normalizations,
+        ["row_locator_identity_relaxed"]
+    );
+}
+
+#[test]
 fn row_locator_oracle_gap_normalization_does_not_hide_issue_count_differences() {
     let dir = tempdir().expect("tempdir");
     let case = write_score_fixture(

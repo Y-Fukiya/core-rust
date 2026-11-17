@@ -343,9 +343,11 @@ fn score_case(
 
     let mut official_issues = official.issues;
     let exact_locator_match = !options.strict_scoring
-        && row_locator_oracle_gap_category(case)
         && official_issues.len() == candidate.issues.len()
-        && !official_issues.is_empty()
+        && row_locator_oracle_gap_category(case)
+        && official_issues
+            .iter()
+            .any(|issue| !issue.usubjid.is_empty() || !issue.seq.is_empty())
         && issue_counts(official_issues.iter()) == issue_counts(candidate.issues.iter());
     let (candidate_issues, scoring_normalizations, identity_alignment) =
         if options.strict_scoring || exact_locator_match {
