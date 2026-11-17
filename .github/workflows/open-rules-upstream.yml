@@ -208,6 +208,45 @@ jobs:
           test "$trial_status" = 0
           test "$(head -n 1 "$evidence/trial-full-gate.txt")" = \
             'open-rules baseline: 0 regression(s), 0 improvement(s), 0 review-required'
+      - name: Replay two proposed profile repairs without CLI overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          review=tests/open_rules/diagnostic/accepted-review
+          evidence=target/accepted-review/profile-repairs
+          python3 scripts/review_open_rules_profile_repairs.py \
+            --raw target/accepted-raw --subset "$evidence/fixture-proposals" \
+            --engine-profile tests/open_rules/diagnostic/cdisc-v1-candidate.json \
+            --archive target/core-accepted.tar.gz --plan "$review/plan.json" \
+            --frozen "$review/frozen-profile-locators.json" --out "$evidence/official"
+      - name: Score the repaired profiles in default and strict modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=target/accepted-review/profile-repairs
+          subset="$evidence/fixture-proposals"
+          rust="$evidence/candidate"
+          default_status=0
+          strict_status=0
+          target/debug/xtask open-rules run-score --open-rules-root "$subset" \
+            --core-rs-results-root "$rust" --out "$evidence/default" || default_status=$?
+          test -s "$evidence/default/scoreboard.json"
+          target/debug/xtask open-rules score --strict-scoring --open-rules-root "$subset" \
+            --core-rs-results-root "$rust" --out "$evidence/strict" || strict_status=$?
+          printf 'default %s\nstrict %s\n' "$default_status" "$strict_status" > "$evidence/exit-codes.txt"
+          for mode in default strict; do
+            jq -r '.cases[] | [.rule_id, .case_kind, .case_id, .bucket, .official_issue_count,
+              .candidate_issue_count, .missing_count, .extra_count] | @tsv' "$evidence/$mode/scoreboard.json"
+          done
+          for mode in default strict; do
+            jq -e --slurpfile repairs "$evidence/official/profile-repairs.json" '
+              .summary.total_cases == 2 and .summary.harness_error == 0 and
+              ([.cases[] | [.scope, .rule_id, .case_kind, .case_id] | join("/")] | sort) ==
+                ($repairs[0].repairs | map(.case) | sort) and
+              all(.cases[]; .bucket == "supported_match" and .missing_count == 0 and .extra_count == 0 and
+                ((.scoring_normalizations // []) | length) == 0)
+            ' "$evidence/$mode/scoreboard.json"
+          done
       - name: Preserve raw acceptance failure
         if: always()
         shell: bash
