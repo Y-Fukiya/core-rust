@@ -5,6 +5,7 @@ mod api_types;
 mod cdisc_context;
 mod condition_inspect;
 mod dataset_helpers;
+mod domain_labels;
 mod domain_presence;
 mod engine_semantics;
 mod execution_provenance;
@@ -204,7 +205,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         let cdisc_context = cdisc_context
             .as_ref()
             .ok_or_else(|| ApiError::Internal("missing CDISC context".to_owned()))?;
-        let mut rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
+        let mut rule = prepare_rule_for_execution(
+            rule,
+            cdisc_context,
+            request.standard.as_deref(),
+            request.standard_version.as_deref(),
+        );
         if !open_rules_compat {
             if let Some(result) = core_000206_idvarval_rdomain_result(&rule, &datasets) {
                 results.push(result);

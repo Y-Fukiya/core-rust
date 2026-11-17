@@ -4,6 +4,7 @@ use core_data::{dataset_column_values, DataError, LoadedDataset};
 use core_rule_model::OperationSpec;
 use serde_json::Value;
 
+use crate::domain_labels::bound_domain_label;
 use crate::json_values::json_scalar_string;
 use crate::operation_execution::operation_column_values;
 use crate::operation_fields::{
@@ -24,12 +25,16 @@ use crate::{
 pub(crate) fn derive_domain_label_dataset(
     dataset: &LoadedDataset,
     column_name: &str,
-    prefer_domain_name: bool,
+    operation: &OperationSpec,
 ) -> std::result::Result<LoadedDataset, DataError> {
+    let prefer_domain_name = string_field(operation, &["domain_label_source"])
+        .is_some_and(|source| normalize_operation_key(&source) == "domain");
     let label = if prefer_domain_name {
         domain_name_value(dataset)
     } else {
-        domain_label_value(dataset)
+        bound_domain_label(operation, dataset)
+            .map(str::to_owned)
+            .unwrap_or_else(|| domain_label_value(dataset))
     };
     let values = (0..dataset.summary().row_count)
         .map(|_| Value::String(label.clone()))
