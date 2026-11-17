@@ -18,6 +18,7 @@ SUPPORTED = ((132, "negative"), (308, "negative"), (457, "positive"),
 DEFERRED = ((239, "negative"), (560, "negative"), (690, "positive"),
             (699, "negative"), (711, "negative"), (714, "negative"), (866, "negative"))
 CONTROL = "Published/CORE-000560/positive/01"
+RECOVERED_HEADER_CASE = "Published/CORE-000457/positive/01"
 KEYS = [f"Published/CORE-{rule:06d}/{kind}/01" for rule, kind in SUPPORTED + DEFERRED]
 MODES = ("raw", "trial")
 EXECUTED = {"success", "issue_reported"}
@@ -155,6 +156,8 @@ def report(args):
             category = "inapplicable_or_unconfirmed"
         elif strict_fresh["trial"][key]["bucket"] != "supported_match":
             category = "rust_or_projection_difference"
+        elif key == RECOVERED_HEADER_CASE and strict_fresh["raw"].get(key, {}).get("bucket") == "supported_match":
+            category = "fixture_and_rust_header_recovery"
         elif raw_run["effective_data_sha256"] != trial_run["effective_data_sha256"]:
             category = "fixture_or_profile"
         elif raw_run["outcome"] not in EXECUTED:
@@ -190,6 +193,13 @@ def report(args):
         raise ValueError("full scoring had harness errors")
     if tested["supported_mismatch"] or tested["deferred_oracle_gap_mismatch"]:
         raise ValueError("trial full-corpus mismatches remain")
+    recovery = next(row for row in rows if row["case"] == RECOVERED_HEADER_CASE)
+    if (recovery["category"] != "fixture_and_rust_header_recovery"
+            or (recovery["raw"]["official_rows"], recovery["trial"]["official_rows"]) != (2, 0)):
+        raise ValueError("CORE-000457 must match official CORE before and after header repair")
+    if any(row["category"] in {"rust_or_projection_difference", "inapplicable_or_unconfirmed"}
+           for row in rows):
+        raise ValueError("a reviewed case still lacks a verified disposition")
 
 
 if __name__ == "__main__":
