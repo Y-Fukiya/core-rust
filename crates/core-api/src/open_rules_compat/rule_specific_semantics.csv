@@ -160,6 +160,7 @@ CORE-000884,engine_semantics,operation_adapter,TS AGE AGEU AGETXT parameter coun
 CORE-000878,engine_semantics,usdm_condition_context,invalid condition context reports all invalid context references from USDM datasets,core-api,full-upstream-baseline,oracle_observation,rule_text_and_regression_review,open-rules-oracle-harness
 CORE-000893,engine_semantics,result_postprocess,TX distinct group findings are reported once per offending SETCD group,core-api,full-upstream-baseline,oracle_observation,rule_text_and_regression_review,open-rules-oracle-harness
 CORE-000890,engine_semantics,metadata_adapter,value level metadata support exception,core-api,core-api-lib-inventory,implementation_inventory,classification_inventory,open-rules-oracle-harness
+CORE-000609,engine_semantics,operation_adapter,Record-level SETCD membership in non-missing TX values including TX records,core-api,official-core-v1.0.0-fixtures,oracle_observation,rule_text_and_regression_review,open-rules-oracle-harness
 CORE-000896,engine_semantics,operation_adapter,Record-level POOLID membership in POOLDEF,core-api,full-upstream-baseline,oracle_observation,rule_text_and_regression_review,open-rules-oracle-harness
 CORE-000902,engine_semantics,metadata_adapter,model column order metadata adapter,core-api,core-api-lib-inventory,implementation_inventory,classification_inventory,open-rules-oracle-harness
 CORE-000903,engine_semantics,metadata_adapter,CDISC Library variable metadata adapter,core-api,core-api-lib-inventory,implementation_inventory,classification_inventory,open-rules-oracle-harness

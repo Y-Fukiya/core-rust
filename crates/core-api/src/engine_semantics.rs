@@ -1,5 +1,7 @@
 use core_rule_model::ExecutableRule;
 
+pub(crate) const CORE_000609: &str = "CORE-000609";
+
 pub(crate) const CORE_000015: &str = "CORE-000015";
 pub(crate) const CORE_000007: &str = "CORE-000007";
 pub(crate) const CORE_000025: &str = "CORE-000025";

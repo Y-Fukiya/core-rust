@@ -41,8 +41,8 @@ mod usdm_timeline;
 mod usdm_values;
 mod xpt;
 
-pub use csv_dataset::load_csv_dataset;
 pub(crate) use csv_dataset::parse_csv_bool;
+pub use csv_dataset::{dataset_setcd_values, load_csv_dataset};
 pub(crate) use csv_records::{
     csv_records_to_dict_rows, normalize_dataset_name, normalize_metadata_name, read_csv_dict_rows,
     read_csv_records, row_string, CsvRecords,
@@ -157,11 +157,16 @@ pub struct DatasetSummary {
 pub struct LoadedDataset {
     pub metadata: DatasetMetadata,
     frame: DataFrame,
+    csv_setcd: Option<Column>,
 }
 
 impl LoadedDataset {
     pub fn new(metadata: DatasetMetadata, frame: DataFrame) -> Self {
-        Self { metadata, frame }
+        Self {
+            metadata,
+            frame,
+            csv_setcd: None,
+        }
     }
 
     pub fn metadata(&self) -> &DatasetMetadata {

@@ -1,11 +1,99 @@
-use core_data::{DataError, LoadedDataset};
-use core_rule_model::OperationSpec;
+use std::collections::BTreeSet;
+
+use core_data::{dataset_setcd_values, DataError, LoadedDataset};
+use core_engine::RuleValidationResult;
+use core_rule_model::{
+    Condition, ConditionGroup, ExecutableRule, OperationSpec, Operator, RuleType, Sensitivity,
+    ValueExpr,
+};
 use serde_json::Value;
 
-use crate::derive_column_from_values_with_aliases;
+use crate::dataset_helpers::dataset_column_name;
 use crate::json_values::json_scalar_string;
 use crate::operation_execution::operation_column_values;
 use crate::operation_fields::operation_value;
+use crate::scope_filter::filter_datasets_by_rule_scope;
+use crate::{derive_column_from_values_with_aliases, find_dataset, operation_skipped_result};
+
+const SETCD_NOT_IN_TX: &str = "__core_setcd_not_in_tx";
+
+pub(crate) fn is_tx_setcd_reference_rule(rule: &ExecutableRule) -> bool {
+    if rule.core_id != crate::engine_semantics::CORE_000609
+        || rule.rule_type != RuleType::RecordData
+        || rule.sensitivity != Some(Sensitivity::Record)
+        || rule.entities.is_some()
+        || rule
+            .datasets
+            .as_ref()
+            .is_some_and(|datasets| !datasets.is_empty())
+    {
+        return false;
+    }
+    let [operation] = rule.operations.as_slice() else {
+        return false;
+    };
+    let ConditionGroup::All(conditions) = &rule.conditions else {
+        return false;
+    };
+    let [ConditionGroup::Leaf(condition)] = conditions.as_slice() else {
+        return false;
+    };
+    operation.fields.len() == 4
+        && [
+            ("domain", "TX"),
+            ("id", "$tx_setcd"),
+            ("name", "SETCD"),
+            ("operator", "distinct"),
+        ]
+        .into_iter()
+        .all(|(key, expected)| operation.fields.get(key).and_then(Value::as_str) == Some(expected))
+        && condition.target.as_deref() == Some("SETCD")
+        && condition.operator == Operator::IsNotContainedBy
+        && matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column == "tx_setcd")
+        && condition.options.extra.is_empty()
+}
+
+pub(crate) fn bind_tx_setcd_reference(
+    rule: &mut ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let tx = find_dataset(datasets, "TX")
+        .ok_or_else(|| operation_skipped_result(rule, "dataset TX was not loaded"))?;
+    let source_column = dataset_column_name(tx, "SETCD")
+        .ok_or_else(|| operation_skipped_result(rule, "dataset TX has no SETCD column"))?;
+    let source = dataset_setcd_values(tx, &source_column)
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
+    let setcds: BTreeSet<&str> = source
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .collect();
+    let scoped = filter_datasets_by_rule_scope(rule, datasets)
+        .into_iter()
+        .filter_map(|dataset| dataset_column_name(&dataset, "SETCD").map(|name| (dataset, name)))
+        .map(|(dataset, column)| {
+            let not_in_tx = dataset_setcd_values(&dataset, &column)?
+                .iter()
+                .map(|value| {
+                    Value::Bool(!value.as_str().is_some_and(|value| setcds.contains(value)))
+                })
+                .collect::<Vec<_>>();
+            derive_column_from_values_with_aliases(&dataset, SETCD_NOT_IN_TX, &not_in_tx)
+        })
+        .collect::<std::result::Result<Vec<_>, DataError>>()
+        .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
+
+    rule.conditions = ConditionGroup::Leaf(Condition {
+        target: Some(SETCD_NOT_IN_TX.to_owned()),
+        operator: Operator::EqualTo,
+        comparator: ValueExpr::Literal(Value::Bool(true)),
+        options: Default::default(),
+    });
+    if rule.output_variables.is_empty() {
+        rule.output_variables = vec!["SETCD".to_owned(), "$tx_setcd".to_owned()];
+    }
+    Ok(scoped)
+}
 
 pub(crate) fn operation_reference_values(
     dataset: &LoadedDataset,

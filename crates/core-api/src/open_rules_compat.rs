@@ -93,7 +93,7 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
     include_str!("open_rules_compat/rule_specific_semantics.csv");
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,evidence_type,promotion_basis,scope";
-const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 261;
+const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 262;
 const RULE_SPECIFIC_SEMANTICS_CLASSIFICATIONS: &[&str] = &[
     "compatibility_policy",
     "engine_semantics",
