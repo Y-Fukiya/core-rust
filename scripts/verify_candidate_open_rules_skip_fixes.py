@@ -63,7 +63,7 @@ def verify_fresh_official(official, proposal, manifest):
         raise ValueError("official replay has the wrong rules SHA")
     cases = {row["case"]: row for phase in receipts["phases"].values() for row in phase["cases"]}
     names = set(manifest["new_cases"])
-    if len(names) != 8 or set(cases) != names:
+    if not names or len(names) != len(manifest["new_cases"]) or set(cases) != names:
         raise ValueError("unexpected fresh official case set")
 
     def cell(value):
