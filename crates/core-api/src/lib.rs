@@ -3,6 +3,7 @@
 
 mod api_types;
 mod cdisc_context;
+mod checked_variable_metadata;
 mod condition_inspect;
 mod dataset_helpers;
 mod domain_labels;
@@ -1477,6 +1478,9 @@ fn variable_metadata_execution_datasets(
     datasets: &[LoadedDataset],
     request: &ValidateRequest,
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    if let Some(plan) = checked_variable_metadata::VariableListPlan::from_rule(rule) {
+        return plan.execute(rule, datasets, request);
+    }
     if has_dataset_column_order_operation(rule)
         && (has_expected_variables_operation(rule)
             || has_required_variables_operation(rule)

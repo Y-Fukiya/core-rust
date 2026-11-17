@@ -48,6 +48,9 @@ pub(crate) fn is_supported_dataset_metadata_rule(rule: &ExecutableRule) -> bool 
 }
 
 pub(crate) fn is_supported_variable_metadata_rule(rule: &ExecutableRule) -> bool {
+    if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some() {
+        return true;
+    }
     (rule.operations.is_empty()
         || rule.operations.iter().all(|operation| {
             matches!(

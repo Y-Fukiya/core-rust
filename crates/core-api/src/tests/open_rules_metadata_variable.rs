@@ -5,6 +5,108 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use crate::{run_validation, ValidateRequest};
+
+#[test]
+fn reviewed_expected_variables_are_bound_to_the_requested_version() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("expected.yml");
+    let data = dir.path().join("lb.csv");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999334, Status: Published}
+Authorities:
+  - Standards: [{Name: SDTMIG, Version: "3.2"}, {Name: SDTMIG, Version: "3.3"}, {Name: SDTMIG, Version: "3.4"}]
+Rule Type: Variable Metadata Check
+Sensitivity: Dataset
+Operations:
+  - {id: $expected, operator: expected_variables}
+  - {id: $observed, operator: get_column_order_from_dataset}
+  - {id: $missing, name: $expected, subtract: $observed, operator: minus}
+Check: {name: variable_name, operator: not_contains_all, value: $expected}
+Outcome: {Message: Missing expected variable, Output Variables: [$missing]}
+"#,
+    )
+    .expect("write rule");
+    let header = "DOMAIN,LBCAT,LBORRES,LBORRESU,LBORNRLO,LBORNRHI,LBSTRESC,LBSTRESN,LBSTRESU,LBSTNRLO,LBSTNRHI,LBNRIND,LBLOBXFL,VISITNUM,LBDTC";
+    fs::write(&data, format!("{header}\nLB{}\n", ",x".repeat(14))).expect("write data");
+    for (version, expected) in [
+        ("3.3", ExecutionStatus::Failed),
+        ("3.4", ExecutionStatus::Passed),
+        ("3.2", ExecutionStatus::Skipped),
+    ] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some(version.to_owned()),
+            ..Default::default()
+        })
+        .expect("validate");
+        let [result] = outcome.results.as_slice() else {
+            panic!("expected one dataset result")
+        };
+        assert_eq!(result.execution_status, expected);
+        if expected == ExecutionStatus::Failed {
+            assert_eq!(result.errors[0].dataset, "LB");
+            assert_eq!(result.errors[0].row, None);
+            assert_eq!(result.errors[0].variables, ["$missing"]);
+        }
+    }
+}
+
+#[test]
+fn reviewed_column_order_uses_the_actual_columns_and_library_intersection() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("order.yml");
+    let data = dir.path().join("se.csv");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999852, Status: Published}
+Authorities:
+  - Standards: [{Name: SDTMIG, Version: "3.4"}]
+Rule Type: Variable Metadata Check
+Sensitivity: Dataset
+Operations:
+  - {id: $library, operator: get_column_order_from_library}
+  - {id: $observed, operator: get_column_order_from_dataset}
+  - {id: $applicable, name: $library, subtract: $observed, operator: intersect}
+Check: {name: $observed, operator: is_not_ordered_subset_of, value: $applicable}
+Outcome: {Message: Incorrect order, Output Variables: [$observed, $applicable]}
+"#,
+    )
+    .expect("write rule");
+    for (contents, expected) in [
+        (
+            "STUDYID,DOMAIN,SESEQ,ETCD\nT,SE,1,A\n",
+            ExecutionStatus::Passed,
+        ),
+        (
+            "STUDYID,DOMAIN,ETCD,SESEQ\nT,SE,A,1\n",
+            ExecutionStatus::Failed,
+        ),
+        ("STUDYID,DOMAIN,NONMODEL\nT,SE,x\n", ExecutionStatus::Failed),
+    ] {
+        fs::write(&data, contents).expect("write data");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some("3.4".to_owned()),
+            ..Default::default()
+        })
+        .expect("validate");
+        let [result] = outcome.results.as_slice() else {
+            panic!("expected one dataset result")
+        };
+        assert_eq!(result.execution_status, expected);
+        if expected == ExecutionStatus::Failed {
+            assert_eq!(result.errors[0].dataset, "SE");
+            assert_eq!(result.errors[0].row, None);
+            assert_eq!(result.errors[0].variables, ["$observed", "$applicable"]);
+        }
+    }
+}
+
 #[test]
 fn run_validation_executes_variable_metadata_label_length_rule() {
     let dir = tempdir().expect("tempdir");

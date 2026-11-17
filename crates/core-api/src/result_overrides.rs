@@ -478,6 +478,9 @@ pub(crate) fn should_ignore_evaluation_error(
 }
 
 pub(crate) fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
+    if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some() {
+        return None;
+    }
     rule.operations.iter().find_map(|operation| {
         let name = operation_name(operation).unwrap_or_else(|| "<missing>".to_owned());
         (!is_supported_operation_name(&name)).then_some(name)
