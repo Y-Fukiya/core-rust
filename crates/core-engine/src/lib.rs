@@ -1131,14 +1131,28 @@ fn evaluate_present_on_multiple_rows_within(
         ValueExpr::Null => 1,
         _ => length_comparator(&operator, comparator)?.max(1),
     };
-    let mut counts = std::collections::HashMap::new();
-    let mut row_keys = Vec::with_capacity(row_count);
-    for row in 0..row_count {
-        let key = (group_column.get(row)?, target_column.get(row)?);
-        *counts.entry(key.clone()).or_insert(0) += 1;
-        row_keys.push(key);
+    let group_name = group_column.name().as_str();
+    let target = target_column.name().as_str();
+    let keys = std::iter::once(group_name).chain((group_name != target).then_some(target));
+    let groups = frame.group_by(keys)?;
+    let mut mask = vec![false; row_count];
+    for group in groups
+        .get_groups()
+        .iter()
+        .filter(|group| group.len() > minimum)
+    {
+        match group {
+            GroupsIndicator::Idx((_, rows)) => {
+                for &row in rows.iter() {
+                    mask[row as usize] = true;
+                }
+            }
+            GroupsIndicator::Slice([start, len]) => {
+                mask[start as usize..(start + len) as usize].fill(true);
+            }
+        }
     }
-    Ok(row_keys.iter().map(|key| counts[key] > minimum).collect())
+    Ok(mask)
 }
 
 fn evaluate_not_present_on_multiple_rows_within(

@@ -217,13 +217,12 @@ fn execution_datasets(
 fn reference(family: &str, version: &str) -> Checked<&'static str> {
     REFERENCE
         .lines()
-        .filter_map(|line| {
+        .find_map(|line| {
             let mut fields = line.splitn(3, '\t');
             (fields.next()? == family && fields.next()? == version)
                 .then(|| fields.next())
                 .flatten()
         })
-        .next()
         .ok_or_else(|| format!("no checked {family} reference for {version}"))
 }
 
