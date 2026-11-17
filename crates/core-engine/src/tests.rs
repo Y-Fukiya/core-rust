@@ -1606,6 +1606,45 @@ fn evaluates_does_not_have_next_corresponding_record() {
 }
 
 #[test]
+fn evaluates_present_on_multiple_rows_within_without_dropping_null_keys() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("relationships.json");
+    fs::write(
+        &path,
+        r#"{"datasets":[{"filename":"ae.xpt","domain":"AE","records":{
+            "USUBJID":["A","B","A",null,null,"A","B","A"],
+            "RELID":[1,1,1,null,null,2,1,1]
+        }}]}"#,
+    )
+    .expect("write dataset");
+    let datasets = load_dataset_package_json(&path).expect("load dataset");
+    for (minimum, expected) in [
+        (
+            ValueExpr::Null,
+            vec![true, true, true, true, true, false, true, true],
+        ),
+        (
+            literal(2),
+            vec![true, false, true, false, false, false, false, true],
+        ),
+    ] {
+        assert_eq!(
+            evaluate_condition(
+                &condition_with_options(
+                    "RELID",
+                    Operator::PresentOnMultipleRowsWithin,
+                    minimum,
+                    serde_json::Map::from_iter([("within".to_owned(), json!("USUBJID"))]),
+                ),
+                &datasets[0],
+            )
+            .expect("evaluate repeated values"),
+            expected,
+        );
+    }
+}
+
+#[test]
 fn evaluates_not_present_on_multiple_rows_within() {
     let dataset = relationship_dataset();
 

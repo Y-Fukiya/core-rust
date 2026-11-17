@@ -1,6 +1,6 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use core_data::{dataset_setcd_values, DataError, LoadedDataset};
+use core_data::{dataset_column_values, dataset_setcd_values, DataError, LoadedDataset};
 use core_engine::RuleValidationResult;
 use core_rule_model::{
     Condition, ConditionGroup, ExecutableRule, OperationSpec, Operator, RuleType, Sensitivity,
@@ -11,11 +11,147 @@ use serde_json::Value;
 use crate::dataset_helpers::dataset_column_name;
 use crate::json_values::json_scalar_string;
 use crate::operation_execution::operation_column_values;
-use crate::operation_fields::operation_value;
-use crate::scope_filter::filter_datasets_by_rule_scope;
+use crate::operation_fields::{clean_operation_identifier, operation_value};
+use crate::scope_filter::{filter_datasets_by_rule_scope, scope_values};
 use crate::{derive_column_from_values_with_aliases, find_dataset, operation_skipped_result};
 
 const SETCD_NOT_IN_TX: &str = "__core_setcd_not_in_tx";
+
+pub(crate) fn supp_reference_variable_check(rule: &ExecutableRule) -> Option<String> {
+    if rule.rule_type != RuleType::RecordData
+        || rule.sensitivity != Some(Sensitivity::Record)
+        || rule.entities.is_some()
+        || scope_values(rule.domains.as_ref(), "Include") != ["SUPP--"]
+    {
+        return None;
+    }
+    let [operation] = rule.operations.as_slice() else {
+        return None;
+    };
+    let [child] = rule.datasets.as_deref()? else {
+        return None;
+    };
+    // This child declaration identifies the SUPP records already in scope.
+    if child.fields.len() != 3
+        || child.fields.get("Name").and_then(Value::as_str) != Some("SUPP--")
+        || child.fields.get("Child").and_then(Value::as_bool) != Some(true)
+        || child.fields.get("Keys")?.as_array()? != &["USUBJID", "IDVAR", "IDVARVAL"]
+        || operation.fields.len() != 4
+        || operation.fields.get("operator")?.as_str()? != "referenced_domain_variable_names"
+        || operation.fields.get("domain")?.as_str()? != "SUPP--"
+        || operation.fields.get("name")?.as_str()? != "RDOMAIN"
+        || rule.output_variables != ["IDVAR", "RDOMAIN"]
+    {
+        return None;
+    }
+    let output_id = operation.fields.get("id")?.as_str()?;
+    if !output_id.starts_with('$') {
+        return None;
+    }
+    let output = clean_operation_identifier(output_id);
+    let ConditionGroup::All(conditions) = &rule.conditions else {
+        return None;
+    };
+    let [ConditionGroup::Leaf(domain), ConditionGroup::Leaf(idvar), ConditionGroup::Leaf(membership)] =
+        conditions.as_slice()
+    else {
+        return None;
+    };
+    (domain.target.as_deref() == Some("RDOMAIN")
+        && domain.operator == Operator::Exists
+        && idvar.target.as_deref() == Some("IDVAR")
+        && idvar.operator == Operator::IsNotEmpty
+        && membership.target.as_deref() == Some("IDVAR")
+        && membership.operator == Operator::IsNotContainedBy
+        && matches!(&membership.comparator, ValueExpr::ColumnRef(name) if name == &output)
+        && [domain, idvar, membership]
+            .iter()
+            .all(|check| check.options.extra.is_empty())
+        && !output.is_empty())
+    .then_some(output)
+}
+
+pub(crate) fn bind_supp_reference_variable_check(
+    rule: &mut ExecutableRule,
+    datasets: &[LoadedDataset],
+    output: String,
+) -> Result<Vec<LoadedDataset>, RuleValidationResult> {
+    let scoped = filter_datasets_by_rule_scope(rule, datasets);
+    if scoped.is_empty() {
+        return Err(operation_skipped_result(
+            rule,
+            "no supplemental dataset is in rule scope",
+        ));
+    }
+    let mut variables_by_domain = BTreeMap::<String, BTreeSet<String>>::new();
+    for dataset in datasets {
+        if let Some(domain) = dataset.metadata.domain.as_deref() {
+            variables_by_domain
+                .entry(domain.trim().to_ascii_uppercase())
+                .or_default()
+                .extend(
+                    dataset
+                        .frame()
+                        .get_column_names()
+                        .iter()
+                        .map(|name| name.as_str().to_ascii_uppercase()),
+                );
+        }
+    }
+    let derived = scoped
+        .iter()
+        .map(|dataset| {
+            let required = |name| {
+                dataset_column_name(dataset, name).ok_or_else(|| {
+                    operation_skipped_result(
+                        rule,
+                        format!("dataset {} has no {name} column", dataset.metadata.name),
+                    )
+                })
+            };
+            let columns = |name| {
+                dataset_column_values(dataset, &required(name)?)
+                    .map_err(|source| operation_skipped_result(rule, source.to_string()))
+            };
+            let domains = columns("RDOMAIN")?;
+            let idvars = columns("IDVAR")?;
+            if dataset_column_name(dataset, &output).is_some() {
+                return Err(operation_skipped_result(
+                    rule,
+                    format!("output column {output} already exists"),
+                ));
+            }
+            let invalid = domains
+                .iter()
+                .zip(idvars.iter())
+                .map(|(domain, idvar)| {
+                    let domain = domain
+                        .as_str()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_ascii_uppercase();
+                    Value::Bool(!idvar.as_str().is_some_and(|name| {
+                        variables_by_domain
+                            .get(&domain)
+                            .is_some_and(|columns| columns.contains(name))
+                    }))
+                })
+                .collect::<Vec<_>>();
+            derive_column_from_values_with_aliases(dataset, &output, &invalid)
+                .map_err(|source| operation_skipped_result(rule, source.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if let ConditionGroup::All(conditions) = &mut rule.conditions {
+        conditions[2] = ConditionGroup::Leaf(Condition {
+            target: Some(output),
+            operator: Operator::EqualTo,
+            comparator: ValueExpr::Literal(Value::Bool(true)),
+            options: Default::default(),
+        });
+    }
+    Ok(derived)
+}
 
 pub(crate) fn is_tx_setcd_reference_rule(rule: &ExecutableRule) -> bool {
     if rule.core_id != crate::engine_semantics::CORE_000609

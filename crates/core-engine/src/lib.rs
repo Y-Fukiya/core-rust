@@ -48,6 +48,11 @@ pub enum EngineError {
     MissingTarget,
     #[error("condition using operator {operator} is missing a comparator")]
     MissingComparator { operator: String },
+    #[error("condition using operator {operator} is missing the {option} option")]
+    MissingOperatorOption {
+        operator: String,
+        option: &'static str,
+    },
     #[error("rule is missing sensitivity")]
     MissingSensitivity,
     #[error("dataset is missing required column: {0}")]
@@ -677,6 +682,14 @@ fn evaluate_condition_with_options(
                 &condition.options,
             )
         }
+        Operator::PresentOnMultipleRowsWithin => evaluate_present_on_multiple_rows_within(
+            dataset,
+            frame,
+            row_count,
+            column,
+            &condition.comparator,
+            &condition.options,
+        ),
         Operator::NotPresentOnMultipleRowsWithin => evaluate_not_present_on_multiple_rows_within(
             dataset,
             frame,
@@ -1095,6 +1108,37 @@ fn evaluate_does_not_have_next_corresponding_record(
     }
 
     Ok(mask)
+}
+
+fn evaluate_present_on_multiple_rows_within(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    comparator: &ValueExpr,
+    options: &core_rule_model::OperatorOptions,
+) -> Result<BooleanMask> {
+    let operator = Operator::PresentOnMultipleRowsWithin;
+    let within =
+        option_string(&options.extra, "within").ok_or(EngineError::MissingOperatorOption {
+            operator: operator.as_name().to_owned(),
+            option: "within",
+        })?;
+    let within = expand_domain_placeholder(dataset, &within);
+    let group_column =
+        optional_column(frame, &within)?.ok_or(EngineError::MissingColumn(within))?;
+    let minimum = match comparator {
+        ValueExpr::Null => 1,
+        _ => length_comparator(&operator, comparator)?.max(1),
+    };
+    let mut counts = std::collections::HashMap::new();
+    let mut row_keys = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let key = (group_column.get(row)?, target_column.get(row)?);
+        *counts.entry(key.clone()).or_insert(0) += 1;
+        row_keys.push(key);
+    }
+    Ok(row_keys.iter().map(|key| counts[key] > minimum).collect())
 }
 
 fn evaluate_not_present_on_multiple_rows_within(

@@ -234,6 +234,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         let uses_tx_setcd_reference = operation_references::is_tx_setcd_reference_rule(&rule);
         let execution_datasets = if uses_tx_setcd_reference {
             operation_references::bind_tx_setcd_reference(&mut rule, &datasets)
+        } else if let Some(output) = operation_references::supp_reference_variable_check(&rule) {
+            operation_references::bind_supp_reference_variable_check(&mut rule, &datasets, output)
         } else {
             execution_datasets_for_rule(&rule, &datasets, &request)
         };

@@ -7,6 +7,152 @@ use tempfile::tempdir;
 use crate::{run_validation, ValidateRequest};
 
 #[test]
+fn run_validation_checks_earliest_repeated_consent_against_dm() {
+    let dir = tempdir().expect("tempdir");
+    let rule = dir.path().join("rule.json");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"{
+  "Core": {"Id": "CORE-CONSENT-TEST", "Status": "Published"},
+  "Scope": {"Domains": {"Include": ["DS"]}},
+  "Rule Type": "Record Data", "Sensitivity": "Record",
+  "Match Datasets": [{"Name": "DM", "Keys": ["USUBJID"]}],
+  "Operations": [{"operator": "min_date", "domain": "DS", "name": "DSSTDTC",
+                  "group": ["USUBJID"], "id": "$min_ds_dsstdtc"}],
+  "Check": {"all": [
+    {"name": "DSDECOD", "operator": "present_on_multiple_rows_within", "within": "USUBJID"},
+    {"name": "DSDECOD", "operator": "equal_to", "value": "INFORMED CONSENT OBTAINED", "value_is_literal": true},
+    {"name": "$min_ds_dsstdtc", "operator": "date_not_equal_to", "value": "RFICDTC"},
+    {"name": "$min_ds_dsstdtc", "operator": "date_equal_to", "value": "DSSTDTC"}
+  ]},
+  "Outcome": {"Output Variables": ["DSDECOD", "RFICDTC", "DSSTDTC", "$min_ds_dsstdtc"], "Message": "Consent date mismatch"}
+}"#,
+    )
+    .expect("write rule");
+
+    for (consent_date, expected_rows) in [("2024-01-03", vec![Some(2)]), ("2024-01-01", vec![])] {
+        let consent = "INFORMED CONSENT OBTAINED";
+        let package = serde_json::json!({"datasets": [
+            {"filename": "ds.xpt", "domain": "DS", "records": {
+                "USUBJID": ["A", "A", "B", "B"],
+                "DSDECOD": [consent, consent, consent, "COMPLETED"],
+                "DSSTDTC": ["2024-01-02", "2024-01-01", "2024-01-01", "2024-01-02"]
+            }},
+            {"filename": "dm.xpt", "domain": "DM", "records": {
+                "USUBJID": ["A", "B"], "RFICDTC": [consent_date, "2024-01-03"]
+            }}
+        ]});
+        fs::write(&data, package.to_string()).expect("write datasets");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate");
+        let [result] = outcome.results.as_slice() else {
+            panic!("expected one rule result: {:?}", outcome.results);
+        };
+        assert_eq!(
+            result.execution_status,
+            if expected_rows.is_empty() {
+                ExecutionStatus::Passed
+            } else {
+                ExecutionStatus::Failed
+            },
+            "{result:?}"
+        );
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .map(|issue| issue.row)
+                .collect::<Vec<_>>(),
+            expected_rows
+        );
+    }
+}
+
+#[test]
+fn run_validation_checks_idvar_against_referenced_physical_columns() {
+    let dir = tempdir().expect("tempdir");
+    let rule = dir.path().join("rule.json");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"{
+  "Core": {"Id": "CORE-IDVAR-TEST", "Status": "Published"},
+  "Scope": {"Domains": {"Include": ["SUPP--"]}},
+  "Rule Type": "Record Data", "Sensitivity": "Record",
+  "Match Datasets": [{"Name": "SUPP--", "Child": true, "Keys": ["USUBJID", "IDVAR", "IDVARVAL"]}],
+  "Operations": [{"operator": "referenced_domain_variable_names", "domain": "SUPP--",
+                  "name": "RDOMAIN", "id": "$rdomain_variables"}],
+  "Check": {"all": [
+    {"name": "RDOMAIN", "operator": "exists"},
+    {"name": "IDVAR", "operator": "non_empty"},
+    {"name": "IDVAR", "operator": "is_not_contained_by", "value": "$rdomain_variables"}
+  ]},
+  "Outcome": {"Output Variables": ["IDVAR", "RDOMAIN"], "Message": "No such variable"}
+}"#,
+    )
+    .expect("write rule");
+
+    let cases = [
+        (Some("LBSEK"), true, ExecutionStatus::Failed),
+        (Some("LBSEQ"), true, ExecutionStatus::Passed),
+        (None, true, ExecutionStatus::Skipped),
+        (Some("LBSEQ"), false, ExecutionStatus::Skipped),
+    ];
+    for (idvar, include_rdomain, expected) in cases {
+        let mut supp = serde_json::json!({"USUBJID": ["A", "A", "A"], "IDVARVAL": ["1", "2", ""]});
+        if let Some(name) = idvar {
+            supp["IDVAR"] = serde_json::json!([name, "LBTEST", ""]);
+        }
+        if include_rdomain {
+            supp["RDOMAIN"] = serde_json::json!(["LB", "LB", "LB"]);
+        }
+        let package = serde_json::json!({"datasets": [
+            {"filename": "lb1.xpt", "domain": "LB", "records": {"LBSEQ": [1]}},
+            {"filename": "lb2.xpt", "domain": "LB", "records": {"LBTEST": ["Test"]}},
+            {"filename": "suppdm.xpt", "domain": "SUPPDM", "records": {
+                "USUBJID": ["A"], "RDOMAIN": ["DM"], "IDVAR": [""], "IDVARVAL": [""]
+            }},
+            {"filename": "supplb.xpt", "domain": "SUPPLB", "records": supp}
+        ]});
+        fs::write(&data, package.to_string()).expect("write datasets");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate");
+        assert!(!outcome.results.is_empty());
+        if expected == ExecutionStatus::Failed {
+            let issues = outcome
+                .results
+                .iter()
+                .flat_map(|result| &result.errors)
+                .collect::<Vec<_>>();
+            let [issue] = issues.as_slice() else {
+                panic!("expected only the invalid IDVAR: {:?}", outcome.results);
+            };
+            assert_eq!(issue.dataset.to_ascii_uppercase(), "SUPPLB");
+            assert_eq!(issue.row, Some(1));
+            assert_eq!(issue.variables, ["IDVAR", "RDOMAIN"]);
+        } else {
+            assert!(
+                outcome
+                    .results
+                    .iter()
+                    .all(|result| result.execution_status == expected),
+                "{:?}",
+                outcome.results
+            );
+        }
+    }
+}
+
+#[test]
 fn run_validation_executes_target_is_not_sorted_by_operator() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

@@ -478,7 +478,9 @@ pub(crate) fn should_ignore_evaluation_error(
 }
 
 pub(crate) fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
-    if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some() {
+    if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some()
+        || crate::operation_references::supp_reference_variable_check(rule).is_some()
+    {
         return None;
     }
     rule.operations.iter().find_map(|operation| {
@@ -552,6 +554,7 @@ pub(crate) fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::TargetIsNotSortedBy
             | Operator::EmptyWithinExceptLastRow
             | Operator::DoesNotHaveNextCorrespondingRecord
+            | Operator::PresentOnMultipleRowsWithin
             | Operator::NotPresentOnMultipleRowsWithin
             | Operator::InconsistentEnumeratedColumns
             | Operator::IsNotUniqueSet
