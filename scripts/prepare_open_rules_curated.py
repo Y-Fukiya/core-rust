@@ -14,6 +14,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "tests/open_rules"
 REVIEWED_CASES = {
     "CORE-000677": {"negative/01", "negative/02", "positive/02"},
     "CORE-000206": {"negative/02"},
+    "CORE-000272": {"negative/03", "negative/04"},
 }
 
 

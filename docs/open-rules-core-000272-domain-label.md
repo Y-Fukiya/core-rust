@@ -46,11 +46,19 @@ expect a finding in both cases, with `DOMAIN` as an output variable.
 Fresh CORE v1.0.0 reports no findings in either case. The other six
 accepted cases reproduced their stored CSVs.
 
-The accepted pin, original oracles, scorer and baseline are unchanged.
-The curated gate needs a separate review of the two stored SENDIG
-expectations before publication. The unmodified curated subset matched
-276 of 278 cases. A temporary copy using the two official v1.0.0 replay
-CSVs matched all 278 and passed the current baseline comparison.
+The [curated CI run for `2aa30da`](https://github.com/Y-Fukiya/core-rust/actions/runs/44044824492)
+failed the upstream subset gate. A local run with the same inputs matched
+276 of 278 cases: only negative/03 and negative/04 differed from the
+stored CSVs (two stored issue rows versus zero Rust rows in each).
+A separate v1.0.0 replay confirmed `SUCCESS` and CSV headers with no
+issue rows in both cases.
+
+The [reviewed curated manifest](../tests/open_rules/curated-reviewed/CORE-000272/manifest.json)
+pins the accepted rule tree and those two replay CSVs. The curated
+preparation script replaces only those CSVs in the copied subset.
+With these replacements the subset matched all 278 cases and passed
+the current baseline comparison. The accepted pin, original oracles,
+scorer and baseline are unchanged.
 
 Local evidence is under `target/core-272-domain-label-audit/`. The
 `official/`, `controls/`, and `split-control/` subdirectories contain

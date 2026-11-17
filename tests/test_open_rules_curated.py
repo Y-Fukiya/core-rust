@@ -13,6 +13,7 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 RULE_206 = "CORE-000206"
+RULE_272 = "CORE-000272"
 RULE_677 = "CORE-000677"
 CASES = ("negative/01", "negative/02", "positive/01", "positive/02")
 SHA = "a" * 40
@@ -20,6 +21,10 @@ HEADER = b"Dataset,Record,Variable\n"
 HISTORICAL = HEADER + b"SUPPDM,1,IDVAR\n" * 12
 REVIEWED = {
     RULE_206: {"negative/02": HEADER + b"DM,2,USUBJID\n"},
+    RULE_272: {
+        "negative/03": b"Dataset,Record,Variable,Value\n",
+        "negative/04": b"Dataset,Record,Variable,Value\n",
+    },
     RULE_677: {
         "negative/01": HEADER,
         "negative/02": HEADER,
@@ -64,12 +69,12 @@ def corpus(tmp_path):
         shutil.copyfile(SCRIPTS / name, scripts / name)
     fixtures = tmp_path / "tests/open_rules"
     upstream = tmp_path / "upstream"
-    write(fixtures / "curated-upstream-rules.txt", f"  # subset\n\n{RULE_206}\n{RULE_677}\n".encode())
+    write(fixtures / "curated-upstream-rules.txt", f"  # subset\n\n{RULE_206}\n{RULE_272}\n{RULE_677}\n".encode())
     write(fixtures / "upstream.lock", f"repo=example\nsha={SHA}\n".encode())
     for rule_id, replacements in REVIEWED.items():
         rule_dir = upstream / "Published" / rule_id
         write(rule_dir / "rule.yml", b"core_id: synthetic\n")
-        for case in CASES:
+        for case in dict.fromkeys((*CASES, *replacements)):
             write(original(rule_dir, case), HISTORICAL if case.startswith("negative") else HEADER)
             write(rule_dir / case / "data/.env", b"STUDY=synthetic\n")
             write(rule_dir / case / "data/suppdm.csv", b"IDVAR\nUSUBJID\n")
@@ -89,7 +94,7 @@ def test_copies_all_278_cases_with_only_reviewed_csvs_replaced(corpus):
     script, fixtures, upstream, subset = corpus
     rule_list = fixtures / "curated-upstream-rules.txt"
     with rule_list.open("a", encoding="utf-8") as stream:
-        for number in range(3, 48):
+        for number in range(3, 47):
             rule_id = f"CORE-{number:06d}"
             stream.write(f"{rule_id}\n")
             for kind in ("negative", "positive"):
@@ -161,10 +166,11 @@ def test_rejects_bad_inputs_before_creating_subset(corpus, mutation, message):
     assert snapshot(upstream) == sources
 
 
-def test_rejects_extra_reviewed_206_case_before_creating_subset(corpus):
+@pytest.mark.parametrize("rule_id", [RULE_206, RULE_272])
+def test_rejects_extra_reviewed_case_before_creating_subset(corpus, rule_id):
     script, fixtures, upstream, subset = corpus
-    rule = upstream / "Published" / RULE_206
-    write_reviewed(fixtures, rule, {**REVIEWED[RULE_206], "negative/01": HEADER})
+    rule = upstream / "Published" / rule_id
+    write_reviewed(fixtures, rule, {**REVIEWED[rule_id], "negative/01": HEADER})
 
     result = prepare(script, upstream, subset)
     assert result.returncode != 0
