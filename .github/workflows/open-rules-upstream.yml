@@ -24,6 +24,12 @@ jobs:
           ref: 7f7fae49376b3d023563ebb6c36a3b392d6e649f
           path: target/accepted-raw
           persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: cdisc-org/cdisc-open-rules
+          ref: 1881cb9a1f9a38b6cafc785eca5169b240981f66
+          path: target/profile-candidate
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.93.1
       - name: Verify frozen trial baseline before scoring
         shell: bash
@@ -216,9 +222,37 @@ jobs:
           evidence=target/accepted-review/profile-repairs
           python3 scripts/review_open_rules_profile_repairs.py \
             --raw target/accepted-raw --subset "$evidence/fixture-proposals" \
+            --candidate target/profile-candidate \
             --engine-profile tests/open_rules/diagnostic/cdisc-v1-candidate.json \
             --archive target/core-accepted.tar.gz --plan "$review/plan.json" \
             --frozen "$review/frozen-profile-locators.json" --out "$evidence/official"
+      - name: Verify the missing TO is not counted as a pass on candidate fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p core-api run_validation_core_000660
+          evidence=target/accepted-review/profile-repairs
+          rust="$evidence/candidate-authored-rust"
+          subset=target/profile-candidate-subset
+          mkdir -p "$subset/Published"
+          cp -R target/profile-candidate/Published/CORE-000039 target/profile-candidate/Published/CORE-000660 "$subset/Published/"
+          target/debug/xtask open-rules run-score --open-rules-root "$subset" \
+            --core-rs-results-root "$rust" --out "$evidence/candidate-authored-default"
+          strict_status=0
+          target/debug/xtask open-rules score --strict-scoring --open-rules-root "$subset" \
+            --core-rs-results-root "$rust" --out "$evidence/candidate-authored-strict" || strict_status=$?
+          printf '%s\n' "$strict_status" > "$evidence/candidate-authored-strict-status.txt"
+          for mode in default strict; do
+            jq -e --arg mode "$mode" '
+              .summary.total_cases == 7 and .summary.harness_error == 0 and
+              ([.cases[] | select(.rule_id == "CORE-000660" and .case_kind == "positive" and .case_id == "03")]
+                | length == 1 and all(.[];
+                    .bucket == (if $mode == "default" then "deferred_oracle_gap_skipped" else "skipped_unsupported" end)
+                    and .skipped_reasons == ["operations_not_supported"])) and
+              ([.cases[] | select(.rule_id == "CORE-000660" and .case_kind == "positive" and .case_id != "03")]
+                | length == 2 and all(.[]; .bucket == "supported_match"))
+            ' "$evidence/candidate-authored-$mode/scoreboard.json"
+          done
       - name: Score the repaired profiles in default and strict modes
         shell: bash
         run: |

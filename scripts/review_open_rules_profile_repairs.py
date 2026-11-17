@@ -24,13 +24,37 @@ def locators(report):
     )
 
 
-def prepare(raw, subset, archive, engine_profile, plan, frozen, out):
+def verify_candidate_skips(candidate, out, bundle, env):
+    cases = {
+        "Published/CORE-000039/negative/01": ("ISSUE REPORTED", 24),
+        "Published/CORE-000039/positive/01": ("SUCCESS", 0),
+        "Published/CORE-000039/positive/02": ("SKIPPED", 0),
+        "Published/CORE-000660/negative/01": ("ISSUE REPORTED", 24),
+        "Published/CORE-000660/positive/01": ("SUCCESS", 0),
+        "Published/CORE-000660/positive/02": ("SUCCESS", 0),
+        "Published/CORE-000660/positive/03": ("SKIPPED", 0),
+    }
+    records = []
+    for case, expected in cases.items():
+        record = replay(candidate, bundle, env, out / case, case)
+        if (record.get("status"), record.get("rows")) != expected:
+            raise ValueError(f"unexpected official candidate status or row count: {record}")
+        records.append(record)
+    audit.write_json(out / "summary.json", {"cases": records})
+
+
+def prepare(raw, subset, archive, engine_profile, plan, frozen, out, candidate=None):
     out.mkdir(parents=True)
     audit.check_platform(out, raw)
     rules = audit.check_rules(raw, plan["rules"])
     if audit.git(raw, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=all"):
         raise ValueError("raw checkout is not clean")
-    engine = audit.load_profile(engine_profile)["engine"]
+    profile = audit.load_profile(engine_profile)
+    engine = profile["engine"]
+    if candidate is not None:
+        audit.check_rules(candidate, profile["rules"])
+        if audit.git(candidate, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=all"):
+            raise ValueError("candidate checkout is not clean")
     cases = frozen["cases"]
     if set(cases) - set(plan["new_skips"]):
         raise ValueError("profile repairs must be among the reviewed applicability skips")
@@ -48,6 +72,8 @@ def prepare(raw, subset, archive, engine_profile, plan, frozen, out):
         version = audit.execute([str(bundle / "core"), "version"], bundle, env, out / "version", 30)
         if version["returncode"] != 0 or Path(version["stdout"]).read_text().strip() != engine["version"]:
             raise ValueError("unexpected official CORE version")
+        if candidate is not None:
+            verify_candidate_skips(candidate, out / "candidate", bundle, env)
         for case in plan["new_skips"]:
             original = replay(raw, bundle, env, out / "original" / case, case)
             if original["outcome"] != "rule_not_selected":
@@ -110,6 +136,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     for argument in ("raw", "subset", "archive", "engine-profile", "plan", "frozen", "out"):
         parser.add_argument(f"--{argument}", type=Path, required=True)
+    parser.add_argument("--candidate", type=Path)
     args = parser.parse_args()
     prepare(args.raw.resolve(), args.subset.resolve(), args.archive.resolve(),
-            args.engine_profile, load(args.plan), json.loads(args.frozen.read_text()), args.out.resolve())
+            args.engine_profile, load(args.plan), json.loads(args.frozen.read_text()), args.out.resolve(),
+            args.candidate.resolve() if args.candidate else None)
