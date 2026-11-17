@@ -29,6 +29,18 @@ fn validate_help_exits_successfully() {
 }
 
 #[test]
+fn validate_rejects_a_tig_request_without_substandard() {
+    let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
+
+    cmd.args(["validate", "--standard", "TIG", "--standard-version", "1.0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--substandard is required when --standard is TIG",
+        ));
+}
+
+#[test]
 fn validate_rejects_rules_and_exclude_rules_together() {
     let mut cmd = Command::cargo_bin("core-rs").expect("core-rs binary");
 

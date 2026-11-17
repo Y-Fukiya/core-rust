@@ -21,7 +21,8 @@ PROFILE = REPO / "tests/open_rules/diagnostic/cdisc-v1-candidate.json"
 def report(status="SUCCESS", rule_id="CORE-000013"):
     return {"Rules_Report": [{"core_id": rule_id, "status": status}],
             "Conformance_Details": {"Standard": "SDTMIG"},
-            "Issue_Details": [{"Variable": "AESTAT"}] if status == "ISSUE REPORTED" else []}
+            "Issue_Details": [{"dataset": "AE", "row": 1, "variables": ["AESTAT"]}]
+            if status == "ISSUE REPORTED" else []}
 
 
 @pytest.mark.parametrize("status", sorted(audit.STATUSES))
@@ -59,6 +60,25 @@ def test_invalid_reports_cannot_be_zero_finding_success(tmp_path, mutation):
 def test_missing_output_is_not_a_pass(tmp_path):
     with pytest.raises(FileNotFoundError):
         audit.inspect_report(tmp_path / "report.json", "CORE-000013")
+
+
+@pytest.mark.parametrize(("status", "csv_rows", "valid"), [
+    ("SUCCESS", "", True),
+    ("SUCCESS", "AE,1,AESTAT,\n", False),
+    ("SKIPPED", "AE,1,AESTAT,\n", False),
+    ("ISSUE REPORTED", "AE,1,AESTAT,\n", True),
+    ("ISSUE REPORTED", "AE,2,AESTAT,\n", False),
+    ("ISSUE REPORTED", "", False),
+])
+def test_csv_projection_requires_consistent_status_and_finding_locators(tmp_path, status, csv_rows, valid):
+    json_path, csv_path = tmp_path / "report.json", tmp_path / "report.csv"
+    audit.write_json(json_path, report(status))
+    csv_path.write_text("Dataset,Record,Variable,Value\n" + csv_rows)
+    if valid:
+        assert audit.verify_csv_projection(csv_path, json_path, status) == int(bool(csv_rows))
+    else:
+        with pytest.raises(ValueError, match="CSV"):
+            audit.verify_csv_projection(csv_path, json_path, status)
 
 
 def test_cache_pin_detects_changed_added_and_missing_files(tmp_path):
@@ -249,7 +269,7 @@ def test_nonzero_validation_cannot_pass_with_valid_reports(bundle, tmp_path):
     ("symlink", "unsupported engine archive entry"),
     ("traversal", "invalid engine archive path"),
     ("duplicate", "duplicate engine archive path"),
-    ("ambient_dotenv", "engine cwd ancestry contains .env"),
+    ("ambient_dotenv", "audit ancestry contains .env"),
 ])
 def test_tampering_fails_before_even_version_launch(bundle, tmp_path, monkeypatch, mutation, error):
     root, archive, files, profile = bundle
@@ -321,6 +341,7 @@ def test_all_cases_attempted_and_expected_probe_statuses_preserved(bundle, tmp_p
     audit.write_json(profile_path, profile)
     calls = []
     def fake_execute(argv, cwd, env, prefix, timeout):
+        assert len(env["TMPDIR"]) < 64
         stdout, stderr = prefix.with_suffix(".stdout.txt"), prefix.with_suffix(".stderr.txt")
         stdout.write_text("1.0.0\n" if argv[-1] == "version" else "synthetic run\n")
         stderr.write_text("")
@@ -337,7 +358,8 @@ def test_all_cases_attempted_and_expected_probe_statuses_preserved(bundle, tmp_p
         if status != "no-output":
             document = report("SUCCESS", "CORE-000001") if status == "wrong-rule" else report(status)
             audit.write_json(prefix.parent / "report.json", document)
-            (prefix.parent / "report.csv").write_text("Dataset,Record,Variable,Value\n")
+            rows = "AE,1,AESTAT,NOT DONE\n" if status == "ISSUE REPORTED" else ""
+            (prefix.parent / "report.csv").write_text("Dataset,Record,Variable,Value\n" + rows)
         return result
     monkeypatch.setattr(audit, "execute", fake_execute)
     out = tmp_path / "output"

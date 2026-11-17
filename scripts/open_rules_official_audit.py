@@ -205,11 +205,11 @@ def check_platform(out: Path, rules: Path) -> None:
         raise ValueError(f"filesystem is not case-sensitive: {witness.parent}")
 
 
-def reject_ambient_dotenv(engine: Path) -> None:
+def reject_ambient_dotenv(root: Path) -> None:
     # python-dotenv searches parent directories from the frozen executable's cwd.
-    for parent in (engine, *engine.parents):
+    for parent in (root, *root.parents):
         if os.path.lexists(parent / ".env"):
-            raise ValueError("engine cwd ancestry contains .env; choose an isolated output path")
+            raise ValueError("audit ancestry contains .env; choose an isolated output path")
 
 
 def tracked_files(root: Path, relative: str) -> dict:
@@ -312,18 +312,36 @@ def inspect_report(path: Path, rule_id: str) -> dict:
             "issue_details_count": len(report["Issue_Details"]), "sha256": sha256(path)}
 
 
-def csv_row_count(path: Path) -> int:
+def verify_csv_projection(path: Path, report_path: Path, status: str) -> int:
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream)
         header = next(reader, None)
-        if header not in (["Dataset", "Record", "Variable", "Value"], ["path", "attribute", "value"]):
+        tabular = header == ["Dataset", "Record", "Variable", "Value"]
+        if not tabular and header != ["path", "attribute", "value"]:
             raise ValueError("unrecognized official CSV header")
         count = 0
+        actual = Counter()
         for row in reader:
             if len(row) != len(header):
                 raise ValueError("malformed official CSV row")
             count += 1
-        return count
+            actual[tuple(row[:-1])] += 1
+    if status in {"SUCCESS", "SKIPPED"} and count:
+        raise ValueError(f"{status} report contains CSV findings")
+    if status == "ISSUE REPORTED":
+        expected = Counter()
+        details = json.loads(report_path.read_text(encoding="utf-8"))["Issue_Details"]
+        for detail in details:
+            locators = ("dataset", "row") if tabular else ("path",)
+            prefix = tuple("" if detail[key] is None else str(detail[key]) for key in locators)
+            names = detail["variables" if tabular else "attributes"]
+            if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
+                raise ValueError("invalid JSON finding projection")
+            for name in names or [""]:
+                expected[(*prefix, name)] += 1
+        if expected != actual:
+            raise ValueError("CSV finding locators do not match the JSON report")
+    return count
 
 
 def run_case(root: Path, engine: Path, out: Path, case: dict, env: dict, timeout: int) -> dict:
@@ -348,14 +366,16 @@ def run_case(root: Path, engine: Path, out: Path, case: dict, env: dict, timeout
             observation["outcome"] = "invalid_report"
             observation["report"] = inspect_report(destination / "report.json", case["rule_id"])
             observation["status"] = observation["report"]["status"]
-            observation["csv_data_rows"] = csv_row_count(destination / "report.csv")
+            observation["csv_data_rows"] = verify_csv_projection(
+                destination / "report.csv", destination / "report.json", observation["status"]
+            )
             observation["csv_sha256"] = sha256(destination / "report.csv")
             observation["outcome"] = observation["status"].lower().replace(" ", "_")
             expected = case.get("expected_status")
             acceptable = {expected} if expected else {"SUCCESS", "ISSUE REPORTED"}
             if observation["status"] not in acceptable:
                 observation["errors"].append("unexpected execution status")
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         observation["errors"].append(str(error))
     write_json(destination / "observation.json", observation)
     return observation
@@ -378,9 +398,11 @@ def run_audit(profile_path: Path, rules_root: Path, engine_archive: Path, out: P
         summary["profile_sha256"] = sha256(profile_path)
         write_json(out / "profile.json", profile)
         check_platform(out, rules_root)
+        reject_ambient_dotenv(out)
         summary["rules"] = check_rules(rules_root, profile["rules"])
         pins = profile["engine"]
-        with tempfile.TemporaryDirectory(prefix="core-audit-runtime-", dir=out.parent) as temporary:
+        # CORE's multiprocessing manager binds a Unix socket under TMPDIR.
+        with tempfile.TemporaryDirectory(prefix="core-audit-", dir="/tmp") as temporary:
             runtime = Path(temporary)
             engine_root = runtime / "core"
             summary.update(install_engine(engine_archive, runtime, pins))

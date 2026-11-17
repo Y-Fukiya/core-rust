@@ -116,6 +116,17 @@ fn main() -> Result<()> {
 }
 
 fn run_validate(args: ValidateArgs) -> Result<()> {
+    if args
+        .standard
+        .as_deref()
+        .is_some_and(|standard| standard.trim().eq_ignore_ascii_case("TIG"))
+        && args
+            .substandard
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+    {
+        bail!("--substandard is required when --standard is TIG");
+    }
     let mut dataset_paths = Vec::new();
     if let Some(data) = args.data {
         dataset_paths.push(data);
