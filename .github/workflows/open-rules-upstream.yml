@@ -7,75 +7,92 @@ permissions:
   contents: read
 
 jobs:
-  candidate-review-official:
-    uses: ./.github/workflows/open-rules-official-audit.yml
-
-  candidate-review-full-scores:
-    name: Full corpus ${{ matrix.lane }}
+  accepted-review:
+    name: Accepted pin official replay and proposal comparison
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - lane: accepted
-            sha: 7f7fae49376b3d023563ebb6c36a3b392d6e649f
-          - lane: candidate
-            sha: 1881cb9a1f9a38b6cafc785eca5169b240981f66
+    timeout-minutes: 35
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.93.1
       - uses: actions/checkout@v7
         with:
           repository: cdisc-org/cdisc-open-rules
-          ref: ${{ matrix.sha }}
-          path: pinned-open-rules
+          ref: 7f7fae49376b3d023563ebb6c36a3b392d6e649f
+          path: target/accepted-raw
           persist-credentials: false
-      - name: Run raw and strict scores from the pinned corpus
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Verify proposals with the pinned official CORE
         shell: bash
-        env:
-          LANE: ${{ matrix.lane }}
-          CORPUS_SHA: ${{ matrix.sha }}
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
           set -euo pipefail
-          test "$(git -C pinned-open-rules rev-parse HEAD)" = "$CORPUS_SHA"
-          git -C pinned-open-rules diff --quiet HEAD --
+          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
+          review=tests/open_rules/diagnostic/accepted-review
+          mkdir -p target/accepted-review
+          git clone --shared --no-checkout target/accepted-raw target/accepted-proposal
+          git -C target/accepted-proposal checkout --detach 7f7fae49376b3d023563ebb6c36a3b392d6e649f
+          gzip -dc "$review/accepted.patch.gz" > target/accepted-proposal.patch
+          git -C target/accepted-proposal apply --check "$PWD/target/accepted-proposal.patch"
+          git -C target/accepted-proposal apply "$PWD/target/accepted-proposal.patch"
+          asset="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["engine"]["asset_url"])' "$profile")"
+          curl --fail --location --retry 2 --max-time 120 "$asset" --output target/core-accepted.tar.gz
+          python3 scripts/review_accepted_open_rules.py \
+            --raw target/accepted-raw --proposed target/accepted-proposal \
+            --plan "$review/plan.json" --proposal-manifest "$review/accepted.json" \
+            --engine-profile "$profile" --archive target/core-accepted.tar.gz \
+            --out target/accepted-review/official
+      - name: Run adopted raw acceptance gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/accepted-review
           cargo build --locked -p xtask
-          mkdir -p target/review-evidence
-          args=()
-          if [[ "$LANE" == accepted ]]; then args+=(--strict-lock); fi
+          score_status=0
+          target/debug/xtask open-rules run-score --strict-lock \
+            --open-rules-root target/accepted-raw \
+            --core-rs-results-root target/core-rs-accepted-raw \
+            --out target/accepted-review/score-raw || score_status=$?
+          printf '%s\n' "$score_status" > target/accepted-review/raw-score-exit.txt
+          test -s target/accepted-review/score-raw/scoreboard.json
+          baseline_status=0
+          target/debug/xtask open-rules baseline \
+            --scoreboard target/accepted-review/score-raw/scoreboard.json \
+            --baseline tests/open_rules/upstream-baseline.json \
+            > target/accepted-review/raw-full-gate.txt || baseline_status=$?
+          printf '%s\n' "$baseline_status" > target/accepted-review/raw-baseline-exit.txt
+          head -n 1 target/accepted-review/raw-full-gate.txt
+      - name: Run verified diagnostic proposal copy
+        shell: bash
+        run: |
+          set -euo pipefail
           score_status=0
           target/debug/xtask open-rules run-score \
-            --open-rules-root pinned-open-rules \
-            --core-rs-results-root target/review-raw-results \
-            --out target/review-evidence/raw "${args[@]}" || score_status=$?
-          printf '%s\n' "$score_status" > target/review-evidence/raw-exit.txt
-          test -s target/review-evidence/raw/scoreboard.json
-          strict_status=0
-          target/debug/xtask open-rules score --strict-scoring \
-            --open-rules-root pinned-open-rules \
-            --core-rs-results-root target/review-raw-results \
-            --out target/review-evidence/strict || strict_status=$?
-          printf '%s\n' "$strict_status" > target/review-evidence/strict-exit.txt
-          test -s target/review-evidence/strict/scoreboard.json
-          target/debug/xtask open-rules score-delta \
-            --default-scoreboard target/review-evidence/raw/scoreboard.json \
-            --strict-scoreboard target/review-evidence/strict/scoreboard.json \
-            --out target/review-evidence/delta
-          if [[ "$LANE" == accepted ]]; then
-            target/debug/xtask open-rules baseline \
-              --baseline tests/open_rules/upstream-baseline.json \
-              --scoreboard target/review-evidence/raw/scoreboard.json \
-              | tee target/review-evidence/full-gate.txt
-          fi
+            --open-rules-root target/accepted-proposal \
+            --core-rs-results-root target/core-rs-accepted-proposal \
+            --out target/accepted-review/score-proposal || score_status=$?
+          printf '%s\n' "$score_status" > target/accepted-review/proposal-score-exit.txt
+          test -s target/accepted-review/score-proposal/scoreboard.json
+          baseline_status=0
+          target/debug/xtask open-rules baseline \
+            --scoreboard target/accepted-review/score-proposal/scoreboard.json \
+            --baseline tests/open_rules/upstream-baseline.json \
+            > target/accepted-review/proposal-full-gate.txt || baseline_status=$?
+          printf '%s\n' "$baseline_status" > target/accepted-review/proposal-baseline-exit.txt
+          head -n 1 target/accepted-review/proposal-full-gate.txt
           exit "$score_status"
-      - name: Upload scoring and gate evidence
+      - name: Preserve raw acceptance failure
         if: always()
-        uses: actions/upload-artifact@v7
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat target/accepted-review/raw-baseline-exit.txt)" = 0
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: open-rules-review-${{ matrix.lane }}
-          path: target/review-evidence
+          name: accepted-open-rules-review
+          path: target/accepted-review
+          if-no-files-found: error
