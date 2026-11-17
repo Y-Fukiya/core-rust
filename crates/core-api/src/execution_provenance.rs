@@ -38,7 +38,7 @@ mod tests {
             "generic_engine"
         );
         assert_eq!(
-            execution_provenance_for_rule_id("CORE-000007"),
+            execution_provenance_for_rule_id("CORE-000142"),
             "rule_specific_engine_semantics"
         );
         assert_eq!(
@@ -47,6 +47,10 @@ mod tests {
         );
         assert_eq!(
             execution_provenance_for_rule_id("CORE-000583"),
+            "generic_engine"
+        );
+        assert_eq!(
+            execution_provenance_for_rule_id("CORE-001077"),
             "rule_id_hand_port"
         );
     }

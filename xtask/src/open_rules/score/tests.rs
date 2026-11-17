@@ -36,6 +36,7 @@ fn scored_case(bucket: ScoreBucket, reason: Option<&str>) -> ScoredCase {
         execution_provenance: ExecutionProvenance::NativeEngine,
         execution_provenance_detail: ExecutionProvenanceDetail::GenericEngine,
         scoring_policy: ScoringPolicy::StrictIdentity,
+        identity_alignment: None,
         bucket,
         reason: reason.map(str::to_owned),
         skipped_reasons: Vec::new(),
@@ -958,28 +959,28 @@ CORE-PROV,failed,DM,DM,1,USUBJID,bad,1,,,,native_engine\n",
 #[test]
 fn candidate_report_without_provenance_column_falls_back_to_rule_id() {
     let dir = tempdir().expect("tempdir");
-    let case_dir = dir.path().join("open/Published/CORE-000583/negative/01");
+    let case_dir = dir.path().join("open/Published/CORE-001077/negative/01");
     fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
     fs::write(
         case_dir.join("results/results.csv"),
-        "rule_id,dataset,row,variables\nCORE-000583,TS,1,TSVAL\n",
+        "rule_id,dataset,row,variables\nCORE-001077,TS,1,TSVAL\n",
     )
     .expect("write official results");
     let candidate_dir = dir
         .path()
-        .join("candidate/Published/CORE-000583/negative/01");
+        .join("candidate/Published/CORE-001077/negative/01");
     fs::create_dir_all(&candidate_dir).expect("create candidate dir");
     fs::write(
             candidate_dir.join("report.csv"),
             "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
-CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
+CORE-001077,failed,TS,TS,1,TSVAL,bad,1,,,\n",
         )
         .expect("write candidate report");
     let case = OpenRulesCase {
         scope: "Published".to_owned(),
-        rule_id: "CORE-000583".to_owned(),
-        rule_dir: dir.path().join("open/Published/CORE-000583"),
-        rule_path: dir.path().join("open/Published/CORE-000583/rule.yml"),
+        rule_id: "CORE-001077".to_owned(),
+        rule_dir: dir.path().join("open/Published/CORE-001077"),
+        rule_path: dir.path().join("open/Published/CORE-001077/rule.yml"),
         case_kind: CaseKind::Negative,
         case_id: "01".to_owned(),
         case_dir: case_dir.clone(),
@@ -993,7 +994,7 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
         variables: Vec::new(),
         official_results_csv: dir
             .path()
-            .join("open/Published/CORE-000583/negative/01/results/results.csv"),
+            .join("open/Published/CORE-001077/negative/01/results/results.csv"),
         has_official_results: true,
     };
 
@@ -1016,7 +1017,7 @@ CORE-000583,failed,TS,TS,1,TSVAL,bad,1,,,\n",
 #[test]
 fn empty_candidate_report_with_provenance_header_falls_back_to_hand_port_rule_id() {
     let dir = tempdir().expect("tempdir");
-    let case_dir = dir.path().join("open/Published/CORE-000583/positive/01");
+    let case_dir = dir.path().join("open/Published/CORE-001077/positive/01");
     fs::create_dir_all(case_dir.join("results")).expect("create official results dir");
     fs::write(
         case_dir.join("results/results.csv"),
@@ -1025,7 +1026,7 @@ fn empty_candidate_report_with_provenance_header_falls_back_to_hand_port_rule_id
     .expect("write official results");
     let candidate_dir = dir
         .path()
-        .join("candidate/Published/CORE-000583/positive/01");
+        .join("candidate/Published/CORE-001077/positive/01");
     fs::create_dir_all(&candidate_dir).expect("create candidate dir");
     fs::write(
             candidate_dir.join("report.csv"),
@@ -1034,9 +1035,9 @@ fn empty_candidate_report_with_provenance_header_falls_back_to_hand_port_rule_id
         .expect("write candidate report");
     let case = OpenRulesCase {
         scope: "Published".to_owned(),
-        rule_id: "CORE-000583".to_owned(),
-        rule_dir: dir.path().join("open/Published/CORE-000583"),
-        rule_path: dir.path().join("open/Published/CORE-000583/rule.yml"),
+        rule_id: "CORE-001077".to_owned(),
+        rule_dir: dir.path().join("open/Published/CORE-001077"),
+        rule_path: dir.path().join("open/Published/CORE-001077/rule.yml"),
         case_kind: CaseKind::Positive,
         case_id: "01".to_owned(),
         case_dir: case_dir.clone(),
@@ -1050,7 +1051,7 @@ fn empty_candidate_report_with_provenance_header_falls_back_to_hand_port_rule_id
         variables: Vec::new(),
         official_results_csv: dir
             .path()
-            .join("open/Published/CORE-000583/positive/01/results/results.csv"),
+            .join("open/Published/CORE-001077/positive/01/results/results.csv"),
         has_official_results: true,
     };
 
@@ -1450,6 +1451,111 @@ fn candidate_report_path_mirrors_case_identity() {
 }
 
 #[test]
+fn equal_unlocated_findings_are_reported_as_count_only() {
+    let dir = tempdir().expect("tempdir");
+    let case = write_score_fixture(
+        dir.path(),
+        "CORE-TRACE",
+        "negative",
+        "01",
+        "Message\nfirst official finding\nsecond official finding\n",
+        "rule_id,execution_status,dataset,domain,row,variables,usubjid,seq\n\
+         CORE-TRACE,failed,AE,AE,3,AESTAT,SUBJ001,3\n\
+         CORE-TRACE,failed,DM,DM,9,AGE,SUBJ002,9\n",
+    );
+    let candidate = dir.path().join("candidate");
+    let default = score_cases(std::slice::from_ref(&case), &candidate);
+    let strict = score_cases_strict(&[case], &candidate);
+    assert_eq!(default[0].bucket, ScoreBucket::SupportedMatch);
+    assert_eq!(default[0].official_issue_count, Some(2));
+    assert_eq!(default[0].candidate_issue_count, Some(2));
+    assert_eq!(default[0].scoring_policy, ScoringPolicy::StrictIdentity);
+    assert!(default[0].scoring_normalizations.is_empty());
+    let trace = default[0]
+        .identity_alignment
+        .expect("default alignment trace");
+    assert_eq!(trace.comparison, IdentityComparison::CountOnlyUnlocated);
+    assert_eq!(trace.official_unlocated_findings, 2);
+    assert_eq!(trace.candidate_unlocated_rule_collapses, 2);
+    assert_eq!(trace.candidate_usubjid_omissions, 2);
+    assert_eq!(trace.candidate_seq_omissions, 2);
+    assert_eq!(trace.candidate_rows_substituted_from_seq, 0);
+    assert_eq!(strict[0].bucket, ScoreBucket::SupportedMismatch);
+    let raw = strict[0]
+        .identity_alignment
+        .expect("strict alignment trace");
+    assert_eq!(raw.comparison, IdentityComparison::RawStructural);
+    assert_eq!(raw.official_unlocated_findings, 2);
+    assert_eq!(raw.candidate_unlocated_rule_collapses, 0);
+    assert_eq!(raw.candidate_usubjid_omissions, 0);
+    assert_eq!(raw.candidate_seq_omissions, 0);
+
+    let board = Scoreboard::new(test_upstream(), default);
+    let out = dir.path().join("score");
+    write_scoreboard(&out, &board).expect("write scoreboard");
+    let json = fs::read_to_string(out.join("scoreboard.json")).expect("scoreboard JSON");
+    let readback: Scoreboard = serde_json::from_str(&json).expect("parse scoreboard");
+    assert_eq!(readback, board);
+    let markdown = fs::read_to_string(out.join("summary.md")).expect("scoreboard summary");
+    assert!(markdown.contains("| `count_only_unlocated` | 1 |"));
+    assert!(markdown.contains("It does not imply `--strict-scoring`"));
+
+    let strict_out = dir.path().join("strict");
+    write_scoreboard(&strict_out, &Scoreboard::new(test_upstream(), strict))
+        .expect("write strict scoreboard");
+    let delta_out = dir.path().join("delta");
+    crate::open_rules::score_delta::run(crate::open_rules::score_delta::ScoreDeltaArgs {
+        default_scoreboard: out.join("scoreboard.json"),
+        strict_scoreboard: strict_out.join("scoreboard.json"),
+        out: delta_out.clone(),
+    })
+    .expect("compare scoreboards");
+    let markdown = fs::read_to_string(delta_out.join("summary.md")).expect("delta summary");
+    assert!(
+        markdown.contains("| `count_only_unlocated: supported_match -> supported_mismatch` | 1 |")
+    );
+    assert!(markdown.contains("| `candidate_seq_omitted` | 1 | 0 | -1 |"));
+    let delta: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(delta_out.join("scoreboard-delta.json")).expect("delta JSON"),
+    )
+    .expect("parse delta JSON");
+    assert_eq!(
+        delta["changed_cases"][0]["default_identity_alignment"]["comparison"],
+        "count_only_unlocated"
+    );
+    assert_eq!(
+        delta["changed_cases"][0]["strict_identity_alignment"]["comparison"],
+        "raw_structural"
+    );
+}
+
+#[test]
+fn sparse_official_locator_keeps_subject_evidence_and_traces_sequence_omission() {
+    let dir = tempdir().expect("tempdir");
+    let case = write_score_fixture(
+        dir.path(),
+        "CORE-TRACE",
+        "negative",
+        "01",
+        "Dataset,Record,Variable,USUBJID\nAE,1,AESTAT,SUBJ001\nAE,2,AESTAT,\n",
+        "rule_id,execution_status,dataset,domain,row,variables,usubjid,seq\n\
+         CORE-TRACE,failed,AE,AE,1,AESTAT,SUBJ001,1\n\
+         CORE-TRACE,failed,AE,AE,2,AESTAT,,2\n",
+    );
+    let scored = score_cases(&[case], &dir.path().join("candidate"));
+    assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+    assert_eq!(scored[0].scoring_policy, ScoringPolicy::StrictIdentity);
+    let trace = scored[0].identity_alignment.expect("alignment trace");
+    assert_eq!(trace.comparison, IdentityComparison::Structural);
+    assert_eq!(trace.official_unlocated_findings, 0);
+    assert_eq!(trace.official_findings_with_usubjid, 1);
+    assert_eq!(trace.official_findings_with_seq, 0);
+    assert_eq!(trace.candidate_usubjid_omissions, 0);
+    assert_eq!(trace.candidate_seq_omissions, 2);
+    assert_eq!(trace.candidate_rows_substituted_from_seq, 0);
+}
+
+#[test]
 fn scores_match_when_official_lacks_subject_and_sequence_columns() {
     let dir = tempdir().expect("tempdir");
     let case_dir = dir
@@ -1497,6 +1603,11 @@ fn scores_match_when_official_lacks_subject_and_sequence_columns() {
     assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
     assert!(scored[0].missing.is_empty());
     assert!(scored[0].extra.is_empty());
+    let trace = scored[0].identity_alignment.expect("alignment trace");
+    assert_eq!(trace.comparison, IdentityComparison::Structural);
+    assert_eq!(trace.candidate_usubjid_omissions, 2);
+    assert_eq!(trace.candidate_seq_omissions, 2);
+    assert_eq!(trace.candidate_rows_substituted_from_seq, 0);
 }
 
 #[test]
@@ -1562,6 +1673,9 @@ fn scores_match_when_candidate_seq_identifies_duplicate_record() {
     assert_eq!(scored[0].candidate_issue_count, Some(2));
     assert!(scored[0].missing.is_empty());
     assert!(scored[0].extra.is_empty());
+    let trace = scored[0].identity_alignment.expect("alignment trace");
+    assert_eq!(trace.candidate_rows_substituted_from_seq, 2);
+    assert_eq!(trace.candidate_seq_omissions, 2);
 }
 
 #[test]
@@ -1623,6 +1737,8 @@ fn scores_keep_physical_row_when_candidate_seq_is_not_duplicated() {
     assert_eq!(scored[0].bucket, ScoreBucket::SupportedMismatch);
     assert_eq!(scored[0].missing.len(), 1);
     assert_eq!(scored[0].extra.len(), 1);
+    let trace = scored[0].identity_alignment.expect("alignment trace");
+    assert_eq!(trace.candidate_rows_substituted_from_seq, 0);
 }
 
 #[test]

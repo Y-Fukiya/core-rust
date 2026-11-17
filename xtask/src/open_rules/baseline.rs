@@ -185,6 +185,7 @@ fn canonicalize_scoreboard_for_baseline(mut scoreboard: Scoreboard) -> Scoreboar
         case.candidate_report_csv = canonicalize_scoreboard_path(&case.candidate_report_csv);
         case.reason = case.reason.take().map(canonicalize_reason_text);
         case.scoring_policy = scoring_policy_for_normalizations(&case.scoring_normalizations);
+        case.identity_alignment = None;
         case.execution_provenance_detail = execution_provenance_detail_for_case(
             &case.rule_id,
             &case.execution_provenance,
@@ -722,11 +723,7 @@ fn bucket_and_provenance(
 }
 
 fn provenance_name(provenance: &ExecutionProvenance) -> &'static str {
-    match provenance {
-        ExecutionProvenance::NativeEngine => "native_engine",
-        ExecutionProvenance::RuleIdHandPort => "rule_id_hand_port",
-        ExecutionProvenance::Unknown => "unknown",
-    }
+    provenance.as_str()
 }
 
 #[cfg(test)]
@@ -757,6 +754,7 @@ mod tests {
                 execution_provenance_detail:
                     crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
                 scoring_policy: ScoringPolicy::StrictIdentity,
+                identity_alignment: None,
                 bucket,
                 reason: None,
                 skipped_reasons: Vec::new(),

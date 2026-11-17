@@ -70,7 +70,7 @@ fn run_validation_reports_core_000744_faobj_not_matching_related_ae_term() {
 }
 
 #[test]
-fn run_validation_reports_core_000744_ex_parent_variables_with_double_underscore_names() {
+fn run_validation_reports_core_000744_authored_variables_for_ex_parent() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -126,9 +126,10 @@ fn run_validation_reports_core_000744_ex_parent_variables_with_double_underscore
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
     assert_eq!(result.error_count, 1);
     assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].seq.as_deref(), Some("1"));
     assert_eq!(
         result.errors[0].variables,
-        vec!["FAOBJ", "RELREC.__TERM", "RELREC.__TRT", "RELREC.__DECOD"]
+        vec!["FAOBJ", "RELREC.**TERM", "RELREC.**TRT", "RELREC.**DECOD"]
     );
 }
 

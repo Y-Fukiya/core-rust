@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono = { version = "0.4", default-features = false }
 core-data.workspace = true
 core-rule-model.workspace = true
 polars.workspace = true

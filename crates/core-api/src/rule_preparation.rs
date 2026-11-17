@@ -16,7 +16,6 @@ pub(crate) fn prepare_rule_for_execution(
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
     apply_usdm_hand_port_semantics(&mut rule);
     apply_open_rules_relationship_semantics(&mut rule);
-    apply_trial_summary_value_null_flavor_semantics(&mut rule);
     apply_unscheduled_death_ds_flag_semantics(&mut rule);
     bind_standard_domain_labels(&mut rule, standard, version);
     apply_entity_instance_type_literals(&mut rule);
@@ -79,17 +78,6 @@ fn apply_unscheduled_death_ds_flag_semantics(rule: &mut ExecutableRule) {
         }),
     ]);
     rule.output_variables = vec!["DDTESTCD".to_owned(), "DSUSCHFL".to_owned()];
-}
-
-fn apply_trial_summary_value_null_flavor_semantics(rule: &mut ExecutableRule) {
-    if !engine_semantics::is_trial_summary_null_flavor_rule(rule) {
-        return;
-    }
-
-    rule.conditions = ConditionGroup::All(vec![
-        non_empty_condition("TSVAL"),
-        non_empty_condition("TSVALNF"),
-    ]);
 }
 
 fn apply_open_rules_relationship_semantics(rule: &mut ExecutableRule) {

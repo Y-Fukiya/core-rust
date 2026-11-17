@@ -54,6 +54,8 @@ pub struct ValidateRequest {
     pub exclude_rules: Vec<String>,
     pub standard: Option<String>,
     pub standard_version: Option<String>,
+    pub substandard: Option<String>,
+    pub use_case: Option<String>,
     pub output_format: ReportOutputFormat,
     pub log_level: Option<String>,
     pub output_dir: Option<PathBuf>,

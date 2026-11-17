@@ -458,8 +458,10 @@ also runs weekly. That workflow checks out the pinned SHA from
 `--strict-lock`, and uploads the upstream scoreboard artifacts.
 
 The committed full upstream baseline is a default-engine regression baseline.
-`ValidateRequest::open_rules_oracle_compat` remains an explicit API/test-only
-compatibility switch; the upstream workflow does not silently enable it. Treat
+Legacy fixture behavior requires `--open-rules-oracle-compat` on the harness or
+`ValidateRequest::open_rules_oracle_compat` in the API. The upstream workflow
+does not enable it. Legacy SDTMIG 3.3 visit inference is reported as
+`legacy_fixture_compatibility` and is excluded from native-engine counts. Treat
 `tests/open_rules/upstream-baseline.json` as a "do not get worse" guard for the
 default engine plus tracked hand-port provenance, not as a full conformance
 certificate.

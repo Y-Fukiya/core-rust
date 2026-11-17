@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
 
 use core_data::{dataset_column_values, LoadedDataset};
+use core_rule_model::ExecutableRule;
 use serde_json::Value;
 
 use crate::operation_fields::clean_operation_identifier;
-use crate::{dataset_domain_value, push_unique_string};
+use crate::scope_filter::{
+    class_scope_matches, domain_scope_allows, scope_contains_all, scope_values,
+};
+use crate::{dataset_column_name, dataset_domain_value, push_unique_string, ValidateRequest};
 
 pub(crate) fn model_allowed_variables(dataset: &LoadedDataset) -> Vec<String> {
     if dataset_domain_value(dataset) == "VS" {
@@ -108,6 +112,151 @@ pub(crate) fn is_custom_domain(domain: &str) -> bool {
             | "UR"
             | "VS"
     )
+}
+
+pub(crate) fn uses_tig_sdtm_domain_prefix_metadata(request: &ValidateRequest) -> bool {
+    request
+        .standard
+        .as_deref()
+        .is_some_and(|name| name.eq_ignore_ascii_case("TIG"))
+        && request.standard_version.as_deref() == Some("1.0")
+        && request
+            .substandard
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("SDTM"))
+}
+
+pub(crate) fn tig_custom_domain_use_case_matches(
+    rule: &ExecutableRule,
+    requested: Option<&str>,
+) -> bool {
+    requested
+        .zip(rule.use_case.as_deref())
+        .is_some_and(|(requested, allowed)| {
+            allowed
+                .split(',')
+                .any(|use_case| use_case.trim().eq_ignore_ascii_case(requested))
+        })
+}
+
+pub(crate) fn tig_sdtm_domain_prefix_customness(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+) -> Option<bool> {
+    if !domain_scope_allows(rule.domains.as_ref(), dataset) {
+        return None;
+    }
+
+    let dataset_name = dataset.metadata.name.to_ascii_uppercase();
+    let domain = first_domain_code(dataset, "DOMAIN");
+    let variables = dataset_variable_names_in_order(dataset);
+    let has_variable = |name: &str| variables.iter().any(|var| var.eq_ignore_ascii_case(name));
+    let supp_prefix = ["SUPP", "SQ"]
+        .into_iter()
+        .find(|prefix| dataset_name.starts_with(*prefix));
+    let supplemental_domain = supp_prefix.and_then(|prefix| {
+        first_domain_code(dataset, "RDOMAIN").map(|rdomain| format!("{prefix}{rdomain}"))
+    });
+    let unsplit_name = domain
+        .as_deref()
+        .or(supplemental_domain.as_deref())
+        .unwrap_or(&dataset_name);
+    let ap_suffix =
+        if supp_prefix.is_none() && (has_variable("APID") || dataset_name.starts_with("AP")) {
+            domain
+                .as_deref()
+                .and_then(|domain| domain.get(2..))
+                .filter(|suffix| suffix.len() >= 2)
+                .or_else(|| {
+                    dataset_name
+                        .strip_prefix("AP")
+                        .filter(|suffix| suffix.len() >= 2)
+                })
+        } else {
+            None
+        };
+
+    let includes = scope_values(rule.classes.as_ref(), "Include");
+    if !scope_contains_all(&includes) {
+        let class = tig_sdtm_standard_class(unsplit_name)
+            .or_else(|| infer_sdtm_topic_class(domain.as_deref(), &has_variable))
+            .or_else(|| {
+                let suffix = ap_suffix?;
+                tig_sdtm_standard_class(suffix)
+                    .or_else(|| infer_sdtm_topic_class(Some(suffix), &has_variable))
+            });
+        let excludes = scope_values(rule.classes.as_ref(), "Exclude");
+        if (!includes.is_empty() && !class.is_some_and(|c| class_scope_matches(&includes, c)))
+            || class.is_some_and(|c| class_scope_matches(&excludes, c))
+        {
+            return None;
+        }
+    }
+
+    let check_name = if supp_prefix.is_some() {
+        "SUPPQUAL"
+    } else {
+        ap_suffix.unwrap_or(unsplit_name)
+    };
+    Some(tig_sdtm_standard_class(check_name).is_none())
+}
+
+fn first_domain_code(dataset: &LoadedDataset, column: &str) -> Option<String> {
+    let name = dataset_column_name(dataset, column)?;
+    let value = dataset.frame().column(&name).ok()?.get(0).ok()?;
+    value
+        .get_str()
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+        .map(str::to_ascii_uppercase)
+}
+
+fn infer_sdtm_topic_class(
+    domain: Option<&str>,
+    has_variable: &impl Fn(&str) -> bool,
+) -> Option<&'static str> {
+    let has_topic = |suffix| {
+        if has_variable("DOMAIN") {
+            domain.is_some_and(|domain| has_variable(&format!("{domain}{suffix}")))
+        } else {
+            has_variable("RDOMAIN") && has_variable(suffix)
+        }
+    };
+    if has_topic("TERM") {
+        Some("EVENTS")
+    } else if has_topic("TRT") {
+        Some("INTERVENTIONS")
+    } else if has_topic("QNAM") {
+        Some("RELATIONSHIP")
+    } else if has_topic("TESTCD") {
+        Some(if has_topic("OBJ") {
+            "FINDINGS ABOUT"
+        } else {
+            "FINDINGS"
+        })
+    } else {
+        None
+    }
+}
+
+// CORE v1.0.0 cache: standards/tig/1-0/sdtm first, then models/sdtm/2-1.
+fn tig_sdtm_standard_class(domain: &str) -> Option<&'static str> {
+    match domain {
+        "CM" | "EC" | "EX" | "SU" => Some("INTERVENTIONS"),
+        "AE" | "DS" | "DV" | "EM" | "MH" => Some("EVENTS"),
+        "DA" | "DO" | "DU" | "EG" | "IE" | "LB" | "PC" | "PP" | "PT" | "QS" | "RE" | "SC"
+        | "VS" => Some("FINDINGS"),
+        "FA" => Some("FINDINGS ABOUT"),
+        "CO" | "DM" | "IN" | "IQ" | "IT" | "PD" | "SE" | "SV" => Some("SPECIAL PURPOSE"),
+        "TA" | "TE" | "TI" | "TS" | "TV" => Some("TRIAL DESIGN"),
+        "DI" | "ES" | "TO" => Some("STUDY REFERENCE"),
+        "RELREC" | "SUPPQUAL" => Some("RELATIONSHIP"),
+        "SJ" | "SM" => Some("SPECIAL-PURPOSE"),
+        "AC" | "TD" | "TM" | "TP" | "TT" | "TX" => Some("TRIAL DESIGN"),
+        "OI" => Some("STUDY REFERENCE"),
+        "APRELSUB" | "DR" | "POOLDEF" | "RELREF" | "RELSPEC" | "RELSUB" => Some("RELATIONSHIP"),
+        _ => None,
+    }
 }
 
 pub(crate) fn insert_metadata_operation_value(

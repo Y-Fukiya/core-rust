@@ -3,12 +3,7 @@ use core_rule_model::ExecutableRule;
 pub(crate) const CORE_000609: &str = "CORE-000609";
 
 pub(crate) const CORE_000015: &str = "CORE-000015";
-pub(crate) const CORE_000007: &str = "CORE-000007";
-pub(crate) const CORE_000025: &str = "CORE-000025";
-pub(crate) const CORE_000037: &str = "CORE-000037";
-pub(crate) const CORE_000038: &str = "CORE-000038";
 pub(crate) const CORE_000044: &str = "CORE-000044";
-pub(crate) const CORE_000047: &str = "CORE-000047";
 pub(crate) const CORE_000039: &str = "CORE-000039";
 pub(crate) const CORE_000095: &str = "CORE-000095";
 pub(crate) const CORE_000096: &str = "CORE-000096";
@@ -17,19 +12,11 @@ pub(crate) const CORE_000138: &str = "CORE-000138";
 pub(crate) const CORE_000139: &str = "CORE-000139";
 pub(crate) const CORE_000140: &str = "CORE-000140";
 pub(crate) const CORE_000142: &str = "CORE-000142";
-pub(crate) const CORE_000147: &str = "CORE-000147";
-pub(crate) const CORE_000148: &str = "CORE-000148";
 pub(crate) const CORE_000165: &str = "CORE-000165";
 pub(crate) const CORE_000166: &str = "CORE-000166";
 pub(crate) const CORE_000167: &str = "CORE-000167";
-pub(crate) const CORE_000177: &str = "CORE-000177";
-pub(crate) const CORE_000185: &str = "CORE-000185";
-pub(crate) const CORE_000186: &str = "CORE-000186";
-pub(crate) const CORE_000187: &str = "CORE-000187";
 pub(crate) const CORE_000201: &str = "CORE-000201";
-pub(crate) const CORE_000223: &str = "CORE-000223";
 pub(crate) const CORE_000224: &str = "CORE-000224";
-pub(crate) const CORE_000228: &str = "CORE-000228";
 pub(crate) const CORE_000206: &str = "CORE-000206";
 pub(crate) const CORE_000269: &str = "CORE-000269";
 pub(crate) const CORE_000270: &str = "CORE-000270";
@@ -37,7 +24,6 @@ pub(crate) const CORE_000272: &str = "CORE-000272";
 pub(crate) const CORE_000321: &str = "CORE-000321";
 pub(crate) const CORE_000324: &str = "CORE-000324";
 pub(crate) const CORE_000328: &str = "CORE-000328";
-pub(crate) const CORE_000361: &str = "CORE-000361";
 pub(crate) const CORE_000376: &str = "CORE-000376";
 pub(crate) const CORE_000390: &str = "CORE-000390";
 pub(crate) const CORE_000398: &str = "CORE-000398";
@@ -55,11 +41,9 @@ pub(crate) const CORE_000540: &str = "CORE-000540";
 pub(crate) const CORE_000547: &str = "CORE-000547";
 pub(crate) const CORE_000550: &str = "CORE-000550";
 pub(crate) const CORE_000572: &str = "CORE-000572";
-pub(crate) const CORE_000583: &str = "CORE-000583";
 pub(crate) const CORE_000595: &str = "CORE-000595";
 pub(crate) const CORE_000597: &str = "CORE-000597";
 pub(crate) const CORE_000651: &str = "CORE-000651";
-pub(crate) const CORE_000653: &str = "CORE-000653";
 pub(crate) const CORE_000654: &str = "CORE-000654";
 pub(crate) const CORE_000660: &str = "CORE-000660";
 pub(crate) const CORE_000670: &str = "CORE-000670";
@@ -67,12 +51,12 @@ pub(crate) const CORE_000676: &str = "CORE-000676";
 pub(crate) const CORE_000678: &str = "CORE-000678";
 pub(crate) const CORE_000690: &str = "CORE-000690";
 pub(crate) const CORE_000700: &str = "CORE-000700";
-pub(crate) const CORE_000711: &str = "CORE-000711";
 pub(crate) const CORE_000714: &str = "CORE-000714";
 pub(crate) const CORE_000744: &str = "CORE-000744";
 pub(crate) const CORE_000757: &str = "CORE-000757";
 pub(crate) const CORE_000750: &str = "CORE-000750";
 pub(crate) const CORE_000783: &str = "CORE-000783";
+pub(crate) const CORE_000784: &str = "CORE-000784";
 pub(crate) const CORE_000786: &str = "CORE-000786";
 pub(crate) const CORE_000793: &str = "CORE-000793";
 pub(crate) const CORE_000794: &str = "CORE-000794";
@@ -108,8 +92,6 @@ pub(crate) fn is_date_issue_variable_expansion_rule(rule: &ExecutableRule) -> bo
             | CORE_000324
             | CORE_000505
             | CORE_000572
-            | CORE_000653
-            | CORE_000711
             | CORE_000714
             | CORE_000866
     )
@@ -125,6 +107,10 @@ pub(crate) fn is_missing_casno_oracle_issue_rule(rule: &ExecutableRule) -> bool 
 
 pub(crate) fn is_suppae_aesosp_parent_record_rule(rule: &ExecutableRule) -> bool {
     rule.core_id == CORE_000597
+}
+
+pub(crate) fn is_sv_element_order_match_rule(rule: &ExecutableRule) -> bool {
+    rule.core_id == CORE_000784
 }
 
 pub(crate) fn is_unscheduled_death_ds_flag_rule(rule: &ExecutableRule) -> bool {
@@ -251,27 +237,11 @@ pub(crate) fn uses_missing_scoped_dataset_presence_result(rule: &ExecutableRule)
 }
 
 pub(crate) fn uses_csv_line_record_numbers(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        CORE_000007
-            | CORE_000025
-            | CORE_000037
-            | CORE_000038
-            | CORE_000044
-            | CORE_000140
-            | CORE_000147
-            | CORE_000148
-            | CORE_000185
-            | CORE_000186
-            | CORE_000187
-    )
+    matches!(rule.core_id.as_str(), CORE_000044 | CORE_000140)
 }
 
 pub(crate) fn uses_previous_record_numbers(rule: &ExecutableRule) -> bool {
-    matches!(
-        rule.core_id.as_str(),
-        CORE_000177 | CORE_000223 | CORE_000224 | CORE_000228
-    )
+    rule.core_id == CORE_000224
 }
 
 pub(crate) fn uses_alphanumeric_fa_split_dataset_name_regex(rule: &ExecutableRule) -> bool {
@@ -290,17 +260,18 @@ pub(crate) fn is_cv_unique_evaluation_interval_rule(rule: &ExecutableRule) -> bo
     rule.core_id == CORE_000390
 }
 
-pub(crate) fn assumes_missing_svpresp_is_planned(rule: &ExecutableRule) -> bool {
+pub(crate) fn uses_legacy_svpresp_inference(
+    rule: &ExecutableRule,
+    standard: Option<&str>,
+    version: Option<&str>,
+) -> bool {
     rule.core_id == CORE_000039
-}
-
-pub(crate) fn is_trial_summary_null_flavor_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == CORE_000583
+        && standard.is_some_and(|standard| standard.eq_ignore_ascii_case("SDTMIG"))
+        && version == Some("3.3")
 }
 
 pub(crate) fn open_rules_relationship_direction(rule: &ExecutableRule) -> Option<&'static str> {
     match rule.core_id.as_str() {
-        CORE_000361 => Some("target_to_comparator"),
         CORE_000690 => Some("comparator_to_target"),
         _ => None,
     }
@@ -308,10 +279,6 @@ pub(crate) fn open_rules_relationship_direction(rule: &ExecutableRule) -> Option
 
 pub(crate) fn is_operation_report_variable_override_rule(rule: &ExecutableRule) -> bool {
     rule.core_id == CORE_000783
-}
-
-pub(crate) fn is_reference_distinct_report_variable_rule(rule: &ExecutableRule) -> bool {
-    rule.core_id == CORE_000047
 }
 
 pub(crate) fn is_group_level_distinct_result_rule(rule: &ExecutableRule) -> bool {

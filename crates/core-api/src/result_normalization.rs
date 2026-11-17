@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use core_data::{dataset_column_values, DatasetSourceFormat, LoadedDataset};
 use core_engine::{evaluate_condition_group, RuleValidationResult, SkippedReason, ValidationIssue};
@@ -10,11 +10,13 @@ use crate::dataset_helpers::{
     push_unique_string,
 };
 use crate::json_values::json_scalar_string;
+use crate::match_datasets::SOURCE_ROW_COLUMN;
 use crate::metadata_support::{
     has_dataset_level_record_count_operation, has_variable_count_operation,
 };
 use crate::{
-    engine_semantics, expand_domain_placeholder_for_dataset, find_dataset, outcome_message,
+    dataset_matches_name, engine_semantics, expand_domain_placeholder_for_dataset, find_dataset,
+    outcome_message,
 };
 
 pub(crate) fn normalize_validation_result(
@@ -123,7 +125,10 @@ pub(crate) fn normalize_validation_result(
         && !result.errors.is_empty()
         && has_elapsed_time_consistency_preconditions(rule, dataset)
     {
-        let issue_variables = elapsed_time_consistency_issue_variables(dataset);
+        let issue_variables = match rule.sensitivity {
+            Some(Sensitivity::Group) => None,
+            _ => elapsed_time_consistency_issue_variables(dataset),
+        };
         result.errors = result
             .errors
             .into_iter()
@@ -238,6 +243,7 @@ pub(crate) fn normalize_validation_result(
     report_first_row_dataset_presence_result(rule, &mut result);
     report_csv_line_record_numbers(rule, dataset, &mut result);
     report_previous_record_numbers(rule, dataset, &mut result);
+    report_sv_element_order_sequences(rule, dataset, &mut result);
 
     if !has_variable_count_operation(rule) && !has_dataset_level_record_count_operation(rule)
         || !matches!(rule.sensitivity, Some(Sensitivity::Dataset))
@@ -458,6 +464,38 @@ pub(crate) fn dataset_cell_string(values: &[Value], row: usize) -> String {
         .unwrap_or_default()
 }
 
+fn report_sv_element_order_sequences(
+    rule: &ExecutableRule,
+    dataset: &LoadedDataset,
+    result: &mut RuleValidationResult,
+) {
+    if !engine_semantics::is_sv_element_order_match_rule(rule)
+        || !dataset_domain_value(dataset).eq_ignore_ascii_case("SV")
+        || !dataset_has_column(dataset, SOURCE_ROW_COLUMN)
+        || result.errors.is_empty()
+    {
+        return;
+    }
+
+    // A joined SESEQ is not a sequence number for the original SV record.
+    let sv_sequences = dataset_column_name(dataset, "SVSEQ")
+        .and_then(|column| dataset_column_values(dataset, &column).ok())
+        .unwrap_or_default();
+    let sequence_by_row = dataset_column_values(dataset, SOURCE_ROW_COLUMN)
+        .unwrap_or_default()
+        .into_iter()
+        .zip(sv_sequences)
+        .filter_map(|(row, sequence)| {
+            let row = usize::try_from(row.as_u64()?).ok()?;
+            let sequence = json_scalar_string(&sequence).filter(|value| !value.is_empty())?;
+            Some((row, sequence))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for issue in &mut result.errors {
+        issue.seq = issue.row.and_then(|row| sequence_by_row.get(&row)).cloned();
+    }
+}
+
 fn report_first_row_dataset_presence_result(
     rule: &ExecutableRule,
     result: &mut RuleValidationResult,
@@ -551,6 +589,13 @@ fn narrow_simple_any_issue_variables(
     }) {
         return;
     }
+    if !rule.output_variables.is_empty()
+        && conditions
+            .iter()
+            .all(|condition| condition.operator == Operator::DoesNotMatchRegexFullString)
+    {
+        return;
+    }
 
     let masks = conditions
         .iter()
@@ -602,6 +647,7 @@ fn omit_unique_set_group_locator_variables(
 ) {
     if result.execution_status != core_engine::ExecutionStatus::Failed
         || result.errors.is_empty()
+        || !rule.output_variables.is_empty()
         || !engine_semantics::omits_unique_set_group_locator_variables(rule)
     {
         return;
@@ -943,6 +989,11 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
         let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
         let idvars = dataset_column_values(dataset, "IDVAR").unwrap_or_default();
         let idvarvals = dataset_column_values(dataset, "IDVARVAL").unwrap_or_default();
+        let co_sequences = if dataset_matches_name(dataset, "CO") {
+            dataset_column_values(dataset, "COSEQ").unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         for row in 0..dataset.summary().row_count {
             let idvar = core_000206_cell(&idvars, row);
@@ -958,6 +1009,7 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
             if core_000206_parent_has_idvarval(datasets, &rdomain, &usubjid, &idvar, &idvarval) {
                 continue;
             }
+            let seq = core_000206_cell(&co_sequences, row);
             errors.push(ValidationIssue {
                 rule_id: rule.core_id.clone(),
                 dataset: dataset.metadata.name.clone(),
@@ -966,7 +1018,7 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
                 variables: rule.output_variables.clone(),
                 message: message.clone(),
                 usubjid: (!usubjid.is_empty()).then_some(usubjid),
-                seq: None,
+                seq: (!seq.is_empty()).then_some(seq),
             });
         }
     }

@@ -730,7 +730,7 @@ fn evaluates_open_rules_date_comparisons_against_complete_dates() {
             &dataset
         )
         .expect("date not equal"),
-        vec![true, true, true, false]
+        vec![true, true, true, true]
     );
     assert_eq!(
         evaluate_condition(
@@ -738,7 +738,7 @@ fn evaluates_open_rules_date_comparisons_against_complete_dates() {
             &dataset
         )
         .expect("date less than"),
-        vec![true, false, true, false]
+        vec![true, false, false, false]
     );
     assert_eq!(
         evaluate_condition(
@@ -750,7 +750,7 @@ fn evaluates_open_rules_date_comparisons_against_complete_dates() {
             &dataset
         )
         .expect("date greater than or equal"),
-        vec![false, true, false, false]
+        vec![false, true, true, false]
     );
 }
 
@@ -962,7 +962,7 @@ fn malformed_iso8601_datetime_suffix_is_invalid_date() {
 }
 
 #[test]
-fn date_comparisons_order_incomplete_dates_by_known_prefix() {
+fn date_comparisons_order_partial_dates_at_common_precision() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");
     fs::write(
@@ -997,12 +997,12 @@ fn date_comparisons_order_incomplete_dates_by_known_prefix() {
             &dataset
         )
         .expect("date greater than"),
-        vec![true, true, true]
+        vec![true, false, false]
     );
 }
 
 #[test]
-fn date_comparisons_accept_single_digit_datetime_hour() {
+fn date_comparisons_reject_single_digit_datetime_hour() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("datasets.json");
     fs::write(
@@ -1037,7 +1037,7 @@ fn date_comparisons_accept_single_digit_datetime_hour() {
             &dataset,
         )
         .expect("single digit hour comparison"),
-        vec![true, false]
+        vec![false, false]
     );
 }
 
@@ -1907,6 +1907,21 @@ fn evaluates_is_not_unique_relationship_with_empty_values() {
 }
 
 #[test]
+fn evaluates_not_unique_relationship_without_grouping_null_keys() {
+    let dataset = relationship_dataset();
+    let condition = condition(
+        "LEFT_NULL",
+        Operator::IsNotUniqueRelationship,
+        ValueExpr::ColumnRef("RIGHT_NULL".to_owned()),
+    );
+
+    assert_eq!(
+        evaluate_condition(&condition, &dataset).expect("is not unique relationship"),
+        vec![true, true, true, false]
+    );
+}
+
+#[test]
 fn relationship_rule_uses_dataset_presence_preconditions() {
     let dataset = relationship_dataset();
     let rule = rule(
@@ -2388,7 +2403,7 @@ fn validation_issues_prefer_rule_output_variables() {
 }
 
 #[test]
-fn empty_within_except_last_row_reports_only_target_variable() {
+fn core_000527_reports_explicit_output_variables_for_nonfinal_empty_end_date() {
     let dataset = end_date_dataset();
     let mut rule = rule(
         Some(Sensitivity::Record),
@@ -2400,16 +2415,31 @@ fn empty_within_except_last_row_reports_only_target_variable() {
         )),
         "SEENDTC is empty before the last row",
     );
-    rule.output_variables = vec!["SESTDTC".to_owned(), "SEENDTC".to_owned()];
+    rule.core_id = "CORE-000527".to_owned();
 
-    let result = validate_rule(&rule, &dataset).expect("validate rule");
+    for (declared, expected) in [
+        (vec!["SESTDTC", "SEENDTC"], vec!["SESTDTC", "SEENDTC"]),
+        (
+            vec!["SEENDTC", "SESTDTC", "ETCD"],
+            vec!["SEENDTC", "SESTDTC", "ETCD"],
+        ),
+        (vec![], vec!["SEENDTC"]),
+    ] {
+        rule.output_variables = declared.into_iter().map(str::to_owned).collect();
+        let result = validate_rule(&rule, &dataset).expect("validate rule");
 
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.errors[0].variables, vec!["SEENDTC"]);
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        let issue = &result.errors[0];
+        assert_eq!(issue.row, Some(2));
+        assert_eq!(issue.usubjid.as_deref(), Some("SUBJ1"));
+        assert_eq!(issue.seq.as_deref(), Some("2"));
+        assert_eq!(issue.variables, expected);
+    }
 }
 
 #[test]
-fn not_present_on_multiple_rows_reports_within_and_target_variables() {
+fn not_present_on_multiple_rows_preserves_authored_variables() {
     let dataset = relationship_dataset();
     let mut rule = rule(
         Some(Sensitivity::Record),
@@ -2426,7 +2456,7 @@ fn not_present_on_multiple_rows_reports_within_and_target_variables() {
     let result = validate_rule(&rule, &dataset).expect("validate rule");
 
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.errors[0].variables, vec!["USUBJID", "RELID"]);
+    assert_eq!(result.errors[0].variables, vec!["RELID"]);
 }
 
 #[test]

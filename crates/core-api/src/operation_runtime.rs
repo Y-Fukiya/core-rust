@@ -8,7 +8,9 @@ use core_data::{
     DataError, LoadedDataset,
 };
 use core_engine::{evaluate_condition_group, RuleValidationResult};
-use core_rule_model::{normalize_condition_value, ExecutableRule, OperationSpec};
+use core_rule_model::{
+    normalize_condition_value, ConditionGroup, ExecutableRule, OperationSpec, Operator, ValueExpr,
+};
 use serde_json::Value;
 
 use crate::dataset_helpers::dataset_has_column;
@@ -32,8 +34,9 @@ use crate::operation_execution::{
     operation_column_values, operation_group_key_columns, operation_inline_filter_mask,
 };
 use crate::operation_fields::{
-    bool_field, is_join_operation, normalize_operation_key, operation_name, operation_value,
-    rename_pair, string_field, string_list_field, string_map_field,
+    bool_field, clean_operation_identifier, is_join_operation, normalize_operation_key,
+    operation_name, operation_value, rename_pair, string_field, string_list_field,
+    string_map_field,
 };
 use crate::operation_references::derive_dataset_filtered_variables_dataset;
 use crate::{
@@ -134,6 +137,9 @@ pub(crate) fn initial_operation_datasets(
     }
 
     if is_scope_wide_reference_distinct_operation(rule, operation) {
+        if !reference_distinct_excludes_source(rule, operation) {
+            return Ok(datasets.to_vec());
+        }
         if let Some(name) = operation_dataset_name(operation) {
             let scoped = datasets
                 .iter()
@@ -212,6 +218,40 @@ fn is_scope_wide_reference_distinct_operation(
             Some("distinct" | "unique")
         )
         && operation_dataset_name(operation).is_some()
+}
+
+fn reference_distinct_excludes_source(rule: &ExecutableRule, operation: &OperationSpec) -> bool {
+    let source = string_field(
+        operation,
+        &["source_column", "value_column", "measure", "name"],
+    );
+    let output = string_field(operation, &["id", "target", "as", "output", "column"]);
+    let Some((source, output)) = source.zip(output) else {
+        return true;
+    };
+
+    // Positive membership in the derived set can select source rows, too.
+    !checks_positive_membership(
+        &rule.conditions,
+        &source,
+        &clean_operation_identifier(&output),
+    )
+}
+
+fn checks_positive_membership(group: &ConditionGroup, source: &str, output: &str) -> bool {
+    match group {
+        ConditionGroup::All(groups) => groups
+            .iter()
+            .any(|group| checks_positive_membership(group, source, output)),
+        ConditionGroup::Leaf(condition) => {
+            matches!(
+                condition.operator,
+                Operator::IsContainedBy | Operator::IsContainedByCaseInsensitive
+            ) && condition.target.as_deref() == Some(source)
+                && matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column == output)
+        }
+        ConditionGroup::Any(_) | ConditionGroup::Not(_) => false,
+    }
 }
 
 fn is_external_group_date_operation(operation: &OperationSpec, datasets: &[LoadedDataset]) -> bool {
@@ -1368,6 +1408,7 @@ fn execute_reference_distinct_operation(
     if find_dataset(datasets, &source_name).is_some() && !scope_wide {
         return None;
     }
+    let exclude_source = scope_wide && reference_distinct_excludes_source(rule, operation);
 
     let Some(output) = string_field(operation, &["id", "target", "as", "output", "column"]) else {
         return Some(Err(operation_skipped_result(
@@ -1446,7 +1487,7 @@ fn execute_reference_distinct_operation(
         return Some(
             datasets
                 .iter()
-                .filter(|dataset| !scope_wide || !dataset_matches_name(dataset, &source_name))
+                .filter(|dataset| !exclude_source || !dataset_matches_name(dataset, &source_name))
                 .filter(|dataset| {
                     !group_aliases.is_empty()
                         || reference_distinct_target_has_group_keys(dataset, &target_keys)
@@ -1470,7 +1511,7 @@ fn execute_reference_distinct_operation(
     Some(
         datasets
             .iter()
-            .filter(|dataset| !scope_wide || !dataset_matches_name(dataset, &source_name))
+            .filter(|dataset| !exclude_source || !dataset_matches_name(dataset, &source_name))
             .map(|dataset| {
                 derive_external_distinct_values_dataset(
                     dataset,

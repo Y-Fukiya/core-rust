@@ -55,7 +55,7 @@ fn filter_datasets_by_domain_scope(
         .collect()
 }
 
-fn domain_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
+pub(crate) fn domain_scope_allows(scope: Option<&Value>, dataset: &LoadedDataset) -> bool {
     let domain = dataset
         .metadata
         .domain

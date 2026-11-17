@@ -26,20 +26,14 @@ pub(crate) fn apply_operation_report_variables(rule: &mut ExecutableRule) {
         }
     }
 
-    if engine_semantics::is_operation_report_variable_override_rule(rule) {
+    if engine_semantics::is_operation_report_variable_override_rule(rule)
+        && rule
+            .output_variables
+            .iter()
+            .any(|variable| variable == "$model_variables")
+    {
         push_unique_string(&mut rule.output_variables, "USUBJID");
         push_unique_string(&mut rule.output_variables, "STUDYID");
-        return;
-    }
-
-    if engine_semantics::is_reference_distinct_report_variable_rule(rule)
-        && has_reference_distinct_operation(rule)
-    {
-        let mut variables = Vec::new();
-        collect_condition_target_variables(&rule.conditions, &mut variables);
-        if !variables.is_empty() {
-            rule.output_variables = variables;
-        }
         return;
     }
 

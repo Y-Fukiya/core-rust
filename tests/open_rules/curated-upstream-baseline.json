@@ -45,17 +45,17 @@
     "by_execution_provenance_detail": [
       {
         "detail": "generic_engine",
-        "supported_match": 154,
+        "supported_match": 158,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.5539568345323741
+        "coverage": 0.5683453237410072
       },
       {
         "detail": "rule_specific_engine_semantics",
-        "supported_match": 39,
+        "supported_match": 35,
         "supported_mismatch": 0,
         "supported_accuracy": 1.0,
-        "coverage": 0.14028776978417265
+        "coverage": 0.12589928057553956
       },
       {
         "detail": "compatibility_policy",
@@ -143,17 +143,17 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 154,
+            "supported_match": 158,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.5539568345323741
+            "coverage": 0.5683453237410072
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 39,
+            "supported_match": 35,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.14028776978417265
+            "coverage": 0.12589928057553956
           },
           {
             "detail": "compatibility_policy",
@@ -235,17 +235,17 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 79,
+            "supported_match": 81,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.5524475524475524
+            "coverage": 0.5664335664335665
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 18,
+            "supported_match": 16,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.1258741258741259
+            "coverage": 0.11188811188811189
           },
           {
             "detail": "compatibility_policy",
@@ -325,17 +325,17 @@
         "by_execution_provenance_detail": [
           {
             "detail": "generic_engine",
-            "supported_match": 75,
+            "supported_match": 77,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.5555555555555556
+            "coverage": 0.5703703703703704
           },
           {
             "detail": "rule_specific_engine_semantics",
-            "supported_match": 21,
+            "supported_match": 19,
             "supported_mismatch": 0,
             "supported_accuracy": 1.0,
-            "coverage": 0.15555555555555556
+            "coverage": 0.14074074074074075
           },
           {
             "detail": "compatibility_policy",
@@ -413,7 +413,7 @@
       "official_results_csv": "Published/CORE-000007/negative/01/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000007/negative/01/report.csv",
       "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -432,7 +432,7 @@
       "official_results_csv": "Published/CORE-000007/negative/02/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000007/negative/02/report.csv",
       "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -451,7 +451,7 @@
       "official_results_csv": "Published/CORE-000007/positive/01/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000007/positive/01/report.csv",
       "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,
@@ -470,7 +470,7 @@
       "official_results_csv": "Published/CORE-000007/positive/02/results/results.csv",
       "candidate_report_csv": "target/<core-rs-results-root>/Published/CORE-000007/positive/02/report.csv",
       "execution_provenance": "native_engine",
-      "execution_provenance_detail": "rule_specific_engine_semantics",
+      "execution_provenance_detail": "generic_engine",
       "scoring_policy": "strict_identity",
       "bucket": "supported_match",
       "reason": null,

@@ -390,16 +390,36 @@ Outcome:
 }
 
 #[test]
-fn run_validation_reports_csv_line_record_for_selected_open_rules_row_scope_rules() {
+fn run_validation_keeps_csv_line_offsets_for_historical_rule_ids() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("create rules dir");
     fs::create_dir_all(&data_dir).expect("create data dir");
     fs::write(
-        rules_dir.join("CORE-000025.yml"),
-        r#"Core:
-  Id: CORE-000025
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nie,Inclusion Exclusion Criteria Not Met\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nIE,USUBJID,Unique Subject Identifier,Char,40\nIE,IESEQ,Sequence Number,Num,8\nIE,IEORRES,Original Result,Char,40\nIE,IESTRESC,Standardized Result,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("ie.csv"),
+        "USUBJID,IESEQ,IEORRES,IESTRESC\nSUBJ1,1,Y,Yup\n",
+    )
+    .expect("write dataset csv");
+
+    // The shared IE check isolates locator behavior from the authored rules for 044 and 140.
+    for (rule_id, expected_row) in [("CORE-000025", 1), ("CORE-000044", 2), ("CORE-000140", 2)] {
+        let rule_path = rules_dir.join(format!("{rule_id}.yml"));
+        fs::write(
+            &rule_path,
+            format!(
+                r#"Core:
+  Id: {rule_id}
   Status: Published
 Scope:
   Domains:
@@ -417,37 +437,28 @@ Outcome:
   Output Variables:
     - IEORRES
     - IESTRESC
-"#,
-    )
-    .expect("write rule");
-    fs::write(
-        data_dir.join("_datasets.csv"),
-        "Filename,Label\nie,Inclusion Exclusion Criteria Not Met\n",
-    )
-    .expect("write datasets csv");
-    fs::write(
-        data_dir.join("_variables.csv"),
-        "dataset,variable,label,type,length\nIE,USUBJID,Unique Subject Identifier,Char,40\nIE,IESEQ,Sequence Number,Num,8\nIE,IEORRES,Original Result,Char,40\nIE,IESTRESC,Standardized Result,Char,40\n",
-    )
-    .expect("write variables csv");
-    fs::write(
-        data_dir.join("ie.csv"),
-        "USUBJID,IESEQ,IEORRES,IESTRESC\nSUBJ1,1,Y,Yup\n",
-    )
-    .expect("write dataset csv");
+"#
+            ),
+        )
+        .expect("write rule");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule_path],
+            dataset_paths: vec![data_dir.clone()],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].row, Some(2));
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        let issue = &result.errors[0];
+        assert_eq!(issue.row, Some(expected_row), "{rule_id}");
+        assert_eq!(issue.usubjid.as_deref(), Some("SUBJ1"), "{rule_id}");
+        assert_eq!(issue.seq.as_deref(), Some("1"), "{rule_id}");
+    }
 }
 
 #[test]
@@ -530,16 +541,37 @@ Outcome:
 }
 
 #[test]
-fn run_validation_reports_previous_record_for_selected_open_rules_row_scope_rules() {
+fn run_validation_keeps_previous_record_offset_for_core_000224_only() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("create rules dir");
     fs::create_dir_all(&data_dir).expect("create data dir");
     fs::write(
-        rules_dir.join("CORE-000223.yml"),
-        r#"Core:
-  Id: CORE-000223
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\ndm,Demographics\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nDM,USUBJID,Unique Subject Identifier,Char,40\nDM,ACTARMCD,Actual Arm Code,Char,40\nDM,ACTARM,Actual Arm,Char,40\nDM,ARMNRS,Reason Arm and/or Actual Arm is Null,Char,40\n",
+    )
+    .expect("write variables csv");
+    fs::write(
+        data_dir.join("dm.csv"),
+        "USUBJID,ACTARMCD,ACTARM,ARMNRS\nSUBJ1,ZAN_LOW,Low Dose,\nSUBJ2,,,\n",
+    )
+    .expect("write dataset csv");
+
+    for (rule_id, arm_variable, expected_row) in
+        [("CORE-000223", "ACTARMCD", 2), ("CORE-000224", "ACTARM", 1)]
+    {
+        let rule_path = rules_dir.join(format!("{rule_id}.yml"));
+        fs::write(
+            &rule_path,
+            format!(
+                r#"Core:
+  Id: {rule_id}
   Status: Published
 Scope:
   Domains:
@@ -549,44 +581,34 @@ Sensitivity: Record
 Rule Type: Record Data
 Check:
   all:
-    - name: ACTARMCD
+    - name: {arm_variable}
       operator: empty
     - name: ARMNRS
       operator: empty
 Outcome:
-  Message: ACTARMCD is empty, but ARMNRS is not completed.
+  Message: Actual arm and ARMNRS are both empty.
   Output Variables:
-    - ACTARMCD
+    - {arm_variable}
     - ARMNRS
-"#,
-    )
-    .expect("write rule");
-    fs::write(
-        data_dir.join("_datasets.csv"),
-        "Filename,Label\ndm,Demographics\n",
-    )
-    .expect("write datasets csv");
-    fs::write(
-        data_dir.join("_variables.csv"),
-        "dataset,variable,label,type,length\nDM,USUBJID,Unique Subject Identifier,Char,40\nDM,ACTARMCD,Actual Arm Code,Char,40\nDM,ARMNRS,Reason Arm and/or Actual Arm is Null,Char,40\n",
-    )
-    .expect("write variables csv");
-    fs::write(
-        data_dir.join("dm.csv"),
-        "USUBJID,ACTARMCD,ARMNRS\nSUBJ1,ZAN_LOW,\nSUBJ2,,\n",
-    )
-    .expect("write dataset csv");
+"#
+            ),
+        )
+        .expect("write rule");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule_path],
+            dataset_paths: vec![data_dir.clone()],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        let issue = &result.errors[0];
+        assert_eq!(issue.row, Some(expected_row), "{rule_id}");
+        assert_eq!(issue.usubjid.as_deref(), Some("SUBJ2"), "{rule_id}");
+    }
 }

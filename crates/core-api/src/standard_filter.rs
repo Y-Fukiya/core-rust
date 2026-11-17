@@ -1,28 +1,21 @@
 use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::{ExecutableRule, StandardRef};
 
-use crate::RuleSelection;
+use crate::{engine_semantics::CORE_000039, RuleSelection, ValidateRequest};
 
-pub(crate) fn apply_standard_filter(
-    selection: &mut RuleSelection,
-    include_rules: &[String],
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) {
-    if standard.is_none() {
+pub(crate) fn apply_standard_filter(selection: &mut RuleSelection, request: &ValidateRequest) {
+    if request.standard.is_none() {
         return;
     }
 
     let mut selected = Vec::with_capacity(selection.selected.len());
     for rule in std::mem::take(&mut selection.selected) {
-        if rule_matches_standard(&rule, standard, standard_version) {
+        if rule_matches_standard(&rule, request) {
             selected.push(rule);
-        } else if !include_rules.is_empty() {
-            selection.skipped.push(standard_mismatch_result(
-                &rule,
-                standard.as_deref(),
-                standard_version.as_deref(),
-            ));
+        } else if !request.include_rules.is_empty() {
+            selection
+                .skipped
+                .push(standard_mismatch_result(&rule, request));
         }
     }
     selection.selected = selected;
@@ -51,24 +44,34 @@ pub(crate) fn apply_standard_oracle_gap_filter(
     selection.selected = selected;
 }
 
-fn rule_matches_standard(
-    rule: &ExecutableRule,
-    standard: &Option<String>,
-    standard_version: &Option<String>,
-) -> bool {
-    let Some(standard) = standard.as_deref() else {
+fn rule_matches_standard(rule: &ExecutableRule, request: &ValidateRequest) -> bool {
+    let Some(standard) = request.standard.as_deref() else {
         return true;
     };
+    let allow_sdtmig_33_alias = rule.core_id != CORE_000039 || request.open_rules_oracle_compat;
 
     rule.standards.iter().any(|rule_standard| {
         rule_standard_matches_name(rule_standard, standard, &rule.core_id)
-            && standard_version.as_deref().is_none_or(|version| {
+            && (!standard.eq_ignore_ascii_case("TIG")
+                || request.substandard.as_deref().is_some_and(|requested| {
+                    rule_standard
+                        .extra
+                        .get("Substandard")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|name| name.eq_ignore_ascii_case(requested))
+                }))
+            && request.standard_version.as_deref().is_none_or(|version| {
                 rule_standard
                     .version
                     .as_deref()
                     .is_some_and(|rule_version| {
                         rule_version.eq_ignore_ascii_case(version)
-                            || standard_version_compatible(standard, version, rule_version)
+                            || standard_version_compatible(
+                                standard,
+                                version,
+                                rule_version,
+                                allow_sdtmig_33_alias,
+                            )
                     })
             })
     })
@@ -117,9 +120,17 @@ fn rule_standard_matches_name(rule_standard: &StandardRef, requested: &str, rule
             }))
 }
 
-fn standard_version_compatible(standard: &str, requested: &str, rule_version: &str) -> bool {
+fn standard_version_compatible(
+    standard: &str,
+    requested: &str,
+    rule_version: &str,
+    allow_sdtmig_33_alias: bool,
+) -> bool {
     (standard.eq_ignore_ascii_case("USDM") && requested == "4.0" && rule_version == "3.0")
-        || (standard.eq_ignore_ascii_case("SDTMIG") && requested == "3.3" && rule_version == "3.4")
+        || (allow_sdtmig_33_alias
+            && standard.eq_ignore_ascii_case("SDTMIG")
+            && requested == "3.3"
+            && rule_version == "3.4")
         || (standard.eq_ignore_ascii_case("SDTMIG") && requested == "3.4" && rule_version == "1.0")
         || (standard.eq_ignore_ascii_case("SENDIG")
             && matches!(requested, "3.0" | "3.1")
@@ -148,14 +159,18 @@ fn is_sendig_31_operation_oracle_gap(
 
 fn standard_mismatch_result(
     rule: &ExecutableRule,
-    standard: Option<&str>,
-    standard_version: Option<&str>,
+    request: &ValidateRequest,
 ) -> RuleValidationResult {
-    let requested = match (standard, standard_version) {
+    let standard = request.standard.as_deref();
+    let standard_version = request.standard_version.as_deref();
+    let mut requested = match (standard, standard_version) {
         (Some(standard), Some(version)) => format!("{standard} {version}"),
         (Some(standard), None) => standard.to_owned(),
         _ => "requested standard".to_owned(),
     };
+    if let Some(substandard) = &request.substandard {
+        requested.push_str(&format!(" ({substandard})"));
+    }
     let reason = if is_standard_filter_oracle_gap_rule(rule, standard, standard_version) {
         SkippedReason::OracleSemanticsGap
     } else {
@@ -234,20 +249,24 @@ mod tests {
         let rule = rule_with_standard("CORE-000642", "SENDIG", "3.1.1");
         assert!(rule_matches_standard(
             &rule,
-            &Some("SENDIG".to_owned()),
-            &Some("3.1".to_owned())
+            &ValidateRequest {
+                standard: Some("SENDIG".to_owned()),
+                standard_version: Some("3.1".to_owned()),
+                ..Default::default()
+            }
         ));
     }
 
     #[test]
     fn core_000478_sendig_30_remains_oracle_gap_standard_mismatch() {
         let rule = rule_with_standard("CORE-000478", "SENDIG", "3.1");
-        assert!(!rule_matches_standard(
-            &rule,
-            &Some("SENDIG".to_owned()),
-            &Some("3.0".to_owned())
-        ));
-        let skipped = standard_mismatch_result(&rule, Some("SENDIG"), Some("3.0"));
+        let request = ValidateRequest {
+            standard: Some("SENDIG".to_owned()),
+            standard_version: Some("3.0".to_owned()),
+            ..Default::default()
+        };
+        assert!(!rule_matches_standard(&rule, &request));
+        let skipped = standard_mismatch_result(&rule, &request);
         assert_eq!(
             skipped.skipped_reason,
             Some(SkippedReason::OracleSemanticsGap)

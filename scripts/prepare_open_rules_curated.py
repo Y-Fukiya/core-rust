@@ -12,9 +12,12 @@ from open_rules_pilot_check import source_hash
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests/open_rules"
 REVIEWED_CASES = {
+    "CORE-000007": {"negative/01", "negative/02"},
+    "CORE-000047": {"negative/01"},
     "CORE-000677": {"negative/01", "negative/02", "positive/02"},
     "CORE-000206": {"negative/02"},
     "CORE-000272": {"negative/03", "negative/04"},
+    "CORE-000744": {"negative/03", "negative/04"},
 }
 
 

@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "name": "cdisc-v1-candidate-diagnostic",
+  "scope": "Published",
+  "conformance_claim": false,
+  "engine": {
+    "repo": "https://github.com/cdisc-org/cdisc-rules-engine",
+    "sha": "f3282a0d870bbdf57e326e9992cceea3ed0d9af5",
+    "version": "1.0.0",
+    "asset_url": "https://github.com/cdisc-org/cdisc-rules-engine/releases/download/v1.0.0/core-ubuntu-22.04.tar.gz",
+    "asset_sha256": "52a932ca3f6cbc08055da2611c2a37badde78ee1f426999d39d4cbb24467d870",
+    "binary_sha256": "b9cb41dd248280875c85ecd170992565140fe1ee08cdf00ba9d2ddf622c0b5cb",
+    "cache_tree_sha256": "9b0d65304dced1746f32d5b3f5a7225519925746a9405db3ef3fd10a6b748c8d",
+    "cache_file_count": 222,
+    "cache_files": {
+      "rules.pkl": "d339b072daaa9d2975125f7b50ba9221f105cf029a39c9ac06c8255b6c8c1257",
+      "standards_details.pkl": "e77831cfcc68c1645f087c17e3f0a85d09e82754325b0f0678f58c53f2140d87",
+      "variables_metadata.pkl": "b285c03614d7ca0a4703ae3201f90a14d6f1f8470966dc44103ac5df592d1930",
+      "usdm-4-0-schema.pkl": "088197201758299d5c581d7a31b220e0f6da1a646d66c22b594f93b32754a0fa"
+    }
+  },
+  "rules": {
+    "repo": "https://github.com/cdisc-org/cdisc-open-rules",
+    "sha": "1881cb9a1f9a38b6cafc785eca5169b240981f66",
+    "engine_submodule_sha": "42028faf090c59bfdfba974779f64be2448bf5bb"
+  },
+  "timeout_seconds": 300,
+  "cases": [
+    {
+      "label": "dataset-original-positive-01",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/positive/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "dataset-tig-positive-01",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/positive/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      }
+    },
+    {
+      "label": "dataset-original-negative-01",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/negative/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "dataset-tig-negative-01",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/negative/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      }
+    },
+    {
+      "label": "dataset-original-negative-02",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/negative/02",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "dataset-tig-negative-02",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000013/negative/02",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      }
+    },
+    {
+      "label": "group142-positive-01",
+      "rule_id": "CORE-000142",
+      "fixture": "CORE-000142/positive/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "group142-negative-01",
+      "rule_id": "CORE-000142",
+      "fixture": "CORE-000142/negative/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "group699-positive-01",
+      "rule_id": "CORE-000699",
+      "fixture": "CORE-000699/positive/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "group699-negative-01",
+      "rule_id": "CORE-000699",
+      "fixture": "CORE-000699/negative/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-3"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-record-positive-03",
+      "rule_id": "CORE-000016",
+      "fixture": "CORE-000016/positive/03",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-record-negative-01",
+      "rule_id": "CORE-000016",
+      "fixture": "CORE-000016/negative/01",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "send-positive-01",
+      "rule_id": "CORE-000520",
+      "fixture": "CORE-000520/positive/01",
+      "environment": {
+        "PRODUCT": "SENDIG",
+        "VERSION": "3-1"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "send-negative-01",
+      "rule_id": "CORE-000520",
+      "fixture": "CORE-000520/negative/01",
+      "environment": {
+        "PRODUCT": "SENDIG",
+        "VERSION": "3-1"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "usdm-positive-01",
+      "rule_id": "CORE-000869",
+      "fixture": "CORE-000869/positive/01",
+      "environment": {
+        "PRODUCT": "USDM",
+        "VERSION": "4-0"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "usdm-negative-01",
+      "rule_id": "CORE-000869",
+      "fixture": "CORE-000869/negative/01",
+      "environment": {
+        "PRODUCT": "USDM",
+        "VERSION": "4-0"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-domain-positive-01",
+      "rule_id": "CORE-000590",
+      "fixture": "CORE-000590/positive/01",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "PROD"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-domain-negative-01",
+      "rule_id": "CORE-000590",
+      "fixture": "CORE-000590/negative/01",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "PROD"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-metadata-positive-02",
+      "rule_id": "CORE-000376",
+      "fixture": "CORE-000376/positive/02",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "tig-metadata-negative-02",
+      "rule_id": "CORE-000376",
+      "fixture": "CORE-000376/negative/02",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "overrides": {}
+    },
+    {
+      "label": "probe-skipped-domain",
+      "rule_id": "CORE-000013",
+      "fixture": "CORE-000591/positive/01",
+      "environment": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "PROD"
+      },
+      "overrides": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "expected_status": "SKIPPED"
+    },
+    {
+      "label": "probe-execution-error",
+      "rule_id": "CORE-000929",
+      "fixture": "CORE-000013/positive/01",
+      "environment": {
+        "PRODUCT": "SDTMIG",
+        "VERSION": "3-4"
+      },
+      "overrides": {
+        "PRODUCT": "TIG",
+        "VERSION": "1-0",
+        "SUBSTANDARD": "SDTM",
+        "USE_CASE": "INDH"
+      },
+      "expected_status": "EXECUTION ERROR"
+    }
+  ]
+}

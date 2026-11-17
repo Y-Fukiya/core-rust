@@ -27,6 +27,10 @@ pub struct RunArgs {
 
     #[arg(long, value_name = "SCOPE")]
     pub scope: Vec<String>,
+
+    /// Opt in to legacy Open Rules fixture compatibility.
+    #[arg(long)]
+    pub open_rules_oracle_compat: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -63,6 +67,10 @@ pub struct RunScoreArgs {
     /// oracle-informed identity normalization.
     #[arg(long)]
     pub strict_scoring: bool,
+
+    /// Opt in to legacy Open Rules fixture compatibility.
+    #[arg(long)]
+    pub open_rules_oracle_compat: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,7 +92,11 @@ pub struct RunCaseError {
 
 pub fn run(args: RunArgs) -> Result<bool> {
     let cases = discover_cases(&args.open_rules_root, &args.scope)?;
-    let summary = run_cases(&cases, &args.core_rs_results_root)?;
+    let summary = run_cases(
+        &cases,
+        &args.core_rs_results_root,
+        args.open_rules_oracle_compat,
+    )?;
     println!(
         "open-rules run completed: {} succeeded, {} failed, {} total",
         summary.succeeded, summary.failed, summary.total_cases
@@ -99,7 +111,11 @@ pub fn run_score(args: RunScoreArgs) -> Result<bool> {
     }
 
     let cases = discover_cases(&args.open_rules_root, &args.scope)?;
-    let run_summary = run_cases(&cases, &args.core_rs_results_root)?;
+    let run_summary = run_cases(
+        &cases,
+        &args.core_rs_results_root,
+        args.open_rules_oracle_compat,
+    )?;
     let score_failed = crate::open_rules::score::run(ScoreArgs {
         open_rules_root: args.open_rules_root,
         core_rs_results_root: args.core_rs_results_root,
@@ -114,12 +130,16 @@ pub fn run_score(args: RunScoreArgs) -> Result<bool> {
     Ok(run_summary.failed > 0 || score_failed)
 }
 
-pub fn run_cases(cases: &[OpenRulesCase], core_rs_results_root: &Path) -> Result<RunSummary> {
+pub fn run_cases(
+    cases: &[OpenRulesCase],
+    core_rs_results_root: &Path,
+    open_rules_oracle_compat: bool,
+) -> Result<RunSummary> {
     let mut errors = Vec::new();
     let mut succeeded = 0;
 
     for case in cases {
-        match run_case(case, core_rs_results_root) {
+        match run_case(case, core_rs_results_root, open_rules_oracle_compat) {
             Ok(()) => succeeded += 1,
             Err(source) => errors.push(RunCaseError {
                 scope: case.scope.clone(),
@@ -150,20 +170,25 @@ fn write_run_summary(core_rs_results_root: &Path, summary: &RunSummary) -> Resul
     serde_json::to_writer_pretty(file, summary).with_context(|| format!("write {}", path.display()))
 }
 
-fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
+fn run_case(
+    case: &OpenRulesCase,
+    core_rs_results_root: &Path,
+    open_rules_oracle_compat: bool,
+) -> Result<()> {
     let report_path = core_rs_results_root.join(relative_candidate_report_path(case));
     let output_dir = report_path
         .parent()
         .context("candidate report path has no parent")?;
-    let (standard, standard_version) = standard_filter_from_env(&case.env);
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![case.rule_path.clone()],
         dataset_paths: vec![case.data_dir.clone()],
         dataset_loader: DatasetLoader::OpenRulesDataDir,
+        open_rules_oracle_compat,
         include_rules: vec![case.rule_id.clone()],
-        exclude_rules: Vec::new(),
-        standard: standard.clone(),
-        standard_version,
+        standard: env_value(&case.env, "PRODUCT"),
+        standard_version: env_value(&case.env, "VERSION").map(|version| version.replace('-', ".")),
+        substandard: env_value(&case.env, "SUBSTANDARD"),
+        use_case: env_value(&case.env, "USE_CASE"),
         output_format: ReportOutputFormat::Csv,
         output_dir: Some(output_dir.to_path_buf()),
         ..Default::default()
@@ -184,10 +209,15 @@ fn run_case(case: &OpenRulesCase, core_rs_results_root: &Path) -> Result<()> {
         return Err(anyhow::anyhow!("candidate report.csv was not written"));
     }
 
-    annotate_candidate_report_provenance(
-        &report_csv,
-        execution_provenance_for_rule_id(&case.rule_id),
-    )
+    let provenance = if outcome.results.iter().any(|result| {
+        result.execution_provenance.as_deref()
+            == Some(ExecutionProvenance::LegacyFixtureCompatibility.as_str())
+    }) {
+        ExecutionProvenance::LegacyFixtureCompatibility
+    } else {
+        execution_provenance_for_rule_id(&case.rule_id)
+    };
+    annotate_candidate_report_provenance(&report_csv, provenance)
 }
 
 fn annotate_candidate_report_provenance(
@@ -233,12 +263,6 @@ fn annotate_candidate_report_provenance(
     fs::write(report_csv, output).with_context(|| format!("write {}", report_csv.display()))
 }
 
-fn standard_filter_from_env(env: &BTreeMap<String, String>) -> (Option<String>, Option<String>) {
-    let standard = env_value(env, "PRODUCT");
-    let version = env_value(env, "VERSION").map(|value| value.replace('-', "."));
-    (standard, version)
-}
-
 fn env_value(env: &BTreeMap<String, String>, key: &str) -> Option<String> {
     env.iter()
         .find(|(candidate, _value)| candidate.eq_ignore_ascii_case(key))
@@ -268,7 +292,7 @@ mod tests {
         let cases = discover_cases(&open_rules_root, &[]).expect("discover cases");
         let candidate_root = tempdir().expect("candidate root");
 
-        let summary = run_cases(&cases, candidate_root.path()).expect("run cases");
+        let summary = run_cases(&cases, candidate_root.path(), false).expect("run cases");
 
         assert_eq!(summary.total_cases, 2);
         assert_eq!(summary.succeeded, 2);
@@ -318,7 +342,7 @@ mod tests {
         };
         let candidate_root = tempdir().expect("candidate root");
 
-        let summary = run_cases(&[case], candidate_root.path()).expect("run cases");
+        let summary = run_cases(&[case], candidate_root.path(), false).expect("run cases");
 
         assert_eq!(summary.failed, 1);
         assert!(summary.errors[0]
@@ -328,16 +352,85 @@ mod tests {
     }
 
     #[test]
-    fn standard_filter_from_env_uses_product_and_normalized_version() {
-        let env = BTreeMap::from([
-            ("PRODUCT".to_owned(), "SENDIG".to_owned()),
-            ("VERSION".to_owned(), "3-1".to_owned()),
-        ]);
+    fn run_cases_honors_tig_substandard_and_custom_domain_use_case_from_env() {
+        let upstream = tempdir().expect("upstream");
+        let rule_dir = upstream.path().join("Published/CORE-000376");
+        let data = rule_dir.join("negative/01/data");
+        fs::create_dir_all(&data).expect("create case");
+        fs::write(
+            rule_dir.join("rule.yml"),
+            r#"Core: { Id: CORE-000376, Status: Published }
+Authorities:
+  - Organization: CDISC
+    Standards:
+      - { Name: TIG, Version: "1.0", Substandard: SDTM }
+Scope:
+  Domains: { Include: [ALL] }
+  Classes: { Include: [EVENTS] }
+  Use Case: INDH, PROD
+Sensitivity: Record
+Rule Type: Variable Metadata Check
+Operations:
+  - { id: $domain_list, name: DOMAIN, operator: distinct }
+  - { id: $domain_is_custom, operator: domain_is_custom }
+Check:
+  all:
+    - { name: $domain_is_custom, operator: equal_to, value: true }
+    - { name: variable_name, operator: is_not_contained_by, value: [DOMAIN], value_is_literal: true }
+    - { name: variable_name, operator: prefix_is_not_contained_by, prefix: 2, value: $domain_list }
+Outcome:
+  Message: Custom variable prefix differs from DOMAIN.
+  Output Variables: [$domain_list, variable_name]
+"#,
+        )
+        .expect("write rule");
+        fs::write(
+            data.join("za.csv"),
+            "DOMAIN,ZATERM,CMOUT\nZA,Headache,BAD\n",
+        )
+        .expect("write custom events data");
+        fs::write(
+            data.join("_variables.csv"),
+            "Dataset,Variable,Type\nZA,DOMAIN,Char\nZA,ZATERM,Char\nZA,CMOUT,Char\n",
+        )
+        .expect("write custom events metadata");
 
-        let (standard, version) = standard_filter_from_env(&env);
+        for (substandard, use_case, expected) in [
+            ("SDTM", "INDH", "failed"),
+            ("SDTM", "PROD", "failed"),
+            ("SDTM", "NONCLIN", "skipped"),
+            ("SEND", "INDH", "skipped"),
+            ("SDTM", "", "skipped"),
+        ] {
+            let candidate = tempdir().expect("fresh candidate output");
+            fs::write(
+                data.join(".env"),
+                format!(
+                    "PRODUCT=TIG\nVERSION=1-0\nSUBSTANDARD={substandard}\nUSE_CASE={use_case}\n"
+                ),
+            )
+            .expect("write study configuration");
+            let cases = discover_cases(upstream.path(), &[]).expect("discover cases");
+            let summary = run_cases(&cases, candidate.path(), false).expect("run cases");
+            assert_eq!(summary.succeeded, 1, "{:?}", summary.errors);
 
-        assert_eq!(standard.as_deref(), Some("SENDIG"));
-        assert_eq!(version.as_deref(), Some("3.1"));
+            let report = candidate
+                .path()
+                .join(relative_candidate_report_path(&cases[0]));
+            let mut csv = csv::Reader::from_path(report).expect("open report");
+            let rows = csv
+                .records()
+                .collect::<csv::Result<Vec<_>>>()
+                .expect("read report");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].get(1), Some(expected), "{substandard}/{use_case}");
+            if expected == "failed" {
+                assert_eq!(rows[0].get(2), Some("ZA"));
+                assert_eq!(rows[0].get(4), Some("3"));
+            } else {
+                assert_eq!(rows[0].get(8), Some("standard_mismatch"));
+            }
+        }
     }
 
     #[test]
@@ -388,6 +481,7 @@ mod tests {
             max_skipped_unsupported: None,
             fail_on_deferred_oracle_gap: false,
             strict_scoring: false,
+            open_rules_oracle_compat: false,
         })
         .expect("run score");
 

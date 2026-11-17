@@ -82,6 +82,8 @@ use metadata_execution::{
     dataset_domain_values, dataset_variable_names_in_order, expected_model_variables,
     insert_metadata_operation_value, is_custom_domain, model_allowed_variables,
     model_column_order_from_library, model_filtered_variable_names, required_model_variables,
+    tig_custom_domain_use_case_matches, tig_sdtm_domain_prefix_customness,
+    uses_tig_sdtm_domain_prefix_metadata,
 };
 use metadata_support::{
     has_dataset_column_order_operation, has_dy_operation, has_expected_variables_operation,
@@ -160,12 +162,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
     }
     let open_rules_compat = request.open_rules_oracle_compat;
     let mut selection = select_rules(&rules, &request.include_rules, &request.exclude_rules)?;
-    apply_standard_filter(
-        &mut selection,
-        &request.include_rules,
-        &request.standard,
-        &request.standard_version,
-    );
+    apply_standard_filter(&mut selection, &request);
     if open_rules_compat {
         apply_standard_oracle_gap_filter(
             &mut selection,
@@ -237,7 +234,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         let execution_datasets = if uses_tx_setcd_reference {
             operation_references::bind_tx_setcd_reference(&mut rule, &datasets)
         } else {
-            execution_datasets_for_rule(&rule, &datasets)
+            execution_datasets_for_rule(&rule, &datasets, &request)
         };
         let execution_datasets = match execution_datasets {
             Ok(datasets) => datasets,
@@ -247,10 +244,20 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             }
         };
 
+        let uses_legacy_svpresp_inference = open_rules_compat
+            && engine_semantics::uses_legacy_svpresp_inference(
+                &rule,
+                request.standard.as_deref(),
+                request.standard_version.as_deref(),
+            );
         let rule_result_start = results.len();
         for dataset in &execution_datasets {
             let dataset = add_core_000324_missing_cm_dtc(dataset, &rule)?;
-            let dataset = add_core_000039_missing_svpresp(&dataset, &rule)?;
+            let dataset = if uses_legacy_svpresp_inference {
+                add_missing_svpresp_from_visitdy(&dataset)?
+            } else {
+                dataset
+            };
 
             if open_rules_compat
                 && is_missing_column_oracle_gap_rule(&rule)
@@ -373,7 +380,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 results.push(result);
             }
         }
-        if uses_tx_setcd_reference {
+        if uses_legacy_svpresp_inference {
+            for result in &mut results[rule_result_start..] {
+                result.execution_provenance = Some("legacy_fixture_compatibility".to_owned());
+            }
+        } else if uses_tx_setcd_reference {
             for result in &mut results[rule_result_start..] {
                 result.execution_provenance = Some("rule_specific_engine_semantics".to_owned());
             }
@@ -739,12 +750,8 @@ fn add_core_000324_missing_cm_dtc(
     derive_column_from_column(dataset, "CMDTC", "CMENTPT")
 }
 
-fn add_core_000039_missing_svpresp(
-    dataset: &LoadedDataset,
-    rule: &ExecutableRule,
-) -> core_data::Result<LoadedDataset> {
-    if !engine_semantics::assumes_missing_svpresp_is_planned(rule)
-        || !dataset_domain_value(dataset).eq_ignore_ascii_case("SV")
+fn add_missing_svpresp_from_visitdy(dataset: &LoadedDataset) -> core_data::Result<LoadedDataset> {
+    if !dataset_domain_value(dataset).eq_ignore_ascii_case("SV")
         || dataset_has_column(dataset, "SVPRESP")
         || !dataset_has_column(dataset, "VISITNUM")
         || !dataset_has_column(dataset, "VISITDY")
@@ -927,6 +934,7 @@ pub(crate) fn condition_targets_column(group: &ConditionGroup, column: &str) -> 
 fn execution_datasets_for_rule(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
+    request: &ValidateRequest,
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     if let Some(result) = usdm_hand_port_execution_datasets(rule, datasets) {
         return result;
@@ -948,7 +956,7 @@ fn execution_datasets_for_rule(
     }
 
     if rule.rule_type == RuleType::VariableMetadata && is_supported_variable_metadata_rule(rule) {
-        return variable_metadata_execution_datasets(rule, datasets);
+        return variable_metadata_execution_datasets(rule, datasets, request);
     }
 
     if rule.rule_type == RuleType::ValueLevelMetadata && is_supported_value_metadata_rule(rule) {
@@ -1031,6 +1039,7 @@ fn suppae_aesosp_parent_record_execution_datasets(
     let usubjids = dataset_column_values(suppae, "USUBJID").unwrap_or_default();
     let idvars = dataset_column_values(suppae, "IDVAR").unwrap_or_default();
     let idvarvals = dataset_column_values(suppae, "IDVARVAL").unwrap_or_default();
+    let qvals = dataset_column_values(suppae, "QVAL").unwrap_or_default();
 
     let mut rows = Vec::new();
     for supp_row in 0..suppae.summary().row_count {
@@ -1051,6 +1060,10 @@ fn suppae_aesosp_parent_record_execution_datasets(
         };
         let mut row = dataset_row_values(&parent_with_source, parent_row);
         row.insert("QNAM".to_owned(), Value::String("AESOSP".to_owned()));
+        row.insert(
+            "AESOSP".to_owned(),
+            qvals.get(supp_row).cloned().unwrap_or(Value::Null),
+        );
         rows.push(row);
     }
 
@@ -1065,15 +1078,38 @@ fn supp_parent_record_row(
     idvar: &str,
     idvarval: &str,
 ) -> Option<usize> {
-    if usubjid.trim().is_empty() || idvar.trim().is_empty() || idvarval.trim().is_empty() {
+    let (usubjid, idvar, idvarval) = (usubjid.trim(), idvar.trim(), idvarval.trim());
+    if usubjid.is_empty() || idvar.is_empty() || idvarval.is_empty() {
         return None;
     }
     let parent_subjects = dataset_column_values(parent, "USUBJID").ok()?;
-    let parent_values = dataset_column_values(parent, idvar.trim()).ok()?;
-    (0..parent.summary().row_count).find(|row| {
-        dataset_cell_string(&parent_subjects, *row).trim() == usubjid.trim()
-            && dataset_cell_string(&parent_values, *row).trim() == idvarval.trim()
+    let parent_values = dataset_column_values(parent, idvar).ok()?;
+    parent_values.iter().enumerate().position(|(row, value)| {
+        dataset_cell_string(&parent_subjects, row).trim() == usubjid
+            && supp_parent_value_matches(value, idvarval)
     })
+}
+
+fn supp_parent_value_matches(parent: &Value, idvarval: &str) -> bool {
+    let Value::Number(number) = parent else {
+        return json_values::json_scalar_string(parent)
+            .is_some_and(|value| value.trim() == idvarval);
+    };
+    if let Some(integer) = number
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| number.as_u64().map(i128::from))
+    {
+        // Do not round a textual ID into a different identifier via f64.
+        let integral_text = idvarval
+            .split_once('.')
+            .filter(|(_, fraction)| !fraction.is_empty() && fraction.bytes().all(|d| d == b'0'))
+            .map_or(idvarval, |(whole, _)| whole);
+        return integral_text.parse::<i128>() == Ok(integer);
+    }
+    idvarval
+        .parse::<f64>()
+        .is_ok_and(|value| value.is_finite() && number.as_f64() == Some(value))
 }
 
 fn dataset_row_values(dataset: &LoadedDataset, row: usize) -> BTreeMap<String, Value> {
@@ -1437,6 +1473,7 @@ fn core_000878_invalid_condition_context_results(
 fn variable_metadata_execution_datasets(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
+    request: &ValidateRequest,
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
     if has_dataset_column_order_operation(rule)
         && (has_expected_variables_operation(rule)
@@ -1446,7 +1483,7 @@ fn variable_metadata_execution_datasets(
         return variable_metadata_operation_execution_datasets(rule, datasets);
     }
     if has_variable_metadata_domain_prefix_operations(rule) {
-        return variable_metadata_domain_prefix_execution_datasets(rule, datasets);
+        return variable_metadata_domain_prefix_execution_datasets(rule, datasets, request);
     }
     if engine_semantics::is_define_role_metadata_rule(rule) {
         return core_000494_define_role_metadata_datasets(rule, datasets);
@@ -2035,12 +2072,31 @@ fn variable_metadata_model_column_order_execution_datasets(
 fn variable_metadata_domain_prefix_execution_datasets(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
+    request: &ValidateRequest,
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
-    filter_datasets_by_rule_scope(rule, datasets)
+    let use_tig_metadata = uses_tig_sdtm_domain_prefix_metadata(request);
+    let custom_use_case_matches =
+        tig_custom_domain_use_case_matches(rule, request.use_case.as_deref());
+    let mut custom_use_case_excluded = false;
+    let legacy_scoped = (!use_tig_metadata).then(|| filter_datasets_by_rule_scope(rule, datasets));
+    let execution_datasets = legacy_scoped
+        .as_deref()
+        .unwrap_or(datasets)
         .iter()
-        .map(|dataset| {
+        .filter_map(|dataset| {
+            let tig_customness = if use_tig_metadata {
+                let custom = tig_sdtm_domain_prefix_customness(rule, dataset)?;
+                if custom && !custom_use_case_matches {
+                    custom_use_case_excluded = true;
+                    return None;
+                }
+                Some(custom)
+            } else {
+                None
+            };
             let domain_values = dataset_domain_values(dataset);
-            let domain_is_custom = domain_values.iter().any(|domain| is_custom_domain(domain));
+            let domain_is_custom =
+                tig_customness.unwrap_or_else(|| domain_values.iter().any(|d| is_custom_domain(d)));
             let domain_list = domain_values.join("|");
             let rows = dataset
                 .metadata
@@ -2092,10 +2148,24 @@ fn variable_metadata_domain_prefix_execution_datasets(
                     row
                 })
                 .collect::<Vec<_>>();
-            metadata_rows_dataset(dataset, &rows)
-                .map_err(|source| operation_skipped_result(rule, source.to_string()))
+            Some(
+                metadata_rows_dataset(dataset, &rows)
+                    .map_err(|source| operation_skipped_result(rule, source.to_string())),
+            )
         })
-        .collect()
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if execution_datasets.is_empty() && custom_use_case_excluded {
+        return Err(RuleValidationResult::skipped_rule(
+            rule.core_id.clone(),
+            SkippedReason::StandardMismatch,
+            format!(
+                "Rule {} does not apply to custom domains for TIG use case {}",
+                rule.core_id,
+                request.use_case.as_deref().unwrap_or("(not specified)")
+            ),
+        ));
+    }
+    Ok(execution_datasets)
 }
 
 fn variable_metadata_operation_execution_datasets(

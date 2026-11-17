@@ -1,0 +1,56 @@
+name: Official CORE candidate audit
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  official-audit:
+    name: Official v1 candidate diagnostics (not conformance)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the fixed candidate profile against the official Linux bundle
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/open-rules-official.XXXXXXXX")"
+          mkdir "$work/evidence"
+          printf 'evidence=%s/evidence\n' "$work" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD > "$work/evidence/core-rust-revision.txt"
+          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
+          python3 - "$profile" "$work" <<'PY' > "$work/evidence/fetch.log" 2>&1
+          import json
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          from urllib.request import urlopen
+
+          profile = json.loads(Path(sys.argv[1]).read_text())
+          work = Path(sys.argv[2])
+          rules = work / "rules"
+          subprocess.run(["git", "init", "--quiet", str(rules)], check=True)
+          subprocess.run(["git", "-C", str(rules), "fetch", "--no-tags", "--depth=1",
+                          profile["rules"]["repo"], profile["rules"]["sha"]], check=True)
+          subprocess.run(["git", "-C", str(rules), "checkout", "--detach", "FETCH_HEAD"], check=True)
+          with urlopen(profile["engine"]["asset_url"], timeout=120) as response:
+              with (work / "core.tar.gz").open("xb") as archive:
+                  shutil.copyfileobj(response, archive)
+          PY
+          python3 scripts/open_rules_official_audit.py --profile "$profile" \
+            --rules-root "$work/rules" --engine-archive "$work/core.tar.gz" --out "$work/evidence/audit"
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.audit.outputs.evidence != ''
+        with:
+          name: open-rules-candidate-official-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.audit.outputs.evidence }}
+          include-hidden-files: true
+          if-no-files-found: error

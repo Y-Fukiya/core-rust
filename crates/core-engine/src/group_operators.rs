@@ -142,15 +142,19 @@ pub(super) fn evaluate_not_unique_relationship(
 
         let target = relationship_key(&target);
         let related = relationship_key(&related);
-        related_by_target
-            .entry(target.clone())
-            .or_default()
-            .insert(related.clone());
-        target_by_related
-            .entry(related.clone())
-            .or_default()
-            .insert(target.clone());
-        row_values.push(Some((target, related)));
+        if !target.is_empty() {
+            related_by_target
+                .entry(target.clone())
+                .or_default()
+                .insert(related.clone());
+        }
+        if !related.is_empty() {
+            target_by_related
+                .entry(related.clone())
+                .or_default()
+                .insert(target.clone());
+        }
+        row_values.push((target, related));
     }
 
     let direction = option_string(&options.extra, "direction");
@@ -159,10 +163,7 @@ pub(super) fn evaluate_not_unique_relationship(
 
     Ok(row_values
         .into_iter()
-        .map(|values| {
-            let Some((target, related)) = values else {
-                return false;
-            };
+        .map(|(target, related)| {
             (!comparator_to_target_only
                 && related_by_target
                     .get(&target)

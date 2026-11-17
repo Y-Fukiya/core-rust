@@ -1,19 +1,111 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::open_rules::discovery::OpenRulesCase;
 use crate::open_rules::normalize::{normalize_scalar, IssueKey};
 
 type IssueSignature = (String, String, String, Vec<String>);
 type IssueRowSignature = (String, String, String, Vec<String>, String);
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityComparison {
+    RawStructural,
+    Structural,
+    CountOnlyUnlocated,
+    MixedLocatedAndUnlocated,
+}
+
+impl IdentityComparison {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RawStructural => "raw_structural",
+            Self::Structural => "structural",
+            Self::CountOnlyUnlocated => "count_only_unlocated",
+            Self::MixedLocatedAndUnlocated => "mixed_located_and_unlocated",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IdentityAlignmentTrace {
+    pub comparison: IdentityComparison,
+    pub official_unlocated_findings: usize,
+    pub official_findings_with_usubjid: usize,
+    pub official_findings_with_seq: usize,
+    pub candidate_unlocated_rule_collapses: usize,
+    pub candidate_dataset_locator_clears: usize,
+    pub candidate_usubjid_omissions: usize,
+    pub candidate_seq_omissions: usize,
+    pub candidate_rows_substituted_from_seq: usize,
+}
+
+impl IdentityAlignmentTrace {
+    pub(super) fn raw(official: &[IssueKey]) -> Self {
+        Self {
+            comparison: IdentityComparison::RawStructural,
+            official_unlocated_findings: official
+                .iter()
+                .filter(|issue| issue_is_unlocated(issue))
+                .count(),
+            official_findings_with_usubjid: official
+                .iter()
+                .filter(|issue| !issue.usubjid.is_empty())
+                .count(),
+            official_findings_with_seq: official
+                .iter()
+                .filter(|issue| !issue.seq.is_empty())
+                .count(),
+            candidate_unlocated_rule_collapses: 0,
+            candidate_dataset_locator_clears: 0,
+            candidate_usubjid_omissions: 0,
+            candidate_seq_omissions: 0,
+            candidate_rows_substituted_from_seq: 0,
+        }
+    }
+
+    pub(crate) fn case_metrics(self) -> impl Iterator<Item = &'static str> {
+        std::iter::once(self.comparison.as_str()).chain(
+            [
+                (
+                    "unlocated_rule_collapse",
+                    self.candidate_unlocated_rule_collapses,
+                ),
+                (
+                    "dataset_locator_clear",
+                    self.candidate_dataset_locator_clears,
+                ),
+                (
+                    "candidate_usubjid_omitted",
+                    self.candidate_usubjid_omissions,
+                ),
+                ("candidate_seq_omitted", self.candidate_seq_omissions),
+                (
+                    "row_substituted_from_seq",
+                    self.candidate_rows_substituted_from_seq,
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(metric, findings)| (findings != 0).then_some(metric)),
+        )
+    }
+}
+
 pub(super) fn align_candidate_identity_to_official(
     official: &[IssueKey],
     candidate: Vec<IssueKey>,
     duplicate_sequence_values: &BTreeSet<(String, String)>,
-) -> Vec<IssueKey> {
-    let compare_usubjid = official.iter().any(|issue| !issue.usubjid.is_empty());
-    let compare_seq = official.iter().any(|issue| !issue.seq.is_empty());
+) -> (Vec<IssueKey>, IdentityAlignmentTrace) {
+    let mut trace = IdentityAlignmentTrace::raw(official);
+    trace.comparison = match trace.official_unlocated_findings {
+        0 => IdentityComparison::Structural,
+        count if count == official.len() => IdentityComparison::CountOnlyUnlocated,
+        _ => IdentityComparison::MixedLocatedAndUnlocated,
+    };
+    let compare_usubjid = trace.official_findings_with_usubjid != 0;
+    let compare_seq = trace.official_findings_with_seq != 0;
     let unlocated_rules = official
         .iter()
         .filter(|issue| issue_is_unlocated(issue))
@@ -31,10 +123,14 @@ pub(super) fn align_candidate_identity_to_official(
         .collect::<BTreeSet<_>>();
     let candidate_seq_rows = candidate_seq_row_index(&candidate);
 
-    candidate
+    let aligned = candidate
         .into_iter()
         .map(|mut issue| {
+            let had_usubjid = !issue.usubjid.is_empty();
+            let had_seq = !issue.seq.is_empty();
             if unlocated_rules.contains(&issue.rule_id) {
+                trace.candidate_unlocated_rule_collapses +=
+                    usize::from(!issue_is_unlocated(&issue));
                 issue.dataset.clear();
                 issue.domain.clear();
                 issue.row.clear();
@@ -42,6 +138,8 @@ pub(super) fn align_candidate_identity_to_official(
                 issue.usubjid.clear();
                 issue.seq.clear();
             } else if official_dataset_issues.contains(&issue_signature(&issue)) {
+                trace.candidate_dataset_locator_clears +=
+                    usize::from(!issue.row.is_empty() || had_usubjid || had_seq);
                 issue.row.clear();
                 issue.usubjid.clear();
                 issue.seq.clear();
@@ -55,6 +153,7 @@ pub(super) fn align_candidate_identity_to_official(
                     )
                 {
                     issue.row.clone_from(&issue.seq);
+                    trace.candidate_rows_substituted_from_seq += 1;
                 }
                 if !compare_usubjid {
                     issue.usubjid.clear();
@@ -63,9 +162,13 @@ pub(super) fn align_candidate_identity_to_official(
             if !compare_seq {
                 issue.seq.clear();
             }
+            trace.candidate_usubjid_omissions +=
+                usize::from(had_usubjid && issue.usubjid.is_empty());
+            trace.candidate_seq_omissions += usize::from(had_seq && issue.seq.is_empty());
             issue
         })
-        .collect()
+        .collect();
+    (aligned, trace)
 }
 
 fn issue_is_unlocated(issue: &IssueKey) -> bool {

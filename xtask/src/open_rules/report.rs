@@ -7,7 +7,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::open_rules::score::{ExecutionProvenance, ScoreBucket, Scoreboard};
+use crate::open_rules::score::{
+    identity_alignment_counts, ExecutionProvenance, ScoreBucket, Scoreboard,
+    IDENTITY_ALIGNMENT_NOTE, LEGACY_SCORING_POLICY_NOTE,
+};
 
 pub fn write_scoreboard(out_dir: &Path, scoreboard: &Scoreboard) -> Result<()> {
     fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
@@ -104,7 +107,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
             summary.unknown_provenance_coverage,
         ),
         String::new(),
-        "Aggregate coverage includes native-engine and rule-id hand-port supported cases. Native engine coverage means non-hand-port execution; it may include rule-specific engine semantics and compatibility policy. Use the Execution Provenance Detail table to estimate generic-engine support, and use Scoring Policy / Scoring Normalizations to see oracle-gap identity normalization."
+        "Aggregate coverage includes legacy fixture compatibility. Native engine coverage excludes hand ports and legacy fixture compatibility; it may include rule-specific engine semantics and other compatibility policy. Use the Execution Provenance Detail table to estimate generic-engine support, and use Scoring Policy / Scoring Normalizations to see oracle-gap identity normalization."
             .to_owned(),
         String::new(),
         "## Execution Provenance Detail".to_owned(),
@@ -138,6 +141,7 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
                 policy.coverage,
             ));
         }
+        lines.extend([String::new(), LEGACY_SCORING_POLICY_NOTE.to_owned()]);
     }
     if !summary.scoring_normalization_counts.is_empty() {
         lines.extend([
@@ -153,6 +157,18 @@ fn markdown_summary(scoreboard: &Scoreboard) -> String {
                 normalization.normalization, normalization.cases
             ));
         }
+    }
+    lines.extend([
+        String::new(),
+        "## Identity Alignment".to_owned(),
+        String::new(),
+        IDENTITY_ALIGNMENT_NOTE.to_owned(),
+        String::new(),
+        "| Comparison or effect | Cases |".to_owned(),
+        "|---|---:|".to_owned(),
+    ]);
+    for (metric, cases) in identity_alignment_counts(&scoreboard.cases) {
+        lines.push(format!("| `{metric}` | {cases} |"));
     }
     lines.extend([
         String::new(),
@@ -423,6 +439,9 @@ fn provenance_suffix(provenance: &ExecutionProvenance) -> &'static str {
     match provenance {
         ExecutionProvenance::NativeEngine => " provenance=native_engine",
         ExecutionProvenance::RuleIdHandPort => " provenance=rule_id_hand_port",
+        ExecutionProvenance::LegacyFixtureCompatibility => {
+            " provenance=legacy_fixture_compatibility"
+        }
         ExecutionProvenance::Unknown => "",
     }
 }
@@ -486,6 +505,7 @@ mod tests {
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::GenericEngine,
                     scoring_policy: ScoringPolicy::StrictIdentity,
+                    identity_alignment: None,
                     bucket: ScoreBucket::SupportedMismatch,
                     reason: None,
                     skipped_reasons: Vec::new(),
@@ -512,6 +532,7 @@ mod tests {
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::Unknown,
                     scoring_policy: ScoringPolicy::StrictIdentity,
+                    identity_alignment: None,
                     bucket: ScoreBucket::SkippedUnsupported,
                     reason: Some("candidate skipped rows: unsupported_operator".to_owned()),
                     skipped_reasons: vec!["unsupported_operator".to_owned()],
@@ -536,6 +557,7 @@ mod tests {
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::GenericEngine,
                     scoring_policy: ScoringPolicy::OracleGapNormalized,
+                    identity_alignment: None,
                     bucket: ScoreBucket::DeferredOracleGapMismatch,
                     reason: Some(
                         "deferred oracle semantics; excluded from supported accuracy until native semantics are verified"
@@ -565,6 +587,7 @@ mod tests {
                     execution_provenance_detail:
                         crate::open_rules::score::ExecutionProvenanceDetail::RuleIdHandPort,
                     scoring_policy: ScoringPolicy::StrictIdentity,
+                    identity_alignment: None,
                     bucket: ScoreBucket::SupportedMatch,
                     reason: Some(
                         "missing official results.csv; unverified synthetic candidate oracle"
@@ -604,7 +627,9 @@ mod tests {
         assert!(markdown.contains("## Execution Provenance"));
         assert!(markdown.contains("| Native engine | 0 | 1 | 0.00% | 25.00% |"));
         assert!(markdown.contains("| Rule-id hand-port | 1 | 0 | 100.00% | 25.00% |"));
-        assert!(markdown.contains("Native engine coverage means non-hand-port execution"));
+        assert!(markdown.contains(
+            "Native engine coverage excludes hand ports and legacy fixture compatibility"
+        ));
         assert!(markdown.contains("Use the Execution Provenance Detail table"));
         assert!(markdown.contains("## Scoring Policy"));
         assert!(markdown.contains("| strict_identity | 1 | 1 | 50.00% | 50.00% |"));

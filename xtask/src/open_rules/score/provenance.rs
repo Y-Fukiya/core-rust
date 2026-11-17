@@ -9,6 +9,7 @@ use crate::open_rules::discovery::OpenRulesCase;
 pub enum ExecutionProvenance {
     NativeEngine,
     RuleIdHandPort,
+    LegacyFixtureCompatibility,
     #[default]
     Unknown,
 }
@@ -40,6 +41,7 @@ impl ExecutionProvenance {
         match self {
             Self::NativeEngine => "native_engine",
             Self::RuleIdHandPort => "rule_id_hand_port",
+            Self::LegacyFixtureCompatibility => "legacy_fixture_compatibility",
             Self::Unknown => "unknown",
         }
     }
@@ -88,6 +90,9 @@ pub fn execution_provenance_detail_for_case(
 ) -> ExecutionProvenanceDetail {
     match provenance {
         ExecutionProvenance::RuleIdHandPort => ExecutionProvenanceDetail::RuleIdHandPort,
+        ExecutionProvenance::LegacyFixtureCompatibility => {
+            ExecutionProvenanceDetail::CompatibilityPolicy
+        }
         ExecutionProvenance::Unknown => ExecutionProvenanceDetail::Unknown,
         ExecutionProvenance::NativeEngine => {
             match core_api::rule_id_specific_semantics_classification(rule_id) {
@@ -166,6 +171,7 @@ fn execution_provenance_from_label(value: &str) -> ExecutionProvenance {
         | "rule_specific_engine_semantics"
         | "compatibility_policy" => ExecutionProvenance::NativeEngine,
         "rule_id_hand_port" => ExecutionProvenance::RuleIdHandPort,
+        "legacy_fixture_compatibility" => ExecutionProvenance::LegacyFixtureCompatibility,
         _ => ExecutionProvenance::Unknown,
     }
 }
@@ -196,6 +202,24 @@ mod tests {
                 Some(ExecutionProvenance::NativeEngine)
             );
         }
+    }
+
+    #[test]
+    fn legacy_fixture_report_is_not_scored_as_native() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("report.csv");
+        std::fs::write(
+            &path,
+            "execution_provenance\nlegacy_fixture_compatibility\n",
+        )
+        .expect("write report");
+
+        let provenance = read_candidate_execution_provenance(&path).expect("read provenance");
+        assert_eq!(provenance, ExecutionProvenance::LegacyFixtureCompatibility);
+        assert_eq!(
+            execution_provenance_detail_for_case("CORE-000039", &provenance, &[]),
+            ExecutionProvenanceDetail::CompatibilityPolicy
+        );
     }
 
     #[test]

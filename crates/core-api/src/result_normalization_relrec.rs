@@ -29,10 +29,18 @@ pub(crate) fn core_000744_relrec_faobj_result(
 
     let faobj = dataset_column_values(fa, "FAOBJ").ok()?;
     let fa_usubjid = dataset_column_values(fa, "USUBJID").unwrap_or_default();
+    let fa_seq = dataset_column_values(fa, "FASEQ").unwrap_or_default();
     let fa_lnkid = dataset_column_values(fa, "FALNKID").unwrap_or_default();
     let fa_lnkgrp = dataset_column_values(fa, "FALNKGRP").unwrap_or_default();
     let fa_spid = dataset_column_values(fa, "FASPID").unwrap_or_default();
     let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
+    let variables = if rule.output_variables.is_empty() {
+        ["FAOBJ", "RELREC.**TERM", "RELREC.**TRT", "RELREC.**DECOD"]
+            .map(str::to_owned)
+            .to_vec()
+    } else {
+        rule.output_variables.clone()
+    };
     let mut errors = Vec::new();
 
     for row in 0..fa.summary().row_count {
@@ -67,14 +75,12 @@ pub(crate) fn core_000744_relrec_faobj_result(
         ];
 
         let mut related_values = BTreeSet::new();
-        let mut related_domains = BTreeSet::new();
         let used_specific_relrec = collect_core_000744_relrec_parent_values(
             datasets,
             fa,
             row,
             subject,
             &mut related_values,
-            &mut related_domains,
         );
         if !used_specific_relrec {
             for parent in datasets.iter().filter(|dataset| {
@@ -85,7 +91,6 @@ pub(crate) fn core_000744_relrec_faobj_result(
                     subject,
                     &link_candidates,
                     &mut related_values,
-                    &mut related_domains,
                 );
             }
         }
@@ -95,15 +100,16 @@ pub(crate) fn core_000744_relrec_faobj_result(
                 .iter()
                 .any(|value| value.eq_ignore_ascii_case(faobj))
         {
+            let seq = core_000744_cell(&fa_seq, row);
             errors.push(ValidationIssue {
                 rule_id: rule.core_id.clone(),
                 dataset: fa.metadata.name.clone(),
                 domain: fa.metadata.domain.clone(),
                 row: Some(row + 1),
-                variables: core_000744_issue_variables(&related_domains),
+                variables: variables.clone(),
                 message: message.clone(),
                 usubjid: (!subject.is_empty()).then(|| subject.to_owned()),
-                seq: None,
+                seq: (!seq.is_empty()).then_some(seq),
             });
         }
     }
@@ -135,30 +141,12 @@ pub(crate) fn core_000744_relrec_faobj_result(
     })
 }
 
-fn core_000744_issue_variables(related_domains: &BTreeSet<String>) -> Vec<String> {
-    let placeholder = if related_domains
-        .iter()
-        .any(|domain| domain.eq_ignore_ascii_case("EX"))
-    {
-        "__"
-    } else {
-        "**"
-    };
-    vec![
-        "FAOBJ".to_owned(),
-        format!("RELREC.{placeholder}TERM"),
-        format!("RELREC.{placeholder}TRT"),
-        format!("RELREC.{placeholder}DECOD"),
-    ]
-}
-
 fn collect_core_000744_relrec_parent_values(
     datasets: &[LoadedDataset],
     fa: &LoadedDataset,
     fa_row: usize,
     subject: &str,
     related_values: &mut BTreeSet<String>,
-    related_domains: &mut BTreeSet<String>,
 ) -> bool {
     let Some(relrec) = find_dataset(datasets, "RELREC") else {
         return false;
@@ -232,7 +220,6 @@ fn collect_core_000744_relrec_parent_values(
                 &relrec_subject
             },
             related_values,
-            related_domains,
         );
     }
 
@@ -245,7 +232,6 @@ fn collect_core_000744_parent_row_values(
     idvarval: &str,
     subject: &str,
     related_values: &mut BTreeSet<String>,
-    related_domains: &mut BTreeSet<String>,
 ) {
     let Ok(id_values) = dataset_column_values(parent, idvar) else {
         return;
@@ -262,7 +248,6 @@ fn collect_core_000744_parent_row_values(
                 continue;
             }
         }
-        related_domains.insert(domain.clone());
         collect_core_000744_parent_row_term_values(parent, row, &domain, related_values);
     }
 }
@@ -272,7 +257,6 @@ fn collect_core_000744_parent_values(
     subject: &str,
     link_candidates: &[Option<&str>; 3],
     related_values: &mut BTreeSet<String>,
-    related_domains: &mut BTreeSet<String>,
 ) {
     let domain = dataset_domain_value(dataset);
     let subject_values = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
@@ -315,7 +299,6 @@ fn collect_core_000744_parent_values(
             continue;
         }
 
-        related_domains.insert(domain.clone());
         collect_core_000744_parent_row_term_values(dataset, row, &domain, related_values);
     }
 }

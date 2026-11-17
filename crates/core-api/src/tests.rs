@@ -1211,7 +1211,7 @@ Outcome:
 }
 
 #[test]
-fn run_validation_narrows_simple_any_issue_variables_to_failing_targets() {
+fn run_validation_core_000558_reports_authored_variables_for_invalid_study_days() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1234,6 +1234,12 @@ Check:
     - name: --DY
       operator: not_matches_regex
       value: ^-?[1-9]{1}\d*$
+    - name: --STDY
+      operator: not_matches_regex
+      value: ^-?[1-9]{1}\d*$
+    - name: --ENDY
+      operator: not_matches_regex
+      value: ^-?[1-9]{1}\d*$
     - name: VISITDY
       operator: not_matches_regex
       value: ^-?[1-9]{1}\d*$
@@ -1241,6 +1247,8 @@ Outcome:
   Message: Study day variable is not a non-zero integer
   Output Variables:
     - --DY
+    - --STDY
+    - --ENDY
     - VISITDY
 "#,
     )
@@ -1255,9 +1263,11 @@ Outcome:
       "filename": "ds.xpt",
       "domain": "DS",
         "records": {
-        "USUBJID": ["S1"],
-        "DSSEQ": [1],
-        "DSDY": [0]
+        "USUBJID": ["S1", "S1", "S2", "S2", "S2", "S3", "S3", "S3"],
+        "DSSEQ": [1, 2, 13, 14, 15, 6, 17, 18],
+        "DSDY": [1, -5, 0, 3.2, -4.5, null, 2, null],
+        "DSSTDY": [null, null, 44, null, null, null, 0, null],
+        "DSENDY": [null, null, null, 65, null, null, null, -2.5]
       }
     }
   ]
@@ -1275,8 +1285,27 @@ Outcome:
     assert_eq!(outcome.results.len(), 1);
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.errors[0].variables, vec!["DSDY"]);
+    assert_eq!(result.error_count, 5);
+    assert_eq!(
+        result
+            .errors
+            .iter()
+            .map(|issue| (issue.row, issue.usubjid.as_deref(), issue.seq.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(3), Some("S2"), Some("13")),
+            (Some(4), Some("S2"), Some("14")),
+            (Some(5), Some("S2"), Some("15")),
+            (Some(7), Some("S3"), Some("17")),
+            (Some(8), Some("S3"), Some("18")),
+        ]
+    );
+    for issue in &result.errors {
+        assert_eq!(issue.rule_id, "CORE-000558");
+        assert_eq!(issue.dataset, "DS");
+        assert_eq!(issue.domain.as_deref(), Some("DS"));
+        assert_eq!(issue.variables, vec!["DSDY", "DSSTDY", "DSENDY", "VISITDY"]);
+    }
 }
 
 #[test]

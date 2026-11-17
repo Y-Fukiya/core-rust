@@ -7,7 +7,10 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::open_rules::score::{ScoreSummary, Scoreboard, ScoredCase};
+use crate::open_rules::score::{
+    identity_alignment_counts, IdentityAlignmentTrace, ScoreSummary, Scoreboard, ScoredCase,
+    IDENTITY_ALIGNMENT_NOTE, LEGACY_SCORING_POLICY_NOTE,
+};
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreDeltaArgs {
@@ -31,8 +34,12 @@ struct ScoreboardDelta {
     execution_provenance_detail: Vec<CountDelta>,
     scoring_policy: Vec<CountDelta>,
     scoring_normalizations: Vec<CountDelta>,
+    #[serde(default)]
+    identity_alignment: Vec<CountDelta>,
     bucket_transitions: Vec<TransitionSummary>,
     normalization_transitions: Vec<TransitionSummary>,
+    #[serde(default)]
+    identity_alignment_transitions: Vec<TransitionSummary>,
     top_affected_rules: Vec<RuleImpactSummary>,
     changed_cases: Vec<ChangedCase>,
     example_changed_cases: Vec<ChangedCase>,
@@ -84,6 +91,10 @@ struct ChangedCase {
     transition: String,
     default_scoring_normalizations: Vec<String>,
     strict_scoring_normalizations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_identity_alignment: Option<IdentityAlignmentTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    strict_identity_alignment: Option<IdentityAlignmentTrace>,
 }
 
 pub fn run(args: ScoreDeltaArgs) -> Result<bool> {
@@ -152,8 +163,13 @@ impl ScoreboardDelta {
                 scoring_normalization_counts(&default.summary),
                 scoring_normalization_counts(&strict.summary),
             ),
+            identity_alignment: map_deltas(
+                identity_alignment_counts(&default.cases),
+                identity_alignment_counts(&strict.cases),
+            ),
             bucket_transitions: bucket_transitions(default, strict),
             normalization_transitions: normalization_transitions(default, strict),
+            identity_alignment_transitions: identity_alignment_transitions(&changed_cases),
             top_affected_rules: top_affected_rules(default, strict, 20),
             changed_cases,
             example_changed_cases,
@@ -421,6 +437,20 @@ fn normalization_transitions(default: &Scoreboard, strict: &Scoreboard) -> Vec<T
     transition_summaries(counts)
 }
 
+fn identity_alignment_transitions(changed_cases: &[ChangedCase]) -> Vec<TransitionSummary> {
+    let mut counts = BTreeMap::new();
+    for case in changed_cases {
+        if let Some(trace) = case.default_identity_alignment {
+            for metric in trace.case_metrics() {
+                *counts
+                    .entry(format!("{metric}: {}", case.transition))
+                    .or_default() += 1;
+            }
+        }
+    }
+    transition_summaries(counts)
+}
+
 fn top_affected_rules(
     default: &Scoreboard,
     strict: &Scoreboard,
@@ -487,6 +517,8 @@ fn changed_cases(
                 transition: case_transition_label(default_case, strict_case),
                 default_scoring_normalizations: default_case.scoring_normalizations.clone(),
                 strict_scoring_normalizations: strict_case.scoring_normalizations.clone(),
+                default_identity_alignment: default_case.identity_alignment,
+                strict_identity_alignment: strict_case.identity_alignment,
             })
         })
         .collect::<Vec<_>>();
@@ -688,16 +720,31 @@ fn markdown_delta(delta: &ScoreboardDelta) -> String {
             .to_owned(),
     );
     lines.push(String::new());
+    lines.push(LEGACY_SCORING_POLICY_NOTE.to_owned());
+    lines.push(String::new());
     push_count_table(
         &mut lines,
         "Scoring Normalization Counts",
         &delta.scoring_normalizations,
     );
+    push_count_table(
+        &mut lines,
+        "Identity Alignment Counts",
+        &delta.identity_alignment,
+    );
+    if !delta.identity_alignment.is_empty() {
+        lines.extend([IDENTITY_ALIGNMENT_NOTE.to_owned(), String::new()]);
+    }
     push_transition_table(&mut lines, "Bucket Transitions", &delta.bucket_transitions);
     push_transition_table(
         &mut lines,
         "Normalization-Affected Transitions",
         &delta.normalization_transitions,
+    );
+    push_transition_table(
+        &mut lines,
+        "Changed Cases By Default Identity Alignment",
+        &delta.identity_alignment_transitions,
     );
     push_rule_impact_table(&mut lines, "Top Affected Rules", &delta.top_affected_rules);
     push_changed_case_examples(
@@ -914,6 +961,7 @@ mod tests {
         assert!(markdown.contains("| `oracle_gap_normalized` | 1 | 0 | -1 |"));
         assert!(markdown.contains("## Deferred Oracle-Gap Breakdown"));
         assert!(markdown.contains("Scoring Policy counts supported match/mismatch cases."));
+        assert!(markdown.contains("| `no_trace` | 2 | 2 | +0 |"));
         assert!(
             markdown.contains("| `supported_match -> supported_mismatch` | 1 |"),
             "{markdown}"
@@ -1254,6 +1302,7 @@ mod tests {
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
+            identity_alignment: None,
             official_issue_count: Some(1),
             candidate_issue_count: Some(1),
             missing_count: Some(0),

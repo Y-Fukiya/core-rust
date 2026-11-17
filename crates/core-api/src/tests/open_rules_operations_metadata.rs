@@ -2,6 +2,7 @@ use std::fs;
 
 use core_engine::ExecutionStatus;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 use tempfile::tempdir;
 
 use crate::{run_validation, DatasetLoader, ValidateRequest};
@@ -462,6 +463,94 @@ fn run_validation_executes_extract_metadata_dataset_name_string_part_check() {
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 1);
     assert_eq!(outcome.results[0].errors[0].row, Some(2));
+}
+
+#[test]
+fn run_validation_core_000783_reports_context_only_for_model_variables_output() {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("CORE-000783.json");
+    let dataset_path = dir.path().join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "domain": "SUPPAE",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "RDOMAIN": ["AE", "AE"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "QNAM": ["AETERM", "SPONSOR"]
+      }
+    },
+    {
+      "domain": "SUPPLB",
+      "records": {
+        "STUDYID": ["S1", "S1"],
+        "RDOMAIN": ["LB", "LB"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "QNAM": ["LBTESTCD", "SPONSOR"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write supplemental datasets");
+
+    for (declared, expected) in [
+        (vec!["QNAM"], vec!["QNAM"]),
+        (
+            vec!["QNAM", "$model_variables"],
+            vec!["QNAM", "$model_variables", "USUBJID", "STUDYID"],
+        ),
+    ] {
+        fs::write(
+            &rule_path,
+            json!({
+                "Core": { "Id": "CORE-000783", "Status": "Published" },
+                "Scope": {
+                    "Classes": { "Include": ["RELATIONSHIP"] },
+                    "Domains": { "Include": ["SUPP--"] }
+                },
+                "Sensitivity": "Record",
+                "Rule Type": "Record Data",
+                "Operations": [
+                    { "id": "$model_variables", "operator": "get_parent_model_column_order" }
+                ],
+                "Check": { "all": [
+                    { "name": "QNAM", "operator": "is_contained_by", "value": "$model_variables" }
+                ] },
+                "Outcome": { "Message": "QNAM matches a model variable", "Output Variables": declared }
+            })
+            .to_string(),
+        )
+        .expect("write rule");
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule_path.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            open_rules_oracle_compat: true,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        for domain in ["SUPPAE", "SUPPLB"] {
+            let result = outcome
+                .results
+                .iter()
+                .find(|result| result.dataset == domain)
+                .expect("supplemental dataset result");
+            assert_eq!(result.execution_status, ExecutionStatus::Failed);
+            assert_eq!(result.error_count, 1);
+            let issue = &result.errors[0];
+            assert_eq!(issue.domain.as_deref(), Some(domain));
+            assert_eq!(issue.row, Some(1));
+            assert_eq!(issue.usubjid.as_deref(), Some("SUBJ1"));
+            assert_eq!(issue.seq, None);
+            assert_eq!(issue.variables, expected);
+        }
+    }
 }
 
 #[test]

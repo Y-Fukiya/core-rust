@@ -14,6 +14,9 @@ mod normalization;
 mod policy;
 mod provenance;
 mod summary;
+pub use identity::IdentityAlignmentTrace;
+#[cfg(test)]
+use identity::IdentityComparison;
 use identity::{align_candidate_identity_to_official, duplicate_sequence_values_by_dataset};
 use normalization::normalize_deferred_oracle_gap_issue_identity;
 use policy::{
@@ -25,9 +28,16 @@ pub use provenance::{
     scoring_policy_for_normalizations, ExecutionProvenance, ExecutionProvenanceDetail,
     ScoringPolicy,
 };
+pub(crate) use summary::identity_alignment_counts;
 #[cfg(test)]
 pub use summary::ScoringNormalizationSummary;
 pub use summary::{GroupSummary, ScoreGate, ScoreSummary};
+
+pub(crate) const LEGACY_SCORING_POLICY_NOTE: &str =
+    "`strict_identity` is the legacy policy label for cases without a recorded scoring normalization. It does not imply `--strict-scoring` or that all locator fields were compared.";
+
+pub(crate) const IDENTITY_ALIGNMENT_NOTE: &str =
+    "These observations do not change the score. `count_only_unlocated` compares finding counts by rule, not locations. `mixed_located_and_unlocated` includes both kinds of oracle finding. Omission and substitution rows count cases with actual changes to normalized candidate findings; effects can overlap. An omitted optional field is not by itself a candidate failure. `no_trace` means not compared or an older scoreboard without trace data.";
 
 #[derive(Debug, Clone, Parser)]
 pub struct ScoreArgs {
@@ -110,6 +120,8 @@ pub struct ScoredCase {
     pub skipped_reasons: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scoring_normalizations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_alignment: Option<IdentityAlignmentTrace>,
     pub official_issue_count: Option<usize>,
     pub candidate_issue_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -223,6 +235,7 @@ fn score_case(
         reason: None,
         skipped_reasons: Vec::new(),
         scoring_normalizations: Vec::new(),
+        identity_alignment: None,
         official_issue_count: None,
         candidate_issue_count: None,
         missing_count: None,
@@ -329,11 +342,15 @@ fn score_case(
     }
 
     let mut official_issues = official.issues;
-    let (candidate_issues, scoring_normalizations) = if options.strict_scoring {
-        (candidate.issues, Vec::new())
+    let (candidate_issues, scoring_normalizations, identity_alignment) = if options.strict_scoring {
+        (
+            candidate.issues,
+            Vec::new(),
+            IdentityAlignmentTrace::raw(&official_issues),
+        )
     } else {
         let duplicate_sequence_values = duplicate_sequence_values_by_dataset(case);
-        let mut candidate_issues = align_candidate_identity_to_official(
+        let (mut candidate_issues, identity_alignment) = align_candidate_identity_to_official(
             &official_issues,
             candidate.issues,
             &duplicate_sequence_values,
@@ -343,7 +360,11 @@ fn score_case(
             &mut official_issues,
             &mut candidate_issues,
         );
-        (candidate_issues, scoring_normalizations)
+        (candidate_issues, scoring_normalizations, identity_alignment)
+    };
+    let base = ScoredCase {
+        identity_alignment: Some(identity_alignment),
+        ..base
     };
     let execution_provenance_detail = provenance::execution_provenance_detail_for_case(
         &case.rule_id,

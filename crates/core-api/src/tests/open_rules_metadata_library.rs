@@ -1,6 +1,6 @@
 use std::fs;
 
-use core_engine::ExecutionStatus;
+use core_engine::{ExecutionStatus, SkippedReason};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -586,4 +586,145 @@ fn run_validation_executes_custom_domain_variable_prefix_metadata_rule() {
     assert_eq!(outcome.results[0].error_count, 1);
     assert_eq!(outcome.results[0].errors[0].dataset, "ZB");
     assert_eq!(outcome.results[0].errors[0].row, Some(5));
+}
+
+#[test]
+fn tig_custom_domain_prefix_uses_standard_classes_then_domain_topics() {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("CORE-000376.yml");
+    fs::write(
+        &rule_path,
+        r#"Core: { Id: CORE-000376, Status: Published }
+Authorities:
+  - Organization: CDISC
+    Standards:
+      - { Name: TIG, Version: "1.0", Substandard: SDTM }
+      - { Name: SDTMIG, Version: "3.4" }
+Scope:
+  Domains: { Include: [ALL] }
+  Classes: { Include: [FINDINGS, INTERVENTIONS, EVENTS] }
+  Use Case: INDH, PROD
+Sensitivity: Record
+Rule Type: Variable Metadata Check
+Operations:
+  - { id: $domain_list, name: DOMAIN, operator: distinct }
+  - { id: $domain_is_custom, operator: domain_is_custom }
+Check:
+  all:
+    - { name: $domain_is_custom, operator: equal_to, value: true }
+    - { name: variable_name, operator: is_not_contained_by, value: [DOMAIN], value_is_literal: true }
+    - { name: variable_name, operator: prefix_is_not_contained_by, prefix: 2, value: $domain_list }
+Outcome:
+  Message: Custom variable prefix differs from DOMAIN.
+  Output Variables: [$domain_list, variable_name]
+"#,
+    )
+    .expect("write rule");
+
+    let dataset_paths = [
+        ("du.csv", "DOMAIN,CMOUT\nDU,RECOVERED\n"),
+        ("pd.csv", "DOMAIN,PDTERM,CMOUT\nPD,Design,RECOVERED\n"),
+        ("sj.csv", "DOMAIN,SJTERM,CMOUT\nSJ,Design,RECOVERED\n"),
+        ("za.csv", "DOMAIN,ZATERM,CMOUT\nZA,Headache,RECOVERED\n"),
+        ("zc.csv", "DOMAIN,ZCTERM,ZCOUT\nZC,Headache,RECOVERED\n"),
+        (
+            "zf.csv",
+            "DOMAIN,ZFTESTCD,ZFOBJ,LBORRES\nZF,TEST,Subject,80\n",
+        ),
+        ("zm.csv", "DOMAIN,ZMTRT,PRSTDTC\nZM,Drug,2020-01-01\n"),
+        ("zx.csv", "DOMAIN,ZXTERM,CMOUT\nZY,Headache,RECOVERED\n"),
+        ("zy01.csv", "DOMAIN,ZYTERM,CMOUT\nZY,Headache,RECOVERED\n"),
+    ]
+    .into_iter()
+    .map(|(filename, csv)| {
+        let path = dir.path().join(filename);
+        fs::write(&path, csv).expect("write dataset");
+        path
+    })
+    .collect();
+    let request = ValidateRequest {
+        rule_paths: vec![rule_path],
+        dataset_paths,
+        include_rules: vec!["CORE-000376".to_owned()],
+        standard: Some("TIG".to_owned()),
+        standard_version: Some("1.0".to_owned()),
+        substandard: Some("sdtm".to_owned()),
+        use_case: Some("INDH".to_owned()),
+        ..Default::default()
+    };
+
+    let outcome = run_validation(request.clone()).expect("run TIG validation");
+    let mut results = outcome
+        .results
+        .iter()
+        .map(|result| {
+            (
+                result.dataset.as_str(),
+                &result.execution_status,
+                result
+                    .errors
+                    .iter()
+                    .map(|error| error.row)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    results.sort_unstable_by_key(|(dataset, _, _)| *dataset);
+    assert_eq!(
+        results,
+        vec![
+            ("DU", &ExecutionStatus::Passed, vec![]),
+            ("ZA", &ExecutionStatus::Failed, vec![Some(3)]),
+            ("ZC", &ExecutionStatus::Passed, vec![]),
+            ("ZF", &ExecutionStatus::Failed, vec![Some(4)]),
+            ("ZM", &ExecutionStatus::Failed, vec![Some(3)]),
+            ("ZY01", &ExecutionStatus::Failed, vec![Some(3)]),
+        ]
+    );
+
+    let prod = run_validation(ValidateRequest {
+        use_case: Some("PROD".to_owned()),
+        ..request.clone()
+    })
+    .expect("run TIG PROD validation");
+    assert_eq!(prod.results, outcome.results);
+
+    let nonclin = run_validation(ValidateRequest {
+        use_case: Some("NONCLIN".to_owned()),
+        ..request.clone()
+    })
+    .expect("run TIG NONCLIN validation");
+    assert_eq!(nonclin.results.len(), 1);
+    assert_eq!(nonclin.results[0].dataset, "DU");
+    assert_eq!(nonclin.results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(nonclin.results[0].error_count, 0);
+
+    for substandard in [Some("SEND".to_owned()), None] {
+        let mismatch = run_validation(ValidateRequest {
+            substandard,
+            ..request.clone()
+        })
+        .expect("run TIG validation without matching substandard");
+        assert_eq!(mismatch.results.len(), 1);
+        assert_eq!(
+            mismatch.results[0].execution_status,
+            ExecutionStatus::Skipped
+        );
+        assert_eq!(
+            mismatch.results[0].skipped_reason,
+            Some(SkippedReason::StandardMismatch)
+        );
+        assert!(mismatch.results[0].errors.is_empty());
+    }
+
+    let outcome = run_validation(ValidateRequest {
+        standard: Some("SDTMIG".to_owned()),
+        standard_version: Some("3.4".to_owned()),
+        ..request
+    })
+    .expect("run SDTMIG validation");
+    assert!(outcome
+        .results
+        .iter()
+        .any(|result| result.dataset == "ZX" && result.error_count == 2));
 }

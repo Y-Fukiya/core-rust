@@ -98,7 +98,7 @@ fn run_validation_core_000750_detects_unique_set_duplicates_across_split_domains
 }
 
 #[test]
-fn run_validation_core_000495_omits_unique_set_group_locator_from_variables() {
+fn run_validation_core_000495_preserves_authored_subject_variable() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -164,7 +164,10 @@ fn run_validation_core_000495_omits_unique_set_group_locator_from_variables() {
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
     assert_eq!(result.error_count, 2);
     for issue in &result.errors {
-        assert_eq!(issue.variables, vec!["MATESTCD", "MAORRES", "MASPEC"]);
+        assert_eq!(
+            issue.variables,
+            vec!["USUBJID", "MATESTCD", "MAORRES", "MASPEC"]
+        );
         assert_eq!(issue.usubjid.as_deref(), Some("SUBJ1"));
     }
 }

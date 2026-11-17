@@ -321,7 +321,11 @@ fn normalize_cdisc_metadata_rule(value: Value) -> Result<ExecutableRule> {
             .transpose()?
             .unwrap_or_default(),
         output_variables: string_vec_field(outcome, "Output Variables"),
-        grouping_variables: string_vec_field(outcome, "Grouping Variables"),
+        grouping_variables: if object.contains_key("Grouping_Variables") {
+            string_vec_field(object, "Grouping_Variables")
+        } else {
+            string_vec_field(outcome, "Grouping Variables")
+        },
         use_case: scope.and_then(|scope| string_field(scope, "Use Case")),
         status,
         raw: Some(value),

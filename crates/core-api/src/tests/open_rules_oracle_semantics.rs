@@ -133,14 +133,14 @@ fn run_validation_executes_is_inconsistent_across_dataset_operator() {
 }
 
 #[test]
-fn run_validation_core_000142_scopes_elapsed_time_consistency_to_precondition_rows() {
+fn run_validation_core_000142_keeps_group_output_and_legacy_record_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("rules dir");
     fs::create_dir_all(&data_dir).expect("data dir");
-    fs::write(
-        rules_dir.join("CORE-000142.json"),
+    let rule_file = rules_dir.join("CORE-000142.json");
+    let mut authored: serde_json::Value = serde_json::from_str(
         r#"{
   "Core": { "Id": "CORE-000142", "Status": "Published" },
   "Scope": { "Domains": { "Include": ["FT"] }, "Classes": { "Include": ["ALL"] } },
@@ -164,7 +164,7 @@ fn run_validation_core_000142_scopes_elapsed_time_consistency_to_precondition_ro
   }
 }"#,
     )
-    .expect("write rule");
+    .expect("parse rule fixture");
     let dataset_path = data_dir.join("datasets.json");
     fs::write(
         &dataset_path,
@@ -188,26 +188,49 @@ fn run_validation_core_000142_scopes_elapsed_time_consistency_to_precondition_ro
     )
     .expect("write dataset");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        ..Default::default()
-    })
-    .expect("run validation");
+    for (sensitivity, rows, variables) in [
+        ("Record", &[1, 2][..], &["FTTPT", "FTTPTNUM", "FTELTM"][..]),
+        (
+            "Group",
+            &[1][..],
+            &["FTTPT", "FTTPTNUM", "FTELTM", "VISITNUM", "DOMAIN"][..],
+        ),
+    ] {
+        authored["Sensitivity"] = serde_json::json!(sensitivity);
+        if sensitivity == "Group" {
+            authored["Grouping_Variables"] =
+                serde_json::json!(["DOMAIN", "VISITNUM", "--TPTREF", "--TPTNUM"]);
+            authored["Check"]["all"][3]["where_populated_columns"] =
+                serde_json::json!(["--TPT", "--TPTNUM", "--ELTM"]);
+        }
+        fs::write(
+            &rule_file,
+            serde_json::to_vec(&authored).expect("serialize rule"),
+        )
+        .expect("write rule");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 2);
-    assert_eq!(
-        outcome.results[0]
-            .errors
-            .iter()
-            .filter_map(|issue| issue.row)
-            .collect::<Vec<_>>(),
-        vec![1, 2]
-    );
-    for issue in &outcome.results[0].errors {
-        assert_eq!(issue.variables, vec!["FTTPT", "FTTPTNUM", "FTELTM"]);
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, rows.len());
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .filter_map(|issue| issue.row)
+                .collect::<Vec<_>>(),
+            rows
+        );
+        for issue in &result.errors {
+            assert_eq!(issue.variables, variables);
+        }
     }
 }
 
@@ -829,10 +852,10 @@ fn run_validation_executes_core_000583_trial_summary_value_exclusive_or() {
       "filename": "ts.csv",
       "domain": "TS",
       "records": {
-        "STUDYID": ["S1", "S1", "S1"],
-        "TSPARMCD": ["A", "B", "C"],
-        "TSVAL": ["VALUE", "", "VALUE"],
-        "TSVALNF": ["NF", "", ""]
+        "STUDYID": ["S1", "S1", "S1", "S1"],
+        "TSPARMCD": ["A", "B", "C", "D"],
+        "TSVAL": ["VALUE", "", "VALUE", ""],
+        "TSVALNF": ["NF", "", "", "NF"]
       }
     }
   ]
@@ -850,6 +873,16 @@ fn run_validation_executes_core_000583_trial_summary_value_exclusive_or() {
     assert_eq!(outcome.results.len(), 1);
     assert_eq!(outcome.results[0].rule_id, "CORE-000583");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+    assert_eq!(outcome.results[0].error_count, 2);
+    assert_eq!(
+        outcome.results[0]
+            .errors
+            .iter()
+            .map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        vec![Some(1), Some(2)]
+    );
+    for issue in &outcome.results[0].errors {
+        assert_eq!(issue.variables, ["TSVAL", "TSVALNF"]);
+    }
 }

@@ -32,6 +32,12 @@ struct ValidateArgs {
     #[arg(short = 'v', long, value_name = "TEXT")]
     standard_version: Option<String>,
 
+    #[arg(long, value_name = "TEXT")]
+    substandard: Option<String>,
+
+    #[arg(long, value_name = "TEXT")]
+    use_case: Option<String>,
+
     #[arg(short = 'd', long, value_name = "DIR")]
     data: Option<PathBuf>,
 
@@ -128,6 +134,8 @@ fn run_validate(args: ValidateArgs) -> Result<()> {
         exclude_rules: args.exclude_rules,
         standard: args.standard,
         standard_version: args.standard_version,
+        substandard: args.substandard,
+        use_case: args.use_case,
         output_format: args
             .output_format
             .map(ReportOutputFormat::from)

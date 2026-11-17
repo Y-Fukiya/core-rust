@@ -14,7 +14,7 @@ use crate::{
     expand_dataset_domain_placeholder, find_dataset, join_skipped_result,
 };
 
-const SOURCE_ROW_COLUMN: &str = "__core_source_row";
+pub(crate) const SOURCE_ROW_COLUMN: &str = "__core_source_row";
 
 pub(crate) fn execute_match_datasets(
     rule: &ExecutableRule,

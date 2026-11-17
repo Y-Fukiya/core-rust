@@ -192,6 +192,57 @@ fn domain_presence_reporting_preserves_record_and_group_counts() {
 }
 
 #[test]
+fn group_sensitivity_uses_declared_keys_and_reports_the_first_failing_record() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("datasets.json");
+    fs::write(
+        &path,
+        r#"{"datasets": [{
+            "filename": "lb.csv", "domain": "LB", "records": {
+                "USUBJID": ["S1", "S2", "S3", "S4"],
+                "LBSEQ": [1, 2, 3, 4],
+                "lbtestcd": ["A", "A", "A", "B"],
+                "LBSTAT": ["NOT DONE", "", "", ""],
+                "LBSTRESU": ["cm", "mm", "cm", "mm"]
+            }
+        }]}"#,
+    )
+    .expect("write grouped findings");
+    let dataset = load_dataset_package_json(&path)
+        .expect("load dataset")
+        .remove(0);
+    assert!(dataset.frame().column("lbtestcd").is_ok());
+    let rule = core_rule_model::normalize_rule(json!({
+        "Core": {"Id": "CORE-TEST-GROUP"},
+        "Rule Type": "Record Data",
+        "Sensitivity": "Group",
+        "Grouping_Variables": ["--TESTCD", "--METHOD"],
+        "Check": {"all": [{
+            "name": "--STRESU",
+            "operator": "is_inconsistent_across_dataset",
+            "value": ["--TESTCD", "--METHOD", "--STAT"]
+        }]},
+        "Outcome": {
+            "Message": "Inconsistent units",
+            "Output Variables": ["--TESTCD", "--METHOD", "--STAT", "--STRESU"]
+        }
+    }))
+    .expect("normalize grouped findings rule");
+
+    let result = validate_rule(&rule, &dataset).expect("validate grouped findings");
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 1);
+    let issue = &result.errors[0];
+    assert_eq!(issue.row, Some(2));
+    assert_eq!(issue.usubjid.as_deref(), Some("S2"));
+    assert_eq!(issue.seq.as_deref(), Some("2"));
+    assert_eq!(
+        issue.variables,
+        ["LBTESTCD", "LBMETHOD", "LBSTAT", "LBSTRESU"]
+    );
+}
+
+#[test]
 fn dataset_sensitivity_domain_presence_without_matches_keeps_study_identity() {
     let mut rule = aestat_presence_rule(Sensitivity::Dataset);
     rule.core_id = "CORE-TEST-DOMAIN-PRESENCE".to_owned();

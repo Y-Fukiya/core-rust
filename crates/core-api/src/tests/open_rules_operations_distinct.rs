@@ -1,6 +1,6 @@
 use std::fs;
 
-use core_engine::ExecutionStatus;
+use core_engine::{ExecutionStatus, SkippedReason};
 use core_rule_model::load_rules_from_paths;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
@@ -148,7 +148,7 @@ fn run_validation_executes_scope_wide_reference_distinct_operation() {
 }
 
 #[test]
-fn run_validation_executes_core_000361_one_way_relationship_semantics() {
+fn run_validation_checks_core_000361_one_to_one_relationship_in_each_scoped_dataset() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -186,18 +186,18 @@ fn run_validation_executes_core_000361_one_way_relationship_semantics() {
       "filename": "tv.csv",
       "domain": "TV",
       "records": {
-        "VISITNUM": [700, 700],
-        "VISIT": ["VISIT 7 (WEEK 5)", "VISIT 8 (WEEK 6)"]
+        "VISITNUM": [1, 2, 3, 4, 4, 5, 6],
+        "VISIT": ["BASELINE", "FOLLOW-UP", "FINAL", "TV FIRST", "TV SECOND", "REPEATED", "TV ONLY"]
       }
     },
     {
       "filename": "sv.csv",
       "domain": "SV",
       "records": {
-        "USUBJID": ["S1", "S2"],
-        "SVSEQ": [1, 1],
-        "VISITNUM": [100, 100],
-        "VISIT": ["VISIT 1 (WEEK -2)", "VISIT 1"]
+        "USUBJID": ["S1", "S2", "S1", "S1", "S1", "S2", "S1", "S2", "S1", "S2"],
+        "SVSEQ": [11, 22, 33, 44, 55, 66, 77, 88, 99, 100],
+        "VISITNUM": [1, 1, 2, 3, 5, 5, 99, 99, 6, 98],
+        "VISIT": ["FIRST", "SECOND", "SHARED", "SHARED", "REPEATED", "REPEATED", "UNPLANNED FIRST", "UNPLANNED SECOND", "SV ONLY", "SHARED"]
       }
     }
   ]
@@ -212,10 +212,39 @@ fn run_validation_executes_core_000361_one_way_relationship_semantics() {
     })
     .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].rule_id, "CORE-000361");
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
-    assert_eq!(outcome.results[0].error_count, 0);
+    assert_eq!(outcome.results.len(), 2);
+    for (dataset, expected) in [
+        (
+            "SV",
+            vec![
+                (Some(1), Some("S1"), Some("11")),
+                (Some(2), Some("S2"), Some("22")),
+                (Some(3), Some("S1"), Some("33")),
+                (Some(4), Some("S1"), Some("44")),
+            ],
+        ),
+        ("TV", vec![(Some(4), None, None), (Some(5), None, None)]),
+    ] {
+        let result = outcome
+            .results
+            .iter()
+            .find(|result| result.dataset == dataset)
+            .expect("scoped dataset result");
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, expected.len());
+        let records = result
+            .errors
+            .iter()
+            .map(|issue| {
+                assert_eq!(issue.rule_id, "CORE-000361");
+                assert_eq!(issue.dataset, dataset);
+                assert_eq!(issue.domain.as_deref(), Some(dataset));
+                assert_eq!(issue.variables, vec!["VISITNUM", "VISIT"]);
+                (issue.row, issue.usubjid.as_deref(), issue.seq.as_deref())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(records, expected);
+    }
 }
 
 #[test]
@@ -449,11 +478,11 @@ fn run_validation_executes_tv_visitnum_reference_distinct_operations() {
       "filename": "sv.xpt",
       "domain": "SV",
       "records": {
-        "STUDYID": ["S1", "S1", "S1"],
-        "USUBJID": ["SUBJ1", "SUBJ2", "SUBJ3"],
-        "SVSEQ": [1, 2, 3],
-        "SVPRESP": ["Y", "Y", ""],
-        "VISITNUM": ["1", "99", "1"]
+        "STUDYID": ["S1", "S1", "S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ2", "SUBJ3", "SUBJ4"],
+        "SVSEQ": [1, 2, 3, 4],
+        "SVPRESP": ["Y", "Y", "", ""],
+        "VISITNUM": ["1", "99", "1", "98"]
       }
     },
     {
@@ -525,7 +554,7 @@ fn run_validation_executes_trial_arm_reference_distinct_operation() {
       { "name": "ARM", "operator": "is_not_contained_by", "value": "$ta_arm" }
     ]
   },
-  "Outcome": { "Message": "DM ARM is not found in TA" }
+  "Outcome": { "Message": "DM ARM is not found in TA", "Output Variables": ["ARM"] }
 }"#,
     )
     .expect("write arm reference distinct rule");
@@ -569,6 +598,7 @@ fn run_validation_executes_trial_arm_reference_distinct_operation() {
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 1);
     assert_eq!(outcome.results[0].errors[0].row, Some(2));
+    assert_eq!(outcome.results[0].errors[0].variables, ["ARM"]);
 }
 
 #[test]
@@ -1010,7 +1040,7 @@ Outcome:
 }
 
 #[test]
-fn run_validation_core_000039_assumes_missing_svpresp_is_planned() {
+fn run_validation_core_000039_only_infers_missing_svpresp_for_legacy_sdtmig_33() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1022,6 +1052,11 @@ fn run_validation_core_000039_assumes_missing_svpresp_is_planned() {
         r#"Core:
   Id: CORE-000039
   Status: Published
+Authorities:
+  - Organization: CDISC
+    Standards:
+      - Name: SDTMIG
+        Version: "3.4"
 Scope:
   Domains:
     Include:
@@ -1073,19 +1108,63 @@ Outcome:
     )
     .expect("write data");
 
-    let outcome = run_validation(ValidateRequest {
+    let request = ValidateRequest {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
+        standard: Some("SDTMIG".to_owned()),
+        include_rules: vec!["CORE-000039".to_owned()],
         ..Default::default()
-    })
-    .expect("run validation");
+    };
 
-    assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.errors[0].row, Some(1));
-    assert_eq!(result.errors[0].variables, vec!["SVPRESP", "VISITNUM"]);
+    let native_33 = run_validation(ValidateRequest {
+        standard_version: Some("3.3".to_owned()),
+        ..request.clone()
+    })
+    .expect("run SDTMIG 3.3 validation without compatibility");
+    assert_eq!(native_33.results.len(), 1);
+    let native_result = &native_33.results[0];
+    assert_eq!(native_result.execution_status, ExecutionStatus::Skipped);
+    assert_eq!(
+        native_result.skipped_reason,
+        Some(SkippedReason::StandardMismatch)
+    );
+    assert!(native_result.errors.is_empty());
+
+    let legacy = run_validation(ValidateRequest {
+        standard_version: Some("3.3".to_owned()),
+        open_rules_oracle_compat: true,
+        ..request.clone()
+    })
+    .expect("run SDTMIG 3.3 validation");
+    assert_eq!(legacy.results.len(), 1);
+    let legacy_result = &legacy.results[0];
+    assert_eq!(legacy_result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(
+        legacy_result.execution_provenance.as_deref(),
+        Some("legacy_fixture_compatibility")
+    );
+    assert_eq!(legacy_result.error_count, 1);
+    assert_eq!(legacy_result.errors[0].row, Some(1));
+    assert_eq!(
+        legacy_result.errors[0].variables,
+        vec!["SVPRESP", "VISITNUM"]
+    );
+
+    let current = run_validation(ValidateRequest {
+        standard_version: Some("3.4".to_owned()),
+        ..request
+    })
+    .expect("run SDTMIG 3.4 validation");
+    assert_eq!(current.results.len(), 1);
+    let current_result = &current.results[0];
+    assert_eq!(current_result.dataset, "SV");
+    assert_eq!(current_result.execution_status, ExecutionStatus::Skipped);
+    assert_eq!(
+        current_result.skipped_reason,
+        Some(SkippedReason::EvaluationError)
+    );
+    assert_eq!(current_result.error_count, 0);
+    assert!(current_result.errors.is_empty());
 }
 
 #[test]

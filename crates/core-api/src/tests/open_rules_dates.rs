@@ -134,6 +134,83 @@ fn run_validation_executes_open_rules_date_operators() {
 }
 
 #[test]
+fn run_validation_core_000034_compares_joined_blank_dates() {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("CORE-000034.json");
+    let dataset_path = dir.path().join("datasets.json");
+    fs::write(
+        &rule_path,
+        r#"{
+  "Core": { "Id": "CORE-000034", "Status": "Published" },
+  "Scope": { "Domains": { "Include": ["DS"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Match Datasets": [{ "Name": "DM", "Keys": ["USUBJID"] }],
+  "Check": {
+    "all": [
+      { "name": "DSDECOD", "operator": "equal_to", "value": "DEATH", "value_is_literal": true },
+      { "name": "DSSTDTC", "operator": "date_not_equal_to", "value": "DTHDTC" }
+    ]
+  },
+  "Outcome": {
+    "Message": "DSSTDTC and DTHDTC disagree",
+    "Output Variables": ["DSDECOD", "DSSTDTC", "DTHDTC"]
+  }
+}"#,
+    )
+    .expect("write rule");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "ds.xpt",
+      "domain": "DS",
+      "records": {
+        "USUBJID": ["A", "B", "C", "D", "A", "B", "A", "B"],
+        "DSSEQ": [11, 12, 13, 14, 15, 16, 17, 18],
+        "DSDECOD": ["DEATH", "DEATH", "DEATH", "DEATH", "OTHER", "DEATH", "DEATH", "DEATH"],
+        "DSSTDTC": ["2024-01-10", "2024-01-10", "2024-01-10", "", "2024-01-10", null, "invalid", "2024-01-10T00:00"]
+      }
+    },
+    {
+      "filename": "dm.xpt",
+      "domain": "DM",
+      "records": {
+        "USUBJID": ["A", "B", "C", "D"],
+        "DTHDTC": ["", "2024-01-10", "2024-01", null]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write dataset");
+
+    let outcome = run_validation(ValidateRequest {
+        rule_paths: vec![rule_path],
+        dataset_paths: vec![dataset_path],
+        ..Default::default()
+    })
+    .expect("run validation");
+
+    assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.error_count, 5);
+    assert_eq!(
+        result
+            .errors
+            .iter()
+            .map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(3), Some(6), Some(7), Some(8)]
+    );
+    for issue in &result.errors {
+        assert_eq!(issue.variables, ["DSDECOD", "DSSTDTC", "DTHDTC"]);
+    }
+}
+
+#[test]
 fn run_validation_executes_core_000653_date_end_before_start() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
@@ -170,10 +247,10 @@ fn run_validation_executes_core_000653_date_end_before_start() {
       "filename": "ds.xpt",
       "domain": "DS",
       "records": {
-        "USUBJID": ["SUBJ1", "SUBJ1"],
-        "DSSEQ": [1, 2],
-        "DSDTC": ["2018-09-21", "2018-05-08T09:13"],
-        "DSENDTC": ["2018-09-04", "2018-05-08T08:00"]
+        "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1", "SUBJ1"],
+        "DSSEQ": [1, 2, 3, 4, 5, 6, 7, 8],
+        "DSDTC": ["2018-09-21", "2018-05-08T09:13", "2018-09-21T09:21", "2018-09-21", "2018-09-22T09:21", "", "2023-12-31T23:30-02:00", "2024-03-01T00:30:00+02:00"],
+        "DSENDTC": ["2018-09-04", "2018-05-08T08:00", "2018-09-21", "2018-09-21T07:00", "2018-09-21", "2018-09-21", "2023-12-31", "2024-02-29"]
       }
     }
   ]
@@ -185,6 +262,7 @@ fn run_validation_executes_core_000653_date_end_before_start() {
         rule_paths: vec![rules_dir],
         dataset_paths: vec![dataset_path],
         output_dir: None,
+        open_rules_oracle_compat: true,
         ..Default::default()
     })
     .expect("run validation");
@@ -193,12 +271,17 @@ fn run_validation_executes_core_000653_date_end_before_start() {
     assert_eq!(outcome.results[0].rule_id, "CORE-000653");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 4);
-    assert_eq!(outcome.results[0].errors[0].row, Some(1));
-    assert_eq!(outcome.results[0].errors[0].variables, vec!["DSENDTC"]);
-    assert_eq!(outcome.results[0].errors[1].variables, vec!["DSDTC"]);
-    assert_eq!(outcome.results[0].errors[2].row, Some(2));
-    assert_eq!(outcome.results[0].errors[2].variables, vec!["DSENDTC"]);
-    assert_eq!(outcome.results[0].errors[3].variables, vec!["DSDTC"]);
+    assert_eq!(
+        outcome.results[0]
+            .errors
+            .iter()
+            .map(|issue| issue.row)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(2), Some(5), Some(7)]
+    );
+    for issue in &outcome.results[0].errors {
+        assert_eq!(issue.variables, ["DSENDTC", "DSDTC"]);
+    }
 }
 
 #[test]
@@ -933,9 +1016,9 @@ fn run_validation_executes_core_000711_reference_start_after_end_dates() {
       "filename": "dm.xpt",
       "domain": "DM",
       "records": {
-        "USUBJID": ["SUBJ1"],
-        "RFSTDTC": ["2006-03"],
-        "RFENDTC": ["2006-01-16"]
+        "USUBJID": ["SUBJ1", "SUBJ2", "SUBJ3"],
+        "RFSTDTC": ["2018-09-11", "2019-01-01T09:00:00", "2006-03"],
+        "RFENDTC": ["2018-08-03", "2019-01-01", "2006-01-16"]
       }
     }
   ]
@@ -955,13 +1038,18 @@ fn run_validation_executes_core_000711_reference_start_after_end_dates() {
     assert_eq!(outcome.results[0].rule_id, "CORE-000711");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 2);
-    let mut variables = outcome.results[0]
+    let issues = outcome.results[0]
         .errors
         .iter()
-        .map(|issue| issue.variables.join("|"))
+        .map(|issue| (issue.row, issue.variables.join("|")))
         .collect::<Vec<_>>();
-    variables.sort();
-    assert_eq!(variables, vec!["RFENDTC", "RFSTDTC"]);
+    assert_eq!(
+        issues,
+        vec![
+            (Some(1), "RFSTDTC|RFENDTC".to_owned()),
+            (Some(3), "RFSTDTC|RFENDTC".to_owned()),
+        ]
+    );
 }
 
 #[test]
@@ -1003,9 +1091,9 @@ fn run_validation_executes_core_000714_treatment_start_after_end_dates() {
       "filename": "dm.xpt",
       "domain": "DM",
       "records": {
-        "USUBJID": ["SUBJ1"],
-        "RFXSTDTC": ["2018-04-17"],
-        "RFXENDTC": ["2018-04"]
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "RFXSTDTC": ["2018-04-17", "2018-05-17"],
+        "RFXENDTC": ["2018-04", "2018-04"]
       }
     }
   ]
@@ -1025,6 +1113,7 @@ fn run_validation_executes_core_000714_treatment_start_after_end_dates() {
     assert_eq!(outcome.results[0].rule_id, "CORE-000714");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 2);
+    assert!(outcome.results[0].errors.iter().all(|i| i.row == Some(2)));
     let mut variables = outcome.results[0]
         .errors
         .iter()
@@ -1075,10 +1164,10 @@ fn run_validation_executes_core_000866_observation_start_after_end_dates() {
       "filename": "lb.xpt",
       "domain": "LB",
       "records": {
-        "USUBJID": ["SUBJ1"],
-        "LBSEQ": [1],
-        "LBDTC": ["2018-11"],
-        "LBENDTC": ["2018"]
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "LBSEQ": [1, 1],
+        "LBDTC": ["2018-11", "2019-01"],
+        "LBENDTC": ["2018", "2018"]
       }
     }
   ]
@@ -1098,6 +1187,7 @@ fn run_validation_executes_core_000866_observation_start_after_end_dates() {
     assert_eq!(outcome.results[0].rule_id, "CORE-000866");
     assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
     assert_eq!(outcome.results[0].error_count, 2);
+    assert!(outcome.results[0].errors.iter().all(|i| i.row == Some(2)));
     let mut variables = outcome.results[0]
         .errors
         .iter()

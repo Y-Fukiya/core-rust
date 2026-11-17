@@ -1,14 +1,22 @@
 use std::cmp::Ordering;
 
 use core_data::LoadedDataset;
-use core_rule_model::ValueExpr;
-use polars::prelude::{Column, DataFrame};
+use core_rule_model::{OperatorOptions, ValueExpr};
+use polars::chunked_array::ops::sort::arg_sort;
+use polars::prelude::{
+    AnyValue, Column, DataFrame, DataType, Float64Chunked, IntoColumn, NewChunkedArray,
+    PolarsError, PolarsResult, SortMultipleOptions, StringChunked,
+};
+use regex::Regex;
 
 use crate::scalar_operators::{expand_domain_placeholder, ScalarValue};
 use crate::{
-    cell_string, compare_scalars, compare_sort_values, is_uncertain_sort_value, option_string,
-    optional_column, BooleanMask, Result, SortSpec,
+    cell_string, compare_scalars, compare_sort_values, is_uncertain_sort_value, option_bool,
+    option_string, optional_column, BooleanMask, EngineError, Result, SortSpec,
 };
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn evaluate_target_is_not_sorted_by(
     dataset: &LoadedDataset,
@@ -16,9 +24,20 @@ pub(super) fn evaluate_target_is_not_sorted_by(
     row_count: usize,
     target_column: &Column,
     comparator: &ValueExpr,
-    options: &core_rule_model::OperatorOptions,
+    options: &OperatorOptions,
 ) -> Result<BooleanMask> {
     let sort_specs = crate::sort_specs(comparator)?;
+    if option_bool(&options.extra, "strict_incremental_ordering") == Some(true) {
+        return evaluate_strict_target_order(
+            dataset,
+            frame,
+            row_count,
+            target_column,
+            &sort_specs,
+            options,
+        );
+    }
+
     let within = option_string(&options.extra, "within")
         .map(|value| expand_domain_placeholder(dataset, &value));
     let mut groups: std::collections::BTreeMap<String, Vec<SortRow>> =
@@ -68,6 +87,140 @@ pub(super) fn evaluate_target_is_not_sorted_by(
     }
 
     Ok(mask)
+}
+
+fn evaluate_strict_target_order(
+    dataset: &LoadedDataset,
+    frame: &DataFrame,
+    row_count: usize,
+    target_column: &Column,
+    sort_specs: &[SortSpec],
+    options: &OperatorOptions,
+) -> Result<BooleanMask> {
+    let column_for = |name: &str| {
+        let name = expand_domain_placeholder(dataset, name);
+        optional_column(frame, &name)?.ok_or(EngineError::MissingColumn(name))
+    };
+    let invalid_within =
+        || PolarsError::ComputeError("strict target ordering requires valid within columns".into());
+    let within = options
+        .extra
+        .get("within")
+        .or_else(|| {
+            options
+                .extra
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("within"))
+                .map(|(_, value)| value)
+        })
+        .ok_or_else(invalid_within)?;
+    let within = within
+        .as_array()
+        .map_or_else(|| std::slice::from_ref(within), Vec::as_slice);
+    if within.is_empty() {
+        return Err(invalid_within().into());
+    }
+    let mut keys = within
+        .iter()
+        .map(|value| {
+            let name = value
+                .as_str()
+                .filter(|name| !name.is_empty())
+                .ok_or_else(invalid_within)?;
+            strict_order_column(column_for(name)?, false)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let group_key_count = keys.len();
+    let regex = option_string(&options.extra, "regex")
+        .filter(|pattern| !pattern.is_empty())
+        .map(|pattern| Regex::new(&pattern))
+        .transpose()?;
+
+    // CORE sorts the column values as stored. The non-strict comparison coerces text to
+    // numbers and can treat values as incomparable, so it cannot establish these ranks.
+    for spec in sort_specs {
+        keys.push(strict_order_column(column_for(&spec.column)?, true)?);
+    }
+    // Ordering by the group keys first makes groups contiguous without changing their ranks.
+    let permutation = arg_sort(
+        &keys,
+        SortMultipleOptions::default()
+            .with_order_descending_multi(
+                std::iter::repeat_n(false, group_key_count)
+                    .chain(sort_specs.iter().map(|spec| spec.descending)),
+            )
+            .with_nulls_last_multi(
+                std::iter::repeat_n(true, group_key_count)
+                    .chain(sort_specs.iter().map(|spec| !spec.nulls_first)),
+            )
+            .with_maintain_order(true),
+    )?;
+
+    let mut previous_group = Vec::new();
+    let mut rank = 0;
+    let mut mask = vec![false; row_count];
+    for row in permutation.into_no_null_iter().map(|row| row as usize) {
+        let group = keys[..group_key_count]
+            .iter()
+            .map(|column| column.get(row))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        if group != previous_group {
+            previous_group = group;
+            rank = 0;
+        }
+        rank += 1;
+        mask[row] = strict_target_mismatches_rank(target_column.get(row)?, rank, regex.as_ref());
+    }
+    Ok(mask)
+}
+
+fn strict_order_column(column: &Column, blank_is_null: bool) -> Result<Column> {
+    let name = column.name().clone();
+    match column.dtype() {
+        DataType::String if blank_is_null => {
+            let values = column.str()?;
+            let values = values
+                .iter()
+                .map(|value| value.filter(|text| !text.trim().is_empty()));
+            Ok(StringChunked::from_iter_options(name, values).into_column())
+        }
+        dtype if dtype.is_float() => {
+            let floats = column.cast(&DataType::Float64)?;
+            let values = floats
+                .f64()?
+                .iter()
+                .map(|value| value.filter(|v| !v.is_nan()).map(normalize_zero));
+            Ok(Float64Chunked::from_iter_options(name, values).into_column())
+        }
+        _ => Ok(column.clone()),
+    }
+}
+
+fn strict_target_mismatches_rank(target: AnyValue<'_>, rank: usize, regex: Option<&Regex>) -> bool {
+    if target.is_null() || target.is_nan() {
+        return false;
+    }
+    let expected = rank as f64;
+    if let Some(regex) = regex {
+        let text = match target {
+            AnyValue::Float32(value) => format!("{value:?}"),
+            AnyValue::Float64(value) => format!("{value:?}"),
+            AnyValue::Boolean(true) => "True".to_owned(),
+            AnyValue::Boolean(false) => "False".to_owned(),
+            value => ScalarValue::from_any_value(value).to_string(),
+        };
+        return regex
+            .captures(&text)
+            .and_then(|captures| captures.get(1))
+            .map(|capture| capture.as_str().trim())
+            .is_some_and(|text| !text.is_empty() && text.parse::<f64>().ok() != Some(expected));
+    }
+    let target = ScalarValue::from_any_value(target);
+    match target {
+        ScalarValue::String(ref text) if text.trim().is_empty() => false,
+        ScalarValue::Bool(value) => f64::from(u8::from(value)) != expected,
+        _ => target.as_type_insensitive_number() != Some(expected),
+    }
 }
 
 #[derive(Debug)]

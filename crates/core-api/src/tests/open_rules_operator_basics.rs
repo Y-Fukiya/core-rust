@@ -132,8 +132,8 @@ fn run_validation_executes_not_present_on_multiple_rows_within_operator() {
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("rules dir");
     fs::create_dir_all(&data_dir).expect("data dir");
-    fs::write(
-        rules_dir.join("CORE-REL-OPERATOR.json"),
+    let rule_file = rules_dir.join("CORE-REL-OPERATOR.json");
+    let mut rule: serde_json::Value = serde_json::from_str(
         r#"{
   "Core": { "Id": "CORE-REL-OPERATOR", "Status": "Published" },
   "Scope": { "Domains": {}, "Classes": {} },
@@ -147,7 +147,7 @@ fn run_validation_executes_not_present_on_multiple_rows_within_operator() {
   "Outcome": { "Message": "RELID must appear on multiple rows" }
 }"#,
     )
-    .expect("write rule");
+    .expect("parse rule");
     let dataset_path = data_dir.join("datasets.json");
     fs::write(
         &dataset_path,
@@ -166,19 +166,33 @@ fn run_validation_executes_not_present_on_multiple_rows_within_operator() {
     )
     .expect("write dataset");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        output_dir: None,
-        open_rules_oracle_compat: true,
-        ..Default::default()
-    })
-    .expect("run validation");
+    for variables in [&["USUBJID", "RELID"][..], &["RELID"][..]] {
+        if variables.len() == 1 {
+            rule["Outcome"]["Output Variables"] = serde_json::json!(["RELID"]);
+        }
+        fs::write(
+            &rule_file,
+            serde_json::to_vec(&rule).expect("serialize rule"),
+        )
+        .expect("write rule");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            output_dir: None,
+            open_rules_oracle_compat: true,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].skipped_reason, None);
-    assert_eq!(outcome.results[0].error_count, 1);
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.skipped_reason, None);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(result.errors[0].row, Some(3));
+        assert_eq!(result.errors[0].usubjid.as_deref(), Some("SUBJ1"));
+        assert_eq!(result.errors[0].variables, variables);
+    }
 }
 
 #[test]

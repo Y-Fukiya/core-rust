@@ -28,7 +28,7 @@ pub(crate) use classifier::{
 
 const HAND_PORT_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/hand_port_rule_ids.csv");
 const HAND_PORT_RULE_ID_HEADER: &str = "rule_id,execution_provenance,owner,scope";
-const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 119;
+const EXPECTED_HAND_PORT_RULE_ID_COUNT: usize = 116;
 const HAND_PORT_PROVENANCE: &str = "rule_id_hand_port";
 const HAND_PORT_SCOPE: &str = "open-rules-oracle-harness";
 const ORACLE_GAP_RULE_ID_MANIFEST: &str = include_str!("open_rules_compat/oracle_gap_rule_ids.csv");
@@ -93,7 +93,7 @@ const RULE_SPECIFIC_SEMANTICS_MANIFEST: &str =
     include_str!("open_rules_compat/rule_specific_semantics.csv");
 const RULE_SPECIFIC_SEMANTICS_HEADER: &str =
     "rule_id,classification,category,reason,owner,evidence,evidence_type,promotion_basis,scope";
-const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 262;
+const EXPECTED_RULE_SPECIFIC_SEMANTICS_RULE_ID_COUNT: usize = 250;
 const RULE_SPECIFIC_SEMANTICS_CLASSIFICATIONS: &[&str] = &[
     "compatibility_policy",
     "engine_semantics",
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn hand_port_rule_ids_are_loaded_from_manifest() {
-        assert!(rule_id_uses_hand_port("CORE-000583"));
+        assert!(!rule_id_uses_hand_port("CORE-000583"));
         assert!(rule_id_uses_hand_port(" CORE-001077 "));
         assert!(!rule_id_uses_hand_port("CORE-PROV"));
         assert!(!rule_id_uses_hand_port(""));
@@ -594,7 +594,7 @@ mod tests {
         );
         assert_eq!(
             rule_id_specific_semantics_classification("CORE-000583"),
-            Some("engine_semantics")
+            None
         );
         assert_eq!(rule_id_specific_semantics_classification("CORE-PROV"), None);
     }

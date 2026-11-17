@@ -356,6 +356,20 @@ fn scoring_normalization_counts(cases: &[ScoredCase]) -> Vec<ScoringNormalizatio
         .collect()
 }
 
+pub(crate) fn identity_alignment_counts(cases: &[ScoredCase]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for case in cases {
+        if let Some(trace) = case.identity_alignment {
+            for metric in trace.case_metrics() {
+                *counts.entry(metric.to_owned()).or_default() += 1;
+            }
+        } else {
+            *counts.entry("no_trace".to_owned()).or_default() += 1;
+        }
+    }
+    counts
+}
+
 fn count_supported_by_provenance_detail(
     cases: &[ScoredCase],
     bucket: ScoreBucket,

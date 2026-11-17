@@ -36,7 +36,7 @@ fn core_000206_negative_02_reports_globally_absent_values_and_unknown_idvar_colu
         &[
             (
                 "co",
-                "S,CO,LB,S001,1,LBSEQ,320\nS,CO,LB,S001,1,NONSENSE,299\n",
+                "S,CO,LB,S001,1,LBSEQ,320\nS,CO,LB,S001,7,NONSENSE,299\n",
             ),
             (
                 "relrec",
@@ -59,6 +59,12 @@ fn core_000206_negative_02_reports_globally_absent_values_and_unknown_idvar_colu
         ],
         PUBLISHED_OUTPUT_VARIABLES,
     );
+    let sequences = result
+        .errors
+        .iter()
+        .map(|issue| issue.seq.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(sequences, [Some("1"), Some("7"), None, None, None]);
 }
 
 #[test]

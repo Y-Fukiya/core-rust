@@ -2,145 +2,80 @@ name: Open Rules Upstream
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 18 * * 0"
+
+permissions:
+  contents: read
 
 jobs:
-  upstream-observe:
-    name: Full Upstream Oracle Observe
-    runs-on: ubuntu-latest
+  candidate-review-official:
+    uses: ./.github/workflows/open-rules-official-audit.yml
+
+  candidate-review-full-scores:
+    name: Full corpus ${{ matrix.lane }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: accepted
+            sha: 7f7fae49376b3d023563ebb6c36a3b392d6e649f
+          - lane: candidate
+            sha: 1881cb9a1f9a38b6cafc785eca5169b240981f66
     steps:
-      - name: Checkout core-rust
-        uses: actions/checkout@v7
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.93.1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Checkout pinned cdisc-open-rules
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - uses: actions/checkout@v7
+        with:
+          repository: cdisc-org/cdisc-open-rules
+          ref: ${{ matrix.sha }}
+          path: pinned-open-rules
+          persist-credentials: false
+      - name: Run raw and strict scores from the pinned corpus
+        shell: bash
+        env:
+          LANE: ${{ matrix.lane }}
+          CORPUS_SHA: ${{ matrix.sha }}
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
-          upstream_repo="$(sed -n 's/^repo=//p' tests/open_rules/upstream.lock)"
-          upstream_sha="$(sed -n 's/^sha=//p' tests/open_rules/upstream.lock)"
-          git clone "$upstream_repo" ../cdisc-open-rules
-          git -C ../cdisc-open-rules checkout "$upstream_sha"
-
-      - name: Run full upstream oracle
-        run: |
-          set +e
-          cargo run -p xtask -- open-rules run-score \
-            --open-rules-root ../cdisc-open-rules \
-            --core-rs-results-root target/open-rules-core-rs-upstream \
-            --out target/open-rules-scoreboard-upstream \
-            --strict-lock
-          score_status=$?
-          set -e
-          echo "open-rules upstream observe exit code: ${score_status}"
-          if [ ! -f target/open-rules-scoreboard-upstream/scoreboard.json ]; then
-            echo "scoreboard.json was not generated; this is an infrastructure or harness failure"
-            exit 1
+          set -euo pipefail
+          test "$(git -C pinned-open-rules rev-parse HEAD)" = "$CORPUS_SHA"
+          git -C pinned-open-rules diff --quiet HEAD --
+          cargo build --locked -p xtask
+          mkdir -p target/review-evidence
+          args=()
+          if [[ "$LANE" == accepted ]]; then args+=(--strict-lock); fi
+          score_status=0
+          target/debug/xtask open-rules run-score \
+            --open-rules-root pinned-open-rules \
+            --core-rs-results-root target/review-raw-results \
+            --out target/review-evidence/raw "${args[@]}" || score_status=$?
+          printf '%s\n' "$score_status" > target/review-evidence/raw-exit.txt
+          test -s target/review-evidence/raw/scoreboard.json
+          strict_status=0
+          target/debug/xtask open-rules score --strict-scoring \
+            --open-rules-root pinned-open-rules \
+            --core-rs-results-root target/review-raw-results \
+            --out target/review-evidence/strict || strict_status=$?
+          printf '%s\n' "$strict_status" > target/review-evidence/strict-exit.txt
+          test -s target/review-evidence/strict/scoreboard.json
+          target/debug/xtask open-rules score-delta \
+            --default-scoreboard target/review-evidence/raw/scoreboard.json \
+            --strict-scoreboard target/review-evidence/strict/scoreboard.json \
+            --out target/review-evidence/delta
+          if [[ "$LANE" == accepted ]]; then
+            target/debug/xtask open-rules baseline \
+              --baseline tests/open_rules/upstream-baseline.json \
+              --scoreboard target/review-evidence/raw/scoreboard.json \
+              | tee target/review-evidence/full-gate.txt
           fi
-          echo "Scoreboard generated; compatibility gaps are tracked in uploaded artifacts."
-
-      - name: Run full upstream strict scoring audit
-        run: |
-          set +e
-          cargo run -p xtask -- open-rules score \
-            --open-rules-root ../cdisc-open-rules \
-            --core-rs-results-root target/open-rules-core-rs-upstream \
-            --out target/open-rules-scoreboard-upstream-strict \
-            --strict-scoring
-          strict_score_status=$?
-          set -e
-          echo "open-rules upstream strict observe exit code: ${strict_score_status}"
-          if [ ! -f target/open-rules-scoreboard-upstream-strict/scoreboard.json ]; then
-            echo "strict scoreboard.json was not generated; this is an infrastructure or harness failure"
-            exit 1
-          fi
-          echo "Strict scoring scoreboard generated as a non-gating audit artifact."
-
-      - name: Write default-vs-strict scoring delta
-        run: |
-          cargo run -p xtask -- open-rules score-delta \
-            --default-scoreboard target/open-rules-scoreboard-upstream/scoreboard.json \
-            --strict-scoreboard target/open-rules-scoreboard-upstream-strict/scoreboard.json \
-            --out target/open-rules-scoreboard-upstream-delta
-
-      - name: Upload upstream scoreboard
+          exit "$score_status"
+      - name: Upload scoring and gate evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: open-rules-upstream-scoreboard
-          path: |
-            target/open-rules-scoreboard-upstream
-            target/open-rules-scoreboard-upstream-strict
-            target/open-rules-scoreboard-upstream-delta
-            target/open-rules-core-rs-upstream/run-summary.json
-
-  upstream-regression:
-    name: Full Upstream Regression Baseline
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout core-rust
-        uses: actions/checkout@v7
-
-      - name: Check full upstream baseline availability
-        id: baseline
-        run: |
-          if [ -f tests/open_rules/upstream-baseline.json ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::error::tests/open_rules/upstream-baseline.json is required for the regression gate."
-            exit 1
-          fi
-
-      - name: Install Rust
-        if: steps.baseline.outputs.available == 'true'
-        uses: dtolnay/rust-toolchain@1.93.1
-
-      - name: Cache cargo
-        if: steps.baseline.outputs.available == 'true'
-        uses: Swatinem/rust-cache@v2
-
-      - name: Checkout pinned cdisc-open-rules
-        if: steps.baseline.outputs.available == 'true'
-        run: |
-          upstream_repo="$(sed -n 's/^repo=//p' tests/open_rules/upstream.lock)"
-          upstream_sha="$(sed -n 's/^sha=//p' tests/open_rules/upstream.lock)"
-          git clone "$upstream_repo" ../cdisc-open-rules
-          git -C ../cdisc-open-rules checkout "$upstream_sha"
-
-      - name: Run full upstream oracle
-        if: steps.baseline.outputs.available == 'true'
-        run: |
-          set +e
-          cargo run -p xtask -- open-rules run-score \
-            --open-rules-root ../cdisc-open-rules \
-            --core-rs-results-root target/open-rules-core-rs-upstream \
-            --out target/open-rules-scoreboard-upstream \
-            --strict-lock
-          score_status=$?
-          set -e
-          echo "open-rules upstream regression score exit code: ${score_status}"
-          if [ ! -f target/open-rules-scoreboard-upstream/scoreboard.json ]; then
-            echo "scoreboard.json was not generated; this is an infrastructure or harness failure"
-            exit 1
-          fi
-
-      - name: Compare full upstream regression baseline
-        if: steps.baseline.outputs.available == 'true'
-        run: |
-          cargo run -p xtask -- open-rules baseline \
-            --scoreboard target/open-rules-scoreboard-upstream/scoreboard.json \
-            --baseline tests/open_rules/upstream-baseline.json
-
-      - name: Upload upstream regression scoreboard
-        if: always() && steps.baseline.outputs.available == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: open-rules-upstream-regression-scoreboard
-          path: |
-            target/open-rules-scoreboard-upstream
-            target/open-rules-core-rs-upstream/run-summary.json
+          name: open-rules-review-${{ matrix.lane }}
+          path: target/review-evidence

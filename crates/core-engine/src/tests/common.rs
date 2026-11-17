@@ -85,7 +85,8 @@ pub(super) fn end_date_dataset() -> LoadedDataset {
     "USUBJID": ["SUBJ1", "SUBJ1", "SUBJ1", "SUBJ2"],
     "SESEQ": [1, 2, 3, 1],
     "SESTDTC": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-02-01"],
-    "SEENDTC": ["2024-01-02", "", "", ""]
+    "SEENDTC": ["2024-01-02", "", "", ""],
+    "ETCD": ["SCRN", "TRT", "FU", "SCRN"]
   }
 }
   ]
@@ -118,6 +119,8 @@ pub(super) fn relationship_dataset() -> LoadedDataset {
     "RIGHT": ["1", "2", "3", "3"],
     "LEFT_EMPTY": ["A", "A", "", "C"],
     "RIGHT_EMPTY": ["1", "", "1", "2"],
+    "LEFT_NULL": ["A", null, "A", null],
+    "RIGHT_NULL": ["1", "1", null, null],
     "TARGET_EMPTY_DUP": ["", "", "X", "Y"],
     "GROUP_DUP": ["G", "G", "H", "I"]
   }

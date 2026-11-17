@@ -18,7 +18,7 @@ mod scalar_operators;
 mod target_sort;
 
 use date_operators::{
-    classify_date_value, compare_complete_dates, is_incomplete_date, is_valid_iso_duration,
+    classify_date_value, compare_dates, is_incomplete_date, is_valid_iso_duration,
     parse_complete_date, DateValueState,
 };
 use group_operators::{
@@ -301,14 +301,19 @@ pub fn extract_target_variables(group: &ConditionGroup) -> Vec<String> {
 
 fn issue_variables(rule: &ExecutableRule, dataset: &LoadedDataset) -> Vec<String> {
     let mut expanded = Vec::new();
-    if contains_empty_within_except_last_row_operator(&rule.conditions) {
+    let empty_within_except_last_row =
+        contains_empty_within_except_last_row_operator(&rule.conditions);
+    if empty_within_except_last_row && rule.output_variables.is_empty() {
         for variable in extract_target_variables(&rule.conditions) {
             push_unique(
                 &mut expanded,
                 &expand_domain_placeholder(dataset, &variable),
             );
         }
-    } else if contains_not_present_on_multiple_rows_within_operator(&rule.conditions) {
+    } else if rule.output_variables.is_empty()
+        && !empty_within_except_last_row
+        && contains_not_present_on_multiple_rows_within_operator(&rule.conditions)
+    {
         collect_not_present_on_multiple_rows_variables(&rule.conditions, dataset, &mut expanded);
     } else if rule.output_variables.is_empty() {
         collect_issue_variables(&rule.conditions, dataset, &mut expanded);
@@ -614,21 +619,7 @@ fn evaluate_condition_with_options(
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
                 let right = resolve_scalar_comparator(comparator, dataset, frame, row)?;
-                Ok(compare_complete_dates(&left, &right)
-                    .map(|ordering| match operator {
-                        Operator::DateEqualTo => ordering == Ordering::Equal,
-                        Operator::DateNotEqualTo => ordering != Ordering::Equal,
-                        Operator::DateLessThan => ordering == Ordering::Less,
-                        Operator::DateLessThanOrEqualTo => {
-                            matches!(ordering, Ordering::Less | Ordering::Equal)
-                        }
-                        Operator::DateGreaterThan => ordering == Ordering::Greater,
-                        Operator::DateGreaterThanOrEqualTo => {
-                            matches!(ordering, Ordering::Greater | Ordering::Equal)
-                        }
-                        _ => false,
-                    })
-                    .unwrap_or(false))
+                Ok(compare_dates(operator, &left, &right))
             })
         }
         Operator::IsCompleteDate | Operator::IsIncompleteDate | Operator::InvalidDate => {
@@ -1276,10 +1267,22 @@ fn group_level_issues(
     variables: &[String],
     message: &str,
 ) -> Result<Vec<ValidationIssue>> {
+    let mut grouping_columns = Vec::new();
+    for variable in &rule.grouping_variables {
+        let name = expand_domain_placeholder(dataset, variable);
+        if let Some(column) = optional_column(dataset.frame(), &name)? {
+            grouping_columns.push(column.name().to_string());
+        }
+    }
+    let signature_columns = if grouping_columns.is_empty() {
+        variables
+    } else {
+        &grouping_columns
+    };
     let mut seen = std::collections::BTreeSet::new();
     let mut issues = Vec::new();
     for (row, _failed) in mask.iter().enumerate().filter(|(_row, failed)| **failed) {
-        let signature = group_issue_signature(dataset, variables, row)?;
+        let signature = group_issue_signature(dataset, signature_columns, row)?;
         if !seen.insert(signature) {
             continue;
         }

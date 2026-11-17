@@ -23,7 +23,9 @@ fn validate_help_exits_successfully() {
     cmd.args(["validate", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Usage:"));
+        .stdout(predicate::str::contains("Usage:"))
+        .stdout(predicate::str::contains("--substandard"))
+        .stdout(predicate::str::contains("--use-case"));
 }
 
 #[test]

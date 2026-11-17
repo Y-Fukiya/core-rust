@@ -12,14 +12,22 @@ import pytest
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+RULE_007 = "CORE-000007"
+RULE_047 = "CORE-000047"
 RULE_206 = "CORE-000206"
 RULE_272 = "CORE-000272"
 RULE_677 = "CORE-000677"
+RULE_744 = "CORE-000744"
 CASES = ("negative/01", "negative/02", "positive/01", "positive/02")
 SHA = "a" * 40
 HEADER = b"Dataset,Record,Variable\n"
 HISTORICAL = HEADER + b"SUPPDM,1,IDVAR\n" * 12
 REVIEWED = {
+    RULE_007: {
+        "negative/01": HEADER + b"DM,3,DTHDTC\n",
+        "negative/02": HEADER + b"DM,3,DTHFL\n",
+    },
+    RULE_047: {"negative/01": HEADER + b"DM,1,ARM\n"},
     RULE_206: {"negative/02": HEADER + b"DM,2,USUBJID\n"},
     RULE_272: {
         "negative/03": b"Dataset,Record,Variable,Value\n",
@@ -29,6 +37,10 @@ REVIEWED = {
         "negative/01": HEADER,
         "negative/02": HEADER,
         "positive/02": HEADER + b"SUPPDM,3,IDVAR\nSUPPDM,4,IDVAR\n",
+    },
+    RULE_744: {
+        "negative/03": HEADER + b"FA,1,RELREC.**TRT\n",
+        "negative/04": HEADER + b"FA,2,RELREC.**TRT\n",
     },
 }
 source_hash = runpy.run_path(str(SCRIPTS / "open_rules_pilot_check.py"))["source_hash"]
@@ -69,7 +81,7 @@ def corpus(tmp_path):
         shutil.copyfile(SCRIPTS / name, scripts / name)
     fixtures = tmp_path / "tests/open_rules"
     upstream = tmp_path / "upstream"
-    write(fixtures / "curated-upstream-rules.txt", f"  # subset\n\n{RULE_206}\n{RULE_272}\n{RULE_677}\n".encode())
+    write(fixtures / "curated-upstream-rules.txt", ("  # subset\n\n" + "\n".join(REVIEWED) + "\n").encode())
     write(fixtures / "upstream.lock", f"repo=example\nsha={SHA}\n".encode())
     for rule_id, replacements in REVIEWED.items():
         rule_dir = upstream / "Published" / rule_id
@@ -90,11 +102,11 @@ def prepare(script, upstream, subset):
     )
 
 
-def test_copies_all_278_cases_with_only_reviewed_csvs_replaced(corpus):
+def test_copies_all_cases_with_only_reviewed_csvs_replaced(corpus):
     script, fixtures, upstream, subset = corpus
     rule_list = fixtures / "curated-upstream-rules.txt"
     with rule_list.open("a", encoding="utf-8") as stream:
-        for number in range(3, 47):
+        for number in range(100, 143):
             rule_id = f"CORE-{number:06d}"
             stream.write(f"{rule_id}\n")
             for kind in ("negative", "positive"):
@@ -111,7 +123,7 @@ def test_copies_all_278_cases_with_only_reviewed_csvs_replaced(corpus):
             expected[target] = data
     result = prepare(script, upstream, subset)
     assert result.returncode == 0, result.stderr
-    assert len(list(subset.glob("Published/*/*/*/results/results.csv"))) == 278
+    assert len(list(subset.glob("Published/*/*/*/results/results.csv"))) == 286
     assert snapshot(subset) == expected
     assert snapshot(upstream) == sources
     assert snapshot(fixtures) == reviews
@@ -166,11 +178,11 @@ def test_rejects_bad_inputs_before_creating_subset(corpus, mutation, message):
     assert snapshot(upstream) == sources
 
 
-@pytest.mark.parametrize("rule_id", [RULE_206, RULE_272])
+@pytest.mark.parametrize("rule_id", [RULE_007, RULE_047, RULE_206, RULE_272, RULE_744])
 def test_rejects_extra_reviewed_case_before_creating_subset(corpus, rule_id):
     script, fixtures, upstream, subset = corpus
     rule = upstream / "Published" / rule_id
-    write_reviewed(fixtures, rule, {**REVIEWED[rule_id], "negative/01": HEADER})
+    write_reviewed(fixtures, rule, {**REVIEWED[rule_id], "positive/01": HEADER})
 
     result = prepare(script, upstream, subset)
     assert result.returncode != 0
