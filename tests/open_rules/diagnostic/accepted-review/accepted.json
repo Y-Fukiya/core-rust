@@ -1,6 +1,6 @@
 {
   "source_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
-  "cases": 58,
+  "cases": 60,
   "files": [
     {
       "file": "Published/CORE-000007/negative/01/results/results.csv",
@@ -91,6 +91,11 @@
       "file": "Published/CORE-000098/negative/01/results/results.csv",
       "before_sha256": "a8938020a2051f24e41e26aea5f46c47496527dbd683622a8688781f097869ff",
       "after_sha256": "c3348f1a8718e444499f85503ad45f6642e034b97e99c7f4e64f91e0814a05fa"
+    },
+    {
+      "file": "Published/CORE-000108/negative/02/results/results.csv",
+      "before_sha256": "5fcc1740ff1fb4c31a5b56596fc271574c9f45f550dc895279c8282d097dfaf4",
+      "after_sha256": "b2d40afc5350a641e3a311456d62c295c00806cb7ba70e270fe74f96f7526ad2"
     },
     {
       "file": "Published/CORE-000118/negative/01/results/results.csv",
@@ -231,6 +236,16 @@
       "file": "Published/CORE-000527/negative/01/results/results.csv",
       "before_sha256": "d9631cba57ffc78826de379f7d3337e2770db32f86298c0cff05f30a7555acb7",
       "after_sha256": "3331c73586e555268d18c620b1e59014fda72f0246809ff942601c22416e4c62"
+    },
+    {
+      "file": "Published/CORE-000558/negative/01/data/ds.csv",
+      "before_sha256": "9cb41154c7abaef79a7b8e3c174de03ad9348c7b8ba18d884f93d86c865bda9a",
+      "after_sha256": "e0601b1472881269cd33264a3b712ed52e38ca8727de06b7e27296841f269533"
+    },
+    {
+      "file": "Published/CORE-000558/negative/01/results/results.csv",
+      "before_sha256": "82f4614da783c9eb1e586de474fbfbb203a3c26333ec266680f165f06d477b37",
+      "after_sha256": "4d5421ad917314d06fa37b00a3e9622f037f9246c43fca33667ca7c48531da00"
     },
     {
       "file": "Published/CORE-000560/negative/01/data/.env",

@@ -32,6 +32,17 @@ mod tests {
     use super::execution_provenance_for_rule_id;
 
     #[test]
+    fn retired_rule_adapters_do_not_claim_old_provenance() {
+        for rule_id in ["CORE-000037", "CORE-000038"] {
+            assert_eq!(execution_provenance_for_rule_id(rule_id), "generic_engine");
+        }
+        assert_eq!(
+            execution_provenance_for_rule_id("CORE-000361"),
+            "rule_specific_engine_semantics"
+        );
+    }
+
+    #[test]
     fn production_provenance_distinguishes_execution_paths() {
         assert_eq!(
             execution_provenance_for_rule_id("CORE-999999"),
