@@ -1,0 +1,394 @@
+{
+  "purpose": "experimental_only_do_not_adopt",
+  "source_linux_run": 44080847059,
+  "adopted_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
+  "formal_sha256": "2d72a556eb0035fcae08987b794807125d1524d37a1c072c41bce189b59b0b5c",
+  "trial_sha256": "2ed2d6a3b82c21997d56a6af370bc2d6cbce8a10cd7ed7b18b3d29ac19ed83ca",
+  "source_scoreboard_sha256": "b0eb007f97d4056f1a0a092821b6c556f6d7ebf086e8c7897e716fa6c1a37349",
+  "retained_improvement": "Published/CORE-000108/negative/02",
+  "updated_cases": [
+    {
+      "case": "Published/CORE-000007/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000007/negative/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000007/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000007/positive/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000025/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000025/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000037/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000037/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000038/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000038/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000039/negative/01",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "candidate_issue_count",
+        "reason",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000039/negative/02",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "candidate_issue_count",
+        "reason",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000124/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000124/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000147/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000147/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000148/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000148/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000177/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000177/negative/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000177/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000177/positive/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000185/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000185/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000186/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000186/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000187/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000187/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000223/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000223/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000361/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000361/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000583/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000583/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000653/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000653/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000660/negative/01",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "candidate_issue_count",
+        "reason",
+        "scoring_normalizations",
+        "scoring_policy",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000660/positive/01",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "reason",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000660/positive/02",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "reason",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000660/positive/03",
+      "bucket": "deferred_oracle_gap_skipped",
+      "fields": [
+        "bucket",
+        "reason",
+        "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000677/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000677/negative/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000677/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000677/positive/02",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000677/positive/03",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000711/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000711/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance",
+        "execution_provenance_detail"
+      ]
+    },
+    {
+      "case": "Published/CORE-000784/negative/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail",
+        "scoring_normalizations",
+        "scoring_policy"
+      ]
+    },
+    {
+      "case": "Published/CORE-000784/positive/01",
+      "bucket": "supported_match",
+      "fields": [
+        "execution_provenance_detail"
+      ]
+    }
+  ],
+  "verified_applicability_skips": [
+    "Published/CORE-000039/negative/01",
+    "Published/CORE-000039/negative/02",
+    "Published/CORE-000660/negative/01",
+    "Published/CORE-000660/positive/01",
+    "Published/CORE-000660/positive/02",
+    "Published/CORE-000660/positive/03"
+  ]
+}

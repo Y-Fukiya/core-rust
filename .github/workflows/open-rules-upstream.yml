@@ -25,6 +25,19 @@ jobs:
           path: target/accepted-raw
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Verify frozen trial baseline before scoring
+        shell: bash
+        run: |
+          set -euo pipefail
+          review=tests/open_rules/diagnostic/accepted-review
+          evidence=target/accepted-review
+          mkdir -p "$evidence"
+          cp "$review/trial-baseline-scope.json" "$evidence/"
+          gzip -dc "$review/trial-baseline.json.gz" > "$evidence/trial-baseline.json"
+          printf '%s  %s\n' "$(jq -er .formal_sha256 "$evidence/trial-baseline-scope.json")" \
+            tests/open_rules/upstream-baseline.json \
+            "$(jq -er .trial_sha256 "$evidence/trial-baseline-scope.json")" \
+            "$evidence/trial-baseline.json" | sha256sum -c -
       - name: Verify proposals with the pinned official CORE
         shell: bash
         run: |
@@ -113,6 +126,44 @@ jobs:
               (.rule_id == "CORE-000039" or .rule_id == "CORE-000660") and
               .bucket == "deferred_oracle_gap_skipped")] | length == 6
           ' target/accepted-review/score-proposal/scoreboard.json
+      - name: Gate all cases against the frozen trial baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=target/accepted-review
+          jq -e --slurpfile trial "$evidence/trial-baseline.json" \
+            --slurpfile scope "$evidence/trial-baseline-scope.json" '
+            . as $actual
+            | $trial[0] as $expected
+            | $scope[0] as $review
+            | def authored_skips:
+                [.cases[]
+                 | select(.bucket == "deferred_oracle_gap_skipped" and .skipped_reasons == ["standard_mismatch"])
+                 | [.scope, .rule_id, .case_kind, .case_id] | join("/")
+                 | select(. | test("^Published/CORE-000(039|660)/"))]
+                | sort;
+              $actual.upstream.observed_sha == $review.adopted_sha
+              and $expected.upstream.observed_sha == $review.adopted_sha
+              and $actual.summary.total_cases == 2296 and $expected.summary.total_cases == 2296
+              and $actual.summary.supported_match == 2055 and $expected.summary.supported_match == 2054
+              and $actual.summary.deferred_oracle_gap_skipped == 59 and $expected.summary.deferred_oracle_gap_skipped == 60
+              and $actual.summary.supported_mismatch == 0 and $actual.summary.deferred_oracle_gap_mismatch == 0
+              and $actual.summary.skipped_unsupported == 0 and $actual.summary.harness_error == 0
+              and ($actual | authored_skips) == $review.verified_applicability_skips
+              and ($expected | authored_skips) == $review.verified_applicability_skips
+          ' "$evidence/score-proposal/scoreboard.json"
+          trial_status=0
+          target/debug/xtask open-rules baseline \
+            --scoreboard "$evidence/score-proposal/scoreboard.json" \
+            --baseline "$evidence/trial-baseline.json" \
+            > "$evidence/trial-full-gate.txt" || trial_status=$?
+          printf '%s\n' "$trial_status" > "$evidence/trial-baseline-exit.txt"
+          cat "$evidence/trial-full-gate.txt"
+          test "$trial_status" = 0
+          test "$(head -n 1 "$evidence/trial-full-gate.txt")" = \
+            'open-rules baseline: 0 regression(s), 1 improvement(s), 0 review-required'
+          grep -F "improvement $(jq -er .retained_improvement "$evidence/trial-baseline-scope.json"):" \
+            "$evidence/trial-full-gate.txt"
       - name: Preserve raw acceptance failure
         if: always()
         shell: bash
