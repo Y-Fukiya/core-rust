@@ -126,6 +126,12 @@ pub(crate) fn initial_operation_datasets(
     };
 
     if is_scope_external_reference_distinct_operation(rule, operation, datasets) {
+        if datasets.is_empty() && !is_supported_reference_distinct_rule(rule) {
+            return Err(operation_skipped_result(
+                rule,
+                "no dataset is in rule scope",
+            ));
+        }
         return Ok(datasets.to_vec());
     }
 
@@ -196,16 +202,73 @@ fn is_scope_external_reference_distinct_operation(
     operation: &OperationSpec,
     datasets: &[LoadedDataset],
 ) -> bool {
-    if !is_supported_reference_distinct_rule(rule) {
-        return false;
-    }
-
     matches!(
         operation_name(operation).as_deref(),
         Some("distinct" | "unique")
     ) && operation_dataset_name(operation)
         .as_deref()
         .is_some_and(|name| find_dataset(datasets, name).is_none())
+        && (is_supported_reference_distinct_rule(rule)
+            || !external_distinct_membership_targets(rule, operation).is_empty())
+}
+
+fn external_distinct_membership_targets<'a>(
+    rule: &'a ExecutableRule,
+    operation: &OperationSpec,
+) -> Vec<&'a str> {
+    let Some(output) = string_field(operation, &["id", "target", "as", "output", "column"]) else {
+        return Vec::new();
+    };
+    if is_join_operation(operation)
+        || bool_field(operation, &["value_is_reference"]).unwrap_or(false)
+        || !output.starts_with('$')
+        || rule.operations.len() != 1
+        || operation_value(
+            operation,
+            &["where", "condition", "conditions", "check", "filter"],
+        )
+        .is_some()
+    {
+        return Vec::new();
+    }
+
+    fn collect<'a>(group: &'a ConditionGroup, output: &str, targets: &mut Vec<&'a str>) {
+        match group {
+            ConditionGroup::All(groups) | ConditionGroup::Any(groups) => {
+                for group in groups {
+                    collect(group, output, targets);
+                }
+            }
+            ConditionGroup::Leaf(condition)
+                if matches!(
+                    condition.operator,
+                    Operator::IsNotContainedBy | Operator::IsNotContainedByCaseInsensitive
+                ) && matches!(&condition.comparator, ValueExpr::ColumnRef(column) if column == output) =>
+            {
+                targets.extend(condition.target.as_deref());
+            }
+            _ => {}
+        }
+    }
+
+    let mut targets = Vec::new();
+    collect(
+        &rule.conditions,
+        &clean_operation_identifier(&output),
+        &mut targets,
+    );
+    targets
+}
+
+fn has_nonempty_membership_target_guard(group: &ConditionGroup, target: &str) -> bool {
+    let ConditionGroup::All(conditions) = group else {
+        return false;
+    };
+    conditions.iter().any(|condition| {
+        matches!(condition, ConditionGroup::Leaf(condition)
+            if condition.operator == Operator::IsNotEmpty
+                && condition.target.as_deref() == Some(target))
+    })
 }
 
 fn is_scope_wide_reference_distinct_operation(
@@ -1395,10 +1458,6 @@ fn execute_reference_distinct_operation(
     datasets: &[LoadedDataset],
     all_datasets: &[LoadedDataset],
 ) -> Option<std::result::Result<Vec<LoadedDataset>, RuleValidationResult>> {
-    if !is_supported_reference_distinct_rule(rule) {
-        return None;
-    }
-
     if !matches!(name, "distinct" | "unique") {
         return None;
     }
@@ -1407,6 +1466,49 @@ fn execute_reference_distinct_operation(
     let scope_wide = is_scope_wide_reference_distinct_operation(rule, operation);
     if find_dataset(datasets, &source_name).is_some() && !scope_wide {
         return None;
+    }
+    if !is_supported_reference_distinct_rule(rule) {
+        let targets = external_distinct_membership_targets(rule, operation);
+        if targets.is_empty() {
+            return None;
+        }
+        if let Some((dataset, target)) = datasets.iter().find_map(|dataset| {
+            targets
+                .iter()
+                .find(|target| !dataset_has_column(dataset, target))
+                .map(|target| (dataset, target))
+        }) {
+            return Some(Err(operation_skipped_result(
+                rule,
+                format!(
+                    "dataset {} is missing column {target}",
+                    dataset.summary().name
+                ),
+            )));
+        }
+        // The existing membership evaluator ignores blank targets.
+        for dataset in datasets {
+            for target in &targets {
+                if has_nonempty_membership_target_guard(&rule.conditions, target) {
+                    continue;
+                }
+                let values = match operation_column_values(dataset, target) {
+                    Ok(values) => values,
+                    Err(error) => {
+                        return Some(Err(operation_skipped_result(rule, error.to_string())))
+                    }
+                };
+                if values
+                    .iter()
+                    .any(|value| value.is_null() || value.as_str() == Some(""))
+                {
+                    return Some(Err(operation_skipped_result(
+                        rule,
+                        format!("reference distinct membership has a blank {target}"),
+                    )));
+                }
+            }
+        }
     }
     let exclude_source = scope_wide && reference_distinct_excludes_source(rule, operation);
 

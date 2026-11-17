@@ -762,6 +762,14 @@ fn evaluate_condition_with_options(
                 Ok(left != part)
             })
         }
+        Operator::HasNotEqualLength => {
+            let length = length_comparator(operator, &condition.comparator)?;
+            evaluate_column(column, row_count, |value, _row| {
+                Ok(ScalarValue::from_any_value(value)
+                    .as_string()
+                    .is_none_or(|value| value.chars().count() != length))
+            })
+        }
         Operator::LongerThan => {
             let max_len = length_comparator(operator, &condition.comparator)?;
             evaluate_column(column, row_count, |value, _row| {

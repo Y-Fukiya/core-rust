@@ -2089,6 +2089,10 @@ Outcome:
     #[test]
     fn open_rules_length_operator_normalizes_to_length_operator() {
         assert_eq!(Operator::from_name("longer_than"), Operator::LongerThan);
+        assert_eq!(
+            Operator::from_name("has_not_equal_length"),
+            Operator::HasNotEqualLength
+        );
     }
 
     #[test]

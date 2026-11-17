@@ -524,6 +524,7 @@ pub(crate) fn is_supported_basic_operator(operator: &Operator) -> bool {
             | Operator::MatchesRegex
             | Operator::DoesNotMatchRegex
             | Operator::DoesNotMatchRegexFullString
+            | Operator::HasNotEqualLength
             | Operator::LongerThan
             | Operator::StartsWith
             | Operator::PrefixEqualTo

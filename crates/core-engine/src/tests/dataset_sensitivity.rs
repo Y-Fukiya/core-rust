@@ -49,6 +49,26 @@ fn aestat_presence_rule(sensitivity: Sensitivity) -> ExecutableRule {
 }
 
 #[test]
+fn not_equal_length_detects_short_long_and_missing_text() {
+    let rule = rule(
+        Some(Sensitivity::Record),
+        ConditionGroup::Leaf(condition(
+            "AESTAT",
+            Operator::from_name("has_not_equal_length"),
+            literal(json!(2)),
+        )),
+        "Unexpected length",
+    );
+    let result = validate_rule(&rule, &ae_dataset(Some(json!(["A", "ABC", null]))))
+        .expect("validate lengths");
+    assert_eq!(result.error_count, 3);
+
+    let result = validate_rule(&rule, &ae_dataset(Some(json!(["AE", "éA", "A "]))))
+        .expect("validate two-character values");
+    assert_eq!(result.execution_status, ExecutionStatus::Passed);
+}
+
+#[test]
 fn dataset_sensitivity_reports_one_issue_for_multiple_matching_records() {
     let result = validate_rule(
         &aestat_presence_rule(Sensitivity::Dataset),

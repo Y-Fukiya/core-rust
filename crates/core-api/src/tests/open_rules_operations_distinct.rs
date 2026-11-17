@@ -9,6 +9,72 @@ use crate::operation_fields::operation_name;
 use crate::{run_validation, DatasetLoader, ValidateRequest};
 
 #[test]
+fn external_distinct_membership_looks_up_values_in_the_same_group() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("membership.yml");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999601, Status: Published}
+Rule Type: Record Data
+Sensitivity: Record
+Scope:
+  Domains: {Include: [DM]}
+Operations:
+  - {operator: distinct, domain: TA, name: ARMCD, group: [COHORT], id: $arms}
+Check:
+  all:
+    - {operator: is_not_contained_by, name: ACTARMCD, value: $arms}
+Outcome: {Message: invalid arm, Output Variables: [ACTARMCD]}
+"#,
+    )
+    .expect("write rule");
+    let target = serde_json::json!({"filename": "dm.csv", "domain": "DM",
+        "records": {"COHORT": ["X", "Y"], "ACTARMCD": ["A", "A"]}});
+    let reference = serde_json::json!({"filename": "ta.csv", "domain": "TA",
+        "records": {"COHORT": ["X", "Y"], "ARMCD": ["A", "B"]}});
+    let run = |datasets| {
+        fs::write(&data, serde_json::json!({"datasets": datasets}).to_string())
+            .expect("write data");
+        run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate")
+        .results
+    };
+    let results = run(vec![target.clone(), reference.clone()]);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].execution_status, ExecutionStatus::Failed);
+    assert_eq!(results[0].dataset, "DM");
+    assert_eq!(results[0].error_count, 1);
+    assert_eq!(results[0].errors[0].row, Some(2));
+    assert_eq!(
+        run(vec![target])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    let missing_target = serde_json::json!({"filename": "dm.csv", "domain": "DM",
+        "records": {"COHORT": ["X"]}});
+    assert_eq!(
+        run(vec![missing_target, reference])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    let blank_target = serde_json::json!({"filename": "dm.csv", "domain": "DM",
+        "records": {"COHORT": ["X", "X"], "ACTARMCD": ["A", null]}});
+    let ref_only = serde_json::json!({"filename": "ta.csv", "domain": "TA",
+        "records": {"COHORT": ["X"], "ARMCD": ["A"]}});
+    assert_eq!(
+        run(vec![ref_only.clone()])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    assert_eq!(
+        run(vec![blank_target, ref_only])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+}
+
+#[test]
 fn run_validation_executes_core_000770_distinct_operation() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
