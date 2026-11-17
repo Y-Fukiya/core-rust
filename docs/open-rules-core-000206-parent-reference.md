@@ -54,16 +54,26 @@ The accepted snapshot remains `7f7fae49376b3d023563ebb6c36a3b392d6e649f`.
 Its negative/02 stored CSV has 16 variable rows. A fresh official replay
 has 20. The four additional rows are the four declared output variables
 for the same previously missed SUPPLB record. The stored CSV therefore
-needs separate oracle review before this change can pass the pinned
-curated gate. No committed fixture, baseline, scorer, or upstream pin
-is changed here.
+did not match the corrected engine. The pinned curated job failed in
+[CI run 44036605947](https://github.com/Y-Fukiya/core-rust/actions/runs/44036605947).
 
 The full accepted run changed only this case. The pinned curated subset
 matched 277 of 278 cases. A temporary copy using the fresh official CSV for
 this case matched all 278 and passed the existing baseline comparison with
 zero regressions or review-required entries.
 
+## Curated CI expectation
+
+A second official v1.0.0 run of the accepted inputs produced the same CSV
+byte for byte. The reviewed replacement in
+`tests/open_rules/curated-reviewed/CORE-000206/negative/02/results.csv`
+is that official output with LF line endings. The manifest binds the
+accepted pin, original rule tree, and replacement bytes. CI overlays only
+this case in its copied subset. The gate still checks all 278 cases, and
+the scorer, baseline, upstream checkout and upstream pin are unchanged.
+
 The local evidence lives under `target/core-206-idvarval-audit/`:
 `official/`, `controls-v2/`, and `boundary/` include the input copies,
 process logs, and official JSON and CSV reports. The final scoreboards are
-under `after/`.
+under `after/`. The second official replay is in
+`target/core-206-ci-replay/`.

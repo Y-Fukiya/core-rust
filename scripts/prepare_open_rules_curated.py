@@ -11,8 +11,10 @@ from open_rules_pilot_check import source_hash
 
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests/open_rules"
-REVIEWED_RULE = "CORE-000677"
-REVIEWED_CASES = {"negative/01", "negative/02", "positive/02"}
+REVIEWED_CASES = {
+    "CORE-000677": {"negative/01", "negative/02", "positive/02"},
+    "CORE-000206": {"negative/02"},
+}
 
 
 def prepare(upstream_root: Path, subset_root: Path) -> None:
@@ -31,28 +33,15 @@ def prepare(upstream_root: Path, subset_root: Path) -> None:
         if not re.fullmatch(r"CORE-[0-9]{6}", rule_id) or rule_id in rule_ids:
             raise ValueError(f"invalid or duplicate curated rule ID: {rule_id}")
         rule_ids.append(rule_id)
-    if REVIEWED_RULE not in rule_ids:
-        raise ValueError(f"reviewed rule is not in the curated subset: {REVIEWED_RULE}")
+    for reviewed_rule in REVIEWED_CASES:
+        if reviewed_rule not in rule_ids:
+            raise ValueError(f"reviewed rule is not in the curated subset: {reviewed_rule}")
 
     pins = [line.removeprefix("sha=") for line in
             (FIXTURES / "upstream.lock").read_text(encoding="utf-8").splitlines()
             if line.startswith("sha=")]
     if len(pins) != 1 or not re.fullmatch(r"[0-9a-f]{40}", pins[0]):
         raise ValueError("upstream.lock must have exactly one pinned commit SHA")
-
-    reviewed = FIXTURES / "curated-reviewed" / REVIEWED_RULE
-    manifest_path = reviewed / "manifest.json"
-    if manifest_path.resolve() != manifest_path:
-        raise ValueError(f"symlink in reviewed tree: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if (not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int
-            or manifest["schema_version"] != 1 or manifest.get("rule_id") != REVIEWED_RULE):
-        raise ValueError(f"invalid reviewed manifest: {manifest_path}")
-    if manifest.get("upstream_sha") != pins[0]:
-        raise ValueError("reviewed manifest upstream SHA does not match upstream.lock")
-    replacements = manifest.get("replacements")
-    if not isinstance(replacements, dict) or replacements.keys() != REVIEWED_CASES:
-        raise ValueError(f"reviewed case keys must be exactly: {', '.join(sorted(REVIEWED_CASES))}")
 
     published = upstream_root / "Published"
     if published.is_symlink():
@@ -63,21 +52,35 @@ def prepare(upstream_root: Path, subset_root: Path) -> None:
             raise ValueError(f"missing curated rule directory: {rule_dir}")
         if rule_dir.is_symlink() or any(path.is_symlink() for path in rule_dir.rglob("*")):
             raise ValueError(f"symlink in upstream rule: {rule_dir}")
-    if source_hash(published / REVIEWED_RULE) != manifest.get("source_sha256"):
-        raise ValueError(f"source changed or missing: {REVIEWED_RULE}")
-
     overlays = {}
-    for case, digest in replacements.items():
-        target = Path("Published") / REVIEWED_RULE / case / "results/results.csv"
-        if not (upstream_root / target).is_file():
-            raise ValueError(f"missing original oracle CSV: {target}")
-        path = reviewed / case / "results.csv"
-        if path.resolve() != path:
-            raise ValueError(f"symlink in reviewed tree: {path}")
-        data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise ValueError(f"replacement hash mismatch: {path}")
-        overlays[target] = data
+    for reviewed_rule, cases in REVIEWED_CASES.items():
+        reviewed = FIXTURES / "curated-reviewed" / reviewed_rule
+        manifest_path = reviewed / "manifest.json"
+        if manifest_path.resolve() != manifest_path:
+            raise ValueError(f"symlink in reviewed tree: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int
+                or manifest["schema_version"] != 1 or manifest.get("rule_id") != reviewed_rule):
+            raise ValueError(f"invalid reviewed manifest: {manifest_path}")
+        if manifest.get("upstream_sha") != pins[0]:
+            raise ValueError(f"reviewed manifest upstream SHA does not match upstream.lock: {reviewed_rule}")
+        replacements = manifest.get("replacements")
+        if not isinstance(replacements, dict) or replacements.keys() != cases:
+            raise ValueError(f"reviewed case keys must be exactly: {', '.join(sorted(cases))} ({reviewed_rule})")
+        if source_hash(published / reviewed_rule) != manifest.get("source_sha256"):
+            raise ValueError(f"source changed or missing: {reviewed_rule}")
+
+        for case, digest in replacements.items():
+            target = Path("Published") / reviewed_rule / case / "results/results.csv"
+            if not (upstream_root / target).is_file():
+                raise ValueError(f"missing original oracle CSV: {target}")
+            path = reviewed / case / "results.csv"
+            if path.resolve() != path:
+                raise ValueError(f"symlink in reviewed tree: {path}")
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != digest:
+                raise ValueError(f"replacement hash mismatch: {path}")
+            overlays[target] = data
 
     subset_root.mkdir()
     for rule_id in rule_ids:
