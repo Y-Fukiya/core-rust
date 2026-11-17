@@ -37,6 +37,9 @@ jobs:
           gzip -dc "$review/accepted.patch.gz" > target/accepted-proposal.patch
           git -C target/accepted-proposal apply --check "$PWD/target/accepted-proposal.patch"
           git -C target/accepted-proposal apply "$PWD/target/accepted-proposal.patch"
+          gzip -dc "$review/locator-evidence.patch.gz" > target/locator-evidence.patch
+          git -C target/accepted-proposal apply --check "$PWD/target/locator-evidence.patch"
+          git -C target/accepted-proposal apply "$PWD/target/locator-evidence.patch"
           asset="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["engine"]["asset_url"])' "$profile")"
           curl --fail --location --retry 2 --max-time 120 "$asset" --output target/core-accepted.tar.gz
           python3 scripts/review_accepted_open_rules.py \
@@ -84,6 +87,32 @@ jobs:
           printf '%s\n' "$baseline_status" > target/accepted-review/proposal-baseline-exit.txt
           head -n 1 target/accepted-review/proposal-full-gate.txt
           exit "$score_status"
+      - name: Verify locator parity and authored-profile skips
+        shell: bash
+        run: |
+          set -euo pipefail
+          strict_status=0
+          target/debug/xtask open-rules score --strict-scoring \
+            --open-rules-root target/accepted-proposal \
+            --core-rs-results-root target/core-rs-accepted-proposal \
+            --out target/accepted-review/score-strict || strict_status=$?
+          printf '%s\n' "$strict_status" > target/accepted-review/strict-score-exit.txt
+          for board in score-proposal score-strict; do
+            jq -e '
+              .summary.harness_error == 0 and
+              ([.cases[] | select((.rule_id == "CORE-000361" or .rule_id == "CORE-000784")
+                  and .case_kind == "negative" and .case_id == "01")]
+              | length == 2 and all(.[]; .bucket == "supported_match"
+                  and ((.scoring_normalizations // []) | length) == 0
+                  and .identity_alignment.comparison == "raw_structural"
+                  and .identity_alignment.candidate_usubjid_omissions == 0))
+            ' "target/accepted-review/$board/scoreboard.json"
+          done
+          jq -e '
+            [.cases[] | select(.skipped_reasons == ["standard_mismatch"] and
+              (.rule_id == "CORE-000039" or .rule_id == "CORE-000660") and
+              .bucket == "deferred_oracle_gap_skipped")] | length == 6
+          ' target/accepted-review/score-proposal/scoreboard.json
       - name: Preserve raw acceptance failure
         if: always()
         shell: bash

@@ -789,6 +789,35 @@ CORE-000137,failed,EC,EC,13,ECDOSE,bad,1,,,\n",
 }
 
 #[test]
+fn exact_row_locator_gap_match_preserves_full_identity() {
+    let dir = tempdir().expect("tempdir");
+    let case = write_score_fixture(
+        dir.path(),
+        "CORE-000361",
+        "negative",
+        "01",
+        "Dataset,Record,Variable,Value,USUBJID,SEQ\n\
+SV,1,VISITNUM,2,SUBJ-01,\n\
+TV,7,VISITNUM,3,,\n\
+SV,1,VISITNUM,2,SUBJ-01,\n",
+        "rule_id,execution_status,dataset,domain,row,variables,message,error_count,skipped_reason,usubjid,seq\n\
+CORE-000361,failed,TV,TV,7,VISITNUM,bad,1,,,\n\
+CORE-000361,failed,SV,SV,1,VISITNUM,bad,1,,SUBJ-01,\n\
+CORE-000361,failed,SV,SV,1,VISITNUM,bad,1,,SUBJ-01,\n",
+    );
+    let scored = score_cases(&[case], &dir.path().join("candidate"));
+
+    assert_eq!(scored[0].bucket, ScoreBucket::SupportedMatch);
+    assert_eq!(scored[0].official_issue_count, Some(3));
+    assert_eq!(scored[0].candidate_issue_count, Some(3));
+    assert_eq!(scored[0].scoring_policy, ScoringPolicy::StrictIdentity);
+    assert!(scored[0].scoring_normalizations.is_empty());
+    let trace = scored[0].identity_alignment.expect("identity trace");
+    assert_eq!(trace.official_findings_with_usubjid, 2);
+    assert_eq!(trace.candidate_usubjid_omissions, 0);
+}
+
+#[test]
 fn row_locator_oracle_gap_normalization_does_not_hide_issue_count_differences() {
     let dir = tempdir().expect("tempdir");
     let case = write_score_fixture(

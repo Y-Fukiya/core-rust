@@ -21,7 +21,7 @@ use identity::{align_candidate_identity_to_official, duplicate_sequence_values_b
 use normalization::normalize_deferred_oracle_gap_issue_identity;
 use policy::{
     deferred_default_engine_oracle_gap_reason, deferred_default_engine_oracle_gap_skipped_reason,
-    official_oracle_fixture_gap_category,
+    official_oracle_fixture_gap_category, row_locator_oracle_gap_category,
 };
 pub use provenance::{
     execution_provenance_detail_for_case, execution_provenance_for_rule_id,
@@ -342,26 +342,32 @@ fn score_case(
     }
 
     let mut official_issues = official.issues;
-    let (candidate_issues, scoring_normalizations, identity_alignment) = if options.strict_scoring {
-        (
-            candidate.issues,
-            Vec::new(),
-            IdentityAlignmentTrace::raw(&official_issues),
-        )
-    } else {
-        let duplicate_sequence_values = duplicate_sequence_values_by_dataset(case);
-        let (mut candidate_issues, identity_alignment) = align_candidate_identity_to_official(
-            &official_issues,
-            candidate.issues,
-            &duplicate_sequence_values,
-        );
-        let scoring_normalizations = normalize_deferred_oracle_gap_issue_identity(
-            case,
-            &mut official_issues,
-            &mut candidate_issues,
-        );
-        (candidate_issues, scoring_normalizations, identity_alignment)
-    };
+    let exact_locator_match = !options.strict_scoring
+        && row_locator_oracle_gap_category(case)
+        && official_issues.len() == candidate.issues.len()
+        && !official_issues.is_empty()
+        && issue_counts(official_issues.iter()) == issue_counts(candidate.issues.iter());
+    let (candidate_issues, scoring_normalizations, identity_alignment) =
+        if options.strict_scoring || exact_locator_match {
+            (
+                candidate.issues,
+                Vec::new(),
+                IdentityAlignmentTrace::raw(&official_issues),
+            )
+        } else {
+            let duplicate_sequence_values = duplicate_sequence_values_by_dataset(case);
+            let (mut candidate_issues, identity_alignment) = align_candidate_identity_to_official(
+                &official_issues,
+                candidate.issues,
+                &duplicate_sequence_values,
+            );
+            let scoring_normalizations = normalize_deferred_oracle_gap_issue_identity(
+                case,
+                &mut official_issues,
+                &mut candidate_issues,
+            );
+            (candidate_issues, scoring_normalizations, identity_alignment)
+        };
     let base = ScoredCase {
         identity_alignment: Some(identity_alignment),
         ..base
@@ -465,7 +471,7 @@ fn issue_multiset_diff(
     )
 }
 
-fn issue_counts(issues: Vec<IssueKey>) -> BTreeMap<IssueKey, usize> {
+fn issue_counts<K: Ord>(issues: impl IntoIterator<Item = K>) -> BTreeMap<K, usize> {
     let mut counts = BTreeMap::new();
     for issue in issues {
         *counts.entry(issue).or_default() += 1;

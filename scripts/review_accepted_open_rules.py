@@ -15,6 +15,7 @@ import open_rules_official_audit as audit
 FIXTURE = re.compile(r"Published/(CORE-\d{6})/(?:positive|negative)/\d+")
 PROFILE_REPAIR = "Published/CORE-000560/negative/01/data/.env"
 NUMERIC_REPAIR = "Published/CORE-000558/negative/01/data/ds.csv"
+LOCATOR_ORACLES = {f"Published/CORE-{rule:06}/negative/01" for rule in (361, 784)}
 PASS_STATUSES = {"ISSUE REPORTED", "SUCCESS"}
 NO_SELECTION = "No rules were selected for this standard/version"
 MISSING_VERSION = "Missing option '-v' / '--version'"
@@ -46,7 +47,7 @@ def verify_numeric_repair(before, after):
         raise ValueError("numeric repair changes more than the two invalid tokens")
 
 
-def verify_numeric_oracle(report, proposed):
+def verify_oracle_with_locators(report, proposed):
     header, expected = csv_records(proposed)
     official_header, official = csv_records(report / "report.csv")
     if header != [*official_header, "USUBJID", "SEQ"]:
@@ -55,14 +56,16 @@ def verify_numeric_oracle(report, proposed):
     for row, count in expected.items():
         projected[row[:-2]] += count
     details = load(report / "report.json")["Issue_Details"]
-    actual_locators = Counter((detail["dataset"], str(detail["row"]), name,
-                               str(detail["USUBJID"]), str(detail["SEQ"]))
+    def scalar(value):
+        return "" if value is None else str(value)
+
+    actual_locators = Counter((detail["dataset"], scalar(detail["row"]), name,
+                               scalar(detail["USUBJID"]), scalar(detail["SEQ"]))
                               for detail in details for name in detail["variables"])
     expected_locators = Counter()
     for row, count in expected.items():
         expected_locators[(row[0], row[1], row[2], row[4], row[5])] += count
-    return (projected == official and expected_locators == actual_locators
-            and [detail["row"] for detail in sorted(details, key=lambda d: d["row"])] == [3, 4])
+    return projected == official and expected_locators == actual_locators
 
 
 def check_proposal(raw, proposed, manifest):
@@ -86,7 +89,7 @@ def check_proposal(raw, proposed, manifest):
         verify_numeric_repair(raw / NUMERIC_REPAIR, proposed / NUMERIC_REPAIR)
 
 
-def replay(raw, engine, env, dest, case, version=None, data_override=None):
+def replay(raw, engine, env, dest, case, version=None, data_override=None, profile=None):
     rule_id = FIXTURE.fullmatch(case).group(1)
     first = raw / case / "data"
     rule = raw / "Published" / rule_id / "rule.yml"
@@ -106,6 +109,8 @@ def replay(raw, engine, env, dest, case, version=None, data_override=None):
     ]
     if version:
         cmd += ["-v", version]
+    for option, value in (profile or {}).items():
+        cmd.extend([audit.ENV_FLAGS[option], value])
     process = audit.execute(cmd, engine, env, dest / "engine", 120)
     for path, metadata in files.items():
         if audit.sha256(raw / path) != metadata["sha256"]:
@@ -114,7 +119,7 @@ def replay(raw, engine, env, dest, case, version=None, data_override=None):
         raise ValueError(f"effective input changed during replay: {case}")
     exit_code = process["returncode"]
     obs = {"case": case, "version_override": version, "exit": exit_code, "inputs": files,
-           "effective_data_sha256": input_hashes}
+           "effective_data_sha256": input_hashes, "profile_override": profile}
     json_path, csv_path = dest / "report.json", dest / "report.csv"
     stderr = (dest / "engine.stderr.txt").read_text(errors="replace")
     if process["timed_out"]:
@@ -184,6 +189,14 @@ def main():
             replay(raw, bundle, env, out / "version-controls" / version, adsl, version)
             for version in ("1-0", "1-1", "1-2", "1-3")
         ]
+        profile_controls = []
+        for case in plan["new_skips"]:
+            if "/CORE-000039/" in case:
+                profile = {"VERSION": "3-4"}
+            else:
+                profile = {"SUBSTANDARD": "SDTM", "USE_CASE": "PROD"}
+            profile_controls.append(replay(raw, bundle, env, out / "matched-profile" / case,
+                                           case, profile=profile))
         numeric_case = NUMERIC_REPAIR.removesuffix("/data/ds.csv")
         numeric_output = out / "numeric-fixture-control"
         numeric = None
@@ -201,9 +214,14 @@ def main():
                 src, record = out / "version-controls/1-3/report.csv", controls[-1]
             if case == numeric_case and numeric is not None:
                 record = numeric
+                details = load(numeric_output / "report.json")["Issue_Details"] if record.get("status") == "ISSUE REPORTED" else []
                 match = (raw_cases[case].get("status") == "EXECUTION ERROR"
                          and record.get("status") == "ISSUE REPORTED"
-                         and verify_numeric_oracle(numeric_output, proposed / entry["file"]))
+                         and sorted(detail["row"] for detail in details) == [3, 4]
+                         and verify_oracle_with_locators(numeric_output, proposed / entry["file"]))
+            elif case in LOCATOR_ORACLES:
+                match = (record.get("status") == "ISSUE REPORTED"
+                         and verify_oracle_with_locators(src.parent, proposed / entry["file"]))
             else:
                 match = (record.get("status") in PASS_STATUSES
                          and csv_records(src) == csv_records(proposed / entry["file"]))
@@ -223,7 +241,7 @@ def main():
         "cases": raw_cases, "counts": dict(Counter(r["outcome"] for r in raw_cases.values())),
         "proposal_checks": checks, "new_skip_controls": scopes, "adam_version_controls": controls,
         "adam_profile_verified": adsl_profile_verified, "numeric_fixture_control": numeric,
-        "provenance_controls": provenance,
+        "provenance_controls": provenance, "matched_profile_controls": profile_controls,
     }
     audit.write_json(out / "summary.json", result)
     fail = (len(checks) != manifest["cases"] or not all(c["verified"] for c in checks)
