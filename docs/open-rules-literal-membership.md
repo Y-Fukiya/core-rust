@@ -64,18 +64,16 @@ artifacts need archiving before `target` cleanup.
 | CORE-000123 through CORE-000131 negative/01 | 1 | 1 | 1 |
 
 Default scoring improves from eight matches and ten mismatches to 17 matches
-and one mismatch. CORE-000124 negative/01 still reports candidate Record `2`
-against official Record `1`. Its physical CSV has one row with `AESEQ=2` and
-`AESCONG=U`. This existing locator difference is not a membership failure and
-is not hidden by a new normalization or exclusion.
+and one mismatch in the membership-only change. CORE-000124 negative/01 then
+reported candidate Record `2` against official Record `1`. Its CSV has one
+data row with `AESEQ=2` and `AESCONG=U`. See the Record-number follow-up below.
 
 Strict scoring matches all nine positive cases. All nine negative cases still
 have existing identity differences because the candidate includes USUBJID and
-sequence values absent from the official CSV. CORE-000124 also has the Record
-difference above. Matching detection counts does not imply strict identity
-conformance.
+sequence values absent from the official CSV. Matching detection counts does
+not imply strict identity conformance.
 
-## Candidate corpus impact
+## Membership-only corpus impact
 
 The final implementation executes all 2,298 cases in the candidate snapshot
 without harness errors. Compared with the preceding Domain Presence change,
@@ -102,12 +100,11 @@ and 906 mismatches. Its 89 unsupported skips and 12 missing-oracle cases remain
 unchanged. The default adoption gate still fails with 54 mismatching cases.
 This result does not justify updating the accepted pin or baseline.
 
-The accepted snapshot `7f7fae49376b3d023563ebb6c36a3b392d6e649f` also executes
-all 2,296 cases without harness errors. All case buckets, counts, mismatch
-fingerprints, provenance classifications, and normalization traces are
-unchanged. Its existing 17 supported and seven deferred mismatches remain.
-The accepted full regression gate is not green, but this correction adds no
-regression.
+Before the Record-number follow-up, the accepted snapshot
+`7f7fae49376b3d023563ebb6c36a3b392d6e649f` also executes all 2,296 cases without
+harness errors. All case buckets, counts, mismatch fingerprints, provenance
+classifications, and normalization traces are unchanged by the membership fix.
+Its existing 17 supported and seven deferred mismatches remain.
 
 One earlier accepted-corpus attempt overlapped test linking and hit two
 `No space left on device` report-write failures. It is not counted as a
@@ -151,3 +148,61 @@ The reviewer did not execute these runtime checks. Logs are stored as
 `final-build.log`, `final-check.log`, `final-clippy.log`, and `final-test.log`
 under the local evidence directory. These are local checks, not a new GitHub
 Actions run. This change does not authorize a merge or an adopted-rules update.
+
+## CORE-000124 Record-number follow-up
+
+The engine already located the violation at data row `1`. The API's
+`report_csv_line_record_numbers` postprocessor added one because CORE-000124
+was on its legacy CSV line-number allowlist. The coincidentally equal `AESEQ`
+was not the source of the reported `2`.
+
+Fresh official CORE v1.0.0 runs used the executable and cache identified
+above. The original files were left intact. For the controls, only a copy of
+the candidate AE CSV changed.
+
+| Input | Fresh official Record | Fresh official JSON `SEQ` | Stored Record |
+| --- | ---: | ---: | ---: |
+| Candidate negative/01 | 1 | 2 | 1 |
+| Accepted snapshot negative/01 | 1 | 2 | 2 |
+| Candidate negative, change only `AESEQ` to 73 | 1 | 73 | Not applicable |
+| Candidate negative, put a valid row before that violation | 2 | 73 | Not applicable |
+| Candidate positive/01 | No issue | No issue | No issue |
+
+Official `models/actions.py` uses a row locator starting at one and records
+the sequence separately. `services/reporting/sdtm_report_data.py` writes the
+issue's row to the CSV `Record` column. This holds for both rule definitions,
+including the older one without `value_is_literal`.
+
+Remove CORE-000124 from the offset allowlist and its matching semantics entry.
+The rule now uses the ordinary record locator, preserving `seq` as a separate
+field. Other offset rules, scorer policy, baselines, and the accepted pin stay
+unchanged. The accepted snapshot's stored `Record=2` remains a visible
+difference; it does not agree with a fresh run on those same inputs.
+
+The local diagnostic is in `target/core-124-record-audit-v2/`. It contains the
+probe, input hashes, and official CSV and JSON reports for the five controls.
+
+The real-CSV regression failed before the fix with row `2` instead of `1`.
+It now verifies the first and second data rows with `AESEQ=73` in both API
+compatibility modes. It also verifies that valid `Y`, `N`, and empty values do
+not add findings. Run it with:
+
+```sh
+cargo test -p core-api --locked --lib run_validation_core_000124_keeps_csv_data_row_separate_from_sequence
+```
+
+The unmodified candidate fixture now reports `row=1, seq=2`. All 18 cases
+from CORE-000123 through CORE-000131 match under default scoring. No scorer
+normalization was added or applied to the CORE-000124 case. Strict CSV scoring
+still flags the USUBJID and sequence fields present only in the candidate CSV;
+the row number matches in both reports.
+
+| Default comparison after the follow-up | Cases executed | Supported mismatch | Deferred mismatch | Harness error |
+| --- | ---: | ---: | ---: | ---: |
+| Candidate snapshot | 2,298 | 37 to 36 | 17 | 0 |
+| Accepted snapshot | 2,296 | 17 to 18 | 7 | 0 |
+
+Only the two CORE-000124 cases change: the negative case's comparison changes
+as above, and both cases now have generic-engine provenance. `impact.json`
+records the compared fields. The Rust workspace format, check, Clippy, and
+test commands passed again with 815 passing tests. These are local results.

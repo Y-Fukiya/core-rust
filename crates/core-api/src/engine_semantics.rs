@@ -11,7 +11,6 @@ pub(crate) const CORE_000039: &str = "CORE-000039";
 pub(crate) const CORE_000095: &str = "CORE-000095";
 pub(crate) const CORE_000096: &str = "CORE-000096";
 pub(crate) const CORE_000098: &str = "CORE-000098";
-pub(crate) const CORE_000124: &str = "CORE-000124";
 pub(crate) const CORE_000138: &str = "CORE-000138";
 pub(crate) const CORE_000139: &str = "CORE-000139";
 pub(crate) const CORE_000140: &str = "CORE-000140";
@@ -258,7 +257,6 @@ pub(crate) fn uses_csv_line_record_numbers(rule: &ExecutableRule) -> bool {
             | CORE_000037
             | CORE_000038
             | CORE_000044
-            | CORE_000124
             | CORE_000140
             | CORE_000147
             | CORE_000148
