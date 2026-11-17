@@ -132,25 +132,38 @@ jobs:
           set -euo pipefail
           evidence=target/accepted-review
           jq -e --slurpfile trial "$evidence/trial-baseline.json" \
-            --slurpfile scope "$evidence/trial-baseline-scope.json" '
+            --slurpfile scope "$evidence/trial-baseline-scope.json" \
+            --slurpfile strict "$evidence/score-strict/scoreboard.json" \
+            --slurpfile official "$evidence/official/summary.json" '
             . as $actual
             | $trial[0] as $expected
             | $scope[0] as $review
-            | def authored_skips:
+            | def case_key: [.scope, .rule_id, .case_kind, .case_id] | join("/");
+              def authored_skips:
                 [.cases[]
                  | select(.bucket == "deferred_oracle_gap_skipped" and .skipped_reasons == ["standard_mismatch"])
-                 | [.scope, .rule_id, .case_kind, .case_id] | join("/")
+                 | case_key
                  | select(. | test("^Published/CORE-000(039|660)/"))]
                 | sort;
+              def confirmed_match:
+                [.cases[] | select(case_key == $review.confirmed_match)]
+                | length == 1 and all(.[]; .bucket == "supported_match"
+                    and .official_issue_count == 2 and .candidate_issue_count == 2
+                    and .missing_count == 0 and .extra_count == 0
+                    and ((.scoring_normalizations // []) | length) == 0);
               $actual.upstream.observed_sha == $review.adopted_sha
               and $expected.upstream.observed_sha == $review.adopted_sha
               and $actual.summary.total_cases == 2296 and $expected.summary.total_cases == 2296
-              and $actual.summary.supported_match == 2055 and $expected.summary.supported_match == 2054
-              and $actual.summary.deferred_oracle_gap_skipped == 59 and $expected.summary.deferred_oracle_gap_skipped == 60
+              and $actual.summary.supported_match == 2055 and $expected.summary.supported_match == 2055
+              and $actual.summary.deferred_oracle_gap_skipped == 59 and $expected.summary.deferred_oracle_gap_skipped == 59
               and $actual.summary.supported_mismatch == 0 and $actual.summary.deferred_oracle_gap_mismatch == 0
               and $actual.summary.skipped_unsupported == 0 and $actual.summary.harness_error == 0
               and ($actual | authored_skips) == $review.verified_applicability_skips
               and ($expected | authored_skips) == $review.verified_applicability_skips
+              and ($actual | confirmed_match) and ($expected | confirmed_match)
+              and ($strict[0] | confirmed_match)
+              and any($official[0].proposal_checks[];
+                  .case == $review.confirmed_match and .status == "ISSUE REPORTED" and .verified)
           ' "$evidence/score-proposal/scoreboard.json"
           trial_status=0
           target/debug/xtask open-rules baseline \
@@ -161,9 +174,7 @@ jobs:
           cat "$evidence/trial-full-gate.txt"
           test "$trial_status" = 0
           test "$(head -n 1 "$evidence/trial-full-gate.txt")" = \
-            'open-rules baseline: 0 regression(s), 1 improvement(s), 0 review-required'
-          grep -F "improvement $(jq -er .retained_improvement "$evidence/trial-baseline-scope.json"):" \
-            "$evidence/trial-full-gate.txt"
+            'open-rules baseline: 0 regression(s), 0 improvement(s), 0 review-required'
       - name: Preserve raw acceptance failure
         if: always()
         shell: bash

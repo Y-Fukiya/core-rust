@@ -1,11 +1,10 @@
 {
   "purpose": "experimental_only_do_not_adopt",
-  "source_linux_run": 44080847059,
+  "source_linux_run": 44084763332,
   "adopted_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
   "formal_sha256": "2d72a556eb0035fcae08987b794807125d1524d37a1c072c41bce189b59b0b5c",
-  "trial_sha256": "2ed2d6a3b82c21997d56a6af370bc2d6cbce8a10cd7ed7b18b3d29ac19ed83ca",
+  "trial_sha256": "e15f9218e80f50d19eb7ea4880ff9fb92abedc2a5178ad5932725cb8ba54c62f",
   "source_scoreboard_sha256": "b0eb007f97d4056f1a0a092821b6c556f6d7ebf086e8c7897e716fa6c1a37349",
-  "retained_improvement": "Published/CORE-000108/negative/02",
   "updated_cases": [
     {
       "case": "Published/CORE-000007/negative/01",
@@ -95,6 +94,17 @@
         "candidate_issue_count",
         "reason",
         "skipped_reasons"
+      ]
+    },
+    {
+      "case": "Published/CORE-000108/negative/02",
+      "bucket": "supported_match",
+      "fields": [
+        "bucket",
+        "extra_count",
+        "issue_fingerprint_hash",
+        "official_issue_count",
+        "reason"
       ]
     },
     {
@@ -390,5 +400,7 @@
     "Published/CORE-000660/positive/01",
     "Published/CORE-000660/positive/02",
     "Published/CORE-000660/positive/03"
-  ]
+  ],
+  "previous_trial_sha256": "2ed2d6a3b82c21997d56a6af370bc2d6cbce8a10cd7ed7b18b3d29ac19ed83ca",
+  "confirmed_match": "Published/CORE-000108/negative/02"
 }
