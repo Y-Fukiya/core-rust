@@ -19,6 +19,7 @@ mod open_rules_joins_oracle_gaps;
 mod open_rules_joins_timeline;
 mod open_rules_joins_usdm;
 mod open_rules_jsonata;
+mod open_rules_literal_membership;
 mod open_rules_match_datasets;
 mod open_rules_metadata_dataset;
 mod open_rules_metadata_domain;

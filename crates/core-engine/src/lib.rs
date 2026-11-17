@@ -534,6 +534,11 @@ fn evaluate_condition_with_options(
         | Operator::IsContainedByCaseInsensitive
         | Operator::IsNotContainedByCaseInsensitive => {
             let comparator = required_comparator(operator, &condition.comparator)?;
+            let membership_view = match comparator {
+                ValueExpr::Literal(Value::Array(values)) => Some(ValueExpr::List(values.clone())),
+                _ => None,
+            };
+            let comparator = membership_view.as_ref().unwrap_or(comparator);
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
                 let contained = scalar_matches_comparator(
