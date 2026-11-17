@@ -7,6 +7,80 @@ use tempfile::tempdir;
 use crate::{run_validation, ValidateRequest};
 
 #[test]
+fn run_validation_joins_pp_and_pc_only_through_explicit_relrec_endpoints() {
+    let dir = tempdir().expect("tempdir");
+    let rule = dir.path().join("rule.yml");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"
+Core: {Id: CORE-RELREC-PC-TEST, Status: Published}
+Scope: {Domains: {Include: [PP]}}
+Sensitivity: Record
+Rule Type: Record Data
+Match Datasets: [{Name: RELREC, Wildcard: PC}]
+Check:
+  all:
+    - {name: PPCAT, operator: non_empty}
+    - {name: RELREC.PCRFTDTC, operator: non_empty}
+    - {name: PPRFTDTC, operator: equal_to, value: RELREC.PCRFTDTC}
+    - {name: PPCAT, operator: not_equal_to, value: RELREC.PCTEST}
+Outcome:
+  Message: Category does not match the related test
+  Output Variables: [PPCAT, PPRFTDTC, RELREC.PCRFTDTC, RELREC.PCTEST]
+"#,
+    )
+    .expect("rule");
+    for (category, first_pc_id, expected) in [
+        ("WRONG", "0009", ExecutionStatus::Failed),
+        ("MATCH", "0009", ExecutionStatus::Passed),
+        ("MATCH", "", ExecutionStatus::Skipped),
+    ] {
+        let timestamp = "2024-01-01T12:00";
+        let package = serde_json::json!({"datasets": [
+            {"filename": "pp.xpt", "domain": "PP", "records": {
+                "STUDYID": ["S", "S", "S", "OTHER"], "USUBJID": ["A", "A", "A", "A"],
+                "PPSEQ": [1,2,3,3], "PPCAT": ["UNLINKED", "MATCH", category, "OTHER STUDY"],
+                "PPRFTDTC": [timestamp, "2024-01-02T12:00", timestamp, timestamp]
+            }},
+            {"filename": "pc.xpt", "domain": "PC", "records": {
+                "STUDYID": ["S","S","S","OTHER"], "USUBJID": ["A","A","B","A"],
+                "PCSEQ": [8,9,9,9], "PCTEST": ["OTHER RELID", "MATCH", "OTHER SUBJECT", "OTHER STUDY"],
+                "PCRFTDTC": [timestamp,timestamp,timestamp,timestamp]
+            }},
+            {"filename": "relrec.xpt", "domain": "RELREC", "records": {
+                "STUDYID": ["S","S","S","OTHER","S","S"], "USUBJID": ["A","A","A","A","B","A"],
+                "RDOMAIN": ["PP","PP","PC","PC","PC","PC"], "RELID": ["1","1","1","1","1","2"],
+                "IDVAR": ["PPSEQ","PPSEQ","PCSEQ","PCSEQ","PCSEQ","PCSEQ"],
+                "IDVARVAL": ["2","3",first_pc_id,"9","9","8"]
+            }}
+        ]});
+        fs::write(&data, package.to_string()).expect("datasets");
+        let result = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate")
+        .results
+        .remove(0);
+        assert_eq!(result.execution_status, expected, "{result:?}");
+        if expected == ExecutionStatus::Failed {
+            assert_eq!(result.errors.len(), 1);
+            let issue = &result.errors[0];
+            assert_eq!(issue.dataset, "PP");
+            assert_eq!(issue.row, Some(3));
+            assert_eq!(issue.usubjid.as_deref(), Some("A"));
+            assert_eq!(issue.seq.as_deref(), Some("3"));
+            assert_eq!(
+                issue.variables,
+                ["PPCAT", "PPRFTDTC", "RELREC.PCRFTDTC", "RELREC.PCTEST"]
+            );
+        }
+    }
+}
+
+#[test]
 fn run_validation_reports_core_000744_faobj_not_matching_related_ae_term() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

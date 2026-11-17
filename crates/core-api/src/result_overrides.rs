@@ -480,6 +480,7 @@ pub(crate) fn should_ignore_evaluation_error(
 pub(crate) fn unsupported_operation(rule: &ExecutableRule) -> Option<String> {
     if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some()
         || crate::operation_references::supp_reference_variable_check(rule).is_some()
+        || crate::versioned_domain_ct::uses_versioned_domain_ct(rule)
     {
         return None;
     }

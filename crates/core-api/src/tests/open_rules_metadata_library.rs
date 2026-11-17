@@ -5,6 +5,103 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use crate::{run_validation, ValidateRequest};
+
+#[test]
+fn run_validation_checks_define_domain_codes_in_the_declared_ct_edition() {
+    let dir = tempdir().expect("tempdir");
+    let rule = dir.path().join("rule.yml");
+    let data = dir.path().join("datasets.json");
+    let define = dir.path().join("define.xml");
+    fs::write(
+        &rule,
+        r#"
+Core: {Id: CORE-CT-EDITION-TEST, Status: Published}
+Authorities: [{Organization: CDISC, Standards: [{Name: SDTMIG, Version: "3.3"}]}]
+Scope: {Domains: {Include: [ALL]}}
+Rule Type: Define Item Metadata Check against Library Metadata
+Sensitivity: Record
+Operations:
+  - {id: $domain_is_custom, operator: domain_is_custom}
+  - id: $domain_lib_ccode
+    operator: get_codelist_attributes
+    name: DOMAIN
+    ct_attribute: Term CCODE
+    ct_conditions: [{Codelist Code: C66734}]
+Check:
+  all:
+    - {name: $domain_is_custom, operator: equal_to, value: false}
+    - {name: define_variable_ccode, operator: equal_to, value: C66734, value_is_literal: true}
+    - {name: define_variable_codelist_coded_codes, operator: is_not_contained_by, value: $domain_lib_ccode}
+Outcome: {Message: Invalid CT code, Output Variables: [define_variable_codelist_coded_codes]}
+"#,
+    )
+    .expect("rule");
+    for (edition, domain, code, extra_alias, expected) in [
+        ("2020-12-18", "CM", "C49563", "", ExecutionStatus::Passed),
+        ("2025-09-26", "CM", "C49563", "", ExecutionStatus::Failed),
+        ("2020-12-18", "CM", "C00002", "", ExecutionStatus::Failed),
+        (
+            "2020-12-18",
+            "CM",
+            "C00002",
+            r#"<Alias Context="nci:ExtCodeID" Name="C49563"/>"#,
+            ExecutionStatus::Passed,
+        ),
+        ("1900-01-01", "CM", "C49563", "", ExecutionStatus::Skipped),
+        ("2025-09-26", "ZB", "C00002", "", ExecutionStatus::Skipped),
+    ] {
+        let payload = serde_json::json!({"datasets": [
+            {"filename": format!("{domain}.xpt"), "domain": domain,
+             "records": {"DOMAIN": [domain], "STUDYID": ["S"]}}
+        ]});
+        fs::write(&data, payload.to_string()).expect("data");
+        fs::write(
+            &define,
+            format!(
+                r#"<ODM xmlns:def="http://www.cdisc.org/ns/def/v2.1">
+  <Study OID="S"><MetaDataVersion OID="MDV">
+    <def:Standards>
+      <def:Standard Type="CT" Name="CDISC/NCI" PublishingSet="DEFINE-XML" Version="1900-01-01"/>
+      <def:Standard Type="CT" Name="CDISC/NCI" PublishingSet="SDTM" Version="{edition}"/>
+    </def:Standards>
+    <ItemGroupDef OID="IG" Domain="{domain}" Name="{domain}">
+      <ItemRef ItemOID="STUDY" OrderNumber="1"/>
+      <ItemRef ItemOID="DOMAIN" OrderNumber="9"/>
+    </ItemGroupDef>
+    <ItemDef OID="STUDY" Name="STUDYID"/>
+    <ItemDef OID="DOMAIN" Name="DOMAIN"><CodeListRef CodeListOID="CL"/></ItemDef>
+    <CodeList OID="CL">
+      <EnumeratedItem CodedValue="{domain}"><Alias Context="nci:ExtCodeID" Name="{code}"/>{extra_alias}</EnumeratedItem>
+      <Alias Context="nci:ExtCodeID" Name="C66734"/>
+    </CodeList>
+  </MetaDataVersion></Study>
+</ODM>"#
+            ),
+        )
+        .expect("define");
+        let result = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            define_xml_paths: vec![define.clone()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some("3.3".to_owned()),
+            ..Default::default()
+        })
+        .expect("validate")
+        .results
+        .remove(0);
+        assert_eq!(result.execution_status, expected, "{result:?}");
+        if expected == ExecutionStatus::Failed {
+            assert_eq!(result.errors.len(), 1);
+            assert_eq!(result.errors[0].dataset, "CM");
+            assert_eq!(result.errors[0].row, Some(2));
+            assert_eq!(
+                result.errors[0].variables,
+                ["define_variable_codelist_coded_codes"]
+            );
+        }
+    }
+}
 #[test]
 fn run_validation_executes_selected_library_metadata_rules() {
     let dir = tempdir().expect("tempdir");

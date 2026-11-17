@@ -53,6 +53,9 @@ pub(crate) fn is_supported_variable_metadata_rule(rule: &ExecutableRule) -> bool
     if crate::checked_variable_metadata::VariableListPlan::from_rule(rule).is_some() {
         return true;
     }
+    if crate::versioned_domain_ct::uses_versioned_domain_ct(rule) {
+        return true;
+    }
     (rule.operations.is_empty()
         || rule.operations.iter().all(|operation| {
             matches!(

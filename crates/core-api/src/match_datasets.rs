@@ -21,6 +21,9 @@ pub(crate) fn execute_match_datasets(
     scoped_datasets: &[LoadedDataset],
     all_datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    if crate::relrec_match::uses_pc_relrec_match(rule) {
+        return crate::relrec_match::join_pc_through_relrec(rule, scoped_datasets, all_datasets);
+    }
     let match_datasets = rule.datasets.as_deref().unwrap_or_default();
     let mut names = match_datasets
         .iter()

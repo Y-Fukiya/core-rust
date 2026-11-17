@@ -21,6 +21,7 @@ mod operation_execution;
 mod operation_fields;
 mod operation_references;
 mod operation_runtime;
+mod relrec_match;
 mod report_variables;
 mod result_normalization;
 mod result_normalization_relrec;
@@ -31,6 +32,7 @@ mod split_domain_unique_set;
 mod standard_filter;
 mod static_codelists;
 mod usdm_hand_ports;
+mod versioned_domain_ct;
 
 pub use api_types::{
     ApiError, DatasetLoader, Result, RuleSelection, ValidateOutcome, ValidateRequest,
@@ -236,6 +238,8 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             operation_references::bind_tx_setcd_reference(&mut rule, &datasets)
         } else if let Some(output) = operation_references::supp_reference_variable_check(&rule) {
             operation_references::bind_supp_reference_variable_check(&mut rule, &datasets, output)
+        } else if versioned_domain_ct::uses_versioned_domain_ct(&rule) {
+            versioned_domain_ct::bind_versioned_domain_ct(&mut rule, &datasets, &request)
         } else {
             execution_datasets_for_rule(&rule, &datasets, &request)
         };
