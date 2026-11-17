@@ -261,7 +261,8 @@ fn load_open_rules_dataset(
         })
         .collect::<BTreeMap<_, _>>();
     let label_columns = open_rules_label_column_map(&variables);
-    let rows = normalize_open_rules_embedded_metadata_records(raw_rows, &declared, &label_columns);
+    let (rows, recovered_csv_header) =
+        normalize_open_rules_embedded_metadata_records(raw_rows, &declared, &label_columns);
     let mut seen_columns = BTreeSet::new();
     let csv_columns = rows
         .headers
@@ -340,7 +341,9 @@ fn load_open_rules_dataset(
             .collect(),
     };
 
-    Ok(LoadedDataset::new(metadata, frame))
+    let mut dataset = LoadedDataset::new(metadata, frame);
+    dataset.recovered_csv_header = recovered_csv_header;
+    Ok(dataset)
 }
 
 fn infer_open_rules_embedded_metadata_variables(
@@ -466,13 +469,13 @@ fn normalize_open_rules_embedded_metadata_records(
     mut rows: CsvRecords,
     declared: &BTreeMap<String, OpenRulesVariable>,
     label_columns: &BTreeMap<String, Option<String>>,
-) -> CsvRecords {
+) -> (CsvRecords, bool) {
     if !rows.headers.iter().all(|header| header.trim().is_empty()) {
-        return rows;
+        return (rows, false);
     }
 
     let Some(header_row) = rows.records.first() else {
-        return rows;
+        return (rows, false);
     };
     let mapped_columns = header_row
         .iter()
@@ -480,7 +483,7 @@ fn normalize_open_rules_embedded_metadata_records(
         .filter(|name| declared.contains_key(name))
         .count();
     if mapped_columns == 0 {
-        return rows;
+        return (rows, false);
     }
 
     rows.headers = rows.records.remove(0);
@@ -491,7 +494,7 @@ fn normalize_open_rules_embedded_metadata_records(
     {
         rows.records.remove(0);
     }
-    rows
+    (rows, true)
 }
 
 fn is_open_rules_embedded_metadata_row(row: &[String]) -> bool {

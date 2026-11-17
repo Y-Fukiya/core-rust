@@ -158,6 +158,7 @@ pub struct LoadedDataset {
     pub metadata: DatasetMetadata,
     frame: DataFrame,
     csv_setcd: Option<Column>,
+    recovered_csv_header: bool,
 }
 
 impl LoadedDataset {
@@ -166,6 +167,7 @@ impl LoadedDataset {
             metadata,
             frame,
             csv_setcd: None,
+            recovered_csv_header: false,
         }
     }
 
@@ -187,6 +189,10 @@ impl LoadedDataset {
 
     pub fn frame(&self) -> &DataFrame {
         &self.frame
+    }
+
+    pub fn has_recovered_csv_header(&self) -> bool {
+        self.recovered_csv_header
     }
 }
 

@@ -61,6 +61,7 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
         metadata,
         frame,
         csv_setcd,
+        recovered_csv_header: false,
     })
 }
 

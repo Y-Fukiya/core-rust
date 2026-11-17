@@ -50,6 +50,8 @@ pub(crate) fn derive_study_domains_dataset(
 ) -> std::result::Result<LoadedDataset, DataError> {
     let domains = all_datasets
         .iter()
+        // CORE cannot read an authored DOMAIN from a blank CSV header.
+        .filter(|dataset| !dataset.has_recovered_csv_header())
         .flat_map(|dataset| {
             [
                 dataset.metadata.domain.as_deref(),

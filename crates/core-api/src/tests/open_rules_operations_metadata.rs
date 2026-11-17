@@ -721,8 +721,8 @@ fn run_validation_core_000457_checks_supplemental_parent_presence() {
         (
             "embedded_metadata_without_ec_schema",
             Some(",,\nStudy Identifier,Domain Abbreviation,Unique Subject Identifier\nChar,Char,Char\n50,50,50\nS1,EC,SUBJ1\n"),
-            ExecutionStatus::Passed,
-            0,
+            ExecutionStatus::Failed,
+            1,
         ),
         ("missing_parent", None, ExecutionStatus::Failed, 1),
     ];
@@ -799,27 +799,33 @@ suppec,USUBJID,Unique Subject Identifier,Char,50\n",
             );
         }
 
-        let outcome = run_validation(ValidateRequest {
-            rule_paths: vec![rules_dir],
-            dataset_paths: vec![data_dir],
-            dataset_loader: DatasetLoader::OpenRulesDataDir,
-            ..Default::default()
-        })
-        .expect("run validation");
+        for open_rules_oracle_compat in [false, true] {
+            let outcome = run_validation(ValidateRequest {
+                rule_paths: vec![rules_dir.clone()],
+                dataset_paths: vec![data_dir.clone()],
+                dataset_loader: DatasetLoader::OpenRulesDataDir,
+                open_rules_oracle_compat,
+                ..Default::default()
+            })
+            .expect("run validation");
 
-        assert_eq!(outcome.results.len(), 1, "{case}");
-        let result = &outcome.results[0];
-        assert_eq!(result.execution_status, expected_status, "{case}");
-        assert_eq!(result.error_count, expected_errors, "{case}");
-        assert_eq!(result.errors.len(), expected_errors, "{case}");
-        for issue in &result.errors {
-            assert_eq!(issue.rule_id, "CORE-000457", "{case}");
-            assert_eq!(issue.dataset, "SUPPEC", "{case}");
-            assert_eq!(issue.domain.as_deref(), Some("SUPPEC"), "{case}");
-            assert_eq!(issue.variables, vec!["RDOMAIN", "USUBJID"], "{case}");
-            assert_eq!(issue.row, None, "{case}");
-            assert_eq!(issue.usubjid, None, "{case}");
-            assert_eq!(issue.seq, None, "{case}");
+            assert_eq!(outcome.results.len(), 1, "{case}");
+            let result = &outcome.results[0];
+            assert_eq!(
+                result.execution_status, expected_status,
+                "{case}, compat={open_rules_oracle_compat}"
+            );
+            assert_eq!(result.error_count, expected_errors, "{case}");
+            assert_eq!(result.errors.len(), expected_errors, "{case}");
+            for issue in &result.errors {
+                assert_eq!(issue.rule_id, "CORE-000457", "{case}");
+                assert_eq!(issue.dataset, "SUPPEC", "{case}");
+                assert_eq!(issue.domain.as_deref(), Some("SUPPEC"), "{case}");
+                assert_eq!(issue.variables, vec!["RDOMAIN", "USUBJID"], "{case}");
+                assert_eq!(issue.row, None, "{case}");
+                assert_eq!(issue.usubjid, None, "{case}");
+                assert_eq!(issue.seq, None, "{case}");
+            }
         }
     }
 }
