@@ -7,9 +7,12 @@ permissions:
   contents: read
 
 jobs:
-  official-skip-replay:
+  candidate-skip-fixes:
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 22
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,23 +23,47 @@ jobs:
           ref: 1881cb9a1f9a38b6cafc785eca5169b240981f66
           path: target/skip-candidate
           persist-credentials: false
-      - name: Replay 55 blocking skips, then 49 deferred skips
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Run workspace regressions
+        run: cargo test --workspace --locked
+      - name: Verify the candidate patch paths and checksums before replay
         shell: bash
         run: |
           set -euo pipefail
-          profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
-          asset="$(jq -er .engine.asset_url "$profile")"
-          curl --fail --location --retry 2 --max-time 120 "$asset" --output target/core-skip-audit.tar.gz
-          python3 scripts/review_candidate_open_rules_skips.py \
-            --candidate target/skip-candidate --profile "$profile" \
-            --archive target/core-skip-audit.tar.gz \
-            --plan tests/open_rules/diagnostic/accepted-review/candidate-skip-plan.json \
-            --out target/skip-audit
-          jq -e '(.phases.unsupported.cases | length) == 55 and (.phases.deferred.cases | length) == 49' \
-            target/skip-audit/summary.json
+          review=tests/open_rules/diagnostic/accepted-review
+          mkdir -p target/skip-fix-evidence
+          git clone --shared --no-checkout target/skip-candidate target/skip-proposal
+          git -C target/skip-proposal checkout --detach 1881cb9a1f9a38b6cafc785eca5169b240981f66
+          for patch in candidate-existing skip-replay-oracles; do
+            gzip -dc "$review/$patch.patch.gz" > "target/$patch.patch"
+            git -C target/skip-proposal apply --check "$PWD/target/$patch.patch"
+            git -C target/skip-proposal apply "$PWD/target/$patch.patch"
+          done
+          gzip -dc "$review/skip-replay-oracles.json.gz" > target/skip-fix-evidence/skip-replay-oracles.json
+          python3 scripts/verify_candidate_open_rules_skip_fixes.py \
+            --manifest target/skip-fix-evidence/skip-replay-oracles.json overlay \
+            --raw target/skip-candidate --proposal target/skip-proposal \
+            --profile tests/open_rules/diagnostic/cdisc-v1-candidate.json --previous "$review/candidate-existing.json"
+      - name: Check full candidate default and strict scores
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p xtask
+          evidence=target/skip-fix-evidence
+          score_status=0
+          target/debug/xtask open-rules run-score --open-rules-root target/skip-proposal \
+            --core-rs-results-root target/skip-rust --out "$evidence/default" || score_status=$?
+          printf '%s\n' "$score_status" > "$evidence/candidate-default-exit.txt"
+          test "$score_status" = 1
+          strict_status=0
+          target/debug/xtask open-rules score --strict-scoring --open-rules-root target/skip-proposal \
+            --core-rs-results-root target/skip-rust --out "$evidence/strict" || strict_status=$?
+          printf '%s\n' "$strict_status" > "$evidence/candidate-strict-exit.txt"
+          python3 scripts/verify_candidate_open_rules_skip_fixes.py --manifest "$evidence/skip-replay-oracles.json" \
+            scores --default "$evidence/default/scoreboard.json" --strict "$evidence/strict/scoreboard.json"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: candidate-official-skip-audit
-          path: target/skip-audit
+          name: candidate-skip-fix-evidence
+          path: target/skip-fix-evidence
           if-no-files-found: error
