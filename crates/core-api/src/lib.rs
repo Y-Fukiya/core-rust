@@ -113,8 +113,8 @@ use operation_runtime::{
     execute_dataset_operation, execute_join_operation, initial_operation_datasets,
 };
 use result_normalization::{
-    core_000206_idvarval_rdomain_result, core_000677_pooldef_poolid_result,
-    core_000884_ts_age_parameter_count_result, dataset_cell_string, normalize_validation_result,
+    core_000206_idvarval_rdomain_result, core_000884_ts_age_parameter_count_result,
+    core_000896_poolid_membership_result, dataset_cell_string, normalize_validation_result,
 };
 use result_normalization_relrec::{
     core_000744_relrec_faobj_result, core_000757_intervention_relrec_faobj_result,
@@ -219,7 +219,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 continue;
             }
         }
-        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
+        if let Some(result) = core_000896_poolid_membership_result(&rule, &datasets) {
             results.push(result);
             continue;
         }

@@ -62,7 +62,6 @@ pub(crate) const CORE_000654: &str = "CORE-000654";
 pub(crate) const CORE_000660: &str = "CORE-000660";
 pub(crate) const CORE_000670: &str = "CORE-000670";
 pub(crate) const CORE_000676: &str = "CORE-000676";
-pub(crate) const CORE_000677: &str = "CORE-000677";
 pub(crate) const CORE_000678: &str = "CORE-000678";
 pub(crate) const CORE_000690: &str = "CORE-000690";
 pub(crate) const CORE_000700: &str = "CORE-000700";
@@ -441,10 +440,6 @@ pub(crate) fn is_cm_dataset_oracle_result_rule(rule: &ExecutableRule) -> bool {
 
 pub(crate) fn is_pp_dataset_oracle_result_rule(rule: &ExecutableRule) -> bool {
     rule.core_id == CORE_000466
-}
-
-pub(crate) fn is_pooldef_poolid_oracle_result_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), CORE_000677 | CORE_000896)
 }
 
 pub(crate) fn is_idvarval_rdomain_reference_rule(rule: &ExecutableRule) -> bool {

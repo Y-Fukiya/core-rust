@@ -1077,11 +1077,11 @@ fn core_000206_cell(values: &[Value], row: usize) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) fn core_000677_pooldef_poolid_result(
+pub(crate) fn core_000896_poolid_membership_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<RuleValidationResult> {
-    if !engine_semantics::is_pooldef_poolid_oracle_result_rule(rule) {
+    if rule.core_id != engine_semantics::CORE_000896 {
         return None;
     }
 
@@ -1135,7 +1135,7 @@ pub(crate) fn core_000677_pooldef_poolid_result(
     {
         let poolids = dataset_column_values(dataset, "POOLID").unwrap_or_default();
         let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
-        let seq_column = core_000677_sequence_column(dataset);
+        let seq_column = domain_sequence_column(dataset);
         let seq_values = seq_column
             .as_deref()
             .and_then(|column| dataset_column_values(dataset, column).ok())
@@ -1198,7 +1198,7 @@ pub(crate) fn core_000677_pooldef_poolid_result(
     })
 }
 
-pub(crate) fn core_000677_sequence_column(dataset: &LoadedDataset) -> Option<String> {
+pub(crate) fn domain_sequence_column(dataset: &LoadedDataset) -> Option<String> {
     let domain = dataset
         .metadata
         .domain
