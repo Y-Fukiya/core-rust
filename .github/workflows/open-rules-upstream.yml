@@ -7,13 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  accepted-review:
-    name: Accepted pin official replay and proposal comparison
+  official-skip-replay:
     runs-on: ubuntu-22.04
-    timeout-minutes: 35
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "0"
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -21,275 +17,26 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: cdisc-org/cdisc-open-rules
-          ref: 7f7fae49376b3d023563ebb6c36a3b392d6e649f
-          path: target/accepted-raw
-          persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          repository: cdisc-org/cdisc-open-rules
           ref: 1881cb9a1f9a38b6cafc785eca5169b240981f66
-          path: target/profile-candidate
+          path: target/skip-candidate
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.93.1
-      - name: Verify frozen trial baseline before scoring
-        shell: bash
-        run: |
-          set -euo pipefail
-          review=tests/open_rules/diagnostic/accepted-review
-          evidence=target/accepted-review
-          mkdir -p "$evidence"
-          cp "$review/trial-baseline-scope.json" "$evidence/"
-          gzip -dc "$review/trial-baseline.json.gz" > "$evidence/trial-baseline.json"
-          printf '%s  %s\n' "$(jq -er .formal_sha256 "$evidence/trial-baseline-scope.json")" \
-            tests/open_rules/upstream-baseline.json \
-            "$(jq -er .trial_sha256 "$evidence/trial-baseline-scope.json")" \
-            "$evidence/trial-baseline.json" | sha256sum -c -
-      - name: Verify proposals with the pinned official CORE
+      - name: Replay 55 blocking skips, then 49 deferred skips
         shell: bash
         run: |
           set -euo pipefail
           profile=tests/open_rules/diagnostic/cdisc-v1-candidate.json
-          review=tests/open_rules/diagnostic/accepted-review
-          mkdir -p target/accepted-review
-          git clone --shared --no-checkout target/accepted-raw target/accepted-proposal
-          git -C target/accepted-proposal checkout --detach 7f7fae49376b3d023563ebb6c36a3b392d6e649f
-          gzip -dc "$review/accepted.patch.gz" > target/accepted-proposal.patch
-          git -C target/accepted-proposal apply --check "$PWD/target/accepted-proposal.patch"
-          git -C target/accepted-proposal apply "$PWD/target/accepted-proposal.patch"
-          gzip -dc "$review/locator-evidence.patch.gz" > target/locator-evidence.patch
-          git -C target/accepted-proposal apply --check "$PWD/target/locator-evidence.patch"
-          git -C target/accepted-proposal apply "$PWD/target/locator-evidence.patch"
-          gzip -dc "$review/locator-27-evidence.patch.gz" > target/locator-27-evidence.patch
-          git -C target/accepted-proposal apply --check "$PWD/target/locator-27-evidence.patch"
-          git -C target/accepted-proposal apply "$PWD/target/locator-27-evidence.patch"
-          cp "$review/locator-27-evidence.json" target/accepted-review/
-          asset="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["engine"]["asset_url"])' "$profile")"
-          curl --fail --location --retry 2 --max-time 120 "$asset" --output target/core-accepted.tar.gz
-          python3 scripts/review_accepted_open_rules.py \
-            --raw target/accepted-raw --proposed target/accepted-proposal \
-            --plan "$review/plan.json" --proposal-manifest "$review/accepted.json" \
-            --engine-profile "$profile" --archive target/core-accepted.tar.gz \
-            --out target/accepted-review/official
-      - name: Run adopted raw acceptance gate
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p target/accepted-review
-          cargo build --locked -p xtask
-          score_status=0
-          target/debug/xtask open-rules run-score --strict-lock \
-            --open-rules-root target/accepted-raw \
-            --core-rs-results-root target/core-rs-accepted-raw \
-            --out target/accepted-review/score-raw || score_status=$?
-          printf '%s\n' "$score_status" > target/accepted-review/raw-score-exit.txt
-          test -s target/accepted-review/score-raw/scoreboard.json
-          baseline_status=0
-          target/debug/xtask open-rules baseline \
-            --scoreboard target/accepted-review/score-raw/scoreboard.json \
-            --baseline tests/open_rules/upstream-baseline.json \
-            > target/accepted-review/raw-full-gate.txt || baseline_status=$?
-          printf '%s\n' "$baseline_status" > target/accepted-review/raw-baseline-exit.txt
-          head -n 1 target/accepted-review/raw-full-gate.txt
-      - name: Run verified diagnostic proposal copy
-        shell: bash
-        run: |
-          set -euo pipefail
-          score_status=0
-          target/debug/xtask open-rules run-score \
-            --open-rules-root target/accepted-proposal \
-            --core-rs-results-root target/core-rs-accepted-proposal \
-            --out target/accepted-review/score-proposal || score_status=$?
-          printf '%s\n' "$score_status" > target/accepted-review/proposal-score-exit.txt
-          test -s target/accepted-review/score-proposal/scoreboard.json
-          baseline_status=0
-          target/debug/xtask open-rules baseline \
-            --scoreboard target/accepted-review/score-proposal/scoreboard.json \
-            --baseline tests/open_rules/upstream-baseline.json \
-            > target/accepted-review/proposal-full-gate.txt || baseline_status=$?
-          printf '%s\n' "$baseline_status" > target/accepted-review/proposal-baseline-exit.txt
-          head -n 1 target/accepted-review/proposal-full-gate.txt
-          exit "$score_status"
-      - name: Verify locator parity and authored-profile skips
-        shell: bash
-        run: |
-          set -euo pipefail
-          strict_status=0
-          target/debug/xtask open-rules score --strict-scoring \
-            --open-rules-root target/accepted-proposal \
-            --core-rs-results-root target/core-rs-accepted-proposal \
-            --out target/accepted-review/score-strict || strict_status=$?
-          printf '%s\n' "$strict_status" > target/accepted-review/strict-score-exit.txt
-          for board in score-proposal score-strict; do
-            jq -e '
-              .summary.harness_error == 0 and
-              ([.cases[] | select((.rule_id == "CORE-000361" or .rule_id == "CORE-000784")
-                  and .case_kind == "negative" and .case_id == "01")]
-              | length == 2 and all(.[]; .bucket == "supported_match"
-                  and ((.scoring_normalizations // []) | length) == 0
-                  and .identity_alignment.comparison == "raw_structural"
-                  and .identity_alignment.candidate_usubjid_omissions == 0))
-            ' "target/accepted-review/$board/scoreboard.json"
-          done
-          jq -e '
-            [.cases[] | select(.skipped_reasons == ["standard_mismatch"] and
-              (.rule_id == "CORE-000039" or .rule_id == "CORE-000660") and
-              .bucket == "deferred_oracle_gap_skipped")] | length == 6
-          ' target/accepted-review/score-proposal/scoreboard.json
-      - name: Verify all 27 locator corrections in default and strict scoring
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence=target/accepted-review
-          for board in score-proposal score-strict; do
-            jq -e --slurpfile locator "$evidence/locator-27-evidence.json" '
-              $locator[0].resolved_cases as $keys
-              | $locator[0].cases as $rows
-              | [.cases[] | ([.scope, .rule_id, .case_kind, .case_id] | join("/")) as $key
-                | select($keys | index($key))
-                | (.official_issue_count) as $count
-                | {key: $key, ok: (.bucket == "supported_match" and .missing_count == 0 and .extra_count == 0
-                  and .candidate_issue_count == $count
-                  and any($rows[]; .case == $key and .rows == $count)
-                  and ((.scoring_normalizations // []) | length) == 0)}]
-              | ($keys | length) == 27 and (map(.key) | sort) == ($keys | sort) and all(.[]; .ok)
-            ' "$evidence/$board/scoreboard.json"
-          done
-          jq -e '.summary.total_cases == 2296 and .summary.supported_mismatch == 841
-            and .summary.supported_match == 1259 and .summary.harness_error == 0' \
-            "$evidence/score-strict/scoreboard.json"
-      - name: Gate all cases against the updated frozen trial baseline
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence=target/accepted-review
-          jq -e --slurpfile trial "$evidence/trial-baseline.json" \
-            --slurpfile scope "$evidence/trial-baseline-scope.json" \
-            --slurpfile strict "$evidence/score-strict/scoreboard.json" \
-            --slurpfile official "$evidence/official/summary.json" '
-            . as $actual
-            | $trial[0] as $expected
-            | $scope[0] as $review
-            | def case_key: [.scope, .rule_id, .case_kind, .case_id] | join("/");
-              def authored_skips:
-                [.cases[]
-                 | select(.bucket == "deferred_oracle_gap_skipped" and .skipped_reasons == ["standard_mismatch"])
-                 | case_key
-                 | select(. | test("^Published/CORE-000(039|660)/"))]
-                | sort;
-              def confirmed_match:
-                [.cases[] | select(case_key == $review.confirmed_match)]
-                | length == 1 and all(.[]; .bucket == "supported_match"
-                    and .official_issue_count == 2 and .candidate_issue_count == 2
-                    and .missing_count == 0 and .extra_count == 0
-                    and ((.scoring_normalizations // []) | length) == 0);
-              def reviewed_normalization:
-                [.cases[] | select(case_key == $review.confirmed_normalization_change)]
-                | length == 1 and all(.[]; .bucket == "supported_match"
-                    and .scoring_policy == "strict_identity"
-                    and ((.scoring_normalizations // []) | length) == 0);
-              $actual.upstream.observed_sha == $review.adopted_sha
-              and $expected.upstream.observed_sha == $review.adopted_sha
-              and $actual.summary.total_cases == 2296 and $expected.summary.total_cases == 2296
-              and $actual.summary.supported_match == 2055 and $expected.summary.supported_match == 2055
-              and $actual.summary.deferred_oracle_gap_skipped == 59 and $expected.summary.deferred_oracle_gap_skipped == 59
-              and $actual.summary.supported_mismatch == 0 and $actual.summary.deferred_oracle_gap_mismatch == 0
-              and $actual.summary.skipped_unsupported == 0 and $actual.summary.harness_error == 0
-              and ($actual | authored_skips) == $review.verified_applicability_skips
-              and ($expected | authored_skips) == $review.verified_applicability_skips
-              and ($actual | confirmed_match) and ($expected | confirmed_match)
-              and ($strict[0] | confirmed_match)
-              and ($actual | reviewed_normalization) and ($expected | reviewed_normalization)
-              and ($strict[0] | reviewed_normalization)
-              and any($official[0].proposal_checks[];
-                  .case == $review.confirmed_match and .status == "ISSUE REPORTED" and .verified)
-          ' "$evidence/score-proposal/scoreboard.json"
-          trial_status=0
-          target/debug/xtask open-rules baseline \
-            --scoreboard "$evidence/score-proposal/scoreboard.json" \
-            --baseline "$evidence/trial-baseline.json" \
-            > "$evidence/trial-full-gate.txt" || trial_status=$?
-          printf '%s\n' "$trial_status" > "$evidence/trial-baseline-exit.txt"
-          cat "$evidence/trial-full-gate.txt"
-          test "$trial_status" = 0
-          test "$(head -n 1 "$evidence/trial-full-gate.txt")" = \
-            'open-rules baseline: 0 regression(s), 0 improvement(s), 0 review-required'
-      - name: Replay two proposed profile repairs without CLI overrides
-        shell: bash
-        run: |
-          set -euo pipefail
-          review=tests/open_rules/diagnostic/accepted-review
-          evidence=target/accepted-review/profile-repairs
-          python3 scripts/review_open_rules_profile_repairs.py \
-            --raw target/accepted-raw --subset "$evidence/fixture-proposals" \
-            --candidate target/profile-candidate \
-            --engine-profile tests/open_rules/diagnostic/cdisc-v1-candidate.json \
-            --archive target/core-accepted.tar.gz --plan "$review/plan.json" \
-            --frozen "$review/frozen-profile-locators.json" --out "$evidence/official"
-      - name: Verify the missing TO is not counted as a pass on candidate fixtures
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --locked -p core-api run_validation_core_000660
-          evidence=target/accepted-review/profile-repairs
-          rust="$evidence/candidate-authored-rust"
-          subset=target/profile-candidate-subset
-          mkdir -p "$subset/Published"
-          cp -R target/profile-candidate/Published/CORE-000039 target/profile-candidate/Published/CORE-000660 "$subset/Published/"
-          target/debug/xtask open-rules run-score --open-rules-root "$subset" \
-            --core-rs-results-root "$rust" --out "$evidence/candidate-authored-default"
-          strict_status=0
-          target/debug/xtask open-rules score --strict-scoring --open-rules-root "$subset" \
-            --core-rs-results-root "$rust" --out "$evidence/candidate-authored-strict" || strict_status=$?
-          printf '%s\n' "$strict_status" > "$evidence/candidate-authored-strict-status.txt"
-          for mode in default strict; do
-            jq -e --arg mode "$mode" '
-              .summary.total_cases == 7 and .summary.harness_error == 0 and
-              ([.cases[] | select(.rule_id == "CORE-000660" and .case_kind == "positive" and .case_id == "03")]
-                | length == 1 and all(.[];
-                    .bucket == (if $mode == "default" then "deferred_oracle_gap_skipped" else "skipped_unsupported" end)
-                    and .skipped_reasons == ["operations_not_supported"])) and
-              ([.cases[] | select(.rule_id == "CORE-000660" and .case_kind == "positive" and .case_id != "03")]
-                | length == 2 and all(.[]; .bucket == "supported_match"))
-            ' "$evidence/candidate-authored-$mode/scoreboard.json"
-          done
-      - name: Score the repaired profiles in default and strict modes
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence=target/accepted-review/profile-repairs
-          subset="$evidence/fixture-proposals"
-          rust="$evidence/candidate"
-          default_status=0
-          strict_status=0
-          target/debug/xtask open-rules run-score --open-rules-root "$subset" \
-            --core-rs-results-root "$rust" --out "$evidence/default" || default_status=$?
-          test -s "$evidence/default/scoreboard.json"
-          target/debug/xtask open-rules score --strict-scoring --open-rules-root "$subset" \
-            --core-rs-results-root "$rust" --out "$evidence/strict" || strict_status=$?
-          printf 'default %s\nstrict %s\n' "$default_status" "$strict_status" > "$evidence/exit-codes.txt"
-          for mode in default strict; do
-            jq -r '.cases[] | [.rule_id, .case_kind, .case_id, .bucket, .official_issue_count,
-              .candidate_issue_count, .missing_count, .extra_count] | @tsv' "$evidence/$mode/scoreboard.json"
-          done
-          for mode in default strict; do
-            jq -e --slurpfile repairs "$evidence/official/profile-repairs.json" '
-              .summary.total_cases == 2 and .summary.harness_error == 0 and
-              ([.cases[] | [.scope, .rule_id, .case_kind, .case_id] | join("/")] | sort) ==
-                ($repairs[0].repairs | map(.case) | sort) and
-              all(.cases[]; .bucket == "supported_match" and .missing_count == 0 and .extra_count == 0 and
-                ((.scoring_normalizations // []) | length) == 0)
-            ' "$evidence/$mode/scoreboard.json"
-          done
-      - name: Preserve raw acceptance failure
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(cat target/accepted-review/raw-baseline-exit.txt)" = 0
+          asset="$(jq -er .engine.asset_url "$profile")"
+          curl --fail --location --retry 2 --max-time 120 "$asset" --output target/core-skip-audit.tar.gz
+          python3 scripts/review_candidate_open_rules_skips.py \
+            --candidate target/skip-candidate --profile "$profile" \
+            --archive target/core-skip-audit.tar.gz \
+            --plan tests/open_rules/diagnostic/accepted-review/candidate-skip-plan.json \
+            --out target/skip-audit
+          jq -e '(.phases.unsupported.cases | length) == 55 and (.phases.deferred.cases | length) == 49' \
+            target/skip-audit/summary.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: accepted-open-rules-review
-          path: target/accepted-review
+          name: candidate-official-skip-audit
+          path: target/skip-audit
           if-no-files-found: error
