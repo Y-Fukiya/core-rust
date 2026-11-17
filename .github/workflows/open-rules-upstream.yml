@@ -142,17 +142,17 @@ jobs:
               | [.cases[] | ([.scope, .rule_id, .case_kind, .case_id] | join("/")) as $key
                 | select($keys | index($key))
                 | (.official_issue_count) as $count
-                | .bucket == "supported_match" and .missing_count == 0 and .extra_count == 0
+                | {key: $key, ok: (.bucket == "supported_match" and .missing_count == 0 and .extra_count == 0
                   and .candidate_issue_count == $count
                   and any($rows[]; .case == $key and .rows == $count)
-                  and ((.scoring_normalizations // []) | length) == 0]
-              | ($keys | length) == 27 and length == 27 and all(.[]; .)
+                  and ((.scoring_normalizations // []) | length) == 0)}]
+              | ($keys | length) == 27 and (map(.key) | sort) == ($keys | sort) and all(.[]; .ok)
             ' "$evidence/$board/scoreboard.json"
           done
           jq -e '.summary.total_cases == 2296 and .summary.supported_mismatch == 841
             and .summary.supported_match == 1259 and .summary.harness_error == 0' \
             "$evidence/score-strict/scoreboard.json"
-      - name: Compare the frozen trial baseline without adopting the normalization change
+      - name: Gate all cases against the updated frozen trial baseline
         shell: bash
         run: |
           set -euo pipefail
@@ -177,6 +177,11 @@ jobs:
                     and .official_issue_count == 2 and .candidate_issue_count == 2
                     and .missing_count == 0 and .extra_count == 0
                     and ((.scoring_normalizations // []) | length) == 0);
+              def reviewed_normalization:
+                [.cases[] | select(case_key == $review.confirmed_normalization_change)]
+                | length == 1 and all(.[]; .bucket == "supported_match"
+                    and .scoring_policy == "strict_identity"
+                    and ((.scoring_normalizations // []) | length) == 0);
               $actual.upstream.observed_sha == $review.adopted_sha
               and $expected.upstream.observed_sha == $review.adopted_sha
               and $actual.summary.total_cases == 2296 and $expected.summary.total_cases == 2296
@@ -188,6 +193,8 @@ jobs:
               and ($expected | authored_skips) == $review.verified_applicability_skips
               and ($actual | confirmed_match) and ($expected | confirmed_match)
               and ($strict[0] | confirmed_match)
+              and ($actual | reviewed_normalization) and ($expected | reviewed_normalization)
+              and ($strict[0] | reviewed_normalization)
               and any($official[0].proposal_checks[];
                   .case == $review.confirmed_match and .status == "ISSUE REPORTED" and .verified)
           ' "$evidence/score-proposal/scoreboard.json"
@@ -198,11 +205,9 @@ jobs:
             > "$evidence/trial-full-gate.txt" || trial_status=$?
           printf '%s\n' "$trial_status" > "$evidence/trial-baseline-exit.txt"
           cat "$evidence/trial-full-gate.txt"
-          test "$trial_status" = 1
+          test "$trial_status" = 0
           test "$(head -n 1 "$evidence/trial-full-gate.txt")" = \
-            'open-rules baseline: 0 regression(s), 0 improvement(s), 1 review-required'
-          grep -F 'review-required Published/CORE-000495/negative/01:' "$evidence/trial-full-gate.txt" \
-            | grep -F '(scoring normalizations require review)'
+            'open-rules baseline: 0 regression(s), 0 improvement(s), 0 review-required'
       - name: Preserve raw acceptance failure
         if: always()
         shell: bash
