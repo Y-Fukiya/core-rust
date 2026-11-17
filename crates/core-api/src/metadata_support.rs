@@ -1,4 +1,6 @@
-use core_rule_model::{ConditionGroup, ExecutableRule, OperationSpec, ValueExpr};
+use core_rule_model::{
+    ConditionGroup, ExecutableRule, OperationSpec, Operator, RuleType, Sensitivity, ValueExpr,
+};
 
 use crate::condition_inspect::contains_column_ref_comparator;
 use crate::engine_semantics;
@@ -83,10 +85,42 @@ pub(crate) fn is_supported_variable_metadata_rule(rule: &ExecutableRule) -> bool
 }
 
 pub(crate) fn is_supported_value_metadata_rule(rule: &ExecutableRule) -> bool {
-    engine_semantics::is_supported_value_metadata_rule_id(rule)
+    (engine_semantics::is_supported_value_metadata_rule_id(rule)
+        || is_dataset_name_prefix_value_metadata_rule(rule))
         && rule.operations.is_empty()
         && !contains_column_ref_comparator(&rule.conditions)
         && unsupported_operator(&rule.conditions).is_none()
+}
+
+pub(crate) fn is_dataset_name_prefix_value_metadata_rule(rule: &ExecutableRule) -> bool {
+    if rule.rule_type != RuleType::ValueLevelMetadata
+        || rule.sensitivity != Some(Sensitivity::Dataset)
+        || !rule.operations.is_empty()
+        || rule
+            .datasets
+            .as_ref()
+            .is_some_and(|datasets| !datasets.is_empty())
+    {
+        return false;
+    }
+    let ConditionGroup::All(checks) = &rule.conditions else {
+        return false;
+    };
+    let [ConditionGroup::Leaf(domain), ConditionGroup::Leaf(prefix)] = checks.as_slice() else {
+        return false;
+    };
+    domain.target.as_deref() == Some("variable_name")
+        && domain.operator == Operator::EqualTo
+        && matches!(&domain.comparator, ValueExpr::Literal(value) if value.as_str() == Some("DOMAIN"))
+        && prefix.target.as_deref() == Some("dataset_name")
+        && prefix.operator == Operator::PrefixNotEqualTo
+        && prefix
+            .options
+            .extra
+            .get("prefix")
+            .and_then(serde_json::Value::as_u64)
+            == Some(2)
+        && matches!(&prefix.comparator, ValueExpr::ColumnRef(name) if name == "variable_value")
 }
 
 pub(crate) fn has_expected_variables_operation(rule: &ExecutableRule) -> bool {

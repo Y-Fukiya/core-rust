@@ -1951,6 +1951,9 @@ fn value_metadata_execution_datasets(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> std::result::Result<Vec<LoadedDataset>, RuleValidationResult> {
+    if metadata_support::is_dataset_name_prefix_value_metadata_rule(rule) {
+        return metadata_execution::dataset_name_prefix_execution_datasets(rule, datasets);
+    }
     let mut execution_datasets = Vec::new();
     for dataset in filter_datasets_by_rule_scope(rule, datasets) {
         let frame = dataset.frame();

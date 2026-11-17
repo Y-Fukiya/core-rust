@@ -108,6 +108,51 @@ Outcome: {Message: Incorrect order, Output Variables: [$observed, $applicable]}
 }
 
 #[test]
+fn dataset_name_prefix_checks_the_physical_name_against_domain_values() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("prefix.yml");
+    let data = dir.path().join("lbchem.csv");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999598, Status: Published}
+Rule Type: Value Check with Dataset Metadata
+Sensitivity: Dataset
+Check:
+  all:
+    - {name: variable_name, operator: equal_to, value: DOMAIN, value_is_literal: true}
+    - {name: dataset_name, operator: prefix_not_equal_to, prefix: 2, value: variable_value}
+Outcome: {Message: Wrong dataset prefix}
+"#,
+    )
+    .expect("write rule");
+    for (content, status) in [
+        ("DOMAIN,LBSEQ\nLB,1\nLB,2\n", ExecutionStatus::Passed),
+        ("DOMAIN,LBSEQ\nLB,1\nVS,2\nVS,3\n", ExecutionStatus::Failed),
+        ("LBSEQ\n1\n", ExecutionStatus::Skipped),
+    ] {
+        fs::write(&data, content).expect("write data");
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate");
+        let [result] = outcome.results.as_slice() else {
+            panic!("expected one dataset result")
+        };
+        assert_eq!(result.execution_status, status);
+        if status == ExecutionStatus::Failed {
+            let [issue] = result.errors.as_slice() else {
+                panic!("expected one dataset-level issue")
+            };
+            assert_eq!(issue.dataset, "LBCHEM");
+            assert_eq!(issue.row, None);
+            assert_eq!(issue.variables, ["variable_name", "dataset_name"]);
+        }
+    }
+}
+
+#[test]
 fn run_validation_executes_variable_metadata_label_length_rule() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

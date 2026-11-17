@@ -371,6 +371,58 @@ pub(crate) fn dataset_variable_names_in_order(dataset: &LoadedDataset) -> Vec<St
         .collect()
 }
 
+pub(crate) fn dataset_name_prefix_execution_datasets(
+    rule: &ExecutableRule,
+    datasets: &[LoadedDataset],
+) -> Result<Vec<LoadedDataset>, core_engine::RuleValidationResult> {
+    let scoped = crate::filter_datasets_by_rule_scope(rule, datasets);
+    if scoped.is_empty() {
+        return Err(crate::operation_skipped_result(
+            rule,
+            "no dataset is in rule scope",
+        ));
+    }
+    scoped
+        .iter()
+        .map(|dataset| {
+            let name = crate::dataset_metadata_name(dataset);
+            let domain = dataset_column_name(dataset, "DOMAIN").ok_or_else(|| {
+                crate::operation_skipped_result(
+                    rule,
+                    format!("dataset {name} has no DOMAIN column"),
+                )
+            })?;
+            let values = dataset_column_values(dataset, &domain)
+                .map_err(|error| crate::operation_skipped_result(rule, error.to_string()))?;
+            if values.is_empty()
+                || values
+                    .iter()
+                    .any(|value| value.as_str().is_none_or(str::is_empty))
+            {
+                return Err(crate::operation_skipped_result(
+                    rule,
+                    format!("dataset {name} has no complete character DOMAIN values"),
+                ));
+            }
+            let rows = values
+                .into_iter()
+                .map(|value| {
+                    BTreeMap::from([
+                        ("dataset_name".to_owned(), Value::String(name.clone())),
+                        (
+                            "variable_name".to_owned(),
+                            Value::String("DOMAIN".to_owned()),
+                        ),
+                        ("variable_value".to_owned(), value),
+                    ])
+                })
+                .collect::<Vec<_>>();
+            core_data::metadata_rows_dataset(dataset, &rows)
+                .map_err(|error| crate::operation_skipped_result(rule, error.to_string()))
+        })
+        .collect()
+}
+
 pub(crate) fn expected_model_variables(dataset: &LoadedDataset) -> Vec<String> {
     let domain = dataset
         .metadata

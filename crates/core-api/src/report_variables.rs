@@ -50,10 +50,10 @@ pub(crate) fn apply_operation_report_variables(rule: &mut ExecutableRule) {
 
 pub(crate) fn apply_metadata_report_variables(rule: &mut ExecutableRule) {
     if !rule.output_variables.is_empty()
-        || !matches!(
+        || !(matches!(
             rule.rule_type,
             RuleType::DatasetMetadata | RuleType::VariableMetadata
-        )
+        ) || crate::metadata_support::is_dataset_name_prefix_value_metadata_rule(rule))
     {
         return;
     }
