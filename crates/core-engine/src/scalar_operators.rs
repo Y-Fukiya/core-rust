@@ -274,6 +274,9 @@ pub(super) fn scalar_contained_by_value(
     if scalar_equal_with_mode(left, right, case_insensitive, type_insensitive) {
         return true;
     }
+    if matches!(left, ScalarValue::Null) {
+        return false;
+    }
 
     let ScalarValue::String(right) = right else {
         return false;

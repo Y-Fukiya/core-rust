@@ -1467,7 +1467,13 @@ fn execute_reference_distinct_operation(
     if find_dataset(datasets, &source_name).is_some() && !scope_wide {
         return None;
     }
-    if !is_supported_reference_distinct_rule(rule) {
+    let group_keys = string_list_field(
+        operation,
+        &["by", "keys", "group", "group_by", "group_keys"],
+    )
+    .unwrap_or_default();
+    let native_external_membership = !is_supported_reference_distinct_rule(rule);
+    if native_external_membership {
         let targets = external_distinct_membership_targets(rule, operation);
         if targets.is_empty() {
             return None;
@@ -1486,26 +1492,28 @@ fn execute_reference_distinct_operation(
                 ),
             )));
         }
-        // The existing membership evaluator ignores blank targets.
-        for dataset in datasets {
-            for target in &targets {
-                if has_nonempty_membership_target_guard(&rule.conditions, target) {
-                    continue;
-                }
-                let values = match operation_column_values(dataset, target) {
-                    Ok(values) => values,
-                    Err(error) => {
-                        return Some(Err(operation_skipped_result(rule, error.to_string())))
+        if !group_keys.is_empty() {
+            // A missing group can still surface as an empty set in the grouped adapter.
+            for dataset in datasets {
+                for target in &targets {
+                    if has_nonempty_membership_target_guard(&rule.conditions, target) {
+                        continue;
                     }
-                };
-                if values
-                    .iter()
-                    .any(|value| value.is_null() || value.as_str() == Some(""))
-                {
-                    return Some(Err(operation_skipped_result(
-                        rule,
-                        format!("reference distinct membership has a blank {target}"),
-                    )));
+                    let values = match operation_column_values(dataset, target) {
+                        Ok(values) => values,
+                        Err(error) => {
+                            return Some(Err(operation_skipped_result(rule, error.to_string())))
+                        }
+                    };
+                    if values
+                        .iter()
+                        .any(|value| value.is_null() || value.as_str() == Some(""))
+                    {
+                        return Some(Err(operation_skipped_result(
+                            rule,
+                            format!("grouped reference distinct membership has a blank {target}"),
+                        )));
+                    }
                 }
             }
         }
@@ -1551,11 +1559,6 @@ fn execute_reference_distinct_operation(
         )));
     };
 
-    let group_keys = string_list_field(
-        operation,
-        &["by", "keys", "group", "group_by", "group_keys"],
-    )
-    .unwrap_or_default();
     let group_aliases = string_list_field(operation, &["group_aliases", "groupAliases", "aliases"])
         .unwrap_or_default();
     if !group_keys.is_empty() {
@@ -1620,6 +1623,7 @@ fn execute_reference_distinct_operation(
                     source_dataset,
                     &source_column,
                     &output,
+                    native_external_membership,
                 )
                 .map_err(|source| operation_skipped_result(rule, source.to_string()))
             })
@@ -1652,6 +1656,7 @@ fn derive_external_distinct_values_dataset_allow_missing_source(
             dataset,
             source_column,
             column_name,
+            false,
         );
     }
 
@@ -1666,6 +1671,7 @@ fn derive_external_distinct_values_dataset(
     source_dataset: &LoadedDataset,
     source_column: &str,
     column_name: &str,
+    exclude_blank: bool,
 ) -> std::result::Result<LoadedDataset, DataError> {
     if source_column.trim().is_empty() {
         return Err(DataError::InvalidDatasetPackage(
@@ -1678,13 +1684,18 @@ fn derive_external_distinct_values_dataset(
         ));
     }
     let values = operation_column_values(source_dataset, source_column)?;
-    let joined = values
+    let members = values
         .iter()
         .filter_map(json_distinct_value_string)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>()
-        .join("|");
+        .filter(|value| !exclude_blank || !value.is_empty())
+        .collect::<BTreeSet<_>>();
+    if exclude_blank && members.is_empty() {
+        // The text encoding cannot distinguish an empty set from an empty member.
+        return Err(DataError::InvalidDatasetPackage(format!(
+            "external membership source column {source_column} has no nonblank keys"
+        )));
+    }
+    let joined = members.into_iter().collect::<Vec<_>>().join("|");
     let values = (0..dataset.summary().row_count)
         .map(|_| Value::String(joined.clone()))
         .collect::<Vec<_>>();

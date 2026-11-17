@@ -75,6 +75,68 @@ Outcome: {Message: invalid arm, Output Variables: [ACTARMCD]}
 }
 
 #[test]
+fn external_distinct_membership_does_not_match_blank_reference_keys() {
+    let dir = tempdir().expect("fixture");
+    let rule = dir.path().join("membership.yml");
+    let data = dir.path().join("datasets.json");
+    fs::write(
+        &rule,
+        r#"Core: {Id: CORE-999610, Status: Published}
+Rule Type: Record Data
+Sensitivity: Record
+Scope:
+  Domains: {Include: [GT]}
+Operations:
+  - {operator: distinct, domain: RELREF, name: REFID, id: $reference_ids}
+Check: {operator: is_not_contained_by, name: GTREFID, value: $reference_ids}
+Outcome: {Message: invalid reference, Output Variables: [GTREFID, $reference_ids]}
+"#,
+    )
+    .expect("write rule");
+    let target = serde_json::json!({"filename": "gt.csv", "domain": "GT",
+        "records": {"GTREFID": [null, "", "null", "A", "B"], "GTSEQ": [3, 7, 11, 15, 19]}});
+    let reference = serde_json::json!({"filename": "relref.csv", "domain": "RELREF",
+        "records": {"REFID": ["A", "", "null", null]}});
+    let run = |datasets| {
+        fs::write(&data, serde_json::json!({"datasets": datasets}).to_string())
+            .expect("write data");
+        run_validation(ValidateRequest {
+            rule_paths: vec![rule.clone()],
+            dataset_paths: vec![data.clone()],
+            ..Default::default()
+        })
+        .expect("validate")
+        .results
+    };
+    let results = run(vec![target.clone(), reference]);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].execution_status, ExecutionStatus::Failed);
+    let keys = results[0]
+        .errors
+        .iter()
+        .map(|issue| (issue.row, issue.seq.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        [
+            (Some(1), Some("3")),
+            (Some(2), Some("7")),
+            (Some(5), Some("19"))
+        ]
+    );
+    let blank_reference = serde_json::json!({"filename": "relref.csv", "domain": "RELREF",
+        "records": {"REFID": ["", null]}});
+    assert_eq!(
+        run(vec![target.clone(), blank_reference])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+    assert_eq!(
+        run(vec![target])[0].execution_status,
+        ExecutionStatus::Skipped
+    );
+}
+
+#[test]
 fn run_validation_executes_core_000770_distinct_operation() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
