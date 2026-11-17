@@ -84,16 +84,33 @@ v1.0.0 produces zero, zero, and two rows respectively. The old negative
 fixtures contain `POOLDEF`; the old positive/02 has `POOLID` but no `POOLDEF`.
 The labels and saved outputs are not reliable expectations for this rule.
 
-The current curated upstream CI gate still uses the accepted snapshot and
-requires a match against its saved CSVs. It needs a separate, reviewed
-expectation update or the adoption of corrected upstream oracles. This change
-does not rewrite the fixtures, change the scorer, or suppress these cases.
-
 Full accepted execution completed 2,296 cases without harness errors. Its
 default supported mismatches against stored oracles increased from 18 to 21.
-In a local run of the CI subset, 275 of 278 cases matched and the only three
-mismatches were the CORE-000677 cases above. The `run-score` gate exits 1.
-This is not a new GitHub Actions run and the PR is not ready for adoption.
+In [CI run 44022062243](https://github.com/Y-Fukiya/core-rust/actions/runs/44022062243),
+the curated `run-score` step exited 1. The same unmodified curated subset
+matched 275 of 278 cases locally. The only three mismatches were the cases
+above.
+
+## Curated CI expectations
+
+The curated job now copies the accepted inputs to a new directory and uses the
+reviewed official v1.0.0 CSVs for those three cases. The files in
+`tests/open_rules/curated-reviewed/CORE-000677/` are the outputs from the
+accepted-input runs above, with CRLF line endings converted to LF. No content
+was derived from Rust output. The manifest binds the accepted pin, the complete
+official rule tree including `.env` and the original `results.csv` files, and
+the replacement CSV hashes. Review a changed source tree before updating it.
+
+CI still requires all 278 cases to match and compares the portable curated
+baseline. This update does not change the scorer, accepted upstream pin, source
+checkout, or full-upstream baseline. Full-upstream runs still show differences
+against the original stored oracles. Passing curated CI does not authorize
+upstream adoption.
+
+The local curated replay matched all 278 cases, with no regressions or
+review-required differences in the baseline check. A control changed the
+`positive/02` candidate dataset from `STUDY` to `VS` without changing its two
+variable rows. The scorer rejected it. No cases or identity checks were removed.
 
 Local evidence is in `target/core-677-pooldef-audit/`, including the probe,
 official JSON and CSV reports, per-case input hashes, full scoreboards under

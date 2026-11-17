@@ -177,10 +177,9 @@ jobs:
 
       - name: Open Rules curated upstream subset oracle
         run: |
-          mkdir -p ../cdisc-open-rules-curated/Published
-          grep -Ev '^[[:space:]]*(#|$)' tests/open_rules/curated-upstream-rules.txt | while read -r rule_id; do
-            cp -R "../cdisc-open-rules/Published/${rule_id}" ../cdisc-open-rules-curated/Published/
-          done
+          python3 -B scripts/prepare_open_rules_curated.py \
+            --upstream-root ../cdisc-open-rules \
+            --subset-root ../cdisc-open-rules-curated
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root ../cdisc-open-rules-curated \
             --core-rs-results-root target/open-rules-core-rs-curated-upstream \

@@ -99,7 +99,10 @@ the review record for Open Rules compatibility, especially for changes touching
 The curated upstream subset is intentionally not a replacement for the full
 upstream workflow. It is a fast PR signal that copies selected rule directories
 from the pinned `cdisc-open-rules` checkout and compares them against
-`tests/open_rules/curated-upstream-baseline.json`. The selected rules cover the
+`tests/open_rules/curated-upstream-baseline.json`. The curated job uses three
+[reviewed CORE-000677 CSVs](open-rules-core-000677-pooldef-presence.md#curated-ci-expectations)
+on the temporary copy of the pinned inputs. The full upstream job still scores
+the original stored CSVs. The selected rules cover the
 major execution provenance detail families, scoring-policy normalization, and
 several previously fragile semantics families:
 
