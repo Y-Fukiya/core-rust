@@ -59,8 +59,11 @@ def verify_oracle_with_locators(report, proposed):
     def scalar(value):
         return "" if value is None else str(value)
 
+    def locator(value):
+        return "" if value == "None" else scalar(value)
+
     actual_locators = Counter((detail["dataset"], scalar(detail["row"]), name,
-                               scalar(detail["USUBJID"]), scalar(detail["SEQ"]))
+                               locator(detail["USUBJID"]), locator(detail["SEQ"]))
                               for detail in details for name in detail["variables"])
     expected_locators = Counter()
     for row, count in expected.items():
@@ -155,6 +158,11 @@ def main():
     reference = plan["cases"]
     if len(reference) != len(set(reference)) or any(not FIXTURE.fullmatch(case) for case in reference):
         raise ValueError("invalid or duplicate plan cases")
+    locators = manifest.get("locator_cases", sorted(LOCATOR_ORACLES))
+    csv_cases = {entry["file"].removesuffix("/results/results.csv") for entry in manifest["files"]
+                 if entry["file"].endswith("/results/results.csv")}
+    if len(set(locators)) != len(locators) or not set(locators) <= (set(reference) & csv_cases):
+        raise ValueError("locator cases must be unique and in the reviewed CSV plan")
     pins = plan["rules"]
     if pins["sha"] != manifest["source_sha"]:
         raise ValueError("review plan and proposal pins differ")
@@ -219,7 +227,7 @@ def main():
                          and record.get("status") == "ISSUE REPORTED"
                          and sorted(detail["row"] for detail in details) == [3, 4]
                          and verify_oracle_with_locators(numeric_output, proposed / entry["file"]))
-            elif case in LOCATOR_ORACLES:
+            elif case in locators:
                 match = (record.get("status") == "ISSUE REPORTED"
                          and verify_oracle_with_locators(src.parent, proposed / entry["file"]))
             else:
