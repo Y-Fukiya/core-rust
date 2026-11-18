@@ -113,3 +113,79 @@ records individual runs; `summary.json` separates initial and repeated
 times. Use a fresh label to repeat. A long temporary DB path can prevent
 PostgreSQL from opening its Unix socket, so keep `DB_TMP` short.
 Keep the generated XPT and detailed reports outside version control.
+
+## Resident PostgreSQL follow-up
+
+On 2026-11-18, a second run used the same million-row XPT, five rule YAMLs,
+official SQL CORE v1.0.0 source, and Rust release binary. Both SQL
+configurations used PostgreSQL 16.2 from the same `pgserver` package. The
+resident server used a new private cluster with a Unix socket only. The
+runner verified that the server did not restart between requests and
+stopped it after the run. The temporary SQL CLI used `-mem` and a fresh
+cluster for each request.
+
+All 18 invocations (six per configuration) ran all five rules without
+skips. Each report matched the same 100 expected findings, including
+the last row, using the same structural comparison described above.
+
+| Configuration | First CLI run | Repeat median (n=5) | Repeat range |
+|---|---:|---:|---:|
+| Official SQL, resident PostgreSQL already ready | 8.38 s | 7.53 s | 7.49-7.61 s |
+| Official SQL, new temporary PostgreSQL each time | 8.55 s | 8.48 s | 8.38-8.66 s |
+| `core-rs` release, no database | 2.16 s | 2.05 s | 2.03-2.11 s |
+
+The CLI timer includes launch, XPT loading, rule execution, JSON writing,
+and exit. The temporary result includes cluster initialization and
+startup. The resident result excludes the one-time server setup.
+
+| SQL phase | Resident first | Resident repeat median | Temporary first | Temporary repeat median |
+|---|---:|---:|---:|---:|
+| Initialize cluster | 0.634 s | Not repeated | 0.592 s | 0.584 s |
+| Start server until ready | 0.132 s | Not repeated | 0.145 s | 0.146 s |
+| Load XPT into PostgreSQL, including indexes | 2.28 s | 2.29 s | 2.35 s | 2.28 s |
+| Execute five rules, excluding cleanup and JSON writing | 1.49 s | 1.49 s | 1.49 s | 1.49 s |
+
+The separate resident setup took 0.767 s in total. Adding that to the
+first resident CLI run gives about 9.14 s. Temporary initialization
+and startup together took 0.737 s initially and a median of 0.731 s on
+repeats. With the resident server already ready, the repeat CLI median
+was 0.95 s shorter than with a temporary server. Both SQL modes still
+loaded the XPT on every run; loading and rule-execution times were nearly
+the same. Rust was not broken down into individual phases.
+
+The phase probe times selected functions without editing the official
+SQL files. The `db_pool` phase in the output includes temporary cluster
+initialization and startup; do not sum it with those phases. Phase times
+do not account for all interpreter work, metadata setup, or cleanup.
+The first group ran resident SQL, temporary SQL, then Rust. The six
+sequential groups covered all six execution orders. OS caches were not
+flushed. The macOS arm64 host had 10 logical CPUs and other activity
+(one-minute load 6.76-19.00 at sample starts). These results describe
+this workload and these CLI configurations, not a tuned PostgreSQL
+deployment or a service that keeps the dataset in memory.
+
+### Replay the three-way comparison
+
+Complete the preceding replay first. Keep the XPT and expected findings
+under `BENCH/lb-million` and the YAMLs and hashes under the reference
+run's directory. Use the same bundle, SQL source tree, and Python
+environment. Set `--reference-label` to the label of the two-way run.
+
+```sh
+RESIDENT_OUT=$(mktemp -d "$BENCH/resident-replay.XXXXXX")
+PG_ROOT=$(mktemp -d "$SSD_ROOT/lbg.XXXXXX")
+"$SQL_VENV/bin/python" -B -E -s "$REPO/scripts/sdtmig_34_lb_benchmark/compare_postgres.py" \
+  --bench "$BENCH" --reference-label replay --bundle "$BUNDLE" \
+  --out "$RESIDENT_OUT" --pg-root "$PG_ROOT"
+```
+
+Use empty, private output and database directories. Keep the DB root short
+for the macOS Unix socket limit. Do not connect this benchmark to an
+existing database: the SQL validator drops its run tables. The driver
+starts and stops a separate local server, checks the database mode, and
+verifies the finding identities on every run before accepting its time.
+Expect 18 valid observations in `measurements.json`, first-run and repeat
+aggregates in `summary.json`, and the one-time setup in
+`resident-startup.json`. The repository replay matched all 18 observations
+on the original input; its timings are not included above. Keep generated
+files, XPTs, and raw logs outside Git.
