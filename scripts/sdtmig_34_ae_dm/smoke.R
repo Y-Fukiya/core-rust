@@ -17,7 +17,7 @@ local({
   ae <- file.path(project, "ae.xpt")
   dm <- file.path(project, "dm.xpt")
   sha <- function(path) digest::digest(path, algo = "sha256", file = TRUE)
-  check <- function(expected, count, ...) {
+  check <- function(expected, count, reason = NULL, ...) {
     before <- vapply(c(ae, dm), sha, character(1))
     messages <- capture.output(
       summary <- sdtmig_34_ae_dm_precheck(
@@ -25,9 +25,10 @@ local({
       ),
       type = "message"
     )
-    stopifnot(length(messages) == 0L, identical(summary$status, expected))
+    stopifnot(length(messages) == 0L, identical(summary$status, expected),
+              identical(summary$reason, reason))
     if (is.na(count)) {
-      stopifnot(is.na(summary$finding_count))
+      stopifnot(is.na(summary$finding_count), is.na(summary$checked_rules))
     } else {
       stopifnot(summary$finding_count == count, summary$checked_rules == 5L)
       stopifnot(file.exists(file.path(project, summary$log_path, "report.json")))
@@ -53,12 +54,17 @@ local({
     write_pair(file.path(mutants_dir, rule$control$folder))
     result <- check("findings", 1)
     stopifnot(!identical(clean$log_path, result$log_path))
+    report <- jsonlite::read_json(file.path(project, result$log_path, "report.json"))
+    issue <- do.call(c, lapply(report$results, `[[`, "errors"))[[1L]]
+    stopifnot(identical(issue$rule_id, rule$id), identical(issue$dataset, rule$domain),
+              identical(issue$row, rule$control$row),
+              identical(sort(unlist(issue$variables)), sort(unlist(rule$variables))))
   }
   write_pair(normal_dir)
   rows <- haven::read_xpt(ae)
   rows$AESHOSP <- NULL
   haven::write_xpt(rows, ae, version = 5, name = "AE", adjust_tz = FALSE)
-  check("not_evaluated", NA_integer_)
+  check("not_evaluated", NA_integer_, "input")
 
   write_pair(normal_dir)
   original_rules <- rules_dir
@@ -66,7 +72,7 @@ local({
   stopifnot(dir.create(rules_dir))
   stopifnot(all(file.copy(list.files(original_rules, full.names = TRUE), rules_dir)))
   cat("\n# changed\n", file = file.path(rules_dir, "CORE-000087.yml"), append = TRUE)
-  check("not_evaluated", NA_integer_)
+  check("not_evaluated", NA_integer_, "rule_pin")
 
   rules_dir <- original_rules
   tampered <- file.path(project, "qualification.json")
@@ -75,7 +81,7 @@ local({
   jsonlite::write_json(proof, tampered, auto_unbox = TRUE)
   original_receipt <- receipt
   receipt <- tampered
-  check("not_evaluated", NA_integer_)
+  check("not_evaluated", NA_integer_, "qualification")
 
   receipt <- original_receipt
   original_bundle <- bundle_dir
@@ -85,10 +91,28 @@ local({
   copied <- file.path(bundle_dir, "bin", "core-rs")
   stopifnot(file.copy(file.path(original_bundle, "bin", "core-rs"), copied))
   cat("changed", file = copied, append = TRUE)
-  check("not_evaluated", NA_integer_)
+  check("not_evaluated", NA_integer_, "qualification")
+
+  rules_dir <- file.path(project, "rules")
+  edited_rule <- file.path(rules_dir, "CORE-000087.yml")
+  stopifnot(file.copy(file.path(original_rules, basename(edited_rule)), edited_rule, overwrite = TRUE),
+            file.copy(file.path(original_bundle, "bin", "core-rs"), copied, overwrite = TRUE))
+  local({
+    trace("run", tracer = function() {
+      writeLines("replaced executable", copied)
+      writeLines("replaced rule", edited_rule)
+    }, where = asNamespace("processx"), print = FALSE)
+    on.exit(untrace("run", where = asNamespace("processx")))
+    list_runtime <- function() list.files(tempdir(), pattern = "^core-rs-precheck-")
+    before <- list_runtime()
+    check("clean", 0)
+    stopifnot(identical(before, list_runtime()), identical(readLines(copied), "replaced executable"),
+              identical(readLines(edited_rule), "replaced rule"))
+  })
 
   bundle_dir <- original_bundle
-  check("not_evaluated", NA_integer_, timeout_ms = 1L)
+  rules_dir <- original_rules
+  check("not_evaluated", NA_integer_, "timeout", timeout_ms = 1L)
   stopifnot(check("clean", 0)$status == "clean")
 
   swapped <- file.path(mutants_dir, "087", "ae.xpt")
@@ -108,4 +132,4 @@ local({
     stopifnot(identical(report$summary$error_count, 0L))
   })
 })
-cat("R post-write precheck: clean, five findings, and six unavailable paths passed\n")
+cat("R post-write precheck: five finding locations, six unavailable paths, and runtime snapshots passed\n")

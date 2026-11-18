@@ -12,36 +12,45 @@ sdtmig_34_ae_dm_precheck <- function(ae_xpt, dm_xpt, bundle_dir, qualification_f
     if (!is.null(restart)) invokeRestart(restart)
   }
   tryCatch(withCallingHandlers({
-    lock <- read_json(lock_file)
-    proof <- read_json(qualification_file)
+    runtime <- tempfile("core-rs-precheck-")
+    stopifnot(dir.create(runtime, mode = "0700"))
+    on.exit(unlink(runtime, recursive = TRUE), add = TRUE)
+    stage <- function(from, to = file.path(runtime, basename(from))) {
+      stopifnot(all(file.copy(from, to)))
+      to
+    }
+    lock_copy <- stage(lock_file, file.path(runtime, "pilot-lock.json"))
+    lock <- read_json(lock_copy)
+    proof <- read_json(stage(qualification_file, file.path(runtime, "qualification.json")))
     ids <- vapply(lock$rules, `[[`, character(1), "id")
     domains <- vapply(lock$rules, `[[`, character(1), "domain")
     stopifnot(
       identical(lock$schema_version, 1L), identical(proof$schema_version, 1L),
       identical(lock$standard, "sdtmig"), identical(lock$standard_version, "3.4"),
-      identical(proof$status, "qualified"), identical(sha(lock_file), proof$pilot_lock_sha256),
+      identical(proof$status, "qualified"), identical(sha(lock_copy), proof$pilot_lock_sha256),
       length(ids) == 5L, !anyDuplicated(ids), all(grepl("^CORE-[0-9]{6}$", ids)),
       identical(sort(domains), c("AE", "AE", "DM", "DM", "DM")),
       identical(vapply(proof$comparisons, `[[`, character(1), "case"), c("normal", ids)),
       identical(vapply(proof$comparisons, `[[`, integer(1), "executed"), rep(5L, 6L)),
       identical(vapply(proof$comparisons, `[[`, integer(1), "findings"), c(0L, rep(1L, 5L)))
     )
-    manifest_file <- file.path(bundle_dir, "release-manifest.json")
+    manifest_file <- stage(file.path(bundle_dir, "release-manifest.json"))
     manifest <- read_json(manifest_file)
-    binary <- normalizePath(file.path(bundle_dir, "bin", "core-rs"), mustWork = TRUE)
+    binary <- stage(file.path(bundle_dir, "bin", "core-rs"))
     stopifnot(
       identical(sha(manifest_file), proof$release_manifest_sha256),
       identical(manifest$git$commit, proof$source_commit),
       isTRUE(manifest$git$available), identical(manifest$git$dirty, FALSE),
       identical(manifest$target_triple, proof$target_triple),
       identical(manifest$artifacts, list(list(path = "bin/core-rs", sha256 = proof$binary_sha256))),
-      identical(sha(binary), proof$binary_sha256)
+      identical(sha(binary), proof$binary_sha256), Sys.chmod(binary, "0500")
     )
 
     reason <- "rule_pin"
-    rule_files <- normalizePath(file.path(rules_dir, paste0(ids, ".yml")), mustWork = TRUE)
+    rule_files <- stage(file.path(rules_dir, paste0(ids, ".yml")))
     stopifnot(identical(vapply(rule_files, sha, character(1), USE.NAMES = FALSE),
-                        vapply(lock$rules, `[[`, character(1), "sha256")))
+                        vapply(lock$rules, `[[`, character(1), "sha256")),
+              all(Sys.chmod(rule_files, "0400")))
 
     reason <- "input"
     root <- normalizePath(project_root, mustWork = TRUE)

@@ -182,8 +182,11 @@ It returns `clean`, `findings` or `not_evaluated`. Skipped, missing or
 inconsistent results, load failure, and a changed rule or binary never count
 as zero findings. The helper does not change either XPT or fail the calling
 pipeline when the check is unavailable. Haven and the validator read the
-same private XPT copies, which the helper removes before returning. Changes
-to the original files during the check yield `not_evaluated`.
+same private XPT copies. R also copies the executable and five YAML files
+to a private temporary directory, checks those copies against the
+qualification receipt and lock, and launches only the verified copies.
+The helper removes all these copies before returning. Changes to the
+original XPT files during the check yield `not_evaluated`.
 The safe summary contains counts
 and a neutral project-relative log directory. Raw reports, stdout and stderr
 stay in its private run directory. Do not pass those files to a model.
@@ -195,6 +198,59 @@ Rscript --vanilla scripts/sdtmig_34_ae_dm/smoke.R \
   scripts/sdtmig_34_ae_dm "$BUNDLE" "$QUAL_OUT/qualification.json" \
   "$NORMAL" "$MUTANTS"
 ```
+
+## Hand off the pilot bundle
+
+Use the [bundle quick start](../scripts/sdtmig_34_ae_dm/README.md) on the
+recipient's Apple silicon Mac. The archive includes the qualified binary,
+its manifest and receipt, the pilot lock, five YAMLs, R scripts, the two
+pinned public R objects, and license notices. It does not include generated
+XPTs, private study data, SQL binaries, or logs. The recipient needs R and the four
+packages but no source checkout or database.
+
+To assemble it, use the unchanged qualified release directory as
+`RELEASE_DIR` and the five pinned YAML files under `RULES_DIR`. Set
+`SAMPLE_DIR` to the location of the two public `.rda` objects listed above.
+Save the [core-contributor license](https://raw.githubusercontent.com/cdisc-org/core-contributor/94963e01df448f05bdbbc43a482661d4f30f7dac/LICENSE)
+as `core-contributor-LICENSE.txt` and the
+[pharmaversesdtm license](https://raw.githubusercontent.com/pharmaverse/pharmaversesdtm/7ec53ea88dfe1c168f9efbef59233c4426813b89/LICENSE.md)
+as `pharmaversesdtm-LICENSE.md` in `NOTICES_DIR`.
+
+```sh
+python3 -B scripts/sdtmig_34_ae_dm/bundle.py \
+  --release-dir "$RELEASE_DIR" --rules-dir "$RULES_DIR" \
+  --sample-dir "$SAMPLE_DIR" --notices-dir "$NOTICES_DIR" \
+  --out core-rs-ae-dm-pilot-macos-arm64.tar.gz
+```
+
+The builder checks the staged binary, manifest, rules, samples, and
+third-party notices before writing an archive. Send the printed SHA-256
+through a trusted channel. This packages an existing qualification; it
+does not qualify a new build or alter the adopted Open Rules version.
+
+### Clean-environment replay
+
+The engineering replay started with an empty home directory and R library,
+installed CRAN arm64 binaries, and ran the extracted archive from an unrelated
+directory. Both the bundle and project paths contained spaces. It used R
+4.6.1, haven 2.5.5, jsonlite 2.0.0, digest 0.6.39, and processx 3.9.0.
+No source checkout, SQL engine, or database was needed at runtime. The
+normal and repaired controls each ran five checks with zero findings.
+The five one-cell abnormal controls matched the locked rule, domain,
+record, and output variables. An export missing a required column returned
+`not_evaluated` with reason `input` and no finding count.
+
+The regression replay also rejected altered qualification inputs and
+verified that changing the source executable and a YAML after staging
+does not change which bytes run. The sandboxed trial could not complete
+subprocess cleanup, so the end-to-end evidence is from the normal macOS
+execution environment. This is an engineering replay on one Mac, not
+acceptance by a separate human operator. An independent automated operator
+also followed the bundled quick start from a new private directory, using
+the fresh R library without accessing the repository, and reproduced the
+four result lines. For human acceptance, record the archive hash, R version,
+and the four result lines on the recipient's Mac. Do not include private
+reports in the handoff record.
 
 ## R export and repair trial
 
