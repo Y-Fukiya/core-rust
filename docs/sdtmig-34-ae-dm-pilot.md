@@ -298,5 +298,6 @@ stopifnot(repaired$status == "clean", repaired$checked_rules == 5L,
 
 The assertions are for this replay only. A real pipeline should continue
 and display the advisory status regardless of the precheck outcome.
-Measure engine performance separately on a realistic synthetic LB workload,
-including SQL startup and data load. MCP, SAS and ADaM are outside this pilot.
+See the separate [million-row synthetic LB benchmark](sdtmig-34-lb-benchmark.md)
+for measured CLI startup and data load costs. MCP, SAS and ADaM are outside
+this pilot.
