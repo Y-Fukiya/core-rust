@@ -98,7 +98,9 @@ fn parse_xpt_v5(bytes: &[u8]) -> Result<ParsedXpt> {
         &bytes[namestr_header..namestr_header + XPT_CARD_LEN],
     )
     .ok_or_else(|| {
-        DataError::InvalidDatasetPackage("XPT NAMESTR header is missing variable count".to_owned())
+        DataError::InvalidDatasetPackage(
+            "XPT NAMESTR variable count is missing or invalid".to_owned(),
+        )
     })?;
     if variable_count == 0 {
         return Err(DataError::InvalidDatasetPackage(
@@ -224,12 +226,14 @@ fn find_xpt_header(bytes: &[u8], header: &str) -> Option<usize> {
 }
 
 fn parse_xpt_header_count(card: &[u8]) -> Option<usize> {
-    let text = ascii_card(card);
-    let count_field = text.get(text.len().saturating_sub(30)..)?.trim();
-    if count_field.is_empty() || !count_field.chars().all(|ch| ch.is_ascii_digit()) {
+    // SAS XPORT v5 stores the right-aligned count in columns 55 through 58.
+    let field = std::str::from_utf8(card.get(54..58)?)
+        .ok()?
+        .trim_start_matches(' ');
+    if !field.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    count_field.parse::<usize>().ok().filter(|value| *value > 0)
+    field.parse().ok()
 }
 
 fn parse_xpt_namestr(bytes: &[u8]) -> Result<XptVariable> {
@@ -441,25 +445,28 @@ mod tests {
     }
 
     #[test]
-    fn parse_xpt_header_count_reads_fixed_trailing_count_field() {
-        let mut card = [b' '; XPT_CARD_LEN];
-        card[..48].copy_from_slice(b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!");
-        card[50..53].copy_from_slice(b"999");
-        card[XPT_CARD_LEN - 30..].copy_from_slice(b"000000000000000000000000000002");
-
+    fn parse_xpt_header_count_reads_sas_v5_count() {
+        let card =
+            *b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000000200000000000000000000  ";
         assert_eq!(parse_xpt_header_count(&card), Some(2));
+        let mut blank_padded = card;
+        blank_padded[54..58].copy_from_slice(b"  12");
+        assert_eq!(parse_xpt_header_count(&blank_padded), Some(12));
     }
 
     #[test]
-    fn parse_xpt_header_count_rejects_zero_or_malformed_count_field() {
-        let mut zero = [b' '; XPT_CARD_LEN];
-        zero[..48].copy_from_slice(b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!");
-        zero[XPT_CARD_LEN - 30..].copy_from_slice(b"000000000000000000000000000000");
-        assert_eq!(parse_xpt_header_count(&zero), None);
-
-        let mut malformed = zero;
-        malformed[XPT_CARD_LEN - 1] = b'X';
-        assert_eq!(parse_xpt_header_count(&malformed), None);
+    fn parse_xpt_v5_rejects_legacy_trailing_count_and_malformed_fields() {
+        let mut card =
+            *b"HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000000000000000000000000002  ";
+        let error = parse_xpt_v5(&card).expect_err("trailing count cannot override zero");
+        expect_invalid_dataset_package(error, "zero variables");
+        for field in [
+            b"    ", b"0X02", b" 1 2", b"2   ", b"  +2", b"\t002", b"\xff002",
+        ] {
+            card[54..58].copy_from_slice(field);
+            let error = parse_xpt_v5(&card).expect_err("malformed count must fail");
+            expect_invalid_dataset_package(error, "variable count is missing or invalid");
+        }
     }
 
     #[test]
