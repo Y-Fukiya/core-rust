@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "status": "qualified",
+  "pilot_lock_sha256": "9e24629559aa3b946de4a5c0e8b57a18c94b8c25ce57689cb249d3d45550869a",
+  "release_manifest_sha256": "681d83a9b46c20bd48bd2f61abe3bf149eef67a3a0a1bf83678fcbad1f6f5c16",
+  "binary_sha256": "1271adaf03b0755115a4a2785ceca809b0a4dc762352bf3410343543cbf0721b",
+  "source_commit": "6ce2e19c4dbce6cef50dcadf9bfade0e83ae6c93",
+  "target_triple": "aarch64-apple-darwin",
+  "comparisons": [
+    {
+      "case": "normal",
+      "executed": 5,
+      "findings": 0
+    },
+    {
+      "case": "CORE-000087",
+      "executed": 5,
+      "findings": 1,
+      "domain": "AE",
+      "record": 2,
+      "variables": [
+        "AESER",
+        "AETERM"
+      ],
+      "seq": 2,
+      "subject_matches_input": true
+    },
+    {
+      "case": "CORE-000119",
+      "executed": 5,
+      "findings": 1,
+      "domain": "DM",
+      "record": 12,
+      "variables": [
+        "ARM",
+        "ARMCD"
+      ],
+      "seq": null,
+      "subject_matches_input": true
+    },
+    {
+      "case": "CORE-000127",
+      "executed": 5,
+      "findings": 1,
+      "domain": "AE",
+      "record": 7,
+      "variables": [
+        "AESHOSP"
+      ],
+      "seq": 4,
+      "subject_matches_input": true
+    },
+    {
+      "case": "CORE-000185",
+      "executed": 5,
+      "findings": 1,
+      "domain": "DM",
+      "record": 19,
+      "variables": [
+        "ACTARMCD"
+      ],
+      "seq": null,
+      "subject_matches_input": true
+    },
+    {
+      "case": "CORE-000189",
+      "executed": 5,
+      "findings": 1,
+      "domain": "DM",
+      "record": 23,
+      "variables": [
+        "AGE",
+        "AGEU"
+      ],
+      "seq": null,
+      "subject_matches_input": true
+    }
+  ]
+}

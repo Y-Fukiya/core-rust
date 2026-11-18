@@ -1,10 +1,10 @@
-# AE/DM precheck pilot: input and normal control
+# AE/DM precheck pilot
 
 On 2026-11-18 Verisian SQL v1.0.0 and the corrected Rust reader executed all
 five SDTMIG 3.4 rules on the same AE and DM XPT v5 files. Both reported zero
 issues on the unmodified inputs and the expected record and variables in all
-five one-cell abnormal controls. These are pilot results, not release
-qualification or Hook usability evidence. No upstream SHA or baseline changed.
+five one-cell abnormal controls. These are pilot results, not a submission
+validation or an R workflow usability study. No upstream SHA or baseline changed.
 
 ## Inputs and reproduction
 
@@ -110,22 +110,92 @@ matched the source row. For AE the sequence matched 2 and 4 respectively
 (JSON number in SQL, string in Rust); for DM it was absent (empty string in
 SQL, null in Rust). No scorer relaxation or CSV substitution was used.
 
-## Before enabling a Hook
+## Qualify the local release candidate
 
-1. Repeat the normal and abnormal controls on the release binary before
-   distributing it. Missing results, skips, load errors and capped reports
-   cannot establish agreement.
-2. Call the local precheck from R only after output files are closed. Pin the
-   platform binary and its SHA-256 against a trusted release manifest, verify
-   with [release-verify](release-reproducibility.md), and reject a mismatch.
-   Keep full diagnostics in access-controlled project-local files, outside
-   Git and model context. Return only status, allowlisted rule IDs/variable
-   names, counts and a neutral project-relative log path; never echo stderr,
-   data values or subject identifiers. A failed run must say *not evaluated*.
+The [pilot lock](../scripts/sdtmig_34_ae_dm/pilot-lock.json) fixes the five YAML
+digests, SQL source, original AE and DM XPT bytes, edited XPT bytes, and
+expected finding locations. Use the exact archived files for qualification;
+a new haven export may have a different XPT header timestamp. The lock is
+specific to this pilot. It does not replace the adopted Open Rules lock or
+its baselines. Do not commit XPTs or reports from a user project.
 
-This pilot can test reproducibility and, once tried by an R programmer, Hook
-usability. It does not measure the value of retaining the Rust engine.
-Use a separate realistic synthetic LB workload for that decision: include SQL
-startup and data load, report cold and warm runs separately, measure binary
-provisioning effort, and use independently labelled defects when comparing
-detection. MCP, SAS and ADaM integration are outside this pilot.
+Build `core-rs` and `xtask` with
+`cargo build --locked --release -p core-cli -p xtask` from a clean checkout.
+Place the binary in `$BUNDLE/bin/core-rs` and use
+[`xtask release-manifest`](release-reproducibility.md) to record exactly that
+artifact relative to the bundle root. Set `SOURCE_DATE_EPOCH` to your
+reviewed source timestamp before generating the manifest. For a local pilot
+there is no CI run URL; this is not the full publishing gate.
+
+Use the SQL engine's Python environment, which provides `pyreadstat`, and
+run the qualification driver with a fresh output directory:
+
+```sh
+"$SQL_VENV/bin/python" -B scripts/sdtmig_34_ae_dm/qualify.py \
+  --lock scripts/sdtmig_34_ae_dm/pilot-lock.json \
+  --bundle "$BUNDLE" --source-root "$SOURCE" --xtask "$XTASK" \
+  --sql-archive "$SQL_ARCHIVE" \
+  --normal "$NORMAL" --mutants "$MUTANTS" --out "$QUAL_OUT"
+```
+
+`NORMAL` contains `ae.xpt`, `dm.xpt` and `rules/`; `MUTANTS` contains
+an AE/DM pair in each `control.folder` from the lock. The driver checks
+and freshly extracts the pinned SQL archive, then runs both engines against
+the same digest-checked input copies. It runs `release-verify` on a private
+copy of the bundle. Allow space for the temporary extraction under
+`QUAL_OUT`. The driver removes the copies and writes `qualification.json`
+only after all six comparisons pass. Keep the receipt and bundle in a
+trusted local directory; these hashes are not a signature. Qualify again
+when the binary, platform or rule lock changes.
+
+The local `aarch64-apple-darwin` release candidate at
+`6ce2e19c4dbce6cef50dcadf9bfade0e83ae6c93` passed all six comparisons on
+2026-11-18. Its SHA-256 was
+`1271adaf03b0755115a4a2785ceca809b0a4dc762352bf3410343543cbf0721b`.
+The [qualification receipt](../scripts/sdtmig_34_ae_dm/release-qualification.json)
+records five clean executions per engine on the normal control and one
+expected record/variable finding on each abnormal control.
+
+## Check after writing XPTs in R
+
+The optional check uses `haven`, `jsonlite`, `digest` and `processx`.
+Call it after both successful `haven::write_xpt()` calls have returned.
+Use lowercase `ae.xpt` and `dm.xpt` under `project_root`. The runtime checks
+the freshly written study data; it does not require the public sample's
+content or row counts. Keep `output/core-rs-precheck/` out of version
+control and shared storage. This repository already ignores `output/`;
+add the exclusion to any other project before using the check there.
+
+```r
+source(file.path(pilot_dir, "precheck.R"))
+summary <- sdtmig_34_ae_dm_precheck(
+  ae_xpt = ae_path, dm_xpt = dm_path,
+  bundle_dir = bundle_dir, qualification_file = receipt_path,
+  lock_file = file.path(pilot_dir, "pilot-lock.json"),
+  rules_dir = rules_dir, project_root = project_root
+)
+# Continue the export workflow regardless of summary$status.
+```
+
+The call waits at most 30 seconds for the validator subprocess by default.
+It returns `clean`, `findings` or `not_evaluated`. Skipped, missing or
+inconsistent results, load failure, and a changed rule or binary never count
+as zero findings. The helper does not change either XPT or fail the calling
+pipeline when the check is unavailable. Haven and the validator read the
+same private XPT copies, which the helper removes before returning. Changes
+to the original files during the check yield `not_evaluated`.
+The safe summary contains counts
+and a neutral project-relative log directory. Raw reports, stdout and stderr
+stay in its private run directory. Do not pass those files to a model.
+
+Run the smoke check with real R writes and the verified binary:
+
+```sh
+Rscript --vanilla scripts/sdtmig_34_ae_dm/smoke.R \
+  scripts/sdtmig_34_ae_dm "$BUNDLE" "$QUAL_OUT/qualification.json" \
+  "$NORMAL" "$MUTANTS"
+```
+
+Compare deployment effort and fix turnaround in a later R user trial.
+Measure engine performance separately on a realistic synthetic LB workload,
+including SQL startup and data load. MCP, SAS and ADaM are outside this pilot.
