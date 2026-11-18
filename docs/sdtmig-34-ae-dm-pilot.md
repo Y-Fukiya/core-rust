@@ -196,6 +196,107 @@ Rscript --vanilla scripts/sdtmig_34_ae_dm/smoke.R \
   "$NORMAL" "$MUTANTS"
 ```
 
-Compare deployment effort and fix turnaround in a later R user trial.
+## R export and repair trial
+
+On 2026-11-18, the R helper at `7d8552e` ran the qualified macOS arm64
+binary on exports from the pinned public AE (1,191 rows) and DM (306 rows)
+objects. No SQL process was needed during the R workflow.
+
+- The draft deliberately set AE row 7 `AESHOSP` to `X`. All five rules
+  ran. Only `CORE-000127` reported a finding, at that row and variable.
+- The repair set the value back to `N` in R and wrote a fresh XPT pair.
+  All five rules ran with zero findings and zero skips. Five more exports
+  and checks in the same R process gave the same result.
+- Reading both pairs back showed that only the intended AE cell changed
+  and the DM data was unchanged. The precheck left both XPT file hashes
+  unchanged in each run.
+
+### Observed wait
+
+| Run (macOS arm64, R 4.6.1) | Write both XPTs | Post-write check |
+|---|---:|---:|
+| Draft, first invocation in a fresh R process | 155 ms | 301 ms |
+| Repair, first invocation in a fresh R process | 154 ms | 296 ms |
+| Repair, same R process (five further runs) | median 7 ms (6-7 ms) | median 205 ms (182-215 ms) |
+
+The check timer covered the R helper, including hashes, private copies,
+validator startup, and report interpretation. The first write can include
+haven package loading. The times exclude R startup, loading the public
+objects, installing dependencies, reading the report as an operator, and
+editing the mapping. They are local observations on the small public pair,
+not a performance comparison or an estimate for larger studies.
+
+### Setup checks
+
+Use the qualified executable with its matching manifest, receipt and pilot
+lock, and preserve the exact five YAMLs. A rebuild needs its own
+qualification. The four R packages were already installed for this trial;
+package installation time was not measured.
+
+| Condition tried | Returned status and reason | What to check |
+|---|---|---|
+| Missing qualification receipt | `not_evaluated` / `qualification` | Path and match to the bundle and lock |
+| Missing YAML directory | `not_evaluated` / `rule_pin` | Location and exact bytes of the five YAMLs |
+| Uppercase `AE.xpt` | `not_evaluated` / `input` | Lowercase filenames under the project root |
+| Child process restricted by the Codex sandbox | `not_evaluated` / `engine` | Whether the R runtime can launch the validator |
+
+The safe summary contains no row location. Open the private report locally
+to decide what to repair. Do not treat `not_evaluated` as a zero count or
+share XPTs and detailed logs through Git or a model.
+
+### Replay the public trial
+
+Use a fresh, private, Git-ignored `PROJECT` directory. In R, supply
+`PILOT_SCRIPTS` (the repository's `scripts/sdtmig_34_ae_dm` directory),
+`NORMAL` (the pinned `ae.rda`, `dm.rda` and `rules/`), `BUNDLE` (the
+verified release bundle), and `QUALIFICATION_JSON` (its receipt) as
+environment variables. Use the same source and binary pins as above.
+
+```r
+project <- normalizePath(Sys.getenv("PROJECT"), mustWork = TRUE)
+pilot <- Sys.getenv("PILOT_SCRIPTS")
+normal <- Sys.getenv("NORMAL")
+source(file.path(pilot, "precheck.R"))
+public <- new.env()
+load(file.path(normal, "ae.rda"), envir = public)
+load(file.path(normal, "dm.rda"), envir = public)
+stopifnot(nrow(public$ae) == 1191L, nrow(public$dm) == 306L,
+          identical(public$ae$AESHOSP[[7L]], "N"))
+
+export_and_check <- function(stage, hospital_flag) {
+  ae <- public$ae
+  ae$AESHOSP[[7L]] <- hospital_flag
+  folder <- file.path(project, stage)
+  stopifnot(dir.create(folder, mode = "0700"))
+  ae_file <- file.path(folder, "ae.xpt")
+  dm_file <- file.path(folder, "dm.xpt")
+  haven::write_xpt(ae, ae_file, version = 5, name = "AE", adjust_tz = FALSE)
+  haven::write_xpt(public$dm, dm_file, version = 5, name = "DM", adjust_tz = FALSE)
+  sdtmig_34_ae_dm_precheck(
+    ae_xpt = ae_file, dm_xpt = dm_file, project_root = project,
+    bundle_dir = Sys.getenv("BUNDLE"),
+    qualification_file = Sys.getenv("QUALIFICATION_JSON"),
+    lock_file = file.path(pilot, "pilot-lock.json"),
+    rules_dir = file.path(normal, "rules")
+  )
+}
+
+draft <- export_and_check("draft", "X")
+stopifnot(draft$status == "findings", draft$checked_rules == 5L,
+          draft$finding_count == 1L)
+report <- jsonlite::read_json(file.path(project, draft$log_path, "report.json"))
+issue <- do.call(c, lapply(report$results, `[[`, "errors"))[[1L]]
+stopifnot(issue$rule_id == "CORE-000127", issue$dataset == "AE",
+          issue$row == 7L, identical(issue$variables, list("AESHOSP")))
+print(issue[c("rule_id", "dataset", "row", "variables")])
+
+# Repair the R input and export again. Do not patch the XPT.
+repaired <- export_and_check("repaired", public$ae$AESHOSP[[7L]])
+stopifnot(repaired$status == "clean", repaired$checked_rules == 5L,
+          repaired$finding_count == 0L)
+```
+
+The assertions are for this replay only. A real pipeline should continue
+and display the advisory status regardless of the precheck outcome.
 Measure engine performance separately on a realistic synthetic LB workload,
 including SQL startup and data load. MCP, SAS and ADaM are outside this pilot.
