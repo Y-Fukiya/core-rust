@@ -14,6 +14,9 @@ mod name_normalization;
 mod rule_loading;
 mod yaml_literals;
 
+#[cfg(test)]
+mod literal_membership_tests;
+
 pub use enums::{Operator, RuleStatus, RuleType, Sensitivity};
 pub use name_normalization::normalize_key;
 pub use rule_loading::{

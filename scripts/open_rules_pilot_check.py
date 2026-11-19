@@ -11,6 +11,7 @@ import shutil
 
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[1] / "tests/open_rules/pilot-review.json"
+IDENTITY_FIELDS = ("rule_id", "dataset", "domain", "row", "variable", "usubjid", "seq")
 
 
 def source_hash(rule_dir: Path) -> str:
@@ -30,10 +31,27 @@ def expected_rows(rule: dict, kind: str) -> Counter:
     )
 
 
+def candidate_expected_identities(rule: dict, kind: str) -> Counter:
+    if "candidate_expectations" in rule:
+        return Counter(
+            tuple(identity[field] for field in IDENTITY_FIELDS)
+            for identity in rule["candidate_expectations"][kind]
+        )
+    return Counter(
+        (rule["rule_id"], rule["dataset"], rule["dataset"], str(record), variable,
+         context["usubjid"], context["seq"])
+        for record, context in (zip(rule["records"], rule["row_context"]) if kind == "negative" else [])
+        for variable in rule["variables"]
+    )
+
+
 def load_manifest(path: Path) -> dict:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1 or not manifest.get("rules"):
         raise ValueError("pilot manifest must have schema_version=1 and nonempty rules")
+    evidence_registry = manifest.get("candidate_evidence", {})
+    if not isinstance(evidence_registry, dict):
+        raise ValueError("candidate evidence registry must be an object")
     ids = set()
     for rule in manifest["rules"]:
         rule_id = rule["rule_id"]
@@ -53,6 +71,32 @@ def load_manifest(path: Path) -> dict:
                 or any(not isinstance(value, str) for value in context.values())
                 for context in contexts):
             raise ValueError(f"invalid expected row context: {rule_id}")
+        if "candidate_expectations" in rule:
+            override = rule["candidate_expectations"]
+            if not isinstance(override, dict) or set(override) != {"evidence", "negative", "positive"}:
+                raise ValueError(f"invalid candidate expectations: {rule_id}")
+            evidence_key = override["evidence"]
+            if not isinstance(evidence_key, str) or not evidence_key.strip() or evidence_key not in evidence_registry:
+                raise ValueError(f"unknown candidate evidence: {rule_id}")
+            evidence = evidence_registry[evidence_key]
+            if (not isinstance(evidence, dict) or not isinstance(evidence.get("basis"), str)
+                    or not evidence["basis"].strip()):
+                raise ValueError(f"missing candidate evidence basis: {rule_id}")
+            for kind in ("negative", "positive"):
+                identities = override[kind]
+                if not isinstance(identities, list) or any(
+                        not isinstance(identity, dict) or set(identity) != set(IDENTITY_FIELDS)
+                        or any(not isinstance(value, str) for value in identity.values())
+                        or identity["rule_id"] != rule_id
+                        for identity in identities):
+                    raise ValueError(f"invalid candidate identities: {rule_id}/{kind}")
+                frozen = expected_rows(rule, kind)
+                frozen_variables = Counter()
+                for (_, _, variable), count in frozen.items():
+                    frozen_variables[variable] += count
+                if (len(identities) != sum(frozen.values())
+                        or Counter(identity["variable"] for identity in identities) != frozen_variables):
+                    raise ValueError(f"candidate counts/variables differ from frozen expectations: {rule_id}/{kind}")
     return manifest
 
 
@@ -83,12 +127,7 @@ def check_candidate_reports(manifest: dict, report: dict, root: Path) -> None:
     for rule in manifest["rules"]:
         for kind in ("negative", "positive"):
             path = root / "Published" / rule["rule_id"] / kind / "01/report.csv"
-            expected = Counter(
-                (rule["rule_id"], rule["dataset"], rule["dataset"], str(record), variable,
-                 context["usubjid"], context["seq"])
-                for record, context in (zip(rule["records"], rule["row_context"]) if kind == "negative" else [])
-                for variable in rule["variables"]
-            )
+            expected = candidate_expected_identities(rule, kind)
             actual = Counter()
             with path.open(encoding="utf-8", newline="") as stream:
                 reader = csv.DictReader(stream)

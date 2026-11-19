@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::dataset_helpers::{dataset_column_name, dataset_domain_value, dataset_has_column};
 use crate::json_values::json_scalar_string;
-use crate::result_normalization::core_000677_sequence_column;
+use crate::result_normalization::domain_sequence_column;
 use crate::{dataset_matches_name, engine_semantics, find_dataset, outcome_message};
 
 pub(crate) fn core_000744_relrec_faobj_result(
@@ -417,7 +417,7 @@ pub(crate) fn core_000757_intervention_relrec_faobj_result(
             continue;
         };
         let parent_subjects = dataset_column_values(parent, "USUBJID").unwrap_or_default();
-        let seq_column = core_000677_sequence_column(parent);
+        let seq_column = domain_sequence_column(parent);
         let seq_values = seq_column
             .as_deref()
             .and_then(|column| dataset_column_values(parent, column).ok())

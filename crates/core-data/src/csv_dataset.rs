@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::dataset_paths::{canonical_or_original, column_names, file_name, file_stem};
 use crate::json_table::series_from_json_values;
 use crate::{
-    cell_to_string, validate_dataset_file_size, validate_frame_limits, DataError, DatasetMetadata,
-    DatasetSourceFormat, DatasetVariable, LoadedDataset, Result,
+    cell_to_string, dataset_column_values, validate_dataset_file_size, validate_frame_limits,
+    DataError, DatasetMetadata, DatasetSourceFormat, DatasetVariable, LoadedDataset, Result,
 };
 
 pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
@@ -26,6 +26,11 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
             path: path.to_path_buf(),
             source,
         })?;
+    let csv_setcd = raw_frame
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str().eq_ignore_ascii_case("SETCD"))
+        .cloned();
     let frame = normalize_csv_frame_types(raw_frame, path)?;
     validate_frame_limits(&frame, "CSV")?;
 
@@ -52,7 +57,29 @@ pub fn load_csv_dataset(path: impl AsRef<Path>) -> Result<LoadedDataset> {
         variables,
     };
 
-    Ok(LoadedDataset::new(metadata, frame))
+    Ok(LoadedDataset {
+        metadata,
+        frame,
+        csv_setcd,
+    })
+}
+
+pub fn dataset_setcd_values(dataset: &LoadedDataset, column: &str) -> Result<Vec<Value>> {
+    let Some(raw) = dataset
+        .csv_setcd
+        .as_ref()
+        .filter(|raw| raw.name().as_str() == column)
+    else {
+        return dataset_column_values(dataset, column);
+    };
+    let text = raw.str().map_err(|source| DataError::Polars {
+        path: dataset.metadata.full_path.clone(),
+        source,
+    })?;
+    Ok(text
+        .iter()
+        .map(|value| value.map_or(Value::Null, |text| Value::String(text.to_owned())))
+        .collect())
 }
 
 fn normalize_csv_frame_types(frame: DataFrame, path: &Path) -> Result<DataFrame> {

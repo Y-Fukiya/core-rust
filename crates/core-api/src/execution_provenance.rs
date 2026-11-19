@@ -13,6 +13,9 @@ pub(crate) fn annotate_results_execution_provenance(results: &mut [RuleValidatio
 }
 
 fn execution_provenance_for_rule_id(rule_id: &str) -> &'static str {
+    if rule_id == crate::engine_semantics::CORE_000609 {
+        return "generic_engine";
+    }
     if rule_id_uses_hand_port(rule_id) {
         return "rule_id_hand_port";
     }

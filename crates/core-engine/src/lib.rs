@@ -160,14 +160,6 @@ pub fn validate_rule(
     {
         Sensitivity::Record => record_level_issues(rule, dataset, &mask, &variables, &message)?,
         Sensitivity::Group => group_level_issues(rule, dataset, &mask, &variables, &message)?,
-        Sensitivity::Dataset
-            if matches!(
-                rule.rule_type,
-                RuleType::RecordData | RuleType::DomainPresence
-            ) =>
-        {
-            record_level_issues(rule, dataset, &mask, &variables, &message)?
-        }
         Sensitivity::Dataset => dataset_level_issues(rule, dataset, &mask, &variables, &message),
         sensitivity => {
             return Err(EngineError::UnsupportedSensitivity(
@@ -177,7 +169,7 @@ pub fn validate_rule(
     };
     let error_count = errors.len();
 
-    Ok(RuleValidationResult {
+    let mut result = RuleValidationResult {
         rule_id: rule.core_id.clone(),
         execution_status: if error_count == 0 {
             ExecutionStatus::Passed
@@ -191,7 +183,20 @@ pub fn validate_rule(
         message,
         error_count,
         errors,
-    })
+    };
+    // Domain presence uses physical data for evaluation but reports study-level identity.
+    if rule.rule_type == RuleType::DomainPresence {
+        result.dataset = "STUDY".to_owned();
+        result.domain = None;
+        for issue in &mut result.errors {
+            issue.dataset.clone_from(&result.dataset);
+            issue.domain = None;
+            issue.row = None;
+            issue.usubjid = None;
+            issue.seq = None;
+        }
+    }
+    Ok(result)
 }
 
 pub fn evaluate_rule_conditions(
@@ -529,6 +534,11 @@ fn evaluate_condition_with_options(
         | Operator::IsContainedByCaseInsensitive
         | Operator::IsNotContainedByCaseInsensitive => {
             let comparator = required_comparator(operator, &condition.comparator)?;
+            let membership_view = match comparator {
+                ValueExpr::Literal(Value::Array(values)) => Some(ValueExpr::List(values.clone())),
+                _ => None,
+            };
+            let comparator = membership_view.as_ref().unwrap_or(comparator);
             evaluate_column(column, row_count, |value, row| {
                 let left = ScalarValue::from_any_value(value);
                 let contained = scalar_matches_comparator(

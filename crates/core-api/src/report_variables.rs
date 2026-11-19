@@ -1,13 +1,21 @@
-use core_rule_model::{ExecutableRule, RuleType};
-use serde_json::Value;
-
 use crate::operation_fields::operation_name;
 use crate::{
     collect_condition_target_variables, condition_targets_column, engine_semantics,
     has_reference_distinct_operation, push_unique_string,
 };
+use core_rule_model::{ExecutableRule, RuleType};
 
 pub(crate) fn apply_operation_report_variables(rule: &mut ExecutableRule) {
+    if engine_semantics::is_requested_standard_operation_rule(rule)
+        && rule.output_variables.is_empty()
+        && rule
+            .operations
+            .iter()
+            .any(|operation| operation_name(operation).as_deref() == Some("domain_label"))
+    {
+        collect_condition_target_variables(&rule.conditions, &mut rule.output_variables);
+    }
+
     if engine_semantics::uses_check_target_report_variable_for_ex_end_rule(rule)
         && condition_targets_column(&rule.conditions, "RFXENDTC")
     {
@@ -60,31 +68,5 @@ pub(crate) fn apply_metadata_report_variables(rule: &mut ExecutableRule) {
     collect_condition_target_variables(&rule.conditions, &mut variables);
     if !variables.is_empty() {
         rule.output_variables = variables;
-    }
-}
-
-pub(crate) fn apply_requested_standard_operation_semantics(
-    rule: &mut ExecutableRule,
-    standard: &Option<String>,
-) {
-    if !engine_semantics::is_requested_standard_operation_rule(rule) {
-        return;
-    }
-
-    let Some(standard) = standard.as_deref() else {
-        return;
-    };
-
-    if standard.eq_ignore_ascii_case("SENDIG") {
-        for operation in &mut rule.operations {
-            if operation_name(operation).as_deref() == Some("domain_label") {
-                operation.fields.insert(
-                    "domain_label_source".to_owned(),
-                    Value::String("domain".to_owned()),
-                );
-            }
-        }
-        push_unique_string(&mut rule.output_variables, "--CAT");
-        push_unique_string(&mut rule.output_variables, "DOMAIN");
     }
 }

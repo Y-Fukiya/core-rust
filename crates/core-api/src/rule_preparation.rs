@@ -2,24 +2,23 @@ use core_rule_model::{Condition, ConditionGroup, ExecutableRule, Operator, Value
 use serde_json::Value;
 
 use crate::cdisc_context::{apply_cdisc_context_to_group, CdiscContext};
+use crate::domain_labels::bind_standard_domain_labels;
 use crate::engine_semantics;
-use crate::report_variables::{
-    apply_metadata_report_variables, apply_operation_report_variables,
-    apply_requested_standard_operation_semantics,
-};
+use crate::report_variables::{apply_metadata_report_variables, apply_operation_report_variables};
 use crate::usdm_hand_ports::apply_usdm_hand_port_semantics;
 
 pub(crate) fn prepare_rule_for_execution(
     rule: &ExecutableRule,
     context: &CdiscContext,
-    standard: &Option<String>,
+    standard: Option<&str>,
+    version: Option<&str>,
 ) -> ExecutableRule {
     let mut rule = prepare_rule_with_cdisc_context(rule, context);
     apply_usdm_hand_port_semantics(&mut rule);
     apply_open_rules_relationship_semantics(&mut rule);
     apply_trial_summary_value_null_flavor_semantics(&mut rule);
     apply_unscheduled_death_ds_flag_semantics(&mut rule);
-    apply_requested_standard_operation_semantics(&mut rule, standard);
+    bind_standard_domain_labels(&mut rule, standard, version);
     apply_entity_instance_type_literals(&mut rule);
     apply_metadata_report_variables(&mut rule);
     apply_operation_report_variables(&mut rule);

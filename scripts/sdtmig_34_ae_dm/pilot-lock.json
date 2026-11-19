@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "standard": "sdtmig",
+  "standard_version": "3.4",
+  "rule_source": {
+    "repository": "https://github.com/cdisc-org/core-contributor",
+    "commit": "94963e01df448f05bdbbc43a482661d4f30f7dac"
+  },
+  "sql": {
+    "version": "1.0.0",
+    "commit": "4a734105540a83f1df80d061df5049bd4b6bda4d",
+    "archive_sha256": "09772a78ed91d62d6f029c6abfaeee48fd68b72b6773673dbe8fd3d44fcaf949"
+  },
+  "datasets": {
+    "AE": {
+      "name": "ae.xpt",
+      "rows": 1191,
+      "sha256": "d7ce20e18e33097e32188063ddc5fbce16d9180b7ea07c3c7882aea1a2384862"
+    },
+    "DM": {
+      "name": "dm.xpt",
+      "rows": 306,
+      "sha256": "481baf47c2747eb996650c7e83ab81ef0b9e99e833b8d404345f999e9e431724"
+    }
+  },
+  "rules": [
+    {
+      "id": "CORE-000087",
+      "domain": "AE",
+      "sha256": "d42e03b22edee3b1518d776eaaf1179e1ea78973a8a7ed3012bf79b8b5fdfc1c",
+      "variables": [
+        "AETERM",
+        "AESER"
+      ],
+      "control": {
+        "folder": "087",
+        "row": 2,
+        "seq": 2,
+        "column": "AESER",
+        "before": "N",
+        "after": "X",
+        "sha256": "d3e2004cb07b2d615f060334f0d31bdf94e4401ec60010db0590f9061f476b9d"
+      }
+    },
+    {
+      "id": "CORE-000119",
+      "domain": "DM",
+      "sha256": "cf1ff0aa5c31c5b25e7741e4ad92c03cd94316c4079cc21ebc1d9a6c7eeb4339",
+      "variables": [
+        "ARMCD",
+        "ARM"
+      ],
+      "control": {
+        "folder": "119",
+        "row": 12,
+        "seq": null,
+        "column": "ARMCD",
+        "before": "Pbo",
+        "after": "",
+        "sha256": "ce15b8f2ac8589b965762b44e479debe1846e3f9371781c3917efc07e7ea7b90"
+      }
+    },
+    {
+      "id": "CORE-000127",
+      "domain": "AE",
+      "sha256": "302967d9fcbee8f16768401650be12c7a04430c6717871f781e1b716efc35286",
+      "variables": [
+        "AESHOSP"
+      ],
+      "control": {
+        "folder": "127",
+        "row": 7,
+        "seq": 4,
+        "column": "AESHOSP",
+        "before": "N",
+        "after": "X",
+        "sha256": "445ad8f38a9f9dd8089a8830babd5d2d0fd8b81b0c610d64946c2be2b869455d"
+      }
+    },
+    {
+      "id": "CORE-000185",
+      "domain": "DM",
+      "sha256": "e45cfa01accd40c7283f06ac7c4750b84fff0dec0ef5adc64d4f6747ccf2e0c5",
+      "variables": [
+        "ACTARMCD"
+      ],
+      "control": {
+        "folder": "185",
+        "row": 19,
+        "seq": null,
+        "column": "ACTARMCD",
+        "before": "Scrnfail",
+        "after": "ABCDEFGHIJKLMNOPQRSTU",
+        "sha256": "edc0a03517546900684ff0aeb44d009ee2e57ccab63c5c8970896d170b2751a2"
+      }
+    },
+    {
+      "id": "CORE-000189",
+      "domain": "DM",
+      "sha256": "f2462a218215e57b251533e15723a4cd4a4819cc493fd485337dd0ad0e7c1058",
+      "variables": [
+        "AGE",
+        "AGEU"
+      ],
+      "control": {
+        "folder": "189",
+        "row": 23,
+        "seq": null,
+        "column": "AGEU",
+        "before": "YEARS",
+        "after": "",
+        "sha256": "1ed34e3c0cb1de79003cb37013912a569d58607062734df21d92a15e54618b91"
+      }
+    }
+  ]
+}

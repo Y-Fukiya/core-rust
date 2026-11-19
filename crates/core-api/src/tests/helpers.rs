@@ -81,7 +81,7 @@ pub(super) fn write_test_xpt_char_dataset(
     push_xpt_card(
         &mut bytes,
         &format!(
-            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!{:030}",
+            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000{:4}00000000000000000000",
             columns.len()
         ),
     );

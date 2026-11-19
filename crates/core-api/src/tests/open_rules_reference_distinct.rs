@@ -1,10 +1,261 @@
 use std::fs;
 
-use core_engine::{ExecutionStatus, SkippedReason};
+use core_engine::{ExecutionStatus, RuleValidationResult, SkippedReason};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use crate::{run_validation, DatasetLoader, ValidateRequest};
+
+#[test]
+fn run_validation_core_000609_uses_one_tx_set_across_dm_relref_and_tx() {
+    let datasets: &[(&str, &[&str])] = &[
+        ("DM", &["A1", "a1", "NON_TX", "A2", ""]),
+        ("RELREF", &["NON_TX", "A2", "", "a2", "A1"]),
+        ("TX", &["A1", "", "A2", "A1"]),
+    ];
+    for compat in [false, true] {
+        let results = run_core_000609_fixture(datasets, compat);
+        assert_core_000609_findings(
+            &results,
+            &[("DM", &[2, 3, 5]), ("RELREF", &[1, 3, 4]), ("TX", &[2])],
+            compat,
+        );
+    }
+}
+
+#[test]
+fn run_validation_core_000609_skips_when_tx_is_absent() {
+    let datasets: &[(&str, &[&str])] = &[("DM", &["A1"]), ("RELREF", &[""])];
+    for compat in [false, true] {
+        let results = run_core_000609_fixture(datasets, compat);
+        assert_eq!(results.len(), 1, "compat={compat}: {results:?}");
+        let result = &results[0];
+        assert_eq!(result.rule_id, "CORE-000609");
+        assert_eq!(
+            result.execution_status,
+            ExecutionStatus::Skipped,
+            "compat={compat}"
+        );
+        assert_eq!(result.error_count, 0);
+        assert!(result.errors.is_empty());
+    }
+}
+
+#[test]
+fn run_validation_core_000609_reports_blank_when_tx_is_the_only_dataset() {
+    for compat in [false, true] {
+        let results = run_core_000609_fixture(&[("TX", &["A1", "", "A2"])], compat);
+        assert_core_000609_findings(&results, &[("TX", &[2])], compat);
+    }
+}
+
+#[test]
+fn run_validation_core_000609_rejects_all_rows_when_tx_has_no_non_empty_setcd() {
+    let datasets: &[(&str, &[&str])] = &[("DM", &["A1", ""]), ("TX", &["", ""])];
+    for compat in [false, true] {
+        let results = run_core_000609_fixture(datasets, compat);
+        assert_core_000609_findings(&results, &[("DM", &[1, 2]), ("TX", &[1, 2])], compat);
+    }
+}
+
+#[test]
+fn run_validation_core_000609_preserves_csv_setcd_and_ignores_lookalike_columns() {
+    let results = run_core_000609_generic_csv(&[CORE_000609_RULE], TX_WITH_SETCD_LOOKALIKE);
+    let dm = results
+        .iter()
+        .find(|result| result.dataset == "DM")
+        .expect("DM result");
+    assert_eq!(dm.execution_status, ExecutionStatus::Failed);
+    assert_eq!(
+        dm.errors.iter().map(|issue| issue.row).collect::<Vec<_>>(),
+        [Some(2), Some(3)]
+    );
+    assert_eq!(
+        dm.execution_provenance.as_deref(),
+        Some("rule_specific_engine_semantics")
+    );
+    let tx = results
+        .iter()
+        .find(|result| result.dataset == "TX")
+        .expect("TX result");
+    assert_eq!(tx.execution_status, ExecutionStatus::Passed);
+}
+
+#[test]
+fn run_validation_core_000609_does_not_claim_the_adapter_for_a_different_check() {
+    let rule = CORE_000609_RULE.replace(
+        "operator: is_not_contained_by\n      value: $tx_setcd",
+        "operator: empty",
+    );
+    let results = run_core_000609_generic_csv(&[&rule], TX_WITH_SETCD_LOOKALIKE);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(
+        results[0].execution_provenance.as_deref(),
+        Some("generic_engine")
+    );
+}
+
+#[test]
+fn run_validation_core_000609_keeps_other_rules_on_the_inferred_csv_values() {
+    let grouped_distinct = r#"Core:
+  Id: CORE-000891
+  Status: Published
+Scope:
+  Domains:
+    Include: [TX]
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TX
+    group: [SETCD]
+    id: $txparmcd
+    name: TXPARMCD
+    operator: distinct
+Check:
+  name: $txparmcd
+  operator: does_not_contain
+  value: ARMCD
+Outcome:
+  Message: Each group must contain ARMCD
+  Output Variables: [SETCD, $txparmcd]
+"#;
+    let tx = "SETCD,TXPARMCD\n1E2,ARMCD\n1e2,SPECIES\n";
+    let alone = run_core_000609_generic_csv(&[grouped_distinct], tx);
+    let mixed = run_core_000609_generic_csv(&[CORE_000609_RULE, grouped_distinct], tx);
+    assert_eq!(alone.len(), 1);
+    assert_eq!(alone[0].execution_status, ExecutionStatus::Passed);
+    assert_eq!(
+        mixed.iter().find(|result| result.rule_id == "CORE-000891"),
+        Some(&alone[0])
+    );
+    assert!(mixed.iter().any(|result| {
+        result.rule_id == "CORE-000609" && result.execution_status == ExecutionStatus::Failed
+    }));
+}
+
+const TX_WITH_SETCD_LOOKALIKE: &str = "$SETCD,SETCD,TXPARMCD\nA1,1E2,ARMCD\nA1,1e2,SPECIES\n";
+
+fn run_core_000609_generic_csv(rules: &[&str], tx: &str) -> Vec<RuleValidationResult> {
+    let dir = tempdir().expect("tempdir");
+    let rule_paths = rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| {
+            let path = dir.path().join(format!("rule_{index}.yml"));
+            fs::write(&path, rule).expect("write rule");
+            path
+        })
+        .collect();
+    let tx_path = dir.path().join("tx.csv");
+    let dm_path = dir.path().join("dm.csv");
+    fs::write(&tx_path, tx).expect("write TX");
+    fs::write(&dm_path, "$SETCD,SETCD\nA1,1E2\n1E2,A1\n1E2,1e+2\n").expect("write DM");
+    run_validation(ValidateRequest {
+        rule_paths,
+        dataset_paths: vec![dm_path, tx_path],
+        ..Default::default()
+    })
+    .expect("run CORE-000609 with generic CSV")
+    .results
+}
+
+const CORE_000609_RULE: &str = r#"Core:
+  Id: CORE-000609
+  Status: Published
+Scope:
+  Classes:
+    Include: [ALL]
+  Domains:
+    Include: [ALL]
+  Use Case: NONCLIN
+Sensitivity: Record
+Rule Type: Record Data
+Operations:
+  - domain: TX
+    id: $tx_setcd
+    name: SETCD
+    operator: distinct
+Check:
+  all:
+    - name: SETCD
+      operator: is_not_contained_by
+      value: $tx_setcd
+Outcome:
+  Message: SETCD must match a value in TX
+  Output Variables: [SETCD, $tx_setcd]
+"#;
+
+fn run_core_000609_fixture(
+    datasets: &[(&str, &[&str])],
+    compat: bool,
+) -> Vec<RuleValidationResult> {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("CORE-000609.yml");
+    let data_dir = dir.path().join("data");
+    fs::create_dir(&data_dir).expect("data dir");
+    fs::write(&rule_path, CORE_000609_RULE).expect("write CORE-000609 rule");
+    let mut manifest = String::from("Filename,Label\n");
+    let mut variables = String::from("dataset,variable,label,type,length\n");
+    for &(domain, setcds) in datasets {
+        let filename = domain.to_ascii_lowercase();
+        manifest.push_str(&format!("{filename},{domain}\n"));
+        variables.push_str(&format!(
+            "{filename},DOMAIN,Domain,Char,8\n{filename},SETCD,Set Code,Char,16\n"
+        ));
+        let mut csv = String::from("DOMAIN,SETCD\n");
+        for setcd in setcds {
+            csv.push_str(&format!("{domain},{setcd}\n"));
+        }
+        fs::write(data_dir.join(format!("{filename}.csv")), csv).expect("write dataset CSV");
+    }
+    fs::write(data_dir.join("_datasets.csv"), manifest).expect("write dataset manifest");
+    fs::write(data_dir.join("_variables.csv"), variables).expect("write variable schema");
+
+    run_validation(ValidateRequest {
+        rule_paths: vec![rule_path],
+        dataset_paths: vec![data_dir],
+        dataset_loader: DatasetLoader::OpenRulesDataDir,
+        open_rules_oracle_compat: compat,
+        ..Default::default()
+    })
+    .expect("run CORE-000609")
+    .results
+}
+
+fn assert_core_000609_findings(
+    results: &[RuleValidationResult],
+    expected: &[(&str, &[usize])],
+    compat: bool,
+) {
+    assert_eq!(
+        results.len(),
+        expected.len(),
+        "compat={compat}: {results:?}"
+    );
+    for &(dataset, rows) in expected {
+        let result = results
+            .iter()
+            .find(|result| result.dataset == dataset)
+            .unwrap_or_else(|| panic!("missing {dataset} result, compat={compat}: {results:?}"));
+        assert_eq!(result.rule_id, "CORE-000609");
+        assert_eq!(
+            result.execution_status,
+            ExecutionStatus::Failed,
+            "{dataset}, compat={compat}"
+        );
+        assert_eq!(result.error_count, rows.len(), "{dataset}, compat={compat}");
+        let mut actual_rows = Vec::new();
+        for issue in &result.errors {
+            assert_eq!(issue.rule_id, "CORE-000609");
+            assert_eq!(issue.dataset, dataset);
+            assert_eq!(issue.variables, ["SETCD", "$tx_setcd"]);
+            actual_rows.push(issue.row.expect("record row"));
+        }
+        actual_rows.sort_unstable();
+        assert_eq!(actual_rows, rows, "{dataset}, compat={compat}");
+    }
+}
 
 #[test]
 fn run_validation_core_000660_passes_absent_to_reference_distinct_from_scoped_values() {

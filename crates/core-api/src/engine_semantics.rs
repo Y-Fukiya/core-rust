@@ -1,5 +1,7 @@
 use core_rule_model::ExecutableRule;
 
+pub(crate) const CORE_000609: &str = "CORE-000609";
+
 pub(crate) const CORE_000015: &str = "CORE-000015";
 pub(crate) const CORE_000007: &str = "CORE-000007";
 pub(crate) const CORE_000025: &str = "CORE-000025";
@@ -11,7 +13,6 @@ pub(crate) const CORE_000039: &str = "CORE-000039";
 pub(crate) const CORE_000095: &str = "CORE-000095";
 pub(crate) const CORE_000096: &str = "CORE-000096";
 pub(crate) const CORE_000098: &str = "CORE-000098";
-pub(crate) const CORE_000124: &str = "CORE-000124";
 pub(crate) const CORE_000138: &str = "CORE-000138";
 pub(crate) const CORE_000139: &str = "CORE-000139";
 pub(crate) const CORE_000140: &str = "CORE-000140";
@@ -63,7 +64,6 @@ pub(crate) const CORE_000654: &str = "CORE-000654";
 pub(crate) const CORE_000660: &str = "CORE-000660";
 pub(crate) const CORE_000670: &str = "CORE-000670";
 pub(crate) const CORE_000676: &str = "CORE-000676";
-pub(crate) const CORE_000677: &str = "CORE-000677";
 pub(crate) const CORE_000678: &str = "CORE-000678";
 pub(crate) const CORE_000690: &str = "CORE-000690";
 pub(crate) const CORE_000700: &str = "CORE-000700";
@@ -258,7 +258,6 @@ pub(crate) fn uses_csv_line_record_numbers(rule: &ExecutableRule) -> bool {
             | CORE_000037
             | CORE_000038
             | CORE_000044
-            | CORE_000124
             | CORE_000140
             | CORE_000147
             | CORE_000148
@@ -443,10 +442,6 @@ pub(crate) fn is_cm_dataset_oracle_result_rule(rule: &ExecutableRule) -> bool {
 
 pub(crate) fn is_pp_dataset_oracle_result_rule(rule: &ExecutableRule) -> bool {
     rule.core_id == CORE_000466
-}
-
-pub(crate) fn is_pooldef_poolid_oracle_result_rule(rule: &ExecutableRule) -> bool {
-    matches!(rule.core_id.as_str(), CORE_000677 | CORE_000896)
 }
 
 pub(crate) fn is_idvarval_rdomain_reference_rule(rule: &ExecutableRule) -> bool {

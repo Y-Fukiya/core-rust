@@ -166,9 +166,9 @@ fn load_xpt_dataset_rejects_short_file() {
 }
 
 #[test]
-fn load_xpt_dataset_rejects_excessive_namestr_count_before_allocation() {
+fn load_xpt_dataset_rejects_maximum_namestr_count_without_descriptors() {
     let dir = tempdir().expect("tempdir");
-    let path = dir.path().join("too-many-vars.xpt");
+    let path = dir.path().join("missing-descriptors.xpt");
     let mut bytes = Vec::new();
     push_xpt_card(
         &mut bytes,
@@ -176,17 +176,14 @@ fn load_xpt_dataset_rejects_excessive_namestr_count_before_allocation() {
     );
     push_xpt_card(
         &mut bytes,
-        &format!(
-            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!{:030}",
-            10_001
-        ),
+        "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000999900000000000000000000",
     );
     fs::write(&path, bytes).expect("write xpt");
 
-    let error = load_xpt_dataset(&path).expect_err("excessive variable count rejected");
+    let error = load_xpt_dataset(&path).expect_err("missing descriptors rejected");
 
     assert!(
-        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("declares too many variables"))
+        matches!(error, DataError::InvalidDatasetPackage(message) if message.contains("ended before all NAMESTR records"))
     );
 }
 
@@ -201,7 +198,7 @@ fn load_xpt_dataset_rejects_truncated_namestr_records() {
     );
     push_xpt_card(
         &mut bytes,
-        "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000000000000000000000000001",
+        "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000000100000000000000000000",
     );
     bytes.extend([0_u8; XPT_NAMESTR_LEN - 1]);
     fs::write(&path, bytes).expect("write xpt");

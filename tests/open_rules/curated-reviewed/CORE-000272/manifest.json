@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "rule_id": "CORE-000272",
+  "upstream_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
+  "source_sha256": "c4013e3abe5f8500cd4211b6313c065f8c64ac7bbd7ed8ab787cc56cba90e4cc",
+  "replacements": {
+    "negative/03": "5fcc1740ff1fb4c31a5b56596fc271574c9f45f550dc895279c8282d097dfaf4",
+    "negative/04": "5fcc1740ff1fb4c31a5b56596fc271574c9f45f550dc895279c8282d097dfaf4"
+  }
+}

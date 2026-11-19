@@ -1870,7 +1870,7 @@ fn write_test_xpt(
     push_xpt_card(
         &mut bytes,
         &format!(
-            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!{:030}",
+            "HEADER RECORD*******NAMESTR HEADER RECORD!!!!!!!000000{:04}00000000000000000000",
             variables.len()
         ),
     );

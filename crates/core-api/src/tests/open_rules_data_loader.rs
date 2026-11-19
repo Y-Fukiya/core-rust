@@ -451,6 +451,85 @@ Outcome:
 }
 
 #[test]
+fn run_validation_core_000124_keeps_csv_data_row_separate_from_sequence() {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("CORE-000124.yml");
+    let data_dir = dir.path().join("data");
+    fs::create_dir(&data_dir).expect("create data dir");
+    fs::write(
+        &rule_path,
+        r#"Core:
+  Id: CORE-000124
+  Status: Published
+Scope:
+  Domains:
+    Include: [AE]
+  Classes:
+    Include: [EVENTS]
+Sensitivity: Record
+Rule Type: Record Data
+Check:
+  all:
+    - name: AESCONG
+      operator: non_empty
+    - name: AESCONG
+      operator: is_not_contained_by
+      value:
+        - Y
+        - N
+      value_is_literal: true
+Outcome:
+  Message: AESCONG is populated, but not equal to 'Y' or 'N'.
+  Output Variables: [AESCONG]
+"#,
+    )
+    .expect("write rule");
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        "Filename,Label\nae,Adverse Events\n",
+    )
+    .expect("write datasets csv");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        "dataset,variable,label,type,length\nAE,USUBJID,Unique Subject Identifier,Char,40\nAE,AESEQ,Sequence Number,Num,8\nAE,AESCONG,Congenital Anomaly,Char,1\n",
+    )
+    .expect("write variables csv");
+
+    for (rows, expected_row) in [
+        ("S1,73,U\nS2,11,Y\nS3,12,N\nS4,13,\n", 1),
+        ("S2,11,Y\nS1,73,U\nS3,12,N\nS4,13,\n", 2),
+    ] {
+        fs::write(
+            data_dir.join("ae.csv"),
+            format!("USUBJID,AESEQ,AESCONG\n{rows}"),
+        )
+        .expect("write dataset csv");
+
+        for oracle_compat in [false, true] {
+            let outcome = run_validation(ValidateRequest {
+                rule_paths: vec![rule_path.clone()],
+                dataset_paths: vec![data_dir.clone()],
+                dataset_loader: DatasetLoader::OpenRulesDataDir,
+                open_rules_oracle_compat: oracle_compat,
+                ..Default::default()
+            })
+            .expect("run validation");
+
+            assert_eq!(outcome.results.len(), 1);
+            let result = &outcome.results[0];
+            assert_eq!(result.execution_status, ExecutionStatus::Failed);
+            assert_eq!(result.error_count, 1);
+            let [issue] = result.errors.as_slice() else {
+                panic!("expected only the invalid AESCONG record");
+            };
+            assert_eq!(issue.usubjid.as_deref(), Some("S1"));
+            assert_eq!(issue.seq.as_deref(), Some("73"));
+            assert_eq!(issue.row, Some(expected_row), "compat={oracle_compat}");
+        }
+    }
+}
+
+#[test]
 fn run_validation_reports_previous_record_for_selected_open_rules_row_scope_rules() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");

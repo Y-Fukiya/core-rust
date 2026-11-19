@@ -682,10 +682,7 @@ fn report_missing_column_zero_record_result(
     if result.execution_status != core_engine::ExecutionStatus::Failed
         || result.errors.is_empty()
         || !engine_semantics::uses_missing_column_zero_record_result(rule)
-        || !matches!(
-            rule.sensitivity,
-            Some(Sensitivity::Record) | Some(Sensitivity::Dataset)
-        )
+        || !matches!(rule.sensitivity, Some(Sensitivity::Record))
         || rule.rule_type != RuleType::RecordData
     {
         return;
@@ -942,7 +939,6 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
     let message = outcome_message(rule).unwrap_or_else(|| format!("Rule {} failed", rule.core_id));
     let mut errors = Vec::new();
     for dataset in source_datasets {
-        let source_is_supp = core_000206_is_supp_dataset(dataset);
         let rdomains = dataset_column_values(dataset, "RDOMAIN").unwrap_or_default();
         let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
         let idvars = dataset_column_values(dataset, "IDVAR").unwrap_or_default();
@@ -959,13 +955,6 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
                 continue;
             }
             let usubjid = core_000206_cell(&usubjids, row);
-            if source_is_supp
-                && !core_000206_parent_has_idvarval_any_subject(
-                    datasets, &rdomain, &idvar, &idvarval,
-                )
-            {
-                continue;
-            }
             if core_000206_parent_has_idvarval(datasets, &rdomain, &usubjid, &idvar, &idvarval) {
                 continue;
             }
@@ -974,12 +963,7 @@ pub(crate) fn core_000206_idvarval_rdomain_result(
                 dataset: dataset.metadata.name.clone(),
                 domain: dataset.metadata.domain.clone(),
                 row: Some(row + 1),
-                variables: vec![
-                    "RDOMAIN".to_owned(),
-                    "USUBJID".to_owned(),
-                    "IDVAR".to_owned(),
-                    "IDVARVAL".to_owned(),
-                ],
+                variables: rule.output_variables.clone(),
                 message: message.clone(),
                 usubjid: (!usubjid.is_empty()).then_some(usubjid),
                 seq: None,
@@ -1025,27 +1009,6 @@ fn core_000206_is_source_dataset(dataset: &LoadedDataset) -> bool {
     name == "CO" || name == "RELREC" || name.starts_with("SUPP")
 }
 
-fn core_000206_is_supp_dataset(dataset: &LoadedDataset) -> bool {
-    dataset_metadata_name(dataset)
-        .to_ascii_uppercase()
-        .starts_with("SUPP")
-}
-
-fn core_000206_parent_has_idvarval_any_subject(
-    datasets: &[LoadedDataset],
-    rdomain: &str,
-    idvar: &str,
-    idvarval: &str,
-) -> bool {
-    let Some(parent) = find_dataset(datasets, rdomain) else {
-        return false;
-    };
-    let Ok(parent_values) = dataset_column_values(parent, idvar) else {
-        return false;
-    };
-    (0..parent.summary().row_count).any(|row| core_000206_cell(&parent_values, row) == idvarval)
-}
-
 fn core_000206_parent_has_idvarval(
     datasets: &[LoadedDataset],
     rdomain: &str,
@@ -1080,11 +1043,11 @@ fn core_000206_cell(values: &[Value], row: usize) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) fn core_000677_pooldef_poolid_result(
+pub(crate) fn core_000896_poolid_membership_result(
     rule: &ExecutableRule,
     datasets: &[LoadedDataset],
 ) -> Option<RuleValidationResult> {
-    if !engine_semantics::is_pooldef_poolid_oracle_result_rule(rule) {
+    if rule.core_id != engine_semantics::CORE_000896 {
         return None;
     }
 
@@ -1138,7 +1101,7 @@ pub(crate) fn core_000677_pooldef_poolid_result(
     {
         let poolids = dataset_column_values(dataset, "POOLID").unwrap_or_default();
         let usubjids = dataset_column_values(dataset, "USUBJID").unwrap_or_default();
-        let seq_column = core_000677_sequence_column(dataset);
+        let seq_column = domain_sequence_column(dataset);
         let seq_values = seq_column
             .as_deref()
             .and_then(|column| dataset_column_values(dataset, column).ok())
@@ -1201,7 +1164,7 @@ pub(crate) fn core_000677_pooldef_poolid_result(
     })
 }
 
-pub(crate) fn core_000677_sequence_column(dataset: &LoadedDataset) -> Option<String> {
+pub(crate) fn domain_sequence_column(dataset: &LoadedDataset) -> Option<String> {
     let domain = dataset
         .metadata
         .domain

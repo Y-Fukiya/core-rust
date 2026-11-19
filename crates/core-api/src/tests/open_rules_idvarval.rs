@@ -1,156 +1,190 @@
 use std::fs;
 
-use core_engine::ExecutionStatus;
+use core_engine::{ExecutionStatus, RuleValidationResult};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use crate::{run_validation, DatasetLoader, ValidateRequest};
 
+const PUBLISHED_OUTPUT_VARIABLES: &[&str] = &["RDOMAIN", "IDVAR", "IDVARVAL"];
+
 #[test]
-fn run_validation_reports_core_000206_idvarval_values_missing_from_rdomain_records() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-    write_core_000206_rule(&rules_dir);
-    write_core_000206_open_rules_metadata(&data_dir);
-    fs::write(
-        data_dir.join("co.csv"),
-        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\nS,CO,LB,S001,1,LBGRPID,20\n",
-    )
-    .expect("write co csv");
-    fs::write(
-        data_dir.join("relrec.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\nS,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,2,ONE,2\n",
-    )
-    .expect("write relrec csv");
-    fs::write(
-        data_dir.join("supplb.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\n",
-    )
-    .expect("write supplb csv");
-    fs::write(
-        data_dir.join("lb.csv"),
-        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,321,21\nS,LB,S002,320,20\n",
-    )
-    .expect("write lb csv");
-    fs::write(
-        data_dir.join("ae.csv"),
-        "STUDYID,DOMAIN,USUBJID,AESEQ\nS,AE,S001,1\n",
-    )
-    .expect("write ae csv");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 4);
-    let issues = result
-        .errors
-        .iter()
-        .map(|issue| (issue.dataset.as_str(), issue.row, issue.usubjid.as_deref()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        issues,
-        vec![
-            ("CO", Some(1), Some("S001")),
-            ("RELREC", Some(1), Some("S001")),
-            ("RELREC", Some(2), Some("S001")),
-            ("SUPPLB", Some(1), Some("S001")),
-        ]
+fn core_000206_negative_01_rejects_lb_references_for_the_wrong_subject() {
+    let result = run_core_000206(
+        &[
+            ("co", "S,CO,LB,S001,1,LBGRPID,20\n"),
+            (
+                "relrec",
+                "S,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,2,ONE,2\n",
+            ),
+            ("supplb", "S,LB,S001,LBSEQ,320,LBCLSIG,Y\n"),
+            ("lb", "S,LB,S001,321,21\nS,LB,S002,320,20\n"),
+            ("ae", "S,AE,S001,1\n"),
+        ],
+        PUBLISHED_OUTPUT_VARIABLES,
     );
-    assert!(result
-        .errors
-        .iter()
-        .all(|issue| issue.variables == vec!["RDOMAIN", "USUBJID", "IDVAR", "IDVARVAL"]));
+    assert_core_000206_issues(
+        &result,
+        &[("CO", 1), ("RELREC", 1), ("RELREC", 2), ("SUPPLB", 1)],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
+}
+
+#[test]
+fn core_000206_negative_02_reports_globally_absent_values_and_unknown_idvar_columns() {
+    let result = run_core_000206(
+        &[
+            (
+                "co",
+                "S,CO,LB,S001,1,LBSEQ,320\nS,CO,LB,S001,1,NONSENSE,299\n",
+            ),
+            (
+                "relrec",
+                "S,LB,S001,LBSEQ,320,ONE,1\nS,LB,S001,NONSENSE,299,ONE,1\n",
+            ),
+            ("supplb", "S,LB,S001,LBSEQ,320,LBCLSIG,Y\n"),
+            ("lb", "S,LB,S001,299,\n"),
+            ("ae", ""),
+        ],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
+    assert_core_000206_issues(
+        &result,
+        &[
+            ("CO", 1),
+            ("CO", 2),
+            ("RELREC", 1),
+            ("RELREC", 2),
+            ("SUPPLB", 1),
+        ],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
+}
+
+#[test]
+fn core_000206_negative_03_reports_only_invalid_sibling_rows_once() {
+    let result = run_core_000206(
+        &[
+            ("co", "S,CO,LB,S001,1,LBGRPID,22\nS,CO,AE,S001,2,AESEQ,5\n"),
+            (
+                "relrec",
+                "S,LB,S001,LBSEQ,320,ONE,1\nS,LB,S001,LBSEQ,323,ONE,1\nS,AE,S001,AESEQ,1,ONE,2\n",
+            ),
+            (
+                "supplb",
+                "S,LB,S001,LBSEQ,321,LBCLSIG,Y\nS,LB,S001,LBSEQ,999,LBCLSIG,Y\n",
+            ),
+            (
+                "lb",
+                "S,LB,S001,320,20\nS,LB,S001,321,21\nS,LB,S001,322,22\nS,LB,S002,323,23\n",
+            ),
+            ("ae", "S,AE,S001,1\nS,AE,S001,2\n"),
+        ],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
+    // The official compound-keys control isolates the bad rows from subject-only fanout.
+    assert_core_000206_issues(
+        &result,
+        &[("CO", 2), ("RELREC", 2), ("SUPPLB", 2)],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
 }
 
 #[test]
 fn run_validation_passes_core_000206_when_idvarval_values_exist_in_rdomain_records() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-    write_core_000206_rule(&rules_dir);
-    write_core_000206_open_rules_metadata(&data_dir);
-    fs::write(
-        data_dir.join("co.csv"),
-        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\nS,CO,LB,S001,1,LBGRPID,20\nS,CO,LB,S002,2,LBSEQ,321\n",
-    )
-    .expect("write co csv");
-    fs::write(
-        data_dir.join("relrec.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\nS,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,1,ONE,2\n",
-    )
-    .expect("write relrec csv");
-    fs::write(
-        data_dir.join("supplb.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\n",
-    )
-    .expect("write supplb csv");
-    fs::write(
-        data_dir.join("lb.csv"),
-        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,320,20\nS,LB,S002,321,30\n",
-    )
-    .expect("write lb csv");
-    fs::write(
-        data_dir.join("ae.csv"),
-        "STUDYID,DOMAIN,USUBJID,AESEQ\nS,AE,S001,1\n",
-    )
-    .expect("write ae csv");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
-    assert_eq!(outcome.results[0].error_count, 0);
+    let result = run_core_000206(
+        &[
+            (
+                "co",
+                "S,CO,LB,S001,1,LBGRPID,20\nS,CO,LB,S002,2,LBSEQ,321\n",
+            ),
+            (
+                "relrec",
+                "S,LB,S001,LBSEQ,320,ONE,1\nS,AE,S001,AESEQ,1,ONE,2\n",
+            ),
+            ("supplb", "S,LB,S001,LBSEQ,320,LBCLSIG,Y\n"),
+            ("lb", "S,LB,S001,320,20\nS,LB,S002,321,30\n"),
+            ("ae", "S,AE,S001,1\n"),
+        ],
+        PUBLISHED_OUTPUT_VARIABLES,
+    );
+    assert_eq!(result.execution_status, ExecutionStatus::Passed);
+    assert_eq!(result.error_count, 0);
+    assert!(result.errors.is_empty());
 }
 
 #[test]
-fn run_validation_core_000206_supp_rows_follow_domain_level_oracle_boundary() {
+fn core_000206_legacy_rule_reports_both_missing_supp_references_and_projects_usubjid() {
+    let legacy_output_variables = &["RDOMAIN", "USUBJID", "IDVAR", "IDVARVAL"];
+    let result = run_core_000206(
+        &[
+            ("co", ""),
+            ("relrec", ""),
+            (
+                "supplb",
+                "S,LB,S001,LBSEQ,320,LBCLSIG,Y\nS,LB,S001,LBGRPID,20,LBCLSIG,Y\n",
+            ),
+            ("lb", "S,LB,S001,299,21\nS,LB,S002,319,20\n"),
+            ("ae", ""),
+        ],
+        legacy_output_variables,
+    );
+    assert_core_000206_issues(
+        &result,
+        &[("SUPPLB", 1), ("SUPPLB", 2)],
+        legacy_output_variables,
+    );
+}
+
+fn assert_core_000206_issues(
+    result: &RuleValidationResult,
+    expected_rows: &[(&str, usize)],
+    output_variables: &[&str],
+) {
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    let mut rows = result
+        .errors
+        .iter()
+        .map(|issue| (issue.dataset.as_str(), issue.row.expect("issue row")))
+        .collect::<Vec<_>>();
+    rows.sort_unstable();
+    assert_eq!(rows.as_slice(), expected_rows);
+    assert_eq!(result.error_count, expected_rows.len());
+    for issue in &result.errors {
+        assert_eq!(issue.rule_id, "CORE-000206");
+        assert_eq!(issue.usubjid.as_deref(), Some("S001"));
+        let variables = issue
+            .variables
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(variables.as_slice(), output_variables);
+    }
+}
+
+fn run_core_000206(datasets: &[(&str, &str)], output_variables: &[&str]) -> RuleValidationResult {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
     fs::create_dir_all(&rules_dir).expect("rules dir");
     fs::create_dir_all(&data_dir).expect("data dir");
-    write_core_000206_rule(&rules_dir);
+    write_core_000206_rule(&rules_dir, output_variables);
     write_core_000206_open_rules_metadata(&data_dir);
-    fs::write(
-        data_dir.join("co.csv"),
-        "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL\n",
-    )
-    .expect("write co csv");
-    fs::write(
-        data_dir.join("relrec.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID\n",
-    )
-    .expect("write relrec csv");
-    fs::write(
-        data_dir.join("supplb.csv"),
-        "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL\nS,LB,S001,LBSEQ,320,LBCLSIG,Y\nS,LB,S001,LBGRPID,20,LBCLSIG,Y\n",
-    )
-    .expect("write supplb csv");
-    fs::write(
-        data_dir.join("lb.csv"),
-        "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID\nS,LB,S001,299,21\nS,LB,S002,319,20\n",
-    )
-    .expect("write lb csv");
-    fs::write(data_dir.join("ae.csv"), "STUDYID,DOMAIN,USUBJID,AESEQ\n").expect("write ae csv");
+    for &(dataset, rows) in datasets {
+        let header = match dataset {
+            "co" => "STUDYID,DOMAIN,RDOMAIN,USUBJID,COSEQ,IDVAR,IDVARVAL",
+            "relrec" => "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID",
+            "supplb" => "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL",
+            "lb" => "STUDYID,DOMAIN,USUBJID,LBSEQ,LBGRPID",
+            "ae" => "STUDYID,DOMAIN,USUBJID,AESEQ",
+            _ => panic!("unexpected fixture dataset: {dataset}"),
+        };
+        fs::write(
+            data_dir.join(format!("{dataset}.csv")),
+            format!("{header}\n{rows}"),
+        )
+        .unwrap_or_else(|error| panic!("write {dataset} csv: {error}"));
+    }
 
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
@@ -161,17 +195,16 @@ fn run_validation_core_000206_supp_rows_follow_domain_level_oracle_boundary() {
     .expect("run validation");
 
     assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.errors[0].dataset, "SUPPLB");
-    assert_eq!(result.errors[0].row, Some(2));
+    let result = outcome.results.into_iter().next().expect("rule result");
+    assert_eq!(result.rule_id, "CORE-000206");
+    result
 }
 
-fn write_core_000206_rule(rules_dir: &std::path::Path) {
+fn write_core_000206_rule(rules_dir: &std::path::Path, output_variables: &[&str]) {
     fs::write(
         rules_dir.join("CORE-000206.yml"),
-        r#"
+        format!(
+            r#"
 Core:
   Id: CORE-000206
   Status: Published
@@ -187,20 +220,14 @@ Match Datasets:
   - Child: true
     Keys:
       - USUBJID
-      - IDVAR
-      - IDVARVAL
     Name: SUPP--
   - Child: true
     Keys:
       - USUBJID
-      - IDVAR
-      - IDVARVAL
     Name: CO
   - Child: true
     Keys:
       - USUBJID
-      - IDVAR
-      - IDVARVAL
     Name: RELREC
 Check:
   all:
@@ -215,12 +242,10 @@ Check:
       value_is_reference: true
 Outcome:
   Message: IDVARVAL does not equal a value of the variable referenced by IDVAR in domain = RDOMAIN.
-  Output Variables:
-    - RDOMAIN
-    - USUBJID
-    - IDVAR
-    - IDVARVAL
+  Output Variables: [{}]
 "#,
+            output_variables.join(", ")
+        ),
     )
     .expect("write CORE-000206 rule");
 }

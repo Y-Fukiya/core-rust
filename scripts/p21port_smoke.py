@@ -23,15 +23,22 @@ SMOKE_STEP_TIMEOUT_SECONDS = 60
 
 
 def _run(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        cwd=ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=SMOKE_STEP_TIMEOUT_SECONDS,
-    )
+    try:
+        return subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=SMOKE_STEP_TIMEOUT_SECONDS,
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout:
+            print(exc.stdout, end="", file=sys.stdout)
+        if exc.stderr:
+            print(exc.stderr, end="", file=sys.stderr)
+        raise
 
 
 def _run_expect_failure(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:

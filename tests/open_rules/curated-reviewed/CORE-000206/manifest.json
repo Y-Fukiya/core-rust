@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "rule_id": "CORE-000206",
+  "upstream_sha": "7f7fae49376b3d023563ebb6c36a3b392d6e649f",
+  "source_sha256": "54072963bb96ba50f7386f1dd66e6d23b16aa8e5a59d54f7c8b055df543e079b",
+  "replacements": {
+    "negative/02": "a859911b860273185da6551489749f35d2731a0a180a1b0c311a00b9c733e4e3"
+  }
+}

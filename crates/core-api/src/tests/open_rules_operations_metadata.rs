@@ -4,7 +4,7 @@ use core_engine::ExecutionStatus;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
-use crate::{run_validation, ValidateRequest};
+use crate::{run_validation, DatasetLoader, ValidateRequest};
 
 #[test]
 fn run_validation_executes_core_000690_label_uniqueness_direction() {
@@ -101,7 +101,8 @@ fn run_validation_executes_domain_label_operation() {
   "Operations": [
     {
       "id": "$domain_label",
-      "operator": "domain_label"
+      "operator": "domain_label",
+      "model_domain_labels": { "LB": "LB" }
     }
   ],
   "Check": {
@@ -160,7 +161,10 @@ fn run_validation_executes_core_000272_domain_label_cat_rule() {
         r#"{
   "Core": { "Id": "CORE-000272", "Status": "Published" },
   "Authorities": [
-    { "Standards": [{ "Name": "SDTMIG", "Version": "3.4" }] }
+    { "Standards": [
+      { "Name": "SDTMIG", "Version": "3.4" },
+      { "Name": "SDTMIG", "Version": "99.0" }
+    ] }
   ],
   "Scope": { "Domains": { "Include": ["LB"] } },
   "Sensitivity": "Record",
@@ -176,7 +180,7 @@ fn run_validation_executes_core_000272_domain_label_cat_rule() {
     "operator": "equal_to_case_insensitive",
     "value": "$domain_label"
   },
-  "Outcome": { "Message": "--CAT is equal to DOMAIN." }
+  "Outcome": { "Message": "--CAT is equal to DOMAIN.", "Output Variables": ["--CAT"] }
 }"#,
     )
     .expect("write domain label rule");
@@ -189,41 +193,42 @@ fn run_validation_executes_core_000272_domain_label_cat_rule() {
     {
       "filename": "lb.xpt",
       "domain": "LB",
-      "label": "Laboratory Test Results",
+      "label": "Local Lab Label",
       "records": {
-        "STUDYID": ["S1"],
-        "USUBJID": ["SUBJ1"],
-        "LBCAT": ["Laboratory Test Results"]
+        "STUDYID": ["S1", "S1"],
+        "USUBJID": ["SUBJ1", "SUBJ1"],
+        "LBCAT": ["Laboratory Test Results", "Local Lab Label"]
       }
     }
   ]
 }"#,
     )
-    .expect("write domain label oracle gap data");
+    .expect("write domain label data");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        include_rules: vec!["CORE-000272".to_owned()],
-        standard: Some("SDTMIG".to_owned()),
-        standard_version: Some("3.4".to_owned()),
-        ..Default::default()
-    })
-    .expect("run validation");
+    // The synthetic version is admitted by the rule but has no standard label.
+    for (version, expected_row) in [("3.4", 1), ("99.0", 2)] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            include_rules: vec!["CORE-000272".to_owned()],
+            standard: Some("SDTMIG".to_owned()),
+            standard_version: Some(version.to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(
-        outcome.results[0].execution_status,
-        ExecutionStatus::Failed,
-        "{:?}",
-        outcome.results[0]
-    );
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].row, Some(1));
+        assert_eq!(outcome.results.len(), 1, "SDTMIG {version}");
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].row, Some(expected_row), "SDTMIG {version}");
+        assert_eq!(result.errors[0].variables, vec!["LBCAT".to_owned()]);
+    }
 }
 
 #[test]
-fn run_validation_executes_core_000272_sendig_domain_name_cat_rule() {
+fn run_validation_executes_core_000272_standard_domain_label_matrix() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -235,26 +240,33 @@ fn run_validation_executes_core_000272_sendig_domain_name_cat_rule() {
         r#"{
   "Core": { "Id": "CORE-000272", "Status": "Published" },
   "Authorities": [
-    { "Standards": [{ "Name": "SENDIG", "Version": "3.1" }] }
+    { "Standards": [
+      { "Name": "SENDIG", "Version": "3.1" },
+      { "Name": "SDTMIG", "Version": "3.2" },
+      { "Name": "SDTMIG", "Version": "3.4" }
+    ] }
   ],
   "Scope": { "Domains": { "Include": ["LB"] } },
   "Sensitivity": "Record",
   "Rule Type": "Record Data",
   "Operations": [
     {
-      "id": "$domain_label",
+      "id": "$domain_name",
       "operator": "domain_label"
     }
   ],
   "Check": {
     "name": "--CAT",
     "operator": "equal_to_case_insensitive",
-    "value": "$domain_label"
+    "value": "$domain_name"
   },
-  "Outcome": { "Message": "--CAT is equal to DOMAIN." }
+  "Outcome": {
+    "Message": "--CAT is equal to DOMAIN.",
+    "Output Variables": ["--CAT", "$domain_name"]
+  }
 }"#,
     )
-    .expect("write SENDIG domain name rule");
+    .expect("write domain name rule");
 
     let dataset_path = data_dir.join("datasets.json");
     fs::write(
@@ -266,17 +278,104 @@ fn run_validation_executes_core_000272_sendig_domain_name_cat_rule() {
       "domain": "LB",
       "label": "Laboratory Test Results",
       "records": {
-        "STUDYID": ["S1"],
-        "DOMAIN": ["LB"],
-        "USUBJID": ["SUBJ1"],
-        "LBSEQ": [1],
-        "LBCAT": ["LB"]
+        "STUDYID": ["CDISC-TEST", "CDISC-TEST", "CDISC-TEST", "CDISC-TEST"],
+        "DOMAIN": ["LB", "LB", "LB", "LB"],
+        "USUBJID": ["CDISC-TEST-001", "CDISC-TEST-001", "CDISC-TEST-001", "CDISC-TEST-001"],
+        "LBSEQ": [1, 2, 3, 4],
+        "LBCAT": ["LB", "Laboratory", "Labs", "Laboratory Test Results"]
       }
     }
   ]
 }"#,
     )
-    .expect("write SENDIG domain name data");
+    .expect("write mixed LB data");
+
+    for (standard, version, expected_row, expected_seq) in [
+        ("SENDIG", "3.1", 2, "2"),
+        ("SDTMIG", "3.2", 3, "3"),
+        ("SDTMIG", "3.4", 4, "4"),
+    ] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            include_rules: vec!["CORE-000272".to_owned()],
+            standard: Some(standard.to_owned()),
+            standard_version: Some(version.to_owned()),
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1, "{standard} {version}");
+        let result = &outcome.results[0];
+        assert_eq!(
+            result.execution_status,
+            ExecutionStatus::Failed,
+            "{result:#?}"
+        );
+        assert_eq!(result.error_count, 1, "{result:#?}");
+        assert_eq!(result.errors.len(), 1, "{result:#?}");
+        let issue = &result.errors[0];
+        assert_eq!(issue.rule_id, "CORE-000272");
+        assert_eq!(issue.dataset, "LB");
+        assert_eq!(issue.domain.as_deref(), Some("LB"));
+        assert_eq!(issue.row, Some(expected_row), "{standard} {version}");
+        assert_eq!(issue.usubjid.as_deref(), Some("CDISC-TEST-001"));
+        assert_eq!(issue.seq.as_deref(), Some(expected_seq));
+        assert_eq!(
+            issue.variables,
+            vec!["LBCAT".to_owned(), "$domain_name".to_owned()],
+            "{standard} {version}"
+        );
+    }
+}
+
+#[test]
+fn run_validation_reports_core_000272_split_domain_label_check_targets() {
+    let dir = tempdir().expect("tempdir");
+    let rules_dir = dir.path().join("rules");
+    let data_dir = dir.path().join("data");
+    fs::create_dir_all(&rules_dir).expect("rules dir");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    fs::write(
+        rules_dir.join("CORE-000272.json"),
+        r#"{
+  "Core": { "Id": "CORE-000272", "Status": "Published" },
+  "Authorities": [{ "Standards": [{ "Name": "SENDIG", "Version": "3.1" }] }],
+  "Scope": { "Domains": { "Include": ["LBHEM"] } },
+  "Sensitivity": "Record",
+  "Rule Type": "Record Data",
+  "Operations": [{ "id": "$domain_name", "operator": "domain_label" }],
+  "Check": {
+    "all": [
+      { "name": "LBCAT", "operator": "equal_to_case_insensitive", "value": "$domain_name" },
+      { "name": "LBSCAT", "operator": "equal_to_case_insensitive", "value": "$domain_name" }
+    ]
+  },
+  "Outcome": { "Message": "Categories must not repeat the domain label" }
+}"#,
+    )
+    .expect("write domain label rule");
+
+    let dataset_path = data_dir.join("datasets.json");
+    fs::write(
+        &dataset_path,
+        r#"{
+  "datasets": [
+    {
+      "filename": "lbhem.xpt",
+      "domain": "LBHEM",
+      "label": "Local Lab Label",
+      "records": {
+        "DOMAIN": ["LB", "LB", "LB"],
+        "LBCAT": ["Local Lab Label", "Laboratory", "Laboratory"],
+        "LBSCAT": ["Local Lab Label", "Laboratory", "HEMATOLOGY"]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write split LB data");
 
     let outcome = run_validation(ValidateRequest {
         rule_paths: vec![rules_dir],
@@ -289,17 +388,13 @@ fn run_validation_executes_core_000272_sendig_domain_name_cat_rule() {
     .expect("run validation");
 
     assert_eq!(outcome.results.len(), 1);
+    let result = &outcome.results[0];
+    assert_eq!(result.execution_status, ExecutionStatus::Failed);
+    assert_eq!(result.errors.len(), 1);
+    assert_eq!(result.errors[0].row, Some(2));
     assert_eq!(
-        outcome.results[0].execution_status,
-        ExecutionStatus::Failed,
-        "{:?}",
-        outcome.results[0]
-    );
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].row, Some(1));
-    assert_eq!(
-        outcome.results[0].errors[0].variables,
-        vec!["LBCAT".to_owned(), "DOMAIN".to_owned()]
+        result.errors[0].variables,
+        vec!["LBCAT".to_owned(), "LBSCAT".to_owned()]
     );
 }
 
@@ -523,6 +618,121 @@ fn run_validation_executes_study_domains_operation() {
         outcome.results[0].errors[0].variables,
         vec!["RDOMAIN".to_owned()]
     );
+}
+
+#[test]
+fn run_validation_core_000457_checks_supplemental_parent_presence() {
+    let cases = [
+        (
+            "named_headers",
+            Some("STUDYID,DOMAIN,USUBJID\nS1,EC,SUBJ1\n"),
+            ExecutionStatus::Passed,
+            0,
+        ),
+        (
+            "embedded_metadata_without_ec_schema",
+            Some(",,\nStudy Identifier,Domain Abbreviation,Unique Subject Identifier\nChar,Char,Char\n50,50,50\nS1,EC,SUBJ1\n"),
+            ExecutionStatus::Passed,
+            0,
+        ),
+        ("missing_parent", None, ExecutionStatus::Failed, 1),
+    ];
+
+    for (case, parent_csv, expected_status, expected_errors) in cases {
+        let dir = tempdir().expect("tempdir");
+        let rules_dir = dir.path().join("rules");
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&rules_dir).expect("rules dir");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::write(
+            rules_dir.join("CORE-000457.json"),
+            r#"{
+  "Core": { "Id": "CORE-000457", "Status": "Published" },
+  "Scope": {
+    "Classes": { "Include": ["RELATIONSHIP"] },
+    "Domains": { "Include": ["SUPP--"] }
+  },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Record Data",
+  "Operations": [{ "id": "$study_domains", "operator": "study_domains" }],
+  "Check": {
+    "all": [{ "name": "RDOMAIN", "operator": "is_not_contained_by", "value": "$study_domains" }]
+  },
+  "Outcome": {
+    "Message": "RDOMAIN does not correspond to a dataset present in the study",
+    "Output Variables": ["RDOMAIN", "USUBJID"]
+  }
+}"#,
+        )
+        .expect("write rule");
+        let mut manifest =
+            "Filename,Label\ndm,Demographics\nsuppec,Supplemental Qualifiers for Exposure\n"
+                .to_owned();
+        if let Some(csv) = parent_csv {
+            manifest.push_str("ec,Exposure as Collected\n");
+            fs::write(data_dir.join("ec.csv"), csv).expect("write parent csv");
+        }
+        fs::write(data_dir.join("_datasets.csv"), manifest).expect("write datasets csv");
+        fs::write(
+            data_dir.join("_variables.csv"),
+            "dataset,variable,label,type,length\n\
+dm,STUDYID,Study Identifier,Char,50\n\
+dm,DOMAIN,Domain Abbreviation,Char,50\n\
+dm,USUBJID,Unique Subject Identifier,Char,50\n\
+suppec,STUDYID,Study Identifier,Char,50\n\
+suppec,RDOMAIN,Related Domain Abbreviation,Char,6\n\
+suppec,USUBJID,Unique Subject Identifier,Char,50\n",
+        )
+        .expect("write variables csv");
+        fs::write(
+            data_dir.join("dm.csv"),
+            "STUDYID,DOMAIN,USUBJID\nS1,DM,SUBJ1\n",
+        )
+        .expect("write dm csv");
+        fs::write(
+            data_dir.join("suppec.csv"),
+            "STUDYID,RDOMAIN,USUBJID\nS1,EC,SUBJ1\nS1,EC,SUBJ2\n",
+        )
+        .expect("write suppec csv");
+
+        let datasets = core_data::load_open_rules_data_dir(&data_dir).expect("load data");
+        let parent = datasets
+            .iter()
+            .find(|dataset| dataset.metadata.name == "EC");
+        assert_eq!(parent.is_some(), parent_csv.is_some(), "{case}");
+        if let Some(parent) = parent {
+            assert_eq!(parent.metadata.domain.as_deref(), Some("EC"), "{case}");
+            assert_eq!(parent.frame().height(), 1, "{case}");
+            assert_eq!(
+                core_data::dataset_column_values(parent, "DOMAIN").expect("parent domain"),
+                vec![serde_json::json!("EC")],
+                "{case}"
+            );
+        }
+
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir],
+            dataset_paths: vec![data_dir],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1, "{case}");
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, expected_status, "{case}");
+        assert_eq!(result.error_count, expected_errors, "{case}");
+        assert_eq!(result.errors.len(), expected_errors, "{case}");
+        for issue in &result.errors {
+            assert_eq!(issue.rule_id, "CORE-000457", "{case}");
+            assert_eq!(issue.dataset, "SUPPEC", "{case}");
+            assert_eq!(issue.domain.as_deref(), Some("SUPPEC"), "{case}");
+            assert_eq!(issue.variables, vec!["RDOMAIN", "USUBJID"], "{case}");
+            assert_eq!(issue.row, None, "{case}");
+            assert_eq!(issue.usubjid, None, "{case}");
+            assert_eq!(issue.seq, None, "{case}");
+        }
+    }
 }
 
 #[test]

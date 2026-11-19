@@ -565,12 +565,10 @@ pub(crate) fn execute_dataset_operation(
         "domain_label" => {
             let column = string_field(operation, &["id", "target", "as", "output", "column"])
                 .unwrap_or_else(|| "$domain_label".to_owned());
-            let prefer_domain_name = string_field(operation, &["domain_label_source"])
-                .is_some_and(|source| normalize_operation_key(&source) == "domain");
             input
                 .iter()
                 .map(|dataset| {
-                    derive_domain_label_dataset(dataset, &column, prefer_domain_name)
+                    derive_domain_label_dataset(dataset, &column, operation)
                         .map_err(|source| operation_skipped_result(rule, source.to_string()))
                 })
                 .collect()

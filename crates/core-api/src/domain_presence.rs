@@ -1,4 +1,6 @@
-use core_data::{derive_literal_column, filter_dataset_by_mask, LoadedDataset};
+use core_data::{
+    derive_literal_column, filter_dataset_by_mask, metadata_row_dataset, LoadedDataset,
+};
 use core_engine::{RuleValidationResult, SkippedReason};
 use core_rule_model::ExecutableRule;
 use serde_json::Value;
@@ -30,12 +32,15 @@ pub(crate) fn domain_presence_execution_datasets(
             )
         })?;
 
-    let mut dataset = filter_dataset_by_mask(
-        anchor,
-        &(0..anchor.summary().row_count)
-            .map(|row| row == 0)
-            .collect::<Vec<_>>(),
-    )
+    let row_count = anchor.summary().row_count;
+    let mut dataset = if row_count == 0 {
+        metadata_row_dataset(anchor, &Default::default())
+    } else {
+        filter_dataset_by_mask(
+            anchor,
+            &(0..row_count).map(|row| row == 0).collect::<Vec<_>>(),
+        )
+    }
     .map_err(|source| operation_skipped_result(rule, source.to_string()))?;
 
     let primary = targets

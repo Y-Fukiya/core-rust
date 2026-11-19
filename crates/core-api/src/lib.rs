@@ -5,6 +5,7 @@ mod api_types;
 mod cdisc_context;
 mod condition_inspect;
 mod dataset_helpers;
+mod domain_labels;
 mod domain_presence;
 mod engine_semantics;
 mod execution_provenance;
@@ -113,8 +114,8 @@ use operation_runtime::{
     execute_dataset_operation, execute_join_operation, initial_operation_datasets,
 };
 use result_normalization::{
-    core_000206_idvarval_rdomain_result, core_000677_pooldef_poolid_result,
-    core_000884_ts_age_parameter_count_result, dataset_cell_string, normalize_validation_result,
+    core_000206_idvarval_rdomain_result, core_000884_ts_age_parameter_count_result,
+    core_000896_poolid_membership_result, dataset_cell_string, normalize_validation_result,
 };
 use result_normalization_relrec::{
     core_000744_relrec_faobj_result, core_000757_intervention_relrec_faobj_result,
@@ -204,7 +205,12 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
         let cdisc_context = cdisc_context
             .as_ref()
             .ok_or_else(|| ApiError::Internal("missing CDISC context".to_owned()))?;
-        let rule = prepare_rule_for_execution(rule, cdisc_context, &request.standard);
+        let mut rule = prepare_rule_for_execution(
+            rule,
+            cdisc_context,
+            request.standard.as_deref(),
+            request.standard_version.as_deref(),
+        );
         if !open_rules_compat {
             if let Some(result) = core_000206_idvarval_rdomain_result(&rule, &datasets) {
                 results.push(result);
@@ -219,7 +225,7 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 continue;
             }
         }
-        if let Some(result) = core_000677_pooldef_poolid_result(&rule, &datasets) {
+        if let Some(result) = core_000896_poolid_membership_result(&rule, &datasets) {
             results.push(result);
             continue;
         }
@@ -227,7 +233,13 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
             results.push(result);
             continue;
         }
-        let execution_datasets = match execution_datasets_for_rule(&rule, &datasets) {
+        let uses_tx_setcd_reference = operation_references::is_tx_setcd_reference_rule(&rule);
+        let execution_datasets = if uses_tx_setcd_reference {
+            operation_references::bind_tx_setcd_reference(&mut rule, &datasets)
+        } else {
+            execution_datasets_for_rule(&rule, &datasets)
+        };
+        let execution_datasets = match execution_datasets {
             Ok(datasets) => datasets,
             Err(skipped) => {
                 results.push(skipped);
@@ -359,6 +371,11 @@ pub fn run_validation(request: ValidateRequest) -> Result<ValidateOutcome> {
                 core_000466_pp_dataset_result(&rule, &datasets, &results[rule_result_start..])
             {
                 results.push(result);
+            }
+        }
+        if uses_tx_setcd_reference {
+            for result in &mut results[rule_result_start..] {
+                result.execution_provenance = Some("rule_specific_engine_semantics".to_owned());
             }
         }
     }
@@ -872,6 +889,7 @@ fn has_match_dataset_suffixed_column_reference(rule: &ExecutableRule) -> bool {
 
 fn is_supported_reference_distinct_rule(rule: &ExecutableRule) -> bool {
     has_oracle_gap_rule_id(rule, "supported_reference_distinct")
+        || operation_references::is_tx_setcd_reference_rule(rule)
 }
 
 pub(crate) fn collect_condition_target_variables(

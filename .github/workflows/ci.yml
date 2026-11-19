@@ -76,7 +76,7 @@ jobs:
       - name: P21PORT real-engine smoke workflow
         run: >-
           PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/p21port_smoke.py
-          --work-dir target/p21port-real-smoke
+          --work-dir "${RUNNER_TEMP}/p21port-real-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           --real-engine-command 'target/debug/core-rs validate'
 
       - name: Upload P21PORT real-engine evidence (synthetic fixtures)
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: p21port-real-engine-evidence
-          path: target/p21port-real-smoke/
+          path: ${{ runner.temp }}/p21port-real-smoke-${{ github.run_id }}-${{ github.run_attempt }}/
           include-hidden-files: true
           if-no-files-found: warn
 
@@ -177,10 +177,9 @@ jobs:
 
       - name: Open Rules curated upstream subset oracle
         run: |
-          mkdir -p ../cdisc-open-rules-curated/Published
-          grep -Ev '^[[:space:]]*(#|$)' tests/open_rules/curated-upstream-rules.txt | while read -r rule_id; do
-            cp -R "../cdisc-open-rules/Published/${rule_id}" ../cdisc-open-rules-curated/Published/
-          done
+          python3 -B scripts/prepare_open_rules_curated.py \
+            --upstream-root ../cdisc-open-rules \
+            --subset-root ../cdisc-open-rules-curated
           cargo run -p xtask -- open-rules run-score \
             --open-rules-root ../cdisc-open-rules-curated \
             --core-rs-results-root target/open-rules-core-rs-curated-upstream \
@@ -231,3 +230,15 @@ jobs:
           cargo run -p xtask -- open-rules baseline \
             --scoreboard target/open-rules-scoreboard-curated-gap/scoreboard.json \
             --baseline tests/open_rules/curated-gap-baseline.json
+
+      - name: Install R dependencies for AE/DM precheck
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            r-base-core r-cran-haven r-cran-jsonlite r-cran-digest r-cran-processx
+
+      - name: AE/DM five-rule R precheck regression
+        run: |
+          python3 -B scripts/sdtmig_34_ae_dm/ci_smoke.py \
+            --release-dir target/release-provenance/host \
+            --work-dir "${RUNNER_TEMP}"

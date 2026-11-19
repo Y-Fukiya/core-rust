@@ -25,7 +25,11 @@ fn run_validation_executes_domain_presence_rule_against_loaded_datasets() {
     {
       "filename": "tt.csv",
       "domain": "TT",
-      "records": { "DOMAIN": ["TT"] }
+      "records": {
+        "DOMAIN": ["TT", "TT"],
+        "USUBJID": ["SUBJ1", "SUBJ2"],
+        "TTSEQ": [1, 2]
+      }
     }
   ]
 }"#,
@@ -44,19 +48,95 @@ fn run_validation_executes_domain_presence_rule_against_loaded_datasets() {
     )
     .expect("write domain presence rule");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        open_rules_oracle_compat: true,
-        ..Default::default()
-    })
-    .expect("run validation");
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            output_dir: Some(dir.path().join(format!("reports-{compat}"))),
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(outcome.results[0].errors[0].dataset, "TT");
-    assert_eq!(outcome.results[0].errors[0].variables, vec!["TT"]);
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(result.dataset, "STUDY");
+        assert_eq!(result.domain, None);
+        assert_eq!(result.errors.len(), 1);
+        let issue = &result.errors[0];
+        assert_eq!(issue.dataset, "STUDY");
+        assert_eq!(issue.domain, None);
+        assert_eq!(issue.variables, vec!["TT"]);
+        assert_eq!(issue.row, None);
+        assert_eq!(issue.usubjid, None);
+        assert_eq!(issue.seq, None);
+
+        let reports = outcome.reports.expect("reports");
+        let report: serde_json::Value = serde_json::from_slice(
+            &fs::read(reports.json.expect("json report")).expect("read json report"),
+        )
+        .expect("parse json report");
+        assert_eq!(report["summary"]["error_count"], 1);
+        assert_eq!(
+            report["results"],
+            serde_json::to_value(&outcome.results).unwrap()
+        );
+
+        let mut csv =
+            csv::Reader::from_path(reports.csv.expect("csv report")).expect("read csv report");
+        let rows = csv
+            .deserialize::<std::collections::BTreeMap<String, String>>()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("parse csv report");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["rule_id"], "CORE-DOMAIN-PRESENCE");
+        assert_eq!(rows[0]["dataset"], "STUDY");
+        assert_eq!(rows[0]["domain"], "");
+        assert_eq!(rows[0]["variables"], "TT");
+        assert_eq!(rows[0]["error_count"], "1");
+        for locator in ["row", "usubjid", "seq"] {
+            assert_eq!(rows[0][locator], "");
+        }
+    }
+}
+
+#[test]
+fn run_validation_domain_presence_absent_target_keeps_no_findings() {
+    let dir = tempdir().expect("tempdir");
+    let rule_path = dir.path().join("rule.json");
+    let dataset_path = dir.path().join("ae.csv");
+    fs::write(&dataset_path, "DOMAIN,USUBJID,AESEQ\nAE,SUBJ1,1\n").expect("write dataset");
+    fs::write(
+        &rule_path,
+        r#"{
+  "Core": { "Id": "CORE-DOMAIN-PRESENCE", "Status": "Published" },
+  "Sensitivity": "Dataset",
+  "Rule Type": "Domain Presence Check",
+  "Check": { "name": "TT", "operator": "exists" },
+  "Outcome": { "Message": "TT dataset is present" }
+}"#,
+    )
+    .expect("write rule");
+
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rule_path.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Passed);
+        assert_eq!(result.error_count, 0);
+        assert!(result.errors.is_empty());
+        assert_eq!(result.dataset, "STUDY");
+        assert_eq!(result.domain, None);
+    }
 }
 
 #[test]
@@ -102,115 +182,36 @@ fn run_validation_executes_domain_presence_variable_exists_operation() {
     )
     .expect("write domain presence rule");
 
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        open_rules_oracle_compat: true,
-        ..Default::default()
-    })
-    .expect("run validation");
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![rules_dir.clone()],
+            dataset_paths: vec![dataset_path.clone()],
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
 
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Failed);
-    assert_eq!(outcome.results[0].error_count, 1);
-    assert_eq!(
-        outcome.results[0].errors[0].variables,
-        vec!["$poolid_exists", "POOLDEF"]
-    );
-}
-
-#[test]
-fn run_validation_reports_core_000677_poolid_values_missing_from_pooldef() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-
-    fs::write(
-        rules_dir.join("CORE-000677.yml"),
-        r#"
-Core:
-  Id: CORE-000677
-  Status: Published
-Sensitivity: Dataset
-Rule Type: Domain Presence Check
-Operations:
-  - id: $poolid_exists
-    name: POOLID
-    operator: variable_exists
-Check:
-  all:
-    - name: $poolid_exists
-      operator: equal_to
-      value: true
-    - name: POOLDEF
-      operator: not_exists
-Outcome:
-  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
-  Output Variables:
-    - $pooldef_poolid
-    - POOLID
-"#,
-    )
-    .expect("write rule");
-
-    let dataset_path = data_dir.join("datasets.json");
-    fs::write(
-        &dataset_path,
-        r#"{
-  "datasets": [
-    {
-      "filename": "pooldef.csv",
-      "domain": "POOLDEF",
-      "records": {
-        "POOLID": ["POOL1", "POOL2"]
-      }
-    },
-    {
-      "filename": "vs.csv",
-      "domain": "VS",
-      "records": {
-        "DOMAIN": ["VS", "VS", "VS"],
-        "POOLID": ["POOL1", "POOL3", ""],
-        "VSSEQ": [1, 2, 3]
-      }
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.error_count, 1);
+        assert_eq!(result.dataset, "STUDY");
+        assert_eq!(result.domain, None);
+        assert_eq!(result.errors[0].dataset, "STUDY");
+        assert_eq!(result.errors[0].domain, None);
+        assert_eq!(result.errors[0].row, None);
+        assert_eq!(result.errors[0].usubjid, None);
+        assert_eq!(result.errors[0].seq, None);
+        assert_eq!(
+            result.errors[0].variables,
+            vec!["$poolid_exists", "POOLDEF"]
+        );
     }
-  ]
-}"#,
-    )
-    .expect("write datasets");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        open_rules_oracle_compat: true,
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.errors[0].dataset, "VS");
-    assert_eq!(result.errors[0].row, Some(2));
-    assert_eq!(
-        result.errors[0].variables,
-        vec!["$pooldef_poolid", "POOLID"]
-    );
 }
 
-#[test]
-fn run_validation_passes_core_000677_when_pooldef_is_absent() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-
+fn write_pooldef_rules(dir: &std::path::Path) {
     fs::write(
-        rules_dir.join("CORE-000677.yml"),
+        dir.join("CORE-000677.yml"),
         r#"
 Core:
   Id: CORE-000677
@@ -229,133 +230,12 @@ Check:
     - name: POOLDEF
       operator: not_exists
 Outcome:
-  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
-  Output Variables:
-    - $pooldef_poolid
-    - POOLID
+  Message: POOLID variable exists in the dataset but POOLDEF dataset does not exist.
 "#,
     )
-    .expect("write rule");
-
-    let dataset_path = data_dir.join("datasets.json");
+    .expect("write 677 rule");
     fs::write(
-        &dataset_path,
-        r#"{
-  "datasets": [
-    {
-      "filename": "vs.csv",
-      "domain": "VS",
-      "records": {
-        "DOMAIN": ["VS"],
-        "POOLID": ["POOL3"],
-        "VSSEQ": [1]
-      }
-    }
-  ]
-}"#,
-    )
-    .expect("write datasets");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        open_rules_oracle_compat: true,
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    assert_eq!(outcome.results[0].execution_status, ExecutionStatus::Passed);
-    assert_eq!(outcome.results[0].error_count, 0);
-}
-
-#[test]
-fn run_validation_reports_core_000677_open_rules_data_dir_poolid_mismatches() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-
-    fs::write(
-        rules_dir.join("CORE-000677.yml"),
-        r#"
-Core:
-  Id: CORE-000677
-  Status: Published
-Sensitivity: Dataset
-Rule Type: Domain Presence Check
-Operations:
-  - id: $poolid_exists
-    name: POOLID
-    operator: variable_exists
-Check:
-  all:
-    - name: $poolid_exists
-      operator: equal_to
-      value: true
-    - name: POOLDEF
-      operator: not_exists
-Outcome:
-  Message: POOLID value in the dataset does not correspond to a POOLID value in POOLDEF.
-  Output Variables:
-    - $pooldef_poolid
-    - POOLID
-"#,
-    )
-    .expect("write rule");
-
-    fs::write(
-        data_dir.join("_datasets.csv"),
-        "Filename,Label\nvs,Vital Signs\npooldef,Pool Definition\n",
-    )
-    .expect("write datasets csv");
-    fs::write(
-        data_dir.join("_variables.csv"),
-        "dataset,variable,label,type,length\nvs,STUDYID,Study Identifier,Char,12\nvs,DOMAIN,Domain Abbreviation,Char,2\nvs,USUBJID,Unique Subject Identifier,Char,8\nvs,POOLID,Pool Identifier,Char,8\nvs,VSSEQ,Sequence Number,Num,8\npooldef,STUDYID,Study Identifier,Char,12\npooldef,POOLID,Pool Identifier,Char,8\npooldef,USUBJID,Unique Subject Identifier,Char,8\n",
-    )
-    .expect("write variables csv");
-    fs::write(
-        data_dir.join("pooldef.csv"),
-        "STUDYID,POOLID,USUBJID\nCDISCPILOT01,POOL1,\nCDISCPILOT01,POOL2,\n",
-    )
-    .expect("write pooldef csv");
-    fs::write(
-        data_dir.join("vs.csv"),
-        "STUDYID,DOMAIN,USUBJID,POOLID,VSSEQ\nCDISCPILOT01,VS,SUBJ1,POOL4,1\nCDISCPILOT01,VS,SUBJ2,POOL2,2\n",
-    )
-    .expect("write vs csv");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![data_dir],
-        dataset_loader: DatasetLoader::OpenRulesDataDir,
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.dataset, "VS");
-    assert_eq!(result.errors[0].row, Some(1));
-    assert_eq!(
-        result.errors[0].variables,
-        vec!["$pooldef_poolid", "POOLID"]
-    );
-}
-
-#[test]
-fn run_validation_reports_core_000896_poolid_values_missing_from_pooldef() {
-    let dir = tempdir().expect("tempdir");
-    let rules_dir = dir.path().join("rules");
-    let data_dir = dir.path().join("data");
-    fs::create_dir_all(&rules_dir).expect("rules dir");
-    fs::create_dir_all(&data_dir).expect("data dir");
-
-    fs::write(
-        rules_dir.join("CORE-000896.yml"),
+        dir.join("CORE-000896.yml"),
         r#"
 Core:
   Id: CORE-000896
@@ -376,62 +256,231 @@ Check:
       value: $pooldef_poolid
 Outcome:
   Message: POOLID value does not match a POOLID value in the POOLDEF dataset.
-  Output Variables:
-    - $pooldef_poolid
-    - POOLID
 "#,
     )
-    .expect("write rule");
-
-    let dataset_path = data_dir.join("datasets.json");
-    fs::write(
-        &dataset_path,
-        r#"{
-  "datasets": [
-    {
-      "filename": "pooldef.csv",
-      "domain": "POOLDEF",
-      "records": {
-        "POOLID": ["POOL1", "POOL2", "POOL3"]
-      }
-    },
-    {
-      "filename": "vs.csv",
-      "domain": "VS",
-      "records": {
-        "STUDYID": ["S1", "S1", "S1", "S1", "S1", "S1", "S1"],
-        "DOMAIN": ["VS", "VS", "VS", "VS", "VS", "VS", "VS"],
-        "USUBJID": ["SUBJ1", "SUBJ2", "SUBJ3", "SUBJ4", "SUBJ5", "SUBJ6", "SUBJ7"],
-        "POOLID": ["POOL1", "POOL1", "POOL1", "POOL3", "POOL2", "POOL2", "POOL99"],
-        "VSSEQ": [1, 2, 3, 4, 6, 7, 8]
-      }
-    }
-  ]
-}"#,
-    )
-    .expect("write datasets");
-
-    let outcome = run_validation(ValidateRequest {
-        rule_paths: vec![rules_dir],
-        dataset_paths: vec![dataset_path],
-        ..Default::default()
-    })
-    .expect("run validation");
-
-    assert_eq!(outcome.results.len(), 1);
-    let result = &outcome.results[0];
-    assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 1);
-    assert_eq!(result.dataset, "VS");
-    assert_eq!(result.errors[0].row, Some(7));
-    assert_eq!(
-        result.errors[0].variables,
-        vec!["$pooldef_poolid", "POOLID"]
-    );
+    .expect("write 896 rule");
 }
 
 #[test]
-fn run_validation_keeps_record_scoped_dataset_presence_when_oracle_expects_rows() {
+fn run_validation_pooldef_rules_when_pooldef_is_absent() {
+    let dir = tempdir().expect("tempdir");
+    write_pooldef_rules(dir.path());
+    let dataset = dir.path().join("vs.csv");
+
+    for (csv, expected_count) in [
+        (
+            "DOMAIN,USUBJID,VSSEQ,POOLID\nVS,SUBJ1,7,POOL99\nVS,SUBJ2,8,POOL98\n",
+            1,
+        ),
+        ("DOMAIN,USUBJID,VSSEQ,POOLID\nVS,SUBJ1,7,\n", 1),
+        ("DOMAIN,USUBJID,VSSEQ\nVS,SUBJ1,7\n", 0),
+    ] {
+        fs::write(&dataset, csv).expect("write VS");
+        for compat in [false, true] {
+            let outcome = run_validation(ValidateRequest {
+                rule_paths: vec![dir.path().to_path_buf()],
+                dataset_paths: vec![dataset.clone()],
+                open_rules_oracle_compat: compat,
+                ..Default::default()
+            })
+            .expect("run validation");
+
+            assert_eq!(outcome.results.len(), 2);
+            let presence = outcome
+                .results
+                .iter()
+                .find(|r| r.rule_id == "CORE-000677")
+                .unwrap();
+            assert_eq!(
+                presence.error_count, expected_count,
+                "compat={compat}, VS={csv}"
+            );
+            assert_eq!(presence.errors.len(), expected_count);
+            assert_eq!(presence.dataset, "STUDY");
+            assert_eq!(presence.domain, None);
+            assert_eq!(
+                presence.execution_provenance.as_deref(),
+                Some("generic_engine")
+            );
+            if expected_count == 0 {
+                assert_eq!(presence.execution_status, ExecutionStatus::Passed);
+            } else {
+                assert_eq!(presence.execution_status, ExecutionStatus::Failed);
+                let issue = &presence.errors[0];
+                assert_eq!(issue.rule_id, "CORE-000677");
+                assert_eq!(issue.dataset, "STUDY");
+                assert_eq!(issue.domain, None);
+                assert_eq!(issue.variables, vec!["$poolid_exists", "POOLDEF"]);
+                assert_eq!(
+                    (issue.row, &issue.usubjid, &issue.seq),
+                    (None, &None, &None)
+                );
+            }
+
+            if !compat {
+                let membership = outcome
+                    .results
+                    .iter()
+                    .find(|r| r.rule_id == "CORE-000896")
+                    .unwrap();
+                assert_eq!(membership.execution_status, ExecutionStatus::Passed);
+                assert_eq!(membership.error_count, 0);
+                assert!(membership.errors.is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn run_validation_pooldef_presence_with_empty_dm_anchor() {
+    assert_pooldef_presence_with_empty_anchor(true, "VS,SUBJ1,7,POOL99\n");
+}
+
+#[test]
+fn run_validation_pooldef_presence_with_empty_vs_anchor() {
+    assert_pooldef_presence_with_empty_anchor(false, "");
+}
+
+fn assert_pooldef_presence_with_empty_anchor(include_dm: bool, vs_rows: &str) {
+    let dir = tempdir().expect("tempdir");
+    write_pooldef_rules(dir.path());
+    let data_dir = dir.path().join("data");
+    fs::create_dir(&data_dir).expect("create data dir");
+    let (datasets, dm_variables) = if include_dm {
+        fs::write(data_dir.join("dm.csv"), "DOMAIN\n").expect("write header-only DM");
+        ("dm,Demographics\nvs,Vital Signs\n", "dm,DOMAIN,Char\n")
+    } else {
+        ("vs,Vital Signs\n", "")
+    };
+    fs::write(
+        data_dir.join("_datasets.csv"),
+        format!("Filename,Label\n{datasets}"),
+    )
+    .expect("write dataset manifest");
+    fs::write(
+        data_dir.join("_variables.csv"),
+        format!(
+            "dataset,variable,type\n{dm_variables}vs,DOMAIN,Char\n\
+             vs,USUBJID,Char\nvs,VSSEQ,Num\nvs,POOLID,Char\n"
+        ),
+    )
+    .expect("write variable metadata");
+    fs::write(
+        data_dir.join("vs.csv"),
+        format!("DOMAIN,USUBJID,VSSEQ,POOLID\n{vs_rows}"),
+    )
+    .expect("write VS");
+
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![dir.path().join("CORE-000677.yml")],
+            dataset_paths: vec![data_dir.clone()],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 1);
+        let result = &outcome.results[0];
+        assert_eq!(result.error_count, 1, "compat={compat}");
+        assert_eq!(result.execution_status, ExecutionStatus::Failed);
+        assert_eq!(result.errors.len(), 1);
+        let issue = &result.errors[0];
+        assert_eq!(issue.rule_id, "CORE-000677");
+        assert_eq!(issue.dataset, "STUDY");
+        assert_eq!(issue.domain, None);
+        assert_eq!(issue.variables, vec!["$poolid_exists", "POOLDEF"]);
+        assert_eq!(
+            (issue.row, &issue.usubjid, &issue.seq),
+            (None, &None, &None)
+        );
+    }
+}
+
+#[test]
+fn run_validation_pooldef_rules_distinguish_presence_from_membership() {
+    let dir = tempdir().expect("tempdir");
+    write_pooldef_rules(dir.path());
+    let data_dir = dir.path().join("data");
+    fs::create_dir(&data_dir).expect("create data dir");
+    for (name, contents) in [
+        (
+            "_datasets.csv",
+            "Filename,Label\nvs,Vital Signs\npooldef,Pool Definition\n",
+        ),
+        (
+            "_variables.csv",
+            "dataset,variable,label,type,length\n\
+vs,DOMAIN,Domain Abbreviation,Char,2\n\
+vs,USUBJID,Unique Subject Identifier,Char,8\n\
+vs,POOLID,Pool Identifier,Char,8\n\
+vs,VSSEQ,Sequence Number,Char,8\n\
+pooldef,POOLID,Pool Identifier,Char,8\n",
+        ),
+        ("pooldef.csv", "POOLID\nPOOL1\n"),
+        (
+            "vs.csv",
+            "DOMAIN,USUBJID,POOLID,VSSEQ\n\
+VS,SUBJ1,POOL1,1\n\
+VS,SUBJ2,POOL99,8\n\
+VS,SUBJ3,,9\n",
+        ),
+    ] {
+        fs::write(data_dir.join(name), contents).expect("write Open Rules data");
+    }
+
+    for compat in [false, true] {
+        let outcome = run_validation(ValidateRequest {
+            rule_paths: vec![dir.path().to_path_buf()],
+            dataset_paths: vec![data_dir.clone()],
+            dataset_loader: DatasetLoader::OpenRulesDataDir,
+            open_rules_oracle_compat: compat,
+            ..Default::default()
+        })
+        .expect("run validation");
+
+        assert_eq!(outcome.results.len(), 2);
+        let membership = outcome
+            .results
+            .iter()
+            .find(|r| r.rule_id == "CORE-000896")
+            .unwrap();
+        if compat {
+            assert_eq!(membership.execution_status, ExecutionStatus::Skipped);
+        } else {
+            assert_eq!(membership.execution_status, ExecutionStatus::Failed);
+            assert_eq!(membership.error_count, 1);
+            assert_eq!(membership.errors.len(), 1);
+            let issue = &membership.errors[0];
+            assert_eq!(issue.rule_id, "CORE-000896");
+            assert_eq!(issue.dataset, "VS");
+            assert_eq!(issue.domain.as_deref(), Some("VS"));
+            assert_eq!(issue.row, Some(2));
+            assert_eq!(issue.usubjid.as_deref(), Some("SUBJ2"));
+            assert_eq!(issue.seq.as_deref(), Some("8"));
+            assert_eq!(issue.variables, vec!["$pooldef_poolid", "POOLID"]);
+        }
+
+        let presence = outcome
+            .results
+            .iter()
+            .find(|r| r.rule_id == "CORE-000677")
+            .unwrap();
+        assert_eq!(
+            presence.execution_status,
+            ExecutionStatus::Passed,
+            "compat={compat}"
+        );
+        assert_eq!(presence.dataset, "STUDY");
+        assert_eq!(presence.domain, None);
+        assert_eq!(presence.error_count, 0);
+        assert!(presence.errors.is_empty());
+    }
+}
+
+#[test]
+fn run_validation_reports_core_000013_at_dataset_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -470,15 +519,11 @@ CDISC-TEST,AE,SUBJ2,2,\n",
     assert_eq!(outcome.results.len(), 1);
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 2);
-    assert_eq!(
-        result
-            .errors
-            .iter()
-            .map(|issue| issue.row)
-            .collect::<Vec<_>>(),
-        vec![Some(1), Some(2)]
-    );
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["AESTAT"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]

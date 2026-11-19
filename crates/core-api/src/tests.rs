@@ -19,6 +19,7 @@ mod open_rules_joins_oracle_gaps;
 mod open_rules_joins_timeline;
 mod open_rules_joins_usdm;
 mod open_rules_jsonata;
+mod open_rules_literal_membership;
 mod open_rules_match_datasets;
 mod open_rules_metadata_dataset;
 mod open_rules_metadata_domain;
@@ -1279,7 +1280,7 @@ Outcome:
 }
 
 #[test]
-fn run_validation_reports_missing_dataset_column_once_for_dataset_presence_rules() {
+fn run_validation_reports_dataset_presence_once_without_row_locators() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1340,15 +1341,15 @@ Outcome:
 
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 2);
-    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors[0].row, None);
     assert_eq!(result.errors[0].variables, vec!["AELOC", "AEPORTOT"]);
-    assert_eq!(result.errors[1].row, Some(2));
-    assert_eq!(result.errors[1].variables, vec!["AEPORTOT"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]
-fn run_validation_keeps_missing_dataset_column_per_row_for_timepoint_presence_rules() {
+fn run_validation_reports_missing_timepoint_column_at_dataset_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1409,13 +1410,15 @@ Outcome:
 
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 2);
+    assert_eq!(result.error_count, 1);
     assert_eq!(result.errors[0].variables, vec!["CMENRTPT", "CMENTPT"]);
-    assert_eq!(result.errors[1].variables, vec!["CMENRTPT", "CMENTPT"]);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]
-fn run_validation_core_000165_reports_missing_timepoint_reference_column_once() {
+fn run_validation_core_000165_reports_missing_timepoint_reference_at_dataset_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1478,19 +1481,16 @@ Outcome:
 
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
-    assert_eq!(result.error_count, 4);
-    assert_eq!(result.errors[0].row, Some(1));
-    assert_eq!(result.errors[0].variables, vec!["VSRFTDTC"]);
-    assert_eq!(result.errors[1].row, Some(2));
-    assert_eq!(result.errors[1].variables, vec!["VSRFTDTC"]);
-    assert_eq!(result.errors[2].row, Some(3));
-    assert_eq!(result.errors[2].variables, vec!["VSRFTDTC"]);
-    assert_eq!(result.errors[3].row, Some(0));
-    assert_eq!(result.errors[3].variables, vec!["VSTPTREF"]);
+    assert_eq!(result.error_count, 1);
+    assert_eq!(result.errors.len(), 1);
+    assert_eq!(result.errors[0].row, None);
+    assert_eq!(result.errors[0].variables, vec!["VSRFTDTC", "VSTPTREF"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]
-fn run_validation_reports_first_row_only_for_elapsed_timepoint_presence_rule() {
+fn run_validation_reports_elapsed_timepoint_presence_at_dataset_scope() {
     let dir = tempdir().expect("tempdir");
     let rules_dir = dir.path().join("rules");
     let data_dir = dir.path().join("data");
@@ -1552,8 +1552,10 @@ Outcome:
     let result = &outcome.results[0];
     assert_eq!(result.execution_status, ExecutionStatus::Failed);
     assert_eq!(result.error_count, 1);
-    assert_eq!(result.errors[0].row, Some(1));
+    assert_eq!(result.errors[0].row, None);
     assert_eq!(result.errors[0].variables, vec!["VSELTM", "VSTPTREF"]);
+    assert_eq!(result.errors[0].usubjid, None);
+    assert_eq!(result.errors[0].seq, None);
 }
 
 #[test]

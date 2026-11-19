@@ -1,15 +1,63 @@
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 import scripts.p21port_smoke as p21port_smoke
 
 
 FIXTURE_ROOT = Path("tests/cdisc_rulekit/fixtures/p21port")
+
+
+def test_real_engine_smoke_uses_fresh_runner_temp_and_uploads_its_evidence():
+    workflow = yaml.safe_load(
+        (p21port_smoke.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["rust"]["steps"]
+    smoke = next(step for step in steps if step.get("name") == "P21PORT real-engine smoke workflow")
+    args = shlex.split(smoke["run"])
+    work_dir = args[args.index("--work-dir") + 1]
+    assert work_dir == "${RUNNER_TEMP}/p21port-real-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+    upload = next(
+        step for step in steps
+        if step.get("with", {}).get("name") == "p21port-real-engine-evidence"
+    )
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"]["include-hidden-files"] is True
+    artifact_path = upload["with"]["path"]
+    for context, shell_variable in (
+        ("runner.temp", "RUNNER_TEMP"),
+        ("github.run_id", "GITHUB_RUN_ID"),
+        ("github.run_attempt", "GITHUB_RUN_ATTEMPT"),
+    ):
+        artifact_path = artifact_path.replace("${{ " + context + " }}", "${" + shell_variable + "}")
+    assert artifact_path.rstrip("/") == work_dir
+
+
+def test_p21port_smoke_failed_subprocess_emits_diagnostics_and_raises(capsys):
+    args = [
+        sys.executable,
+        "-c",
+        "import sys; print('smoke stdout'); print('smoke stderr', file=sys.stderr); sys.exit(7)",
+    ]
+
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        p21port_smoke._run(args, env=os.environ.copy())
+
+    assert raised.value.returncode == 7
+    assert raised.value.cmd == args
+    assert raised.value.stdout == "smoke stdout\n"
+    assert raised.value.stderr == "smoke stderr\n"
+    captured = capsys.readouterr()
+    assert captured.out == "smoke stdout\n"
+    assert captured.err == "smoke stderr\n"
 
 
 @pytest.mark.integration
