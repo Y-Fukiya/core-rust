@@ -252,6 +252,21 @@ four result lines. For human acceptance, record the archive hash, R version,
 and the four result lines on the recipient's Mac. Do not include private
 reports in the handoff record.
 
+### Linux CI regression
+
+The GitHub Actions Rust job runs the [R regression driver](../scripts/sdtmig_34_ae_dm/ci_smoke.py)
+with the Linux binary and release manifest it has already verified. The
+driver checks the hashes of the pinned public R objects and five YAMLs
+before use. It runs the post-export example and the regression tests with
+`Rscript --vanilla`, covering five finding locations, repair, unavailable
+checks, and the use of verified copies at execution time.
+
+The driver uses a temporary test receipt to exercise the R validation path.
+It does not run official CORE, qualify a release candidate, or replace the
+macOS qualification receipt. The runner removes the generated XPTs and
+diagnostics without uploading them. This check does not change the adopted
+Open Rules SHA or its baselines.
+
 ## R export and repair trial
 
 On 2026-11-18, the R helper at `7d8552e` ran the qualified macOS arm64
